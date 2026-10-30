@@ -1,0 +1,80 @@
+schema: valise-profile/1
+id: hermes
+display_name: Hermes Agent
+profile_version: 1
+status: draft
+harness_versions_tested: []
+docs: https://hermes-agent.nousresearch.com
+
+detect:
+  binaries: [hermes]
+  version_argv: [hermes, --version]          # verify: pending
+  state_dir_candidates: ["${env:HERMES_HOME}", "${HOME}/.hermes"]   # 环境变量名 verify: pending
+  markers_any: [config.yaml]
+
+roots: []
+
+paths:
+  - { root: state, glob: ".env", category: secrets }
+  - { root: state, glob: "auth.json", category: secrets, verify: pending }
+  - { root: state, glob: "SOUL.md", category: identity }
+  - { root: state, glob: "AGENTS.md", category: identity, verify: pending }
+  - { root: state, glob: "memories/USER.md", category: identity }
+  - { root: state, glob: "memories/**", category: memory }
+  - { root: state, glob: "skills/**", category: skills }
+  - { root: state, glob: "config.yaml", category: config, note: "需确认密钥不会内联在 config.yaml 中", verify: pending }
+  - { root: state, glob: "cron/**", category: config, verify: pending }
+  - { root: state, glob: "state.db", category: state }
+  - { root: state, glob: "sessions/**", category: sessions, verify: pending }
+  - { root: state, glob: "hermes-agent/**", category: body }
+  - { root: state, glob: "backups/**", category: ignore }
+  - { root: state, glob: "logs/**", category: ignore, verify: pending }
+
+consistency:
+  sqlite: [ { root: state, glob: "state.db" } ]
+  quiesce: none                    # 如果存在向量库等二进制目录，可能需要改为 stop_service；verify: pending
+
+provenance:
+  kind: git
+  git: { root: state, path: "hermes-agent" }
+
+body:
+  paths: [ { root: state, glob: "hermes-agent/**" } ]
+  bootstrap_argv: []               # verify: pending —— 需要根据官方安装脚本确认 venv 的创建与依赖安装步骤，以及全局 hermes 命令的链接方式
+  fresh_install_doc: https://hermes-agent.nousresearch.com
+
+relocation: { env: HERMES_HOME }   # verify: pending
+
+service:
+  candidates: [ { scope: user, unit: hermes-gateway.service } ]   # verify: pending
+
+entries: []                        # verify: pending
+
+health:
+  grace_seconds: 20
+  checks:
+    - { kind: systemd_active }
+    - { kind: argv, argv: [hermes, doctor], ok_exit: [0] }   # verify: pending
+
+login: []                          # M5 阶段补充
+
+exclusive_secrets: [ { root: state, glob: ".env" } ]   # 其中包含社交平台的 Bot Token；更细的拆分 verify: pending
+
+native:
+  export_argv: null                # hermes backup 的输出路径参数 verify: pending
+
+checkup:
+  sessions: { root: state, glob: "state.db", format: sqlite, usage_fields: null }   # 表结构 verify: pending
+  memory_files:
+    - { root: state, glob: "memories/MEMORY.md", warn_lines: 600 }
+    - { root: state, glob: "memories/USER.md", warn_lines: 300 }
+  memory_mechanism_markers: [ { root: state, glob: "memories/MEMORY.md" } ]
+  native_options_doc: null         # verify: pending
+
+handoff:
+  targets: [ { root: state, glob: "memories/MEMORY.md", mode: append_section, max_lines: 120 } ]
+  new_session_hint: null           # verify: pending
+
+agent_kit:
+  skills_dir: { root: state, path: "skills/" }
+  mcp_config_doc: null             # verify: pending

@@ -1,0 +1,63 @@
+schema: valise-profile/1
+id: dsh
+display_name: DeepSeek Harness
+profile_version: 1
+status: draft
+harness_versions_tested: []
+docs: https://github.com/deepseek-ai/deepseek-harness
+
+detect:
+  binaries: [dsh]
+  version_argv: [dsh, --version]   # verify: pending
+  state_dir_candidates: ["${env:DSH_HOME}", "${HOME}/.dsh"]   # 环境变量名 verify: pending
+  markers_any: []                  # verify: pending
+
+roots: []
+
+paths:
+  - { root: state, glob: "credentials/**", category: secrets, verify: pending }
+  - { root: state, glob: "profiles/*/package.json", category: config, verify: pending }
+  - { root: state, glob: "profiles/*/*.yml", category: config, verify: pending }
+  - { root: state, glob: "profiles/*/node_modules/**", category: cache, verify: pending }
+  - { root: state, glob: "sessions/**", category: sessions, verify: pending }
+  - { root: state, glob: "logs/**", category: ignore }
+
+consistency: { sqlite: [], quiesce: none }
+
+provenance:
+  kind: npm_global
+  npm: { package: "@deepseek-ai/dsh" }
+
+body: { paths: [], bootstrap_argv: [], fresh_install_doc: https://github.com/deepseek-ai/deepseek-harness }
+
+relocation: null                   # verify: pending
+
+service: { candidates: [] }
+
+entries:
+  - { id: web, kind: web, host: 127.0.0.1, port: 3080, path: "/" }
+
+health:
+  grace_seconds: 15
+  checks:
+    - { kind: tcp, entry: web }
+
+login: []
+
+exclusive_secrets: []              # verify: pending
+
+native: { export_argv: null }
+
+checkup:
+  sessions: { root: state, glob: "sessions/**", format: jsonl, usage_fields: null }   # verify: pending
+  memory_files: []
+  memory_mechanism_markers: []     # 由各记忆插件的子 profile 追加
+  native_options_doc: null
+
+handoff:
+  targets: []                      # 没有记忆插件时，交接写入的目标 verify: pending
+  new_session_hint: null
+
+agent_kit:
+  skills_dir: null                 # verify: pending
+  mcp_config_doc: null             # verify: pending

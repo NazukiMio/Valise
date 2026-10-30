@@ -1,0 +1,85 @@
+schema: valise-profile/1
+id: openclaw
+display_name: OpenClaw
+profile_version: 1
+status: draft
+harness_versions_tested: []
+docs: https://docs.openclaw.ai
+
+detect:
+  binaries: [openclaw]
+  version_argv: [openclaw, --version]
+  state_dir_candidates: ["${env:OPENCLAW_STATE_DIR}", "${HOME}/.openclaw"]   # 环境变量名 verify: pending
+  markers_any: [openclaw.json]                                              # verify: pending
+
+roots:
+  - id: workspace
+    discover_argv: null            # verify: pending —— 待确认是否有只读命令可以读出工作区路径
+    default: "${STATE_DIR}/workspace"
+
+paths:
+  - { root: state, glob: "agents/*/agent/auth-profiles.json", category: secrets }
+  - { root: state, glob: "credentials/**", category: secrets, verify: pending }
+  - { root: state, glob: "openclaw.json", category: secrets, note: "配置中可能内联令牌，整个文件按凭据处理", verify: pending }
+  - { root: workspace, glob: "SOUL.md", category: identity, verify: pending }
+  - { root: workspace, glob: "IDENTITY.md", category: identity, verify: pending }
+  - { root: workspace, glob: "USER.md", category: identity, verify: pending }
+  - { root: workspace, glob: "AGENTS.md", category: identity, verify: pending }
+  - { root: workspace, glob: "TOOLS.md", category: config, verify: pending }
+  - { root: workspace, glob: "HEARTBEAT.md", category: config, verify: pending }
+  - { root: workspace, glob: "MEMORY.md", category: memory, verify: pending }
+  - { root: workspace, glob: "memory/**", category: memory, verify: pending }
+  - { root: workspace, glob: "skills/**", category: skills, verify: pending }
+  - { root: state, glob: "skills/**", category: skills, verify: pending }
+  - { root: state, glob: "agents/*/sessions/**", category: sessions, verify: pending }
+  - { root: state, glob: "agents/*/agent/*.sqlite", category: state }
+  - { root: state, glob: "cron/**", category: config, verify: pending }
+  - { root: state, glob: "logs/**", category: ignore, verify: pending }
+  - { root: state, glob: "**/node_modules/**", category: cache }
+  - { root: workspace, glob: "**", category: workspace }
+
+consistency:
+  sqlite: [ { root: state, glob: "agents/*/agent/*.sqlite" } ]
+  quiesce: none
+
+provenance:
+  kind: npm_global
+  npm: { package: openclaw }       # verify: pending
+
+body: { paths: [], bootstrap_argv: [], fresh_install_doc: https://docs.openclaw.ai }
+
+relocation: { env: OPENCLAW_STATE_DIR }   # verify: pending
+
+service:
+  candidates: [ { scope: user, unit: openclaw-gateway.service } ]   # verify: pending
+
+entries:
+  - { id: gateway, kind: web, host: 127.0.0.1, port: 18789, path: "/" }   # verify: pending
+
+health:
+  grace_seconds: 20
+  checks:
+    - { kind: systemd_active }
+    - { kind: tcp, entry: gateway }
+    - { kind: argv, argv: [openclaw, doctor], ok_exit: [0] }   # 需要确认是否存在非交互模式 verify: pending
+
+login: []                          # M5 阶段补充
+
+exclusive_secrets: [ { root: state, glob: "credentials/**" } ]   # verify: pending
+
+native:
+  export_argv: [openclaw, backup, create, --output, "${OUT}", --verify]
+
+checkup:
+  sessions: { root: state, glob: "agents/*/sessions/*.jsonl", format: jsonl, usage_fields: null }   # verify: pending
+  memory_files: [ { root: workspace, glob: "MEMORY.md", warn_lines: 600 } ]
+  memory_mechanism_markers: [ { root: workspace, glob: "memory/*.md" } ]   # verify: pending
+  native_options_doc: null         # verify: pending
+
+handoff:
+  targets: [ { root: workspace, glob: "MEMORY.md", mode: append_section, max_lines: 120 } ]
+  new_session_hint: null           # verify: pending
+
+agent_kit:
+  skills_dir: { root: workspace, path: "skills/" }   # verify: pending
+  mcp_config_doc: null             # verify: pending

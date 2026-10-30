@@ -1,0 +1,243 @@
+package profile
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+const baseYAML = `schema: valise-profile/1
+id: example
+display_name: Example
+profile_version: 1
+status: draft
+harness_versions_tested: []
+detect:
+  binaries: [example]
+  version_argv: [example, --version]
+  state_dir_candidates: ["${env:EXAMPLE_HOME}", "${HOME}/.example"]
+  markers_any: [config.yaml]
+roots:
+  - id: workspace
+    discover_argv: null
+    default: "${STATE_DIR}/workspace"
+paths:
+  - { root: state, glob: ".env", category: secrets }
+  - { root: state, glob: "memories/**", category: memory, verify: pending }
+  - { root: workspace, glob: "**", category: workspace }
+consistency:
+  sqlite: [ { root: state, glob: "*.db" } ]
+  quiesce: none
+provenance:
+  kind: npm_global
+  npm: { package: example }
+body: { paths: [], bootstrap_argv: [], fresh_install_doc: https://example.invalid }
+relocation: { env: EXAMPLE_HOME }
+service:
+  candidates: [ { scope: user, unit: example.service } ]
+entries:
+  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/" }
+health:
+  grace_seconds: 20
+  checks:
+    - { kind: systemd_active }
+    - { kind: tcp, entry: main }
+    - { kind: http, entry: main, expect_status: [200, 401] }
+    - { kind: argv, argv: [example, doctor], ok_exit: [0] }
+login: []
+exclusive_secrets: [ { root: state, glob: "channels/**" } ]
+native:
+  export_argv: [example, export, "${OUT}"]
+checkup:
+  sessions: { root: state, glob: "sessions/*.jsonl", format: jsonl, usage_fields: null }
+  memory_files: [ { root: state, glob: "MEMORY.md", warn_lines: 800 } ]
+  memory_mechanism_markers: [ { root: state, glob: "memories/*.md" } ]
+  native_options_doc: null   # verify: pending
+handoff:
+  targets: [ { root: state, glob: "MEMORY.md", mode: append_section, max_lines: 120 } ]
+  new_session_hint: null
+agent_kit:
+  skills_dir: { root: workspace, path: "skills/" }
+  mcp_config_doc: null
+`
+
+func mustParse(t *testing.T, name, src string) *Document {
+	t.Helper()
+	d, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse %s: %v", name, err)
+	}
+	d.Path = name
+	return d
+}
+
+func lintOne(t *testing.T, src string) []Issue {
+	t.Helper()
+	return Lint([]*Document{mustParse(t, "p.yaml", src)})[0].Issues
+}
+
+func expectIssue(t *testing.T, issues []Issue, field, msg string) {
+	t.Helper()
+	for _, i := range issues {
+		if strings.HasPrefix(i.Field, field) && strings.Contains(i.Message, msg) {
+			return
+		}
+	}
+	t.Errorf("no issue %s ~ %q in %v", field, msg, issues)
+}
+
+func TestBaseProfileClean(t *testing.T) {
+	if issues := lintOne(t, baseYAML); len(issues) > 0 {
+		t.Fatalf("unexpected issues: %v", issues)
+	}
+}
+
+func TestPendingCountsFieldsAndComments(t *testing.T) {
+	d := mustParse(t, "p.yaml", baseYAML)
+	if len(d.Pending) != 2 {
+		t.Fatalf("pending = %v, want field + comment", d.Pending)
+	}
+}
+
+func TestShellStringRejected(t *testing.T) {
+	src := strings.Replace(baseYAML, "version_argv: [example, --version]", `version_argv: "example --version"`, 1)
+	_, err := Parse([]byte(src))
+	if err == nil || !strings.Contains(err.Error(), "argv 数组") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestUnknownFieldRejected(t *testing.T) {
+	src := strings.Replace(baseYAML, "display_name: Example", "display_name: Example\ndisplay_nmae: typo", 1)
+	if _, err := Parse([]byte(src)); err == nil {
+		t.Fatal("unknown field accepted")
+	}
+}
+
+func TestLintRules(t *testing.T) {
+	cases := []struct {
+		name, old, new, field, msg string
+	}{
+		{"schema", "schema: valise-profile/1", "schema: valise-profile/2", "schema", "必须是"},
+		{"id", "id: example", "id: Example_1", "id", "小写字母"},
+		{"absolute glob", `glob: "memories/**"`, `glob: "/etc/**"`, "paths[1].glob", "绝对路径"},
+		{"dotdot glob", `glob: "memories/**"`, `glob: "../memories/**"`, "paths[1].glob", ".."},
+		{"absolute candidate", `"${HOME}/.example"`, `"/opt/example"`, "detect.state_dir_candidates[1]", "开头"},
+		{"dotdot root default", `default: "${STATE_DIR}/workspace"`, `default: "${STATE_DIR}/../w"`, "roots[0].default", ".."},
+		{"unknown category", "category: memory", "category: memories", "paths[1].category", "未知类别"},
+		{"unknown root", "{ root: state, glob: \"memories/**\"", "{ root: nowhere, glob: \"memories/**\"", "paths[1].root", "未声明的 root"},
+		{"verify value", "verify: pending", "verify: yes", "paths[1].verify", "pending"},
+		{"secret also ignore", `{ root: workspace, glob: "**", category: workspace }`, `{ root: state, glob: ".env", category: ignore }`, "paths[0]", "同时出现"},
+		{"secret matched by cache", `{ root: workspace, glob: "**", category: workspace }`, `{ root: state, glob: "**", category: cache }`, "paths[0]", "同时出现"},
+		{"secret in body", "body: { paths: []", `body: { paths: [ { root: state, glob: ".env" } ]`, "paths[0]", "body.paths[0]"},
+		{"bad quiesce", "quiesce: none", "quiesce: pause", "consistency.quiesce", "stop_service"},
+		{"bad provenance", "kind: npm_global", "kind: apt", "provenance.kind", "未知来源"},
+		{"missing npm package", "npm: { package: example }", "npm: { package: \"\" }", "provenance.npm.package", "包名"},
+		{"health entry", "{ kind: tcp, entry: main }", "{ kind: tcp, entry: nope }", "health.checks[1].entry", "不存在的入口"},
+		{"health kind", "{ kind: systemd_active }", "{ kind: ping }", "health.checks[0].kind", "未知检查"},
+		{"OUT outside export", "argv: [example, doctor]", `argv: [example, "${OUT}"]`, "health.checks[3].argv[1]", "${OUT}"},
+		{"unknown var", `[example, export, "${OUT}"]`, `[example, export, "${TMP}"]`, "native.export_argv[2]", "${TMP}"},
+		{"handoff mode", "mode: append_section", "mode: overwrite", "handoff.targets[0].mode", "append_section"},
+		{"skills path", `path: "skills/"`, `path: "../skills/"`, "agent_kit.skills_dir.path", ".."},
+		{"port", "port: 8080", "port: 0", "entries[0].port", "端口"},
+		{"session format", "format: jsonl", "format: csv", "checkup.sessions.format", "jsonl"},
+		{"verified with pending", "status: draft\nharness_versions_tested: []", "status: verified\nharness_versions_tested: [\"1.0\"]", "status", "verify: pending"},
+		{"verified without versions", "status: draft", "status: verified", "harness_versions_tested", "版本"},
+		{"when on top-level", "harness_versions_tested: []", "harness_versions_tested: []\nwhen: { exists: { root: state, glob: x } }", "when", "只有子 profile"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if !strings.Contains(baseYAML, c.old) {
+				t.Fatalf("fixture does not contain %q", c.old)
+			}
+			expectIssue(t, lintOne(t, strings.Replace(baseYAML, c.old, c.new, 1)), c.field, c.msg)
+		})
+	}
+}
+
+const childYAML = `schema: valise-profile/1
+id: example-json-store
+display_name: Example JSON store
+profile_version: 1
+status: draft
+extends: example
+when: { exists: { root: state, glob: "plugin/memories.json" } }
+paths:
+  - { root: state, glob: "plugin/**", category: memory }
+checkup:
+  memory_mechanism_markers: [ { root: state, glob: "plugin/memories.json" } ]
+`
+
+func TestChildProfile(t *testing.T) {
+	parent := mustParse(t, "example.yaml", baseYAML)
+	child := mustParse(t, "child.yaml", childYAML)
+	res := Lint([]*Document{parent, child})
+	if len(res[1].Issues) > 0 {
+		t.Fatalf("child issues: %v", res[1].Issues)
+	}
+	eff := res[1].Effective
+	if len(eff.Paths) != len(parent.Profile.Paths)+1 || eff.Paths[0].Category != CategorySecrets {
+		t.Fatalf("effective paths = %v", eff.Paths)
+	}
+	if len(eff.Checkup.MemoryMechanismMarkers) != 2 || eff.Checkup.Sessions == nil {
+		t.Fatalf("effective checkup = %+v", eff.Checkup)
+	}
+	if eff.Provenance == nil || eff.ID != "example-json-store" {
+		t.Fatalf("effective = %+v", eff)
+	}
+}
+
+func TestChildRestrictions(t *testing.T) {
+	parent := mustParse(t, "example.yaml", baseYAML)
+	cases := []struct{ name, src, field, msg string }{
+		{"no parent", childYAML, "extends", "找不到父 profile"},
+		{"declares detect", childYAML + "detect: { binaries: [x], state_dir_candidates: [\"${HOME}/.x\"] }\n", "detect", "只能追加"},
+		{"no when", strings.Replace(childYAML, "when: { exists: { root: state, glob: \"plugin/memories.json\" } }\n", "", 1), "when", "when.exists"},
+		{"quiesce", childYAML + "consistency: { quiesce: stop_service }\n", "consistency.quiesce", "quiesce"},
+		{"secret hidden by child ignore", childYAML + "  - { root: state, glob: \".env\", category: ignore }\n", "paths[0]", "同时出现"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			docs := []*Document{mustParse(t, "child.yaml", strings.Replace(c.src, "checkup:\n  memory_mechanism_markers: [ { root: state, glob: \"plugin/memories.json\" } ]\n", "", 1))}
+			if c.name != "no parent" {
+				docs = append([]*Document{parent}, docs...)
+			}
+			res := Lint(docs)
+			expectIssue(t, res[len(res)-1].Issues, c.field, c.msg)
+		})
+	}
+}
+
+func TestChildCycle(t *testing.T) {
+	a := mustParse(t, "a.yaml", strings.Replace(strings.Replace(childYAML, "id: example-json-store", "id: a", 1), "extends: example", "extends: b", 1))
+	b := mustParse(t, "b.yaml", strings.Replace(strings.Replace(childYAML, "id: example-json-store", "id: b", 1), "extends: example", "extends: a", 1))
+	expectIssue(t, Lint([]*Document{a, b})[0].Issues, "extends", "循环")
+}
+
+func TestDuplicateID(t *testing.T) {
+	res := Lint([]*Document{mustParse(t, "a.yaml", baseYAML), mustParse(t, "b.yaml", baseYAML)})
+	expectIssue(t, res[1].Issues, "id", "重复")
+}
+
+func TestRepositoryProfilesPass(t *testing.T) {
+	files, err := filepath.Glob("../../profiles/*.yaml")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no profiles found: %v", err)
+	}
+	var docs []*Document
+	for _, f := range files {
+		d, err := LoadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs = append(docs, d)
+	}
+	for _, r := range Lint(docs) {
+		if len(r.Issues) > 0 {
+			t.Errorf("%s: %v", r.Doc.Path, r.Issues)
+		}
+		if r.Doc.Profile.Status == StatusDraft && len(r.Doc.Pending) == 0 {
+			t.Errorf("%s: draft profile without any verify: pending", r.Doc.Path)
+		}
+	}
+}
