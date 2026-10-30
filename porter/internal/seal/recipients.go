@@ -3,6 +3,7 @@ package seal
 import (
 	"os"
 	"strings"
+	"time"
 
 	"filippo.io/age"
 
@@ -26,8 +27,12 @@ func ReadRecipients(p Paths) ([]string, error) {
 	return r, nil
 }
 
-// AddRecipient appends an age1… recipient unless present.
-func AddRecipient(p Paths, recipient string) (added bool, all []string, err error) {
+// AddRecipient appends an age1… recipient unless present, preceded by a
+// "# <label> (added <date>)" comment when a label is given.
+func AddRecipient(p Paths, recipient, label string) (added bool, all []string, err error) {
+	if strings.ContainsAny(label, "\r\n") || len(label) > 200 {
+		return false, nil, valise.New("recipient_label_invalid", "标签必须是一行、不超过 200 个字符", "换一个简短的说明")
+	}
 	if _, err := age.ParseX25519Recipient(recipient); err != nil {
 		return false, nil, valise.New("recipient_invalid", "公钥格式无效", "使用 valise key show 显示的 age1… 公钥")
 	}
@@ -47,6 +52,9 @@ func AddRecipient(p Paths, recipient string) (added bool, all []string, err erro
 	}
 	if text == "" {
 		text = "# age recipients for Valise; one age1… key per line\n"
+	}
+	if label != "" {
+		text += "# " + label + " (added " + time.Now().UTC().Format("2006-01-02") + ")\n"
 	}
 	text += recipient + "\n"
 	if err := writeAtomic(p.Recipients(), []byte(text), 0o600); err != nil {

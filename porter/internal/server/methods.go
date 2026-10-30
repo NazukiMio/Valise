@@ -77,7 +77,7 @@ func init() {
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
 		}
-		added, all, err := seal.AddRecipient(paths(s), p.Recipient)
+		added, all, err := seal.AddRecipient(paths(s), p.Recipient, p.Label)
 		if err != nil {
 			return nil, err
 		}

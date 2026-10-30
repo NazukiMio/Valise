@@ -12,11 +12,13 @@ import (
 )
 
 func (c *cli) keyRegister(ctx context.Context, args []string) error {
-	pos, err := parseArgs(flag.NewFlagSet("register", flag.ContinueOnError), args, 1)
+	fs := flag.NewFlagSet("register", flag.ContinueOnError)
+	label := fs.String("label", "", "")
+	pos, err := parseArgs(fs, args, 1)
 	if err != nil {
 		return err
 	}
-	res, info, err := c.svc.KeyRegister(ctx, pos[0])
+	res, info, err := c.svc.KeyRegister(ctx, pos[0], *label)
 	if err != nil {
 		return err
 	}

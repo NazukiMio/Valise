@@ -85,7 +85,7 @@ func newWorld(t *testing.T) *world {
 		t.Fatal(err)
 	}
 	w.id, _ = age.GenerateX25519Identity()
-	if _, _, err := AddRecipient(w.p, w.id.Recipient().String()); err != nil {
+	if _, _, err := AddRecipient(w.p, w.id.Recipient().String(), "test key"); err != nil {
 		t.Fatal(err)
 	}
 	return w
@@ -257,6 +257,12 @@ func TestBodyPatch(t *testing.T) {
 
 func TestVaultOps(t *testing.T) {
 	w := newWorld(t)
+	if b, _ := os.ReadFile(w.p.Recipients()); !strings.Contains(string(b), "# test key (added ") {
+		t.Fatalf("label comment missing: %s", b)
+	}
+	if _, _, err := AddRecipient(w.p, w.id.Recipient().String(), "two\nlines"); err == nil {
+		t.Fatal("multi-line label accepted")
+	}
 	if st, err := Status(w.p); err != nil || st.Exists || len(st.Recipients) != 1 {
 		t.Fatal(st, err)
 	}

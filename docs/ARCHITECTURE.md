@@ -127,7 +127,8 @@
 
 ## 7. 金库与同步
 
-- **收件人登记**：`valise key register <服务器>` 把本机密钥的公钥追加到服务器的 `recipients.txt`（每行一个 `age1…`，`#` 开头为注释）。收件人集合变化后，下一次封存新建 epoch。服务器上没有任何收件人时拒绝封存。
+- **收件人登记**：`valise key register <服务器>` 把本机密钥的公钥追加到服务器的 `recipients.txt`（每行一个 `age1…`，`#` 开头为注释）。收件人集合变化后，下一次封存新建 epoch。服务器上没有任何收件人时拒绝封存。`--label <说明>` 会在公钥上方写一行注释 `# <说明> (added <日期>)`，用来标明这把钥匙属于谁、用途是什么（例如测试钥匙）；注释不影响收件人集合和指纹。
+- **移除收件人**（`valise key unregister`，M4 实现）：从 `recipients.txt` 删除一把公钥，下一次封存会新建 epoch，此后的快照不再加密给它。**必须向用户如实说明**：已经写入金库的旧快照仍然可以被这把钥匙解开，加密无法追溯撤销；如果钥匙已经泄露，应当把旧快照视为已暴露。拒绝移除最后一把公钥。
 - 每台服务器有一个本地金库。异地同步由 `porter sync --target <name>` 完成，支持 rsync、rclone 和 sftp。目标配置写在 `targets.json` 中；rclone 使用用户自己的 remote 配置，Valise 不保存其中的凭据。
 - 同步顺序固定为：pack → index → 快照 → 元数据。由于金库只追加，任何中断都可以安全续传。
 - **targets.json**：`{"targets": [{"name": "nas", "kind": "rsync", "dest": "nas-test:/mnt/test/nas/valise-vault/"}]}`。`kind` 取值 `rsync`、`rclone`、`sftp`；M3 只实现 `rsync`（经服务器自己的 SSH 配置，加 `--ignore-existing`，按 pack → index → 快照 → 元数据 → epochs/keys → VAULT 的顺序逐个目录同步）。同步结果写入审计记录，`porter status` 据此报告每个目标的最后同步时间。服务器登录目标所需的凭据由用户自己配置，Valise 不保存。

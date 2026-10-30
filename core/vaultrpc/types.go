@@ -29,6 +29,8 @@ const (
 // RecipientAddParams registers the client's public key.
 type RecipientAddParams struct {
 	Recipient string `json:"recipient"`
+	// Label is written as a comment above the key in recipients.txt.
+	Label string `json:"label,omitempty"`
 }
 
 // RecipientAddResult lists the server's recipients afterwards.

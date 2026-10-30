@@ -160,7 +160,7 @@ for e in "${enrollments[@]}"; do
 	case " ${m3_hosts[*]} " in *" $h "*) ;; *)
 		m3_hosts+=("$h")
 		echo "== M3: keys and target on $h"
-		V key register "$h" >/dev/null && pass "$h: key registered" || fail "$h: key register"
+		V key register "$h" --label "valise-drill TEST key (identity in ~/.cache/valise-drill on the dev Mac); safe to remove once valise key unregister exists" >/dev/null && pass "$h: key registered" || fail "$h: key register"
 		V target add "$h" nas --rsync "$nas_dest" >/dev/null && pass "$h: sync target" || fail "$h: target add"
 	;; esac
 	echo "== M3: seal $p on $h"

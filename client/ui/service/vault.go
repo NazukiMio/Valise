@@ -30,14 +30,14 @@ func (s *Service) withSession(ctx context.Context, host string, fn func(*ssh.RPC
 }
 
 // KeyRegister adds this client's public key to the server's recipients.
-func (s *Service) KeyRegister(ctx context.Context, host string) (*vaultrpc.RecipientAddResult, *KeyInfo, error) {
+func (s *Service) KeyRegister(ctx context.Context, host, label string) (*vaultrpc.RecipientAddResult, *KeyInfo, error) {
 	info, err := s.KeyShow()
 	if err != nil {
 		return nil, nil, err
 	}
 	var res vaultrpc.RecipientAddResult
 	err = s.withSession(ctx, host, func(c *ssh.RPCClient) error {
-		return c.Call(ctx, vaultrpc.MethodRecipientAdd, vaultrpc.RecipientAddParams{Recipient: info.Recipient}, &res)
+		return c.Call(ctx, vaultrpc.MethodRecipientAdd, vaultrpc.RecipientAddParams{Recipient: info.Recipient, Label: label}, &res)
 	})
 	return &res, info, err
 }

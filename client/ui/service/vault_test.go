@@ -25,11 +25,11 @@ func TestSealPullVerifyOverFakeSSH(t *testing.T) {
 	_, err = s.Seal(ctx, "box", vaultrpc.SealParams{InstanceID: "demo", Tier: vault.TierSoul})
 	wantCode(t, err, "no_recipients")
 
-	reg, info, err := s.KeyRegister(ctx, "box")
+	reg, info, err := s.KeyRegister(ctx, "box", "")
 	if err != nil || !reg.Added || reg.Fingerprints[0] != info.Fingerprint {
 		t.Fatal(reg, err)
 	}
-	if reg, _, _ := s.KeyRegister(ctx, "box"); reg.Added {
+	if reg, _, _ := s.KeyRegister(ctx, "box", ""); reg.Added {
 		t.Fatal("registered twice")
 	}
 	rep, err := s.Seal(ctx, "box", vaultrpc.SealParams{InstanceID: "demo", Tier: vault.TierSoul, Reason: "test"})
