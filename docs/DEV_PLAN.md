@@ -7,7 +7,7 @@
 
 ## M1：基础骨架、信任根与传输
 
-- **状态**：`Ready`
+- **状态**：`Done`（2026-10-30）
 - **交付**：
   1. 仓库骨架：`core`、`porter`、`client`、`client/ui` 四个模块，统一 Go 版本，自检脚本可以运行。
   2. `core`：profile 数据模型与 YAML 解析（`go.yaml.in/yaml/v3`）、`profilelint`（实现 PROFILES.md 第 3 节的全部规则）、RPC 类型、金库格式的数据结构（暂不实现读写）。
@@ -21,15 +21,15 @@
   - 单元测试覆盖 keystore 的往返加解密、错误口令、篡改检测，以及用标准 `age` CLI 解开 `keystore.age`。
   - fake-ssh 测试覆盖 RPC 往返。
   - 在三台靶机上部署 porter，`valise doctor` 输出正确。在 `ubuntu-vm-x86` 上确认 porter 安装到 `~/.local/bin`，全程不需要 sudo。
-- **进度**（2026-10-30）：
-  - 已完成：交付 1–8 的代码与测试；CLAUDE.md 自检清单全部通过（`testbed/selfcheck.sh`）；keystore 的往返、错误口令、篡改检测和标准 `age` CLI 解密均有单元测试；fake-ssh 覆盖 RPC 往返与连接失败、延迟、中途断线三种故障注入。
-  - 额外验证：在开发容器内用本机 sshd（127.0.0.1，非 root、无 sudo 用户）跑通 `testbed/drill.sh` 的 M1 步骤，并确认错误架构的 porter 会被拒绝、旧 porter 保持不变。**这不能代替靶机验收。**
-  - 未完成：三台靶机上的 `testbed/drill.sh` 验收（需要在能连到靶机的 Mac 上执行）。
-  - 尚未配置：Release 的 minisign 签名公钥（`client/porter.ReleasePublicKey`）。配置之前，只能用 `--local` 部署。
+- **验收记录**（2026-10-30，在开发 Mac 上执行）：
+  - `testbed/selfcheck.sh` 在 macOS（Go 1.27.3）上全部通过，包括用标准 `age` CLI 解开 `keystore.age` 的测试。
+  - `testbed/drill.sh` 输出 `ALL_PASS (failures=0)`：三台靶机均以 `--local` 部署 porter 到 `~/.local/bin`，`valise doctor` 的架构、porter 版本、可用工具输出正确；porter 文件属于登录用户，全程未使用 sudo（`ubuntu-vm-x86` 与 `nas-test` 本身没有 sudo）。`nas-test` 的 HOME 为 `/mnt/test/nas`，porter 位于 `/mnt/test/nas/.local/bin/`。
+  - 额外核实：向 `ubuntu-vm`（arm64）部署 amd64 porter 被拒绝，原 porter 的 SHA-256 不变；ControlMaster 复用生效；主机不可达时给出"原因 + 建议"，`-v` 才显示 OpenSSH 原始报错。
+  - 遗留：Release 的 minisign 签名公钥（`client/porter.ReleasePublicKey`）尚未配置，配置之前只能用 `--local` 部署。
 
 ## M2：Profile 引擎与登记
 
-- **状态**：`Blocked (depends on M1)`
+- **状态**：`Ready`
 - **交付**：
   1. porter 的 detect、resolve、classify 实现（包括凭据优先、未分类统计、roots 的 `discover_argv`）。
   2. 来源记录：npm、git（包括 dirty 状态与补丁）、uv/pipx、二进制哈希。
