@@ -26,7 +26,7 @@ paths:
   - { root: state, glob: "memories/**", category: memory, verify: pending }
   - { root: workspace, glob: "**", category: workspace }
 consistency:
-  sqlite: [ { root: state, glob: "*.db" } ]
+  sqlite: [ { root: state, glob: "*.db" }, { root: state, glob: "agent.sqlite", secret_tables: [auth_store] } ]
   quiesce: none
 provenance:
   kind: npm_global
@@ -140,6 +140,8 @@ func TestLintRules(t *testing.T) {
 		{"handoff mode", "mode: append_section", "mode: overwrite", "handoff.targets[0].mode", "append_section"},
 		{"skills path", `path: "skills/"`, `path: "../skills/"`, "agent_kit.skills_dir.path", ".."},
 		{"port", "port: 8080", "port: 0", "entries[0].port", "端口"},
+		{"secret table name", "secret_tables: [auth_store]", "secret_tables: [\"auth; drop\"]", "consistency.sqlite[1].secret_tables[0]", "表名"},
+		{"uv package", "kind: npm_global\n  npm: { package: example }", "kind: uv_tool", "provenance.uv.package", "包名"},
 		{"session format", "format: jsonl", "format: csv", "checkup.sessions.format", "jsonl"},
 		{"verified with pending", "status: draft\nharness_versions_tested: []", "status: verified\nharness_versions_tested: [\"1.0\"]", "status", "verify: pending"},
 		{"verified without versions", "status: draft", "status: verified", "harness_versions_tested", "版本"},

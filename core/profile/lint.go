@@ -5,6 +5,7 @@ import (
 	"net"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 // Issue is one profilelint finding. Every issue is an error.
@@ -30,7 +31,10 @@ type Result struct {
 	Issues    []Issue
 }
 
-var idRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+var (
+	idRe    = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	tableRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+)
 
 // childAllowedKeys are the top-level keys a child profile may declare.
 var childAllowedKeys = []string{
@@ -199,7 +203,13 @@ func (c *checker) checkDoc(d *Document, eff *Profile) {
 	}
 	if p.Consistency != nil {
 		for i, r := range p.Consistency.SQLite {
-			c.ref(fmt.Sprintf("consistency.sqlite[%d]", i), r)
+			f := fmt.Sprintf("consistency.sqlite[%d]", i)
+			c.ref(f, r.Ref())
+			for j, tbl := range r.SecretTables {
+				if !tableRe.MatchString(tbl) {
+					c.add(fmt.Sprintf("%s.secret_tables[%d]", f, j), "表名只能包含字母、数字和下划线")
+				}
+			}
 		}
 	}
 	if p.Checkup != nil {
@@ -356,7 +366,18 @@ func (c *checker) checkProvenance(pv *Provenance) {
 				c.add("provenance.git.path", "%v", err)
 			}
 		}
-	case ProvenanceUVTool, ProvenancePipx, ProvenanceBinary:
+	case ProvenanceUVTool:
+		if pv.UV == nil || pv.UV.Package == "" {
+			c.add("provenance.uv.package", "uv_tool 必须声明包名")
+		}
+	case ProvenancePipx:
+		if pv.Pipx == nil || pv.Pipx.Package == "" {
+			c.add("provenance.pipx.package", "pipx 必须声明包名")
+		}
+	case ProvenanceBinary:
+		if pv.Binary == nil || pv.Binary.Name == "" || strings.Contains(pv.Binary.Name, "/") {
+			c.add("provenance.binary.name", "binary 必须声明命令名（不含路径）")
+		}
 	default:
 		c.add("provenance.kind", "未知来源类型 %q", pv.Kind)
 	}

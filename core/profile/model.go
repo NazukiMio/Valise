@@ -80,9 +80,20 @@ type PathRef struct {
 
 // Consistency declares how files are captured consistently.
 type Consistency struct {
-	SQLite  []PathRef `yaml:"sqlite" json:"sqlite,omitempty"`
-	Quiesce string    `yaml:"quiesce" json:"quiesce,omitempty"`
+	SQLite  []SQLiteRef `yaml:"sqlite" json:"sqlite,omitempty"`
+	Quiesce string      `yaml:"quiesce" json:"quiesce,omitempty"`
 }
+
+// SQLiteRef declares SQLite databases. SecretTables are tables holding
+// credentials; the soul tier clears them in the sealed copy.
+type SQLiteRef struct {
+	Root         string   `yaml:"root" json:"root"`
+	Glob         string   `yaml:"glob" json:"glob"`
+	SecretTables []string `yaml:"secret_tables" json:"secret_tables,omitempty"`
+}
+
+// Ref returns the root and glob.
+func (s SQLiteRef) Ref() PathRef { return PathRef{s.Root, s.Glob} }
 
 // Provenance kinds.
 const (
@@ -95,9 +106,22 @@ const (
 
 // Provenance tells where the body was installed from.
 type Provenance struct {
-	Kind string         `yaml:"kind" json:"kind"`
-	NPM  *NPMProvenance `yaml:"npm" json:"npm,omitempty"`
-	Git  *GitProvenance `yaml:"git" json:"git,omitempty"`
+	Kind   string            `yaml:"kind" json:"kind"`
+	NPM    *NPMProvenance    `yaml:"npm" json:"npm,omitempty"`
+	Git    *GitProvenance    `yaml:"git" json:"git,omitempty"`
+	UV     *PackageRef       `yaml:"uv" json:"uv,omitempty"`
+	Pipx   *PackageRef       `yaml:"pipx" json:"pipx,omitempty"`
+	Binary *BinaryProvenance `yaml:"binary" json:"binary,omitempty"`
+}
+
+// PackageRef names a uv tool or pipx package.
+type PackageRef struct {
+	Package string `yaml:"package" json:"package"`
+}
+
+// BinaryProvenance names the command whose file is hashed.
+type BinaryProvenance struct {
+	Name string `yaml:"name" json:"name"`
 }
 
 // NPMProvenance names the npm package of the body.
