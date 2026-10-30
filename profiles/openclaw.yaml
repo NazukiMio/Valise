@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 2
+profile_version: 3
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -69,6 +69,7 @@ relocation: { env: OPENCLAW_STATE_DIR }   # S&S, WS
 
 service:
   candidates: [ { scope: user, unit: openclaw-gateway.service } ]   # GP: default profile's systemd unit
+  install_argv: [openclaw, gateway, install]   # OBS: installs and starts the unit on ubuntu-vm; refuses group-writable ~/.config/systemd
 
 entries:
   - { id: gateway, kind: web, host: 127.0.0.1, port: 18789, path: "/" }   # GP: default ws://127.0.0.1:18789, Control UI on the same port

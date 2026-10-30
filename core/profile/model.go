@@ -150,6 +150,9 @@ type Relocation struct {
 // Service lists candidate service units.
 type Service struct {
 	Candidates []ServiceUnit `yaml:"candidates" json:"candidates,omitempty"`
+	// InstallArgv is the harness's own command that installs the service;
+	// run on a revive target lacking the unit, after the user confirms.
+	InstallArgv Argv `yaml:"install_argv" json:"install_argv,omitempty"`
 }
 
 // ServiceUnit is one systemd unit candidate.

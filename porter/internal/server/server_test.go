@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"valise/core/revive"
 	"valise/core/rpc"
+	porterrevive "valise/porter/internal/revive"
 )
 
 func serve(t *testing.T, home string, lines ...string) []rpc.Response {
@@ -37,15 +40,14 @@ const helloReq = `{"jsonrpc":"2.0","id":1,"method":"hello","params":{"client_ver
 
 func TestHello(t *testing.T) {
 	home := t.TempDir()
-	jd := JournalDir(home)
-	if err := os.MkdirAll(jd, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range []string{"op_b.json", "op_a.json", "notes.txt"} {
-		if err := os.WriteFile(filepath.Join(jd, f), []byte("{}"), 0o600); err != nil {
+	st := porterrevive.Store{Home: home}
+	a, b := revive.NewOpID(time.UnixMilli(1)), revive.NewOpID(time.UnixMilli(2))
+	for _, op := range []string{b, a} {
+		if err := st.Save(&revive.Journal{Plan: revive.Plan{OpID: op, InstanceID: "demo", Mode: revive.ModeRollback}, State: revive.StateLiveMoved}); err != nil {
 			t.Fatal(err)
 		}
 	}
+	os.WriteFile(filepath.Join(JournalDir(home), "notes.txt"), []byte("x"), 0o600)
 	resps := serve(t, home, helloReq)
 	if len(resps) != 1 || resps[0].Error != nil {
 		t.Fatalf("%+v", resps)
@@ -57,7 +59,7 @@ func TestHello(t *testing.T) {
 	if h.Home != home || h.Protocol != rpc.ProtocolVersion || h.PorterVersion != "test" || h.Arch == "" {
 		t.Fatalf("%+v", h)
 	}
-	if len(h.PendingOps) != 2 || h.PendingOps[0].OpID != "op_a" || h.PendingOps[1].OpID != "op_b" {
+	if len(h.PendingOps) != 2 || h.PendingOps[0].OpID != a || h.PendingOps[1].State != revive.StateLiveMoved {
 		t.Fatalf("pending = %+v", h.PendingOps)
 	}
 }

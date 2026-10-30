@@ -17,8 +17,10 @@ func TestRPCRoundTrip(t *testing.T) {
 	e := fakesshenv.New(t)
 	home := e.AddHost("box")
 	porter := e.InstallPorter("box")
+	op := "op_01JBX7Q2W8M3ZK5N6P9R4T0Y2A"
 	os.MkdirAll(filepath.Join(home, ".local/state/valise/journal"), 0o700)
-	os.WriteFile(filepath.Join(home, ".local/state/valise/journal/op_1.json"), []byte("{}"), 0o600)
+	os.WriteFile(filepath.Join(home, ".local/state/valise/journal/"+op+".json"),
+		[]byte(`{"plan":{"op_id":"`+op+`","instance_id":"demo","mode":"rollback"},"state":"LIVE_MOVED"}`), 0o600)
 
 	ctx := context.Background()
 	c, hello, err := Dial(ctx, fakeTransport(t, e, "box"), porter, "test-client")
@@ -29,7 +31,7 @@ func TestRPCRoundTrip(t *testing.T) {
 	if hello.Home != home || hello.Protocol != rpc.ProtocolVersion || len(hello.Tools) != len(rpc.ToolNames) {
 		t.Fatalf("%+v", hello)
 	}
-	if len(hello.PendingOps) != 1 || hello.PendingOps[0].OpID != "op_1" {
+	if len(hello.PendingOps) != 1 || hello.PendingOps[0].OpID != op || hello.PendingOps[0].State != "LIVE_MOVED" {
 		t.Fatalf("pending: %+v", hello.PendingOps)
 	}
 	// A second hello on the same session also round-trips, and unknown

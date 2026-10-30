@@ -81,7 +81,7 @@ func detectOne(ctx context.Context, e *Env, p *profile.Profile) (enroll.Candidat
 		c.Warnings = append(c.Warnings, "在登录 PATH 中找不到 "+p.Detect.Binaries[0]+"，无法读取版本与来源")
 	}
 	if c.Binary != "" && len(p.Detect.VersionArgv) > 0 {
-		argv, ok := e.expandArgv(p.Detect.VersionArgv, map[string]string{"STATE_DIR": c.StateDir})
+		argv, ok := e.ExpandArgv(p.Detect.VersionArgv, map[string]string{"STATE_DIR": c.StateDir})
 		var out *Output
 		var err error
 		if ok {

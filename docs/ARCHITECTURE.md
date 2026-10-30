@@ -178,9 +178,26 @@
    - 失败路径：停止服务 → 把活动目录重命名为 `.valise-failed-<op>` → 把 prev 目录改回活动目录 → 恢复身体 → 启动服务并做健康检查 → 向用户返回 `rolled_back` 和最近的服务日志。这些日志只展示给用户，不写入审计记录。
 6. **收尾**：`.valise-prev-<op>` 默认保留 7 天，UI 中提供"立即退回到交换前"的操作。清理只能由用户执行 `valise prev drop`，由 porter 在 Go 代码中调用 `os.RemoveAll` 完成。
 
+### 8.2.1 实现细节（M4 确定）
+
+- **快照来源**：客户端先从快照所在服务器 `valise pull` 到本机，在内存中解密快照与 blob；明文以 tar 流经 `porter stage-write --op <id>` 写入目标服务器的暂存目录。profile 取客户端内置（或本地）的同 id profile，其 `profile_version` 必须与快照记录的一致，否则停止并提示先升级或重新登记。`status: draft` 的 profile 必须显式传入 `--allow-draft-profile`。
+- **目标路径**：目标的状态目录由目标服务器按 profile 的 `detect.state_dir_candidates` 解析（使用目标用户的 HOME）。其余 root：原路径在原状态目录下的，映射到新状态目录下的同一相对路径；在原 HOME 下的，映射到新 HOME 下；都不是时停止，由用户用 `--root <id>=<路径>` 指定。
+- **符号链接**：目标的 root 本身是符号链接时，v0.1 拒绝复活并说明原因（链接常由其他工具管理；交换时被改名的会是链接而不是数据）；封存不受影响。root 的上级路径中有符号链接（例如 macOS 的 `/var`、把 `/home` 软链到数据盘）不影响原子交换，允许。
+- **交换单位**：只交换没有嵌套在其他 root 内的 root（例如工作区在状态目录内时，只交换状态目录，工作区随之移动）。暂存目录为 `<root 的父目录>/.valise-stage-<op>-<root>`，必须与 root 在同一文件系统。
+- **回滚的携带语义**：回滚只替换快照档位内的类别；当前活目录中档位以外的内容（例如用 `soul` 档回滚时的凭据、未分类文件、工作区、缓存）在服务停止后**复制**进暂存目录；位于 `body.paths` 的身体目录（形如 `<目录>/**`）在交换窗口内整体改名搬入新活目录，并记入交换日志。迁移与克隆不携带任何内容：目标目录整体替换（已有目录按流程保留为 prev）。
+- **运行时前提**：按来源重建身体所需的工具（npm、git、uv、pipx）必须已在目标服务器的登录 PATH 中；计划阶段检查，缺少时停止，并给出 profile 中的 `fresh_install_doc`。Valise 不安装任何运行时。
+- **来源校验**：npm 身体在计划阶段向记录中的 registry 查询该精确版本的 integrity，与登记时记录的值不一致就停止。git 身体检查 remote 一致、commit 可取得。v0.1 中 git 身体只支持"目标已有同一 commit 的身体，保持不变"；需要重建而 `bootstrap_argv` 尚未核实时，计划停止并说明（raw 档兜底见第 5 节）。
+- **服务单元**：目标服务器上没有 profile 声明的服务单元时，执行 profile 的 `service.install_argv`（harness 自带的安装命令）。计划中逐字展示这条命令，用户确认后才执行。Valise 不自己写单元文件。
+- **克隆范围**：v0.1 的克隆只支持到另一台服务器（或另一个用户），同一服务器内的克隆推迟（通常需要改端口、服务名等 harness 配置）。
+- **独占凭据**：迁移默认在目标启动前停止原实例的服务（原实例的文件不动）；克隆默认不暂存匹配 `exclusive_secrets` 的文件。复活失败回退后，客户端重新启动原实例的服务。
+- **健康检查**：按 profile 的 `health.checks` 执行（`systemd_active`、`tcp`、`http`、`argv`）。没有服务单元的实例（前台运行）不由 Valise 启动：计划中说明，交换完成后结果为"已恢复、未启动"，不做健康检查。
+- **交换日志**：`~/.local/state/valise/journal/<op_id>.json`，每次状态变化原子写入并 fsync，内容包括模式、实例、各 root 的 live / stage / prev 路径、已搬动的身体目录、npm 身体的原版本、当前状态与时间。结束（`HEALTHY` 或 `ROLLED_BACK`）后移到 `journal/done/`，`hello` 只报告未完成的日志。
+- **故障注入**（仅用于演练与测试）：客户端隐藏参数 `--inject-fault health|crash-at=<状态>` 通过环境变量传给本次 porter：`health` 让健康检查一律失败；`crash-at` 在写入该状态后立即退出进程。
+- **prev**：`valise prev list <服务器>` 列出保留的旧状态及其天数；`valise prev drop <服务器> <op_id>` 由用户显式执行，porter 在 Go 代码中调用 `os.RemoveAll` 删除。
+
 ### 8.3 崩溃恢复
 
-porter 每次被唤起时都会检查 `journal/` 目录，`hello` 会报告所有未完成的操作。客户端必须立即提示用户，让用户选择"继续完成"或"退回"。porter 绝不在没有客户端确认的情况下自动推进。
+porter 每次被唤起时都会检查 `journal/` 目录，`hello` 会报告所有未完成的操作。客户端必须立即提示用户，让用户选择"继续完成"或"退回"（`valise revive resume <服务器> <op_id> --continue|--back`）。porter 绝不在没有客户端确认的情况下自动推进。
 
 ### 8.4 独占凭据与迁移
 

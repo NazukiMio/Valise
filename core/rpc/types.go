@@ -106,10 +106,12 @@ type Tool struct {
 	Detail    string `json:"detail,omitempty"`
 }
 
-// PendingOp is an unfinished swap journal. Until M4 defines the journal
-// format only the op id (from the file name) is reported.
+// PendingOp is an unfinished swap journal.
 type PendingOp struct {
-	OpID string `json:"op_id"`
+	OpID       string `json:"op_id"`
+	InstanceID string `json:"instance_id,omitempty"`
+	Mode       string `json:"mode,omitempty"`
+	State      string `json:"state,omitempty"`
 }
 
 // VersionInfo is printed by `valise-porter version --json`.

@@ -23,8 +23,8 @@ const (
 	maxUnreadable   = 50
 )
 
-// expandArgv expands variables in every argv element.
-func (e *Env) expandArgv(argv []string, vars map[string]string) ([]string, bool) {
+// ExpandArgv expands variables in every argv element.
+func (e *Env) ExpandArgv(argv []string, vars map[string]string) ([]string, bool) {
 	out := make([]string, len(argv))
 	for i, a := range argv {
 		v, ok := e.Expand(a, vars)
@@ -107,7 +107,7 @@ func resolved(r enroll.Root) enroll.Root {
 
 // discover runs discover_argv; stdout must be exactly one absolute path.
 func discover(ctx context.Context, e *Env, argv []string, vars map[string]string, dir string) (string, bool) {
-	args, ok := e.expandArgv(argv, vars)
+	args, ok := e.ExpandArgv(argv, vars)
 	if !ok {
 		return "", false
 	}

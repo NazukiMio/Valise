@@ -263,6 +263,10 @@ func (c *checker) checkTop(p *Profile) {
 		c.add("relocation.env", "环境变量名不合法")
 	}
 	if p.Service != nil {
+		c.argv("service.install_argv", p.Service.InstallArgv, false)
+		if len(p.Service.InstallArgv) > 0 && len(p.Service.Candidates) == 0 {
+			c.add("service.install_argv", "没有服务单元候选时不能声明安装命令")
+		}
 		for i, u := range p.Service.Candidates {
 			f := fmt.Sprintf("service.candidates[%d]", i)
 			if u.Scope != "user" {

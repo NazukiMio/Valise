@@ -61,6 +61,7 @@ relocation: { env: EXAMPLE_HOME }   # 状态目录可以通过此变量改到别
 
 service:
   candidates: [ { scope: user, unit: example-gateway.service } ]   # 可以为空，表示前台运行
+  install_argv: [example, gateway, install]   # 可选：harness 自带的服务安装命令；复活到没有该服务的服务器时，经用户确认后执行
 
 entries:
   - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/" }

@@ -62,3 +62,40 @@ func AddRecipient(p Paths, recipient, label string) (added bool, all []string, e
 	}
 	return true, append(cur, recipient), nil
 }
+
+// RemoveRecipient deletes a recipient (and the label comment right above
+// it). The last recipient cannot be removed. Snapshots already sealed stay
+// decryptable by the removed key; the next seal starts a new epoch.
+func RemoveRecipient(p Paths, recipient string) (removed bool, all []string, err error) {
+	cur, err := ReadRecipients(p)
+	if err != nil {
+		return false, nil, err
+	}
+	found := false
+	for _, r := range cur {
+		found = found || r == recipient
+	}
+	if !found {
+		return false, cur, nil
+	}
+	if len(cur) == 1 {
+		return false, cur, valise.New("last_recipient", "不能移除最后一把收件人公钥，否则无法再封存", "先登记新的公钥，再移除这一把")
+	}
+	b, _ := os.ReadFile(p.Recipients())
+	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+	var out []string
+	for i := 0; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == recipient {
+			if n := len(out); n > 0 && strings.HasPrefix(out[n-1], "# ") && !strings.HasPrefix(out[n-1], "# age recipients") {
+				out = out[:n-1]
+			}
+			continue
+		}
+		out = append(out, lines[i])
+	}
+	if err := writeAtomic(p.Recipients(), []byte(strings.Join(out, "\n")+"\n"), 0o600); err != nil {
+		return false, nil, err
+	}
+	all, err = ReadRecipients(p)
+	return true, all, err
+}

@@ -6,15 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
-	"strings"
 
 	"valise/core/rpc"
 	"valise/core/valise"
 	porterenroll "valise/porter/internal/enroll"
+	porterrevive "valise/porter/internal/revive"
 	"valise/porter/internal/tools"
 )
 
@@ -113,22 +111,16 @@ func hello(ctx context.Context, req rpc.Request, cfg Config) rpc.Response {
 	return rpc.Response{JSONRPC: rpc.JSONRPCVersion, ID: req.ID, Result: b}
 }
 
-// pendingOps lists <op_id>.json files in the journal directory.
+// pendingOps lists unfinished swap journals.
 func pendingOps(home string) ([]rpc.PendingOp, error) {
-	entries, err := os.ReadDir(JournalDir(home))
-	if errors.Is(err, os.ErrNotExist) {
-		return []rpc.PendingOp{}, nil
-	}
+	js, err := porterrevive.Store{Home: home}.Pending()
 	if err != nil {
 		return nil, err
 	}
 	ops := []rpc.PendingOp{}
-	for _, e := range entries {
-		if id, ok := strings.CutSuffix(e.Name(), ".json"); ok && e.Type().IsRegular() && id != "" {
-			ops = append(ops, rpc.PendingOp{OpID: id})
-		}
+	for _, j := range js {
+		ops = append(ops, rpc.PendingOp{OpID: j.Plan.OpID, InstanceID: j.Plan.InstanceID, Mode: j.Plan.Mode, State: j.State})
 	}
-	sort.Slice(ops, func(i, j int) bool { return ops[i].OpID < ops[j].OpID })
 	return ops, nil
 }
 

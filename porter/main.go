@@ -14,6 +14,7 @@ import (
 	"runtime"
 
 	"valise/core/rpc"
+	porterrevive "valise/porter/internal/revive"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/server"
 )
@@ -28,7 +29,8 @@ func main() {
 const usage = `用法：
   valise-porter version [--json]
   valise-porter rpc
-  valise-porter vault-cat <金库内的相对路径>`
+  valise-porter vault-cat <金库内的相对路径>
+  valise-porter stage-write --op <op_id>`
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -49,6 +51,23 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
+		return 0
+	case "stage-write":
+		if len(args) != 3 || args[1] != "--op" {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		n, err := porterrevive.StageWrite(porterrevive.Store{Home: home}, args[2], stdin)
+		if err != nil {
+			fmt.Fprintln(stderr, "stage-write:", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%d\n", n)
 		return 0
 	case "vault-cat":
 		if len(args) != 2 {

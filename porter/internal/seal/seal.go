@@ -190,6 +190,7 @@ func Seal(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.Sea
 		return nil, err
 	}
 	rep.SnapshotID, rep.Files, rep.PlainBytes, rep.AddedBytes = meta.SnapshotID, meta.FileCount, meta.PlainBytes, meta.AddedBytes
+	updateSeen(p, params.InstanceID, files.Files)
 	rep.NewEpoch = w.NewEpoch()
 	rep.DurationMS = time.Since(start).Milliseconds()
 	return rep, nil
