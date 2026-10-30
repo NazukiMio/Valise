@@ -14,6 +14,7 @@ import (
 
 	"valise/core/rpc"
 	"valise/core/valise"
+	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/tools"
 )
 
@@ -23,6 +24,8 @@ type Config struct {
 	Home    string
 	// DetectTools defaults to tools.Detect.
 	DetectTools func(context.Context) []rpc.Tool
+	// LoadEnv defaults to enroll.LoadEnv; tests replace it.
+	LoadEnv func(context.Context, string) *porterenroll.Env
 }
 
 // JournalDir is the swap journal directory under HOME.
@@ -38,6 +41,7 @@ func Serve(ctx context.Context, r io.Reader, w io.Writer, cfg Config) error {
 	}
 	conn := rpc.NewConn(r, w)
 	helloed := false
+	s := &session{cfg: cfg}
 	for {
 		line, err := conn.ReadLine()
 		if errors.Is(err, io.EOF) {
@@ -71,7 +75,7 @@ func Serve(ctx context.Context, r io.Reader, w io.Writer, cfg Config) error {
 		case !helloed:
 			resp = errorResponse(req.ID, rpc.CodeHelloRequired, "first request must be hello", nil)
 		default:
-			resp = errorResponse(req.ID, rpc.CodeMethodNotFound, "method not found: "+req.Method, nil)
+			resp = s.call(ctx, req)
 		}
 		if err := conn.Write(resp); err != nil {
 			return err
