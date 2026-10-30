@@ -16,6 +16,7 @@
               ▼
 [ 服务器：valise-porter（按需唤起，不监听任何端口）]
   ├─ ~/.config/valise/instances/<instance_id>.json   实例记录
+  ├─ ~/.config/valise/instances/<instance_id>.profile.json  登记时生效的 profile（离线封存用）
   ├─ ~/.config/valise/recipients.txt                 age 收件人公钥
   ├─ ~/.config/valise/dedupe/<vault_id>.key          去重密钥（0600）
   ├─ ~/.config/valise/targets.json                   异地同步目标
@@ -107,20 +108,31 @@
 4. **写入**：依次写入新的 pack、index、加密的快照清单、明文元数据，每一步都要 fsync。最后写入审计记录。
 5. **报告**：文件数、各类别大小、新增字节数、未分类文件数、`unstable` 列表、耗时。
 
+实现细节（M3 确定）：
+
+- **profile 来源**：`enroll --accept` 时，客户端把当时生效的 profile（已合并子 profile）连同实例记录一起写到服务器的 `instances/<id>.profile.json`。封存一律使用这份 profile，因此定时封存和 MCP 封存不需要客户端在线。profile 升级后需要重新登记。
+- **档位**：`soul` 包含 identity、memory、skills、config、sessions、state、body_patch；`soul-secrets` 再加 secrets；`full` 再加 workspace。未分类文件和 body、cache、ignore 不进入任何档位。`local_overrides` 参与分类。
+- **body_patch**：git 来源且工作树 dirty 时，封存当时的 `git diff HEAD --binary` 作为虚拟文件 `valise:body.patch`。
+- **互斥**：同一台服务器同一时刻只允许一个封存或同步，用 `~/.local/state/valise/vault.lock`（flock）保证。
+- **临时文件**：SQLite 副本写在 `~/.local/state/valise/tmp/`，封存结束后由 Go 代码删除。
+
 触发封存的方式有四种：
 
 - CLI 或 UI；
 - agent 通过 MCP 触发，但只能封存 `soul` 档，并且有频率限制；
-- 用户开启的定时任务（`systemd --user` timer）；
+- 用户开启的定时任务（`systemd --user` timer；推迟到 M3 之后实现）；
 - 复活之前自动封存。
 
 封存由 porter 在服务器上使用收件人公钥加密完成，**不需要客户端在线**。
 
 ## 7. 金库与同步
 
+- **收件人登记**：`valise key register <服务器>` 把本机密钥的公钥追加到服务器的 `recipients.txt`（每行一个 `age1…`，`#` 开头为注释）。收件人集合变化后，下一次封存新建 epoch。服务器上没有任何收件人时拒绝封存。
 - 每台服务器有一个本地金库。异地同步由 `porter sync --target <name>` 完成，支持 rsync、rclone 和 sftp。目标配置写在 `targets.json` 中；rclone 使用用户自己的 remote 配置，Valise 不保存其中的凭据。
 - 同步顺序固定为：pack → index → 快照 → 元数据。由于金库只追加，任何中断都可以安全续传。
-- 客户端可以执行 `valise pull`，把金库拉取到本机保存。
+- **targets.json**：`{"targets": [{"name": "nas", "kind": "rsync", "dest": "nas-test:/mnt/test/nas/valise-vault/"}]}`。`kind` 取值 `rsync`、`rclone`、`sftp`；M3 只实现 `rsync`（经服务器自己的 SSH 配置，加 `--ignore-existing`，按 pack → index → 快照 → 元数据 → epochs/keys → VAULT 的顺序逐个目录同步）。同步结果写入审计记录，`porter status` 据此报告每个目标的最后同步时间。服务器登录目标所需的凭据由用户自己配置，Valise 不保存。
+- 客户端可以执行 `valise pull`，把金库拉取到本机保存。拉取只复制本机没有的文件（金库只追加），然后做不需要私钥的校验。
+- **带私钥的校验**只在客户端进行：`valise verify --vault <本机目录> --key` 解锁本机密钥，在内存中解密快照清单与 blob，按文件校验 sha256。
 - UI 中"已写入服务器金库"和"已同步到 <目标>"分开展示。
 - v0.1 不提供删除功能。之后的 `prune` 必须由用户显式执行。
 
