@@ -79,7 +79,8 @@ var categoryOrder = profile.Categories
 var categoryNames = map[string]string{
 	"identity": "人格", "memory": "记忆", "skills": "技能", "config": "配置", "sessions": "会话",
 	"state": "状态库", "body_patch": "身体补丁", "secrets": "凭据", "workspace": "工作区",
-	"body": "身体（按来源重建，不封存）", "cache": "缓存（不封存）", "ignore": "忽略（不封存）",
+	"body": "身体（按来源重建；只进 raw）", "cache": "缓存（只进 raw）", "ignore": "忽略（只进 raw）",
+	"unclassified": "未分类（按凭据层，不进 soul）",
 }
 
 func printReport(w io.Writer, res *service.EnrollResult) {
@@ -113,7 +114,7 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 			fmt.Fprintf(w, "  %-28s %6d 个文件  %10s\n", categoryNames[cat], t.Files, size(t.Bytes))
 		}
 	}
-	fmt.Fprintf(w, "  %-28s %6d 个文件  %10s\n", "未分类（不封存）", r.Unclassified.Files, size(r.Unclassified.Bytes))
+	fmt.Fprintf(w, "  %-28s %6d 个文件  %10s\n", categoryNames["unclassified"], r.Unclassified.Files, size(r.Unclassified.Bytes))
 	if r.Symlinks > 0 {
 		fmt.Fprintf(w, "  符号链接 %d 个（只记录，不跟随）\n", r.Symlinks)
 	}
@@ -135,7 +136,7 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 	if len(r.UnclassGroups) > 0 {
 		groups := append([]enroll.UnclassifiedGroup(nil), r.UnclassGroups...)
 		sort.SliceStable(groups, func(i, j int) bool { return groups[i].Bytes > groups[j].Bytes })
-		fmt.Fprintln(w, "\n未分类文件（按目录汇总；可用 --assign <root>:<glob>=<类别> 归类）：")
+		fmt.Fprintln(w, "\n未分类文件（未知即敏感：按凭据层封存，不进 soul 档；按目录汇总，可用 --assign <root>:<glob>=<类别> 归类）：")
 		for i, g := range groups {
 			if i == 15 {
 				fmt.Fprintf(w, "  …… 另有 %d 组\n", len(groups)-15)

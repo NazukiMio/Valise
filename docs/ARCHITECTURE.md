@@ -76,25 +76,32 @@
 
 ## 5. 类别与封存档位
 
-| 类别 | 含义 | soul | soul-secrets | full |
-| :--- | :--- | :---: | :---: | :---: |
-| `identity` | 人格、用户画像、最高准则 | ✓ | ✓ | ✓ |
-| `memory` | 长期与短期记忆文件 | ✓ | ✓ | ✓ |
-| `skills` | 技能与程序性知识 | ✓ | ✓ | ✓ |
-| `config` | 不含凭据的配置 | ✓ | ✓ | ✓ |
-| `sessions` | 会话记录 | ✓ | ✓ | ✓ |
-| `state` | 状态数据库与索引 | ✓ | ✓ | ✓ |
-| `body_patch` | 身体的本地修改补丁 | ✓ | ✓ | ✓ |
-| `secrets` | 凭据（含可能内联令牌的配置文件） |  | ✓ | ✓ |
-| `workspace` | 工作区与资产 |  |  | ✓ |
-| `body` | 身体本身，依据来源记录重建 | — | — | — |
-| `cache` | 可再生缓存 | — | — | — |
-| `ignore` | 日志、harness 自带备份等 | — | — | — |
+| 类别 | 含义 | soul | soul-secrets | full | raw |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `identity` | 人格、用户画像、最高准则 | ✓ | ✓ | ✓ | ✓ |
+| `memory` | 长期与短期记忆文件 | ✓ | ✓ | ✓ | ✓ |
+| `skills` | 技能与程序性知识 | ✓ | ✓ | ✓ | ✓ |
+| `config` | 不含凭据的配置 | ✓ | ✓ | ✓ | ✓ |
+| `sessions` | 会话记录 | ✓ | ✓ | ✓ | ✓ |
+| `state` | 状态数据库与索引 | ✓ | ✓ | ✓ | ✓ |
+| `body_patch` | 身体的本地修改补丁 | ✓ | ✓ | ✓ | ✓ |
+| `secrets` | 凭据（含可能内联令牌的配置文件） |  | ✓ | ✓ | ✓ |
+| `unclassified` | 没有任何规则命中的文件（不能在 profile 中声明） |  | ✓ | ✓ | ✓ |
+| `workspace` | 工作区与资产 |  |  | ✓ | ✓ |
+| `body` | 身体本身，依据来源记录重建 |  |  |  | ✓ |
+| `cache` | 可再生缓存 |  |  |  | ✓ |
+| `ignore` | 日志、harness 自带备份等 |  |  |  | ✓ |
 
 匹配规则：
 
 - 一个文件匹配多条规则时，取第一条命中的规则。**但只要有任何一条规则把它判定为 `secrets`，它就是 `secrets`**（凭据优先）。
-- 未分类的文件默认不进入任何档位。它们的数量会出现在登记报告和每次封存报告中，用户可以随时为它们指定类别。
+- **未知即敏感**：没有任何规则命中的文件归为 `unclassified`。它们不进入 `soul` 档，而是和凭据走同一层，进入 `soul-secrets`、`full`、`raw` 档，并在快照中单独标记。这样 profile 写漏不会导致完整备份丢数据，而 `soul` 档始终只含已声明的灵魂。未分类文件的数量会出现在登记报告和每次封存报告中，用户可以随时为它们指定类别。
+- **`raw` 档**（全量）：把实例所有 root 下的全部文件原样封存，包括身体、缓存、忽略项和未分类文件，用于在 profile 不完整、或身体无法按来源重建时兜底。规则：
+  - 只封存本实例的 root，**不是整机备份**。因此身体位于 root 之外时（例如 npm 全局前缀中的 OpenClaw、DSH），raw 不包含身体，只能按来源重建；身体位于状态目录内部时（例如 Hermes），raw 才能为身体兜底。
+  - 整个快照按凭据层对待：恢复时必须显式同意包含凭据（`restore.py --include-secrets`）；声明了 `secret_tables` 的数据库不剥离。
+  - SQLite 仍然使用 `VACUUM INTO` 一致性副本；符号链接全部记录、不跟随。
+  - 复活时优先按来源重建身体；只有重建失败、并且目标服务器与封存时是同一架构、同一路径时，才允许用 raw 中的身体兜底，并且必须由用户确认。界面必须如实说明：身体中的运行时常含绝对路径，换路径或换架构后不可用。
+  - raw 首次封存体积大（身体常达数 GB），之后依靠去重增量很小。默认不启用；低频周期执行与保留策略见 DEV_PLAN 的 M8。
 
 ## 6. 封存流水线
 
@@ -111,7 +118,7 @@
 实现细节（M3 确定）：
 
 - **profile 来源**：`enroll --accept` 时，客户端把当时生效的 profile（已合并子 profile）连同实例记录一起写到服务器的 `instances/<id>.profile.json`。封存一律使用这份 profile，因此定时封存和 MCP 封存不需要客户端在线。profile 升级后需要重新登记。
-- **档位**：`soul` 包含 identity、memory、skills、config、sessions、state、body_patch；`soul-secrets` 再加 secrets；`full` 再加 workspace。未分类文件和 body、cache、ignore 不进入任何档位。`local_overrides` 参与分类。
+- **档位**：见第 5 节的表格。`local_overrides` 参与分类。
 - **body_patch**：git 来源且工作树 dirty 时，封存当时的 `git diff HEAD --binary` 作为虚拟文件 `valise:body.patch`。
 - **互斥**：同一台服务器同一时刻只允许一个封存或同步，用 `~/.local/state/valise/vault.lock`（flock）保证。
 - **临时文件**：SQLite 副本写在 `~/.local/state/valise/tmp/`，封存结束后由 Go 代码删除。

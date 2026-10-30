@@ -29,7 +29,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   porter deploy <服务器> --release <版本>         从 GitHub Release 下载、校验并部署 porter
   porter deploy <服务器> --local <文件>           上传本地构建的 porter
   key register <服务器> [--label 说明]            把本机公钥登记为服务器的封存收件人（说明写成注释）
-  seal <服务器> <实例> [--tier soul|soul-secrets|full] [--reason 原因]
+  seal <服务器> <实例> [--tier soul|soul-secrets|full|raw] [--reason 原因]
                                                  封存一次
   vault status <服务器> [--json]                   列出快照与同步状态（不需要私钥）
   vault verify <服务器>                           在服务器上做不需要私钥的校验

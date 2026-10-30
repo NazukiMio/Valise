@@ -24,10 +24,22 @@ const (
 	TierSoul        = "soul"
 	TierSoulSecrets = "soul-secrets"
 	TierFull        = "full"
+	TierRaw         = "raw"
 )
 
 // Tiers lists every tier.
-var Tiers = []string{TierSoul, TierSoulSecrets, TierFull}
+var Tiers = []string{TierSoul, TierSoulSecrets, TierFull, TierRaw}
+
+// CategoryUnclassified marks files no rule matched. It cannot be declared
+// in a profile; such files are treated like secrets ("unknown means
+// sensitive") and never enter the soul tier.
+const CategoryUnclassified = "unclassified"
+
+// Sensitive reports whether files of a category, or a whole snapshot of a
+// tier, belong to the secrets layer.
+func Sensitive(tier, category string) bool {
+	return tier == TierRaw || category == "secrets" || category == CategoryUnclassified
+}
 
 // BodyPatchRoot and BodyPatchPath name the virtual body_patch file.
 const (
@@ -172,8 +184,10 @@ type Meta struct {
 // (docs/ARCHITECTURE.md section 5).
 var TierCategories = map[string][]string{
 	TierSoul:        {"identity", "memory", "skills", "config", "sessions", "state", "body_patch"},
-	TierSoulSecrets: {"identity", "memory", "skills", "config", "sessions", "state", "body_patch", "secrets"},
-	TierFull:        {"identity", "memory", "skills", "config", "sessions", "state", "body_patch", "secrets", "workspace"},
+	TierSoulSecrets: {"identity", "memory", "skills", "config", "sessions", "state", "body_patch", "secrets", CategoryUnclassified},
+	TierFull:        {"identity", "memory", "skills", "config", "sessions", "state", "body_patch", "secrets", CategoryUnclassified, "workspace"},
+	TierRaw: {"identity", "memory", "skills", "config", "sessions", "state", "body_patch", "secrets", CategoryUnclassified,
+		"workspace", "body", "cache", "ignore"},
 }
 
 // InTier reports whether category is sealed by tier.

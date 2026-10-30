@@ -41,6 +41,7 @@ func TestStandaloneRestore(t *testing.T) {
 	add("state", "SOUL.md", "identity", 0o644, data["small.md"])
 	add("state", "empty", "config", 0o600, nil)
 	add("state", ".env", "secrets", 0o600, []byte("API_KEY=secret\n"))
+	add("state", "mystery.bin", CategoryUnclassified, 0o600, []byte("?"))
 	add(BodyPatchRoot, BodyPatchPath, "body_patch", 0o600, []byte("diff --git a b\n"))
 	files.Symlinks = []Symlink{{Root: "state", Path: "link.md", Target: "SOUL.md"}}
 	m, err := w.Commit(Snapshot{InstanceID: "demo", Tier: TierSoulSecrets, CreatedAt: time.Now().UTC()}, files, Meta{})
@@ -60,7 +61,7 @@ func TestStandaloneRestore(t *testing.T) {
 	}
 	out := filepath.Join(t.TempDir(), "out")
 	msg := restore(out)
-	if !strings.Contains(msg, "skipped 1 secret") {
+	if !strings.Contains(msg, "skipped 2 secret or unclassified") {
 		t.Fatal(msg)
 	}
 	check := func(rel string, want []byte, mode os.FileMode) {
@@ -89,6 +90,21 @@ func TestStandaloneRestore(t *testing.T) {
 	restore(out2, "--include-secrets")
 	if b, _ := os.ReadFile(filepath.Join(out2, "state/.env")); string(b) != "API_KEY=secret\n" {
 		t.Fatal("secret not restored with --include-secrets")
+	}
+	if b, _ := os.ReadFile(filepath.Join(out2, "state/mystery.bin")); string(b) != "?" {
+		t.Fatal("unclassified file not restored with --include-secrets")
+	}
+	// A raw snapshot is secrets as a whole: it needs --include-secrets.
+	w2, _ := OpenWriter(f.dir, f.recipients, f.keyFile, time.Now())
+	blobs, sum, n, _ := w2.AddStream(bytes.NewReader([]byte("body")))
+	mraw, err := w2.Commit(Snapshot{InstanceID: "demo", Tier: TierRaw, CreatedAt: time.Now().UTC()},
+		Files{Files: []File{{Root: "state", Path: "bin/tool", Category: "body", Mode: 0o755, MTime: time.Now().UTC(), Size: n, SHA256: sum, Blobs: blobs}}}, Meta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := exec.Command("python3", "-I", script, "--vault", f.dir, "--identity", idFile, "--snapshot", mraw.SnapshotID, "--out", filepath.Join(t.TempDir(), "r")).CombinedOutput()
+	if err == nil || !strings.Contains(string(b), "raw") {
+		t.Fatalf("raw restored without --include-secrets: %s", b)
 	}
 	list, err := exec.Command("python3", "-I", script, "--vault", f.dir, "--identity", idFile, "--list").CombinedOutput()
 	if err != nil || !strings.Contains(string(list), m.SnapshotID) {

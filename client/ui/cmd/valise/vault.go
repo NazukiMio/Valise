@@ -31,7 +31,8 @@ func (c *cli) keyRegister(ctx context.Context, args []string) error {
 	return nil
 }
 
-var categoryOrderSeal = []string{"identity", "memory", "skills", "config", "sessions", "state", "body_patch", "secrets", "workspace"}
+var categoryOrderSeal = []string{"identity", "memory", "skills", "config", "sessions", "state", "body_patch", "secrets",
+	"unclassified", "workspace", "body", "cache", "ignore"}
 
 func (c *cli) seal(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("seal", flag.ContinueOnError)
@@ -71,8 +72,11 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 	if rep.BodyPatch {
 		fmt.Fprintln(w, "  身体有本地修改，已封存 body_patch")
 	}
-	if rep.UnclassifiedCount > 0 {
-		fmt.Fprintf(w, "未分类文件 %d 个，未封存（可在登记时用 --assign 归类）\n", rep.UnclassifiedCount)
+	if rep.UnclassifiedCount > 0 && rep.Tier == vault.TierSoul {
+		fmt.Fprintf(w, "未分类文件 %d 个，按\"未知即敏感\"不进 soul 档（soul-secrets / full / raw 档会封存；可在登记时用 --assign 归类）\n", rep.UnclassifiedCount)
+	}
+	if rep.Tier == vault.TierRaw {
+		fmt.Fprintln(w, "raw 档：实例目录下的全部文件，整体按凭据层对待；其中的身体只能在同架构、同路径下原样使用")
 	}
 	if len(rep.Unstable) > 0 {
 		fmt.Fprintf(w, "封存期间仍在变化的文件（unstable，已封存第二次读到的内容）：\n")

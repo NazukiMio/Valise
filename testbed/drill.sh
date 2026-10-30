@@ -166,8 +166,18 @@ for e in "${enrollments[@]}"; do
 	echo "== M3: seal $p on $h"
 	read -r s1 a1 < <(seal_json "$h" "$p" soul) || { fail "$h/$p: seal soul"; cat "$work/seal.err"; continue; }
 	read -r s2 a2 < <(seal_json "$h" "$p" soul)
-	read -r ss as < <(seal_json "$h" "$p" soul-secrets)
+	V seal "$h" "$p" --tier soul-secrets --json > "$work/$p.ss.json" 2>"$work/seal.err"
+	ss="$(json_field "$work/$p.ss.json" 'd["snapshot_id"]')"
 	[ -n "$ss" ] && pass "$h/$p: sealed soul, soul and soul-secrets" || fail "$h/$p: seal"
+	# Unknown means sensitive: every unclassified file is in soul-secrets.
+	want_unc="$(json_field "$work/$h.$p.enroll.json" 'd["report"]["unclassified"]["files"]')"
+	[ "$(json_field "$work/$p.ss.json" 'd["categories"].get("unclassified",{}).get("files",0)')" = "$want_unc" ] \
+		&& pass "$h/$p: $want_unc unclassified files sealed with the secrets layer" || fail "$h/$p: unclassified files missing from soul-secrets"
+	if [ "${VALISE_DRILL_RAW:-0}" = 1 ]; then # large: the whole instance, body included
+		read -r sr ar < <(seal_json "$h" "$p" raw) && pass "$h/$p: sealed raw ($ar bytes added)" || fail "$h/$p: seal raw"
+		read -r sr2 ar2 < <(seal_json "$h" "$p" raw)
+		echo "   unchanged raw re-seal added $ar2 bytes"
+	fi
 	# "First" is the instance's earliest soul seal in this vault.
 	first="$(V vault status "$h" --json | python3 -c 'import json,sys; s=[m for m in json.load(sys.stdin)["snapshots"] if m["instance_id"]==sys.argv[1] and m["tier"]=="soul"]; print(min(s,key=lambda m:m["snapshot_id"])["added_bytes"])' "$p")"
 	echo "   unchanged re-seal added $a2 bytes; first soul seal of $p added $first ($(python3 -c "print(round(100*$a2/$first,2))")%)"

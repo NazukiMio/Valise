@@ -97,7 +97,7 @@
   "format": "valise-snapshot/1",
   "snapshot_id": "s_…",
   "instance_id": "openclaw",
-  "tier": "soul | soul-secrets | full",
+  "tier": "soul | soul-secrets | full | raw",
   "profile": { "id": "openclaw", "version": 2, "status": "draft | verified" },
   "provenance": { "...": "登记时的来源记录" },
   "created_at": "…",
@@ -123,6 +123,7 @@
 }
 ```
 
+- `category` 取 ARCHITECTURE.md 第 5 节中的值；没有任何规则命中的文件记为 `unclassified`（只出现在 `soul-secrets`、`full`、`raw` 档）。
 - `body_patch` 以虚拟文件的形式出现在 `files` 中：`root` 为 `valise`，`path` 为 `body.patch`，`category` 为 `body_patch`。恢复时它不属于任何状态目录。
 - `sqlite` 列出以 `VACUUM INTO` 副本封存的数据库；`stripped_tables` 是本次快照中已清空的凭据表（只在 `soul` 档出现）。`files` 中这些数据库的 `size` 与 `sha256` 是副本的值。
 - `mode` 为 Unix 权限位（十进制），`mtime` 为 RFC 3339。
@@ -159,4 +160,4 @@ age -d -i identity.txt snapshots/<id>.age > snapshot.json       # 快照头
 # 2. 对 files.json 中的每个文件，按 blobs 依次取出并拼接，最后校验 sha256。
 ```
 
-`tools/standalone-restore/restore.py` 只使用 Python 3 标准库，通过子进程调用 `age` 和 `zstd`。参数为 `--vault --identity --snapshot --out [--include-secrets]`，恢复完成后逐个文件校验 sha256。文件写到 `<out>/<root>/<path>`（`body_patch` 写到 `<out>/valise/body.patch`），并恢复权限位与 mtime；符号链接按记录重建。未加 `--include-secrets` 时跳过 `secrets` 类文件。
+`tools/standalone-restore/restore.py` 只使用 Python 3 标准库，通过子进程调用 `age` 和 `zstd`。参数为 `--vault --identity --snapshot --out [--include-secrets]`，恢复完成后逐个文件校验 sha256。文件写到 `<out>/<root>/<path>`（`body_patch` 写到 `<out>/valise/body.patch`），并恢复权限位与 mtime；符号链接按记录重建。未加 `--include-secrets` 时跳过 `secrets` 和 `unclassified` 类文件；`raw` 档快照整体按凭据层对待，必须加 `--include-secrets` 才能恢复。

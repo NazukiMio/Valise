@@ -78,15 +78,17 @@ func Seal(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.Sea
 	var items []porterenroll.Item
 	c := profile.NewClassifier(prof, rec.LocalOverrides)
 	porterenroll.Walk(roots, c, func(it porterenroll.Item) {
-		switch {
-		case it.SidecarOf != "":
-		case it.Match.Category == "":
+		if it.SidecarOf != "" {
+			return // covered by the database's VACUUM INTO copy
+		}
+		if it.Match.Category == "" {
+			// Unknown means sensitive: sealed with the secrets layer only.
+			it.Match.Category = vault.CategoryUnclassified
 			if !it.Symlink {
 				rep.UnclassifiedCount++
 			}
-		default:
-			items = append(items, it)
 		}
+		items = append(items, it)
 	}, func(root, rel string) {
 		rep.Warnings = append(rep.Warnings, "无法读取 "+root+":"+rel+"（权限不足），未封存")
 	})

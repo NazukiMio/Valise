@@ -26,9 +26,11 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) keyFile(v string) string { return filepath.Join(f.keyDir, v+".key") }
 
-// data: a small file, a 3 MiB file of pseudo-random bytes (several chunks).
+// data: a small file and a 24 MiB file of pseudo-random bytes. The chunker
+// polynomial is random per epoch, so the big file must be large enough to be
+// split into many chunks (average 1 MiB) whatever the polynomial.
 func testData() map[string][]byte {
-	big := make([]byte, 3<<20)
+	big := make([]byte, 24<<20)
 	rand.New(rand.NewSource(1)).Read(big)
 	return map[string][]byte{"small.md": []byte("hello soul\n"), "big.bin": big, "empty": {}}
 }
@@ -83,7 +85,7 @@ func TestRoundTripAndDedupe(t *testing.T) {
 			t.Fatalf("%s: %v", fl.Path, err)
 		}
 	}
-	if len(files.Files[0].Blobs) < 2 {
+	if len(files.Files[0].Blobs) < 4 {
 		t.Fatalf("big file was not chunked: %d blobs", len(files.Files[0].Blobs))
 	}
 
@@ -94,7 +96,7 @@ func TestRoundTripAndDedupe(t *testing.T) {
 	}
 	// A small change in the big file only rewrites the affected chunk(s).
 	changed := testData()
-	changed["big.bin"][2<<20] ^= 1
+	changed["big.bin"][12<<20] ^= 1
 	m3 := f.seal(t, changed)
 	if m3.AddedBytes >= m1.AddedBytes/2 {
 		t.Fatalf("one-byte change added %d of %d", m3.AddedBytes, m1.AddedBytes)
@@ -120,7 +122,7 @@ func TestEpochRotation(t *testing.T) {
 	other, _ := age.GenerateX25519Identity()
 	f.recipients = append(f.recipients, other.Recipient().String())
 	m := f.seal(t, testData())
-	if m.Epoch != 3 || m.AddedBytes < int64(3<<20) {
+	if m.Epoch != 3 || m.AddedBytes < int64(24<<20) {
 		t.Fatalf("%+v", m)
 	}
 	v, _ := Open(f.dir)

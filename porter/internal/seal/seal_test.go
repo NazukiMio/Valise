@@ -178,9 +178,28 @@ func TestSealTiers(t *testing.T) {
 	if string(got["state:.env"]) != "API_KEY=secret" || dbRows(t, got["state:agent.sqlite"], "auth_store") != 1 || len(ss.SQLite[0].StrippedTables) != 0 {
 		t.Fatal("soul-secrets must hold secrets and the unstripped database")
 	}
+	// Unknown means sensitive: unclassified files and symlinks travel with
+	// the secrets layer, never with soul.
+	if string(got["state:mystery.bin"]) != "?" || string(got["link state:unclassified-link"]) != "SOUL.md" || ss.Categories["unclassified"].Files != 1 {
+		t.Fatalf("soul-secrets lacks unclassified files: %v", ss.Categories)
+	}
+	if _, ok := got["state:logs/x.log"]; ok {
+		t.Fatal("soul-secrets contains ignored files")
+	}
 	full := w.seal(t, vault.TierFull)
 	if string(w.restore(t, full.SnapshotID)["state:workspace/notes.md"]) != "notes" {
 		t.Fatal("full tier lacks workspace")
+	}
+	raw := w.seal(t, vault.TierRaw)
+	got = w.restore(t, raw.SnapshotID)
+	if string(got["state:logs/x.log"]) != "log" || string(got["link state:logs/ignored-link"]) != "../SOUL.md" ||
+		string(got["state:mystery.bin"]) != "?" || dbRows(t, got["state:agent.sqlite"], "auth_store") != 1 || len(raw.SQLite[0].StrippedTables) != 0 {
+		t.Fatalf("raw must hold every file, unstripped: %v", raw.Categories)
+	}
+	for k := range got {
+		if strings.HasSuffix(k, "-wal") || strings.HasSuffix(k, "-shm") {
+			t.Fatalf("raw sealed a SQLite sidecar instead of the copy: %s", k)
+		}
 	}
 
 	// Unchanged instance: the second seal adds < 1% of the first.
@@ -192,7 +211,7 @@ func TestSealTiers(t *testing.T) {
 		t.Fatal(probs, err)
 	}
 	audit, _ := os.ReadFile(w.p.Audit())
-	if strings.Count(string(audit), `"op":"seal"`) != 4 || strings.Contains(string(audit), "secret") {
+	if strings.Count(string(audit), `"op":"seal"`) != 5 || strings.Contains(string(audit), "secret") {
 		t.Fatalf("audit: %s", audit)
 	}
 }

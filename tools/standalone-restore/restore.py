@@ -10,7 +10,9 @@ tools. Implements docs/VAULT_FORMAT.md (valise-vault/1):
 Get identity.txt from your recovery kit with `age -d -o identity.txt keystore.age`.
 Files are written to OUT/<root>/<path> (the body patch to OUT/valise/body.patch)
 with their recorded permissions and mtime, and every file's SHA-256 is checked.
-Secrets are skipped unless --include-secrets is given.
+Secrets and unclassified files ("unknown means sensitive") are skipped unless
+--include-secrets is given; a raw (full instance) snapshot needs it to restore
+at all.
 """
 
 import argparse
@@ -134,9 +136,12 @@ def main():
 
     v = Vault(a.vault, a.identity)
     head, files = v.snapshot(a.snapshot)
+    if head["tier"] == "raw" and not a.include_secrets:
+        die("this is a raw (full instance) snapshot and is treated as secrets as a whole; "
+            "add --include-secrets to restore it")
     restored = skipped = 0
     for f in files["files"]:
-        if f["category"] == "secrets" and not a.include_secrets:
+        if f["category"] in ("secrets", "unclassified") and not a.include_secrets:
             skipped += 1
             continue
         dest = safe_join(a.out, f["root"], f["path"])
@@ -166,7 +171,7 @@ def main():
     print("restored %d files and %d symlinks from %s (%s, %s) into %s"
           % (restored, len(files["symlinks"]), a.snapshot, head["instance_id"], head["tier"], a.out))
     if skipped:
-        print("skipped %d secret files (use --include-secrets to restore them)" % skipped)
+        print("skipped %d secret or unclassified files (use --include-secrets to restore them)" % skipped)
 
 
 if __name__ == "__main__":
