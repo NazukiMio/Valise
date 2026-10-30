@@ -53,6 +53,8 @@ func newWorld(t *testing.T) *world {
 	rand.New(rand.NewSource(7)).Read(session)
 	write(t, filepath.Join(w.state, "sessions/a.jsonl"), string(session))
 	os.Symlink("SOUL.md", filepath.Join(w.state, "soul-link"))
+	os.Symlink("../SOUL.md", filepath.Join(w.state, "logs/ignored-link"))
+	os.Symlink("SOUL.md", filepath.Join(w.state, "unclassified-link"))
 	db, err := sql.Open("sqlite", filepath.Join(w.state, "agent.sqlite"))
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +155,9 @@ func TestSealTiers(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 	for k := range got {
+		if strings.Contains(k, "ignored-link") || strings.Contains(k, "unclassified-link") {
+			t.Fatalf("symlink outside the tier was recorded: %s", k)
+		}
 		if strings.HasSuffix(k, "-wal") || strings.HasSuffix(k, "-shm") || strings.Contains(k, "logs/") {
 			t.Fatalf("unexpected %s", k)
 		}

@@ -80,8 +80,10 @@ func Seal(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.Sea
 	porterenroll.Walk(roots, c, func(it porterenroll.Item) {
 		switch {
 		case it.SidecarOf != "":
-		case it.Match.Category == "" && !it.Symlink:
-			rep.UnclassifiedCount++
+		case it.Match.Category == "":
+			if !it.Symlink {
+				rep.UnclassifiedCount++
+			}
 		default:
 			items = append(items, it)
 		}
@@ -120,14 +122,12 @@ func Seal(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.Sea
 	}
 	for _, it := range items {
 		if it.Symlink {
-			// Symlinks are recorded when their category is in the tier; an
-			// unclassified symlink is recorded too (it holds no data).
-			if it.Match.Category != "" && !vault.InTier(params.Tier, it.Match.Category) {
-				continue
-			}
-			target, err := os.Readlink(it.Abs)
-			if err == nil {
-				files.Symlinks = append(files.Symlinks, vault.Symlink{Root: it.Root, Path: it.Rel, Target: target})
+			// Symlinks are classified like files: only those whose
+			// category is in the tier are recorded (never followed).
+			if vault.InTier(params.Tier, it.Match.Category) {
+				if target, err := os.Readlink(it.Abs); err == nil {
+					files.Symlinks = append(files.Symlinks, vault.Symlink{Root: it.Root, Path: it.Rel, Target: target})
+				}
 			}
 			continue
 		}

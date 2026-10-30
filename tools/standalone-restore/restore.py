@@ -141,6 +141,9 @@ def main():
             continue
         dest = safe_join(a.out, f["root"], f["path"])
         os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if os.path.lexists(dest):
+            die("%s:%s already exists in the output; the output file system is probably "
+                "case-insensitive (restore onto a case-sensitive one, e.g. Linux)" % (f["root"], f["path"]))
         h = hashlib.sha256()
         with open(dest, "wb") as out:
             for b in f["blobs"]:
@@ -156,6 +159,9 @@ def main():
     for s in files["symlinks"]:
         dest = safe_join(a.out, s["root"], s["path"])
         os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if os.path.lexists(dest):
+            die("%s:%s already exists in the output; the output file system is probably "
+                "case-insensitive (restore onto a case-sensitive one, e.g. Linux)" % (s["root"], s["path"]))
         os.symlink(s["target"], dest)
     print("restored %d files and %d symlinks from %s (%s, %s) into %s"
           % (restored, len(files["symlinks"]), a.snapshot, head["instance_id"], head["tier"], a.out))

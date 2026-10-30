@@ -58,6 +58,16 @@
   - 篡改任意一个 pack 后，校验能检测出来。
   - 只用 `restore.py`、`age` 和 `zstd`，就能把任意一个快照还原成逐字节一致的文件，全程不使用任何 Valise 二进制。
   - `soul` 档快照中不包含任何 `secrets` 类文件。
+- **进度**（2026-10-30）：
+  - 已完成：交付 1–4（格式、封存流水线、两种校验、rsync 同步、`valise pull`、`restore.py`）；交付 5（定时封存）按用户决定推迟。
+  - `testbed/drill.sh` M1 + M2 + M3 输出 `ALL_PASS (failures=0)`：
+    - 三个实例分别封存 soul 与 soul-secrets 档，同步到 `nas-test:/mnt/test/nas/valise-vault/<vault_id>/`，拉回本机后用私钥逐个文件校验通过。
+    - 只用 `restore.py` + `age` + `zstd` 从 NAS 副本恢复：Hermes 341 个文件与服务器上的活文件逐字节一致（SQLite 为 `VACUUM INTO` 副本，按设计不比对；封存后被运行中的 harness 改写的文件单独列出）。
+    - soul 档中没有任何凭据文件；OpenClaw `state/openclaw.sqlite` 的凭据表 `mcp_oauth_stores` 在 soul 副本中被清空。
+    - 篡改本机副本中的一个 pack，免私钥与带私钥校验都能检出。
+    - 未变化的 Hermes（首次封存 1.3 MiB）再次封存只新增 1352 字节，约 0.1%。
+  - 测试中发现并修复：ControlMaster 套接字路径超长导致 SSH 全部失败；身体目录中的符号链接被记录进快照；`restore.py` 在大小写不敏感的文件系统上报错不清楚。
+  - 需要用户确认：几乎为空的实例（刚初始化的 OpenClaw 39.6 KB、DSH 4.4 KB）再次封存时，约 1.3 KiB 的固定开销（加密快照头、index、元数据）使比例超过 1%，数据本身完全去重。
 
 ## M4：复活
 

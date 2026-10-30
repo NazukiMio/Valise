@@ -171,6 +171,7 @@ func Walk(roots []enroll.Root, c *profile.Classifier, fn func(Item), bad func(ro
 			it := Item{Root: root.ID, Rel: rel, Abs: path}
 			if d.Type()&fs.ModeSymlink != 0 {
 				it.Symlink = true
+				it.Match = c.Classify(root.ID, rel)
 				fn(it)
 				return nil
 			}

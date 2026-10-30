@@ -133,6 +133,99 @@ for e in "${enrollments[@]}"; do
 		&& pass "$h/$p: re-enroll sees record, no changes" || fail "$h/$p: re-enroll diff"
 done
 
+# ---------------------------------------------------------------- M3 -----
+# Sealing, vault, sync, pull and restore without Valise. A dedicated test
+# identity lives in $VALISE_DRILL_KEYDIR (never the user's real keystore) and
+# is reused across runs so servers do not collect test recipients.
+keydir="${VALISE_DRILL_KEYDIR:-$HOME/.cache/valise-drill}"
+mkdir -p "$keydir" && chmod 700 "$keydir"
+if [ ! -f "$keydir/config/keystore.age" ]; then
+	age-keygen -o "$keydir/identity.txt" 2>/dev/null
+	LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 24 > "$keydir/passphrase.txt"
+	chmod 600 "$keydir/identity.txt" "$keydir/passphrase.txt"
+	"$valise" --config-dir "$keydir/config" key import --file "$keydir/identity.txt" < "$keydir/passphrase.txt" >/dev/null
+fi
+V() { "$valise" --config-dir "$keydir/config" "$@"; }
+restore_py="$root/tools/standalone-restore/restore.py"
+nas_dest="nas-test:/mnt/test/nas/valise-vault/"
+
+seal_json() { # seal_json <host> <instance> <tier> -> prints snapshot_id added_bytes
+	V seal "$1" "$2" --tier "$3" --json 2>"$work/seal.err" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["snapshot_id"], d["added_bytes"])'
+}
+
+m3_hosts=()
+for e in "${enrollments[@]}"; do
+	IFS=: read -r h p want <<<"$e"
+	in_hosts "$h" || continue
+	case " ${m3_hosts[*]} " in *" $h "*) ;; *)
+		m3_hosts+=("$h")
+		echo "== M3: keys and target on $h"
+		V key register "$h" >/dev/null && pass "$h: key registered" || fail "$h: key register"
+		V target add "$h" nas --rsync "$nas_dest" >/dev/null && pass "$h: sync target" || fail "$h: target add"
+	;; esac
+	echo "== M3: seal $p on $h"
+	read -r s1 a1 < <(seal_json "$h" "$p" soul) || { fail "$h/$p: seal soul"; cat "$work/seal.err"; continue; }
+	read -r s2 a2 < <(seal_json "$h" "$p" soul)
+	read -r ss as < <(seal_json "$h" "$p" soul-secrets)
+	[ -n "$ss" ] && pass "$h/$p: sealed soul, soul and soul-secrets" || fail "$h/$p: seal"
+	# "First" is the instance's earliest soul seal in this vault.
+	first="$(V vault status "$h" --json | python3 -c 'import json,sys; s=[m for m in json.load(sys.stdin)["snapshots"] if m["instance_id"]==sys.argv[1] and m["tier"]=="soul"]; print(min(s,key=lambda m:m["snapshot_id"])["added_bytes"])' "$p")"
+	echo "   unchanged re-seal added $a2 bytes; first soul seal of $p added $first ($(python3 -c "print(round(100*$a2/$first,2))")%)"
+	if [ "$first" -ge 1048576 ]; then # meaningful once the instance holds real data (fixed overhead ~1.3 KiB)
+		[ $((a2 * 100)) -lt "$first" ] && pass "$h/$p: re-seal < 1% of the first seal" || fail "$h/$p: re-seal not deduplicated"
+	fi
+	echo "$h $p $s1 $ss $want" >> "$work/m3-snaps.txt"
+done
+
+for h in "${m3_hosts[@]}"; do
+	echo "== M3: vault on $h"
+	V vault verify "$h" >/dev/null && pass "$h: server vault verifies (no key)" || fail "$h: server vault verify"
+	V sync "$h" nas >/dev/null && pass "$h: synced to nas" || fail "$h: sync"
+	vid="$(V vault status "$h" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["vault_id"])')"
+	V pull "$h" --to "$work/pull-$h" >/dev/null && pass "$h: pulled" || fail "$h: pull"
+	V verify --vault "$work/pull-$h" --key < "$keydir/passphrase.txt" >/dev/null \
+		&& pass "$h: local copy verifies with the key" || fail "$h: verify --key"
+	cp -R "$work/pull-$h" "$work/tamper-$h"
+	python3 -c 'import sys,glob; p=sorted(glob.glob(sys.argv[1]+"/packs/*/*.pack"))[0]; b=bytearray(open(p,"rb").read()); b[len(b)//2]^=1; open(p,"wb").write(b)' "$work/tamper-$h"
+	if V verify --vault "$work/tamper-$h" >/dev/null 2>&1; then fail "$h: tampered pack not detected"; else pass "$h: tampered pack detected"; fi
+
+	# Restore from the NAS copy with restore.py + age + zstd only.
+	nas="$work/nas-$h"
+	rsync -a "nas-test:/mnt/test/nas/valise-vault/$vid/" "$nas/" && pass "$h: fetched NAS copy" || { fail "$h: fetch NAS copy"; continue; }
+	while read -r hh p s1 ss want; do
+		[ "$hh" = "$h" ] || continue
+		python3 -I "$restore_py" --vault "$nas" --identity "$keydir/identity.txt" --snapshot "$s1" --out "$work/r-$p-soul" --include-secrets >/dev/null \
+			&& pass "$h/$p: restore.py soul" || { fail "$h/$p: restore.py soul"; continue; }
+		python3 -I "$restore_py" --vault "$nas" --identity "$keydir/identity.txt" --snapshot "$ss" --out "$work/r-$p-ss" --include-secrets >/dev/null \
+			&& pass "$h/$p: restore.py soul-secrets" || { fail "$h/$p: restore.py soul-secrets"; continue; }
+		for s in ${want//,/ }; do
+			[ ! -e "$work/r-$p-soul/state/$s" ] && pass "$h/$p: soul tier has no $s" || fail "$h/$p: soul tier contains $s"
+			[ -e "$work/r-$p-ss/state/$s" ] && pass "$h/$p: soul-secrets has $s" || fail "$h/$p: soul-secrets lacks $s"
+		done
+		# Byte-for-byte against the live files; SQLite copies and files the
+		# running harness rewrote after the seal are reported, not failed.
+		state_dir="$(json_field "$work/$h.$p.enroll.json" '[r["path"] for r in d["report"]["roots"] if r["id"]=="state"][0]')"
+		(cd "$work/r-$p-ss/state" && find . -type f | sed 's|^\./||' | sort) > "$work/$p.list"
+		(cd "$work/r-$p-ss/state" && while IFS= read -r f; do shasum -a 256 "$f"; done < "$work/$p.list") | sort -k2 > "$work/$p.local"
+		ssh -T -o BatchMode=yes -- "$h" "cd '$state_dir' && while IFS= read -r f; do sha256sum \"\$f\"; done" < "$work/$p.list" | sort -k2 > "$work/$p.remote"
+		diffs="$(diff "$work/$p.local" "$work/$p.remote" | grep '^<' | awk '{print $3}')"
+		dbs="$(json_field "$work/$h.$p.enroll.json" '" ".join(x["path"] for x in d["report"]["sqlite"])')"
+		sealed_at="$(python3 -c 'import json,sys; print(int(__import__("datetime").datetime.fromisoformat(json.load(open(sys.argv[1]))["created_at"][:19]+"+00:00").timestamp()))' "$nas/snapshots/$ss.meta.json")"
+		bad=0
+		for f in $diffs; do
+			case " $dbs " in *" $f "*) continue ;; esac
+			mt="$(ssh -T -o BatchMode=yes -- "$h" "stat -c %Y '$state_dir/$f'")"
+			if [ "$mt" -ge "$sealed_at" ]; then
+				echo "   changed after the seal (live harness): $f"
+			else
+				echo "   MISMATCH (unchanged since the seal): $f"; bad=1
+			fi
+		done
+		[ "$bad" = 0 ] && pass "$h/$p: $(wc -l < "$work/$p.list" | tr -d ' ') restored files byte-identical to the live instance" \
+			|| fail "$h/$p: restored files differ from the live instance"
+	done < "$work/m3-snaps.txt"
+done
+
 # ------------------------------------------------------------- result -----
 if [ "$failures" -eq 0 ]; then
 	echo "ALL_PASS (failures=0)"

@@ -58,13 +58,35 @@ func (t *Transport) ReusesUserControlMaster() bool {
 	return t.opts.HostConfig != nil && t.opts.HostConfig.UserControlMaster()
 }
 
+// maxControlDirLen keeps "<dir>/cm-<40 hex>" plus the 17-byte temporary
+// suffix OpenSSH appends while creating the master under the 104-byte
+// sun_path limit (macOS; Linux allows 108).
+const maxControlDirLen = 104 - len("/cm-") - 40 - 17 - 1
+
+// controlDir returns the directory for Valise's own ControlMaster sockets:
+// the configured one if short enough, else /tmp/valise-<uid> when it is a
+// private directory owned by us, else "" (no connection sharing).
+func (t *Transport) controlDir() string {
+	dir := t.opts.ControlDir
+	if dir == "" || t.ReusesUserControlMaster() {
+		return ""
+	}
+	if len(dir) <= maxControlDirLen {
+		if os.MkdirAll(dir, 0o700) == nil {
+			return dir
+		}
+		return ""
+	}
+	return privateTmpDir()
+}
+
 // Args builds the ssh argument list for a remote command.
 func (t *Transport) Args(remoteCmd string) []string {
 	args := []string{"-T"}
-	if !t.ReusesUserControlMaster() && t.opts.ControlDir != "" {
+	if dir := t.controlDir(); dir != "" {
 		args = append(args,
 			"-o", "ControlMaster=auto",
-			"-o", "ControlPath="+filepath.Join(t.opts.ControlDir, "cm-%C"),
+			"-o", "ControlPath="+filepath.Join(dir, "cm-%C"),
 			"-o", fmt.Sprintf("ControlPersist=%d", ControlPersistSeconds),
 		)
 	}
@@ -73,11 +95,6 @@ func (t *Transport) Args(remoteCmd string) []string {
 
 // Command returns an unstarted ssh command for remoteCmd.
 func (t *Transport) Command(remoteCmd string) (*exec.Cmd, error) {
-	if t.opts.ControlDir != "" && !t.ReusesUserControlMaster() {
-		if err := os.MkdirAll(t.opts.ControlDir, 0o700); err != nil {
-			return nil, err
-		}
-	}
 	return exec.Command(t.opts.Binary, t.Args(remoteCmd)...), nil
 }
 

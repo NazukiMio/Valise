@@ -3,6 +3,7 @@ package ssh
 import (
 	"context"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,12 +13,16 @@ import (
 )
 
 func TestArgs(t *testing.T) {
-	tr, _ := New("box", Options{ControlDir: "/c"})
-	want := []string{"-T", "-o", "ControlMaster=auto", "-o", "ControlPath=/c/cm-%C", "-o", "ControlPersist=60", "--", "box", "uname"}
+	short := t.TempDir()
+	if len(short) > maxControlDirLen {
+		short = privateTmpDir()
+	}
+	tr, _ := New("box", Options{ControlDir: short})
+	want := []string{"-T", "-o", "ControlMaster=auto", "-o", "ControlPath=" + short + "/cm-%C", "-o", "ControlPersist=60", "--", "box", "uname"}
 	if got := tr.Args("uname"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%q", got)
 	}
-	tr, _ = New("box", Options{ControlDir: "/c", HostConfig: &HostConfig{ControlPath: "~/.ssh/cm-%C"}})
+	tr, _ = New("box", Options{ControlDir: short, HostConfig: &HostConfig{ControlPath: "~/.ssh/cm-%C"}})
 	if got := tr.Args("uname"); !reflect.DeepEqual(got, []string{"-T", "--", "box", "uname"}) || !tr.ReusesUserControlMaster() {
 		t.Fatalf("user ControlMaster must be reused: %q", got)
 	}
@@ -25,6 +30,18 @@ func TestArgs(t *testing.T) {
 		if _, err := New(bad, Options{}); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+func TestLongControlDirFallsBack(t *testing.T) {
+	long := filepath.Join(t.TempDir(), strings.Repeat("x", 80))
+	tr, _ := New("box", Options{ControlDir: long})
+	args := strings.Join(tr.Args("true"), " ")
+	if strings.Contains(args, long) {
+		t.Fatalf("socket path over the sun_path limit: %s", args)
+	}
+	if dir := privateTmpDir(); dir != "" && !strings.Contains(args, "ControlPath="+dir+"/cm-%C") {
+		t.Fatalf("expected fallback to %s: %s", dir, args)
 	}
 }
 

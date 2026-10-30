@@ -30,7 +30,7 @@
 
 - **控制面**：`ssh -T <host> "<porter_path> rpc"` 启动一个会话级子进程，通过 stdin/stdout 交换单行 JSON-RPC 2.0 消息。首个请求必须是 `hello`，返回 porter 版本、协议版本、架构、HOME 路径、可用工具（`systemctl --user`、`git`、`npm`、`uv`、`rsync`、`rclone`），以及**未完成的交换日志**。协议主版本不一致时，客户端拒绝继续。交换日志的内容格式在 M4 定义；在此之前，`hello` 只按 `journal/` 目录中的 `<op_id>.json` 文件名列出 op_id。
 - **数据面**：大数据流使用独立的一次性 SSH 调用，例如 `porter blob-read`（加密 blob 从服务器流向客户端）和 `porter stage-write --op <id>`（复活时，明文 tar 流从客户端流向服务器）。明文只会出现在客户端内存中，以及目标服务器的暂存目录里。
-- **连接复用**：优先复用用户已有的 ControlMaster；没有时，使用 `-o ControlMaster=auto -o ControlPath=<客户端缓存目录>/cm-%C -o ControlPersist=60`。
+- **连接复用**：优先复用用户已有的 ControlMaster；没有时，使用 `-o ControlMaster=auto -o ControlPath=<客户端缓存目录>/cm-%C -o ControlPersist=60`。Unix 套接字路径有长度上限（macOS 为 104 字节，OpenSSH 建立 master 时还会追加约 17 字节的临时后缀），缓存目录过长时改用 `/tmp/valise-<uid>`（必须是本人所有、权限 0700 的真实目录）；仍不满足时不使用连接复用。
 - **协议版本**：格式为 `<主>.<次>`，当前为 `1.0`。主版本号不一致时客户端拒绝继续；次版本号只表示向后兼容的新增。
 - **porter 部署**：客户端从 GitHub Release 下载目标架构的二进制，用随客户端发布的公钥校验 `SHA256SUMS` 的 minisign 签名，再核对哈希；或者由用户显式选择本地构建产物。上传时先执行 `cat > ~/.local/bin/valise-porter.tmp`，再 `chmod 0755`，最后 `mv` 原子替换。
   - Release 资产命名：`valise-porter_linux_amd64`、`valise-porter_linux_arm64`、`SHA256SUMS`（`sha256sum` 输出格式）、`SHA256SUMS.minisig`。远端架构由 `uname -s -m` 判定，只支持 Linux 的 `x86_64` / `aarch64`。
