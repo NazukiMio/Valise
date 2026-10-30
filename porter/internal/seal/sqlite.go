@@ -25,6 +25,10 @@ func snapshotDB(src, dst string, strip []string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// VACUUM INTO writes a rollback-journal database; keep WAL databases in
+	// WAL mode so the restored file matches what the harness expects.
+	var mode string
+	db.QueryRow("PRAGMA journal_mode").Scan(&mode)
 	_, err = db.Exec("VACUUM INTO '" + strings.ReplaceAll(dst, "'", "''") + "'")
 	db.Close()
 	if err != nil {
@@ -62,6 +66,11 @@ func snapshotDB(src, dst string, strip []string) ([]string, error) {
 	}
 	if res != "ok" {
 		return nil, fmt.Errorf("integrity_check: %s", res)
+	}
+	if strings.EqualFold(mode, "wal") {
+		if _, err := cp.Exec("PRAGMA journal_mode=WAL"); err != nil {
+			return nil, fmt.Errorf("journal_mode: %w", err)
+		}
 	}
 	return stripped, nil
 }

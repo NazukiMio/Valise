@@ -242,8 +242,9 @@ func sealSQLite(w *vault.Writer, p Paths, it porterenroll.Item, tier string) (*v
 	tmp.Close()
 	os.Remove(dst)
 	defer func() {
-		os.Remove(dst)
-		os.Remove(dst + "-journal")
+		for _, suffix := range []string{"", "-journal", "-wal", "-shm"} {
+			os.Remove(dst + suffix)
+		}
 	}()
 	var strip []string
 	if tier == vault.TierSoul {

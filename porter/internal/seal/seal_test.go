@@ -163,6 +163,9 @@ func TestSealTiers(t *testing.T) {
 		}
 	}
 	db := got["state:agent.sqlite"]
+	if len(db) < 20 || db[18] != 2 || db[19] != 2 {
+		t.Fatal("the WAL database's copy is not in WAL mode")
+	}
 	if dbRows(t, db, "auth_store") != 0 || dbRows(t, db, "sessions") != 1 || bytes.Contains(db, []byte("TOPSECRET")) {
 		t.Fatal("secret table not stripped from the soul copy")
 	}
