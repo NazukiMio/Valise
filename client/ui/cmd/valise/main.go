@@ -24,6 +24,8 @@ var version = "0.0.0-dev"
 const usage = `用法：valise [--config-dir 目录] [-v] <命令>
 
   doctor <服务器> [--json]                       检查服务器：架构、porter 版本、可用工具
+  enroll <服务器> [--profile id] [--id 实例] [--assign root:glob=类别]... [--report-json] [--accept]
+                                                 登记 agent：展示登记报告，加 --accept 才写入实例记录
   porter deploy <服务器> --release <版本>         从 GitHub Release 下载、校验并部署 porter
   porter deploy <服务器> --local <文件>           上传本地构建的 porter
   key init                                       生成新的密钥（口令至少 12 个字符）
@@ -82,6 +84,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 	switch {
 	case args[0] == "doctor":
 		return c.doctor(ctx, args[1:])
+	case args[0] == "enroll":
+		return c.enroll(ctx, args[1:])
 	case args[0] == "porter" && len(args) > 1 && args[1] == "deploy":
 		return c.deploy(ctx, args[2:])
 	case args[0] == "key" && len(args) > 1:
