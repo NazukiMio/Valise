@@ -27,8 +27,10 @@ valise/
 ├── client/ui/                # 服务层 + CLI(valise) + mygo 桌面 UI (module valise/ui)
 ├── agent-kit/skills/         # valise-enroll / valise-upkeep / valise-handoff / valise-checkup
 ├── tools/standalone-restore/ # 不依赖 Valise 的恢复脚本（Python 3 标准库 + age + zstd 命令行）
-└── testbed/
+└── testbed/                  # module valise/testbed
     ├── fakessh/              # fake-ssh 测试替身（见下文规范）
+    ├── fakesshenv/           # 测试辅助：构建 fake-ssh 与 porter、准备假主机
+    ├── selfcheck.sh          # CLAUDE.md 自检清单
     └── drill.sh              # 靶机全链路演练脚本
 ```
 
@@ -77,6 +79,7 @@ fake-ssh 是一个**冒充 `ssh` 命令的本地小程序**。客户端平时调
 - 位置：`testbed/fakessh/`，是一个独立的 Go 程序。测试时由 `go build` 构建到 `t.TempDir()` 中。
 - 注入方式：客户端配置中有一项 `ssh_binary`（默认值 `ssh`），测试时把它指向 fake-ssh。**不修改 PATH**，也不影响开发机上的真实 ssh。
 - 参数：解析 `-T`、`-tt`、`-o key=value`、`-p`、`-l`、`-F`、主机别名，以及剩下的远端命令。不认识的选项忽略，但要在调试日志中记录下来。
+- 根目录：由环境变量 `FAKESSH_ROOT` 指定 `<临时目录>`。假 HOME 不存在的别名，按"无法解析主机名"处理（退出码 255）。调试日志写入 `FAKESSH_LOG` 指定的文件（未设置时不记录）。`FAKESSH_*` 变量不会传给远端命令。
 - 执行：每个主机别名对应一个独立的假 HOME（`<临时目录>/hosts/<别名>/home`）。远端命令以 `sh -c "<命令>"` 的方式执行，并设置 `HOME` 为对应的假 HOME，工作目录也设为假 HOME。stdin、stdout、stderr 原样透传，退出码原样返回。
 - porter：测试准备阶段，为宿主机系统构建 porter，放到假 HOME 的 `~/.local/bin/valise-porter`，这样探测链也能被测到。
 - 故障注入（通过环境变量控制）：

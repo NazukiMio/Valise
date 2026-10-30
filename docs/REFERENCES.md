@@ -30,6 +30,9 @@
 | modernc.org/sqlite | https://modernc.org/sqlite | 纯 Go 实现的 SQLite，用于 `VACUUM INTO` 和 `integrity_check`，兼容 `CGO_ENABLED=0` |
 | zstd（Go） | https://github.com/klauspost/compress | blob 压缩 |
 | minisign | https://jedisct1.github.io/minisign/ | Release 校验和文件的签名 |
+| golang.org/x/crypto/blake2b | https://pkg.go.dev/golang.org/x/crypto/blake2b | minisign 预哈希签名（`ED`）的 BLAKE2b-512；age 本身已依赖 `golang.org/x/crypto` |
+| golang.org/x/term | https://pkg.go.dev/golang.org/x/term | CLI 中无回显读取口令 |
+| go.yaml.in/yaml/v3 | https://github.com/yaml/go-yaml | profile 解析（含注释节点，用于统计 `verify: pending`） |
 | mygo | https://github.com/egoist/mygo | 桌面 UI；系统 WebView，纯 Go 无 cgo，从 Go 代码生成类型化的 TypeScript 客户端（见 `docs/UI.md`） |
 | Model Context Protocol | https://modelcontextprotocol.io | `valise-porter mcp` 遵循的协议 |
 

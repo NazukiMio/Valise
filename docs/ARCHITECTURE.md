@@ -27,17 +27,25 @@
 
 ## 2. 传输
 
-- **控制面**：`ssh -T <host> "<porter_path> rpc"` 启动一个会话级子进程，通过 stdin/stdout 交换单行 JSON-RPC 2.0 消息。首个请求必须是 `hello`，返回 porter 版本、协议版本、架构、HOME 路径、可用工具（`systemctl --user`、`git`、`npm`、`uv`、`rsync`、`rclone`），以及**未完成的交换日志**。协议主版本不一致时，客户端拒绝继续。
+- **控制面**：`ssh -T <host> "<porter_path> rpc"` 启动一个会话级子进程，通过 stdin/stdout 交换单行 JSON-RPC 2.0 消息。首个请求必须是 `hello`，返回 porter 版本、协议版本、架构、HOME 路径、可用工具（`systemctl --user`、`git`、`npm`、`uv`、`rsync`、`rclone`），以及**未完成的交换日志**。协议主版本不一致时，客户端拒绝继续。交换日志的内容格式在 M4 定义；在此之前，`hello` 只按 `journal/` 目录中的 `<op_id>.json` 文件名列出 op_id。
 - **数据面**：大数据流使用独立的一次性 SSH 调用，例如 `porter blob-read`（加密 blob 从服务器流向客户端）和 `porter stage-write --op <id>`（复活时，明文 tar 流从客户端流向服务器）。明文只会出现在客户端内存中，以及目标服务器的暂存目录里。
 - **连接复用**：优先复用用户已有的 ControlMaster；没有时，使用 `-o ControlMaster=auto -o ControlPath=<客户端缓存目录>/cm-%C -o ControlPersist=60`。
+- **协议版本**：格式为 `<主>.<次>`，当前为 `1.0`。主版本号不一致时客户端拒绝继续；次版本号只表示向后兼容的新增。
 - **porter 部署**：客户端从 GitHub Release 下载目标架构的二进制，用随客户端发布的公钥校验 `SHA256SUMS` 的 minisign 签名，再核对哈希；或者由用户显式选择本地构建产物。上传时先执行 `cat > ~/.local/bin/valise-porter.tmp`，再 `chmod 0755`，最后 `mv` 原子替换。
+  - Release 资产命名：`valise-porter_linux_amd64`、`valise-porter_linux_arm64`、`SHA256SUMS`（`sha256sum` 输出格式）、`SHA256SUMS.minisig`。远端架构由 `uname -s -m` 判定，只支持 Linux 的 `x86_64` / `aarch64`。
+  - minisign 校验：同时接受预哈希（`ED`，BLAKE2b-512）与旧版（`Ed`）签名，并且必须校验 trusted comment 的全局签名。签名公钥随客户端发布；客户端尚未配置发布公钥时，拒绝从 Release 部署，只允许上传本地构建产物。
+  - 在 `chmod` 与 `mv` 之间，执行 `valise-porter.tmp version --json`：确认它能在目标架构上运行，并且它自报的 SHA-256 与本地文件一致，才执行 `mv`。任何一步失败都不替换已有的 porter。
+  - 部署目标固定为 `~/.local/bin/valise-porter`，全程不使用 sudo。
 
 ## 3. Keystore
 
 - **身份**：使用 age 原生的 X25519 身份（`AGE-SECRET-KEY-1…`），以 age 口令加密（scrypt）的形式保存为 `keystore.age`。用户随时可以用标准命令 `age -d keystore.age` 解出身份，**不依赖 Valise**。
 - **口令**：至少 12 位。scrypt 工作因子使用 age 的默认值，不得调低。
 - **收件人**：对应的 `age1…` 公钥登记到服务器的 `recipients.txt`。支持多个收件人，例如再加一把离线纸质备份钥匙。
-- **离线恢复套件**：导出内容包括 `keystore.age`、收件人公钥、指纹，以及一页恢复说明（指向 `tools/standalone-restore/`）。导入时核对指纹。
+- **指纹**：收件人公钥字符串（`age1…`）的 SHA-256 十六进制值的前 16 位。`VAULT` 中的 `recipient_fingerprints` 使用同一定义。
+- **口令长度**：按 Unicode 字符计数，至少 12 个字符。
+- **客户端数据目录**：`os.UserConfigDir()/valise/`（macOS 为 `~/Library/Application Support/valise/`，Linux 为 `~/.config/valise/`），其中包括 `keystore.age` 与 `config.json`。ControlMaster 套接字放在 `os.UserCacheDir()/valise/` 下。
+- **离线恢复套件**：导出内容包括 `keystore.age`、收件人公钥、指纹，以及一页恢复说明（指向 `tools/standalone-restore/`）。导出为一个目录，内含 `keystore.age`、`recipient.txt`、`FINGERPRINT`、`RECOVERY.md`。导入时核对指纹：先确认 `FINGERPRINT` 与 `recipient.txt` 一致，解锁后再确认身份对应的公钥与 `recipient.txt` 一致，并把指纹展示给用户，与纸质记录比对。
 - **内存处理**：解锁后的身份封装在 `UnlockedKey` 中，`Lock()` 时尽力清零。文档和 UI 中要如实说明：Go 的垃圾回收可能产生副本，无法保证彻底清除。UI 空闲 15 分钟后自动锁定（时长可配置）。
 
 ## 4. 登记（全部由代码完成）

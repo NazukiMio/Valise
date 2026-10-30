@@ -32,7 +32,7 @@ Valise 是一个开源的「活体 Agent 逃生舱」。它从零开始开发，
 - **凭据只按声明分类**：凭据由 profile 白名单声明。禁止用 glob 黑名单猜测凭据，禁止扫描或解析文件内容来寻找 API Key。
 - **绝不写入活动状态目录**：所有写入都发生在暂存目录。对活动目录唯一允许的修改，是带交换日志（journal）的目录交换。
 - **不执行远程脚本**：禁止 `curl | bash`，禁止执行 LLM 或网页提供的安装命令。身体重建只依据登记时记录的来源，来源发生变化就立即停止并交给用户决定。
-- **不自研密码学**：只使用 `filippo.io/age` 和 Go 标准库。禁止自定义加密容器格式。
+- **不自研密码学**：只使用 `filippo.io/age` 和 Go 标准库。唯一例外：校验 minisign 签名时，预哈希使用 `golang.org/x/crypto/blake2b`（minisign 格式解析自行实现，验签使用标准库 `crypto/ed25519`）。禁止自定义加密容器格式。
 - **隧道只绑定本机回环地址**（`127.0.0.1` / `[::1]`），禁止绑定 `0.0.0.0`。
 - **MCP 工具的能力边界**：不得提供复活、删除、读取凭据、写入任意文件的能力（详见 `docs/AGENT_KIT.md`）。
 - **金库只追加**：v0.1 不提供任何删除快照的能力。之后的 prune 只能由用户显式命令触发。
@@ -70,10 +70,16 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null .
 cd ../client
 go test ./... && go vet ./... && test -z "$(gofmt -l .)"
 
-# 4. 服务层、CLI 与 UI（generate、typecheck、build:web 三步从 M7 起执行）
-cd ui
+# 4. 测试替身
+cd ../testbed
+go test ./... && go vet ./... && test -z "$(gofmt -l .)"
+
+# 5. 服务层、CLI 与 UI（generate、typecheck、build:web 三步从 M7 起执行）
+cd ../client/ui
 go tool mygo generate
 go test ./... && go vet ./... && test -z "$(gofmt -l .)"
 bun run typecheck
 bun run build:web
 ```
+
+`testbed/selfcheck.sh` 按上述顺序执行全部检查；M7 之前自动跳过 `go tool mygo generate`、`bun run typecheck`、`bun run build:web` 三步。
