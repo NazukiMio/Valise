@@ -330,3 +330,26 @@ func TestScanSymlinkedStateDir(t *testing.T) {
 		t.Fatalf("symlinked state dir was not scanned: %+v", r.Categories)
 	}
 }
+
+func TestRefreshDescribesThisServer(t *testing.T) {
+	w := newWorld(t)
+	p := fixtureProfile(t)
+	src := enroll.Provenance{Kind: profile.ProvenanceNPMGlobal,
+		NPM: &enroll.NPMRecord{Package: "@acme/demo", Version: "1.2.3", Prefix: "/home/source/.npm-global"}}
+	rec := enroll.Record{InstanceID: "demo-clone", Roots: map[string]string{"state": w.state}, Provenance: src}
+	Refresh(context.Background(), w.env, &p, &rec)
+	want, _ := filepath.EvalSymlinks(filepath.Join(w.home, ".npm-global"))
+	if rec.Provenance.NPM == nil || rec.Provenance.NPM.Prefix != want {
+		t.Fatalf("provenance not refreshed: %+v", rec.Provenance.NPM)
+	}
+	if len(rec.Service) != 1 || !rec.Service[0].Exists() || len(rec.Entries) != 1 {
+		t.Fatalf("service/entries: %+v %+v", rec.Service, rec.Entries)
+	}
+
+	// A different kind of body on this server keeps the snapshot's record.
+	rec.Provenance = enroll.Provenance{Kind: profile.ProvenanceGit, Git: &enroll.GitRecord{Commit: "abc"}}
+	Refresh(context.Background(), w.env, &p, &rec)
+	if rec.Provenance.Kind != profile.ProvenanceGit || rec.Provenance.Git.Commit != "abc" {
+		t.Fatalf("kind mismatch replaced provenance: %+v", rec.Provenance)
+	}
+}

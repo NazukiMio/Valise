@@ -28,7 +28,7 @@
 
 ## 2. 传输
 
-- **控制面**：`ssh -T <host> "<porter_path> rpc"` 启动一个会话级子进程，通过 stdin/stdout 交换单行 JSON-RPC 2.0 消息。首个请求必须是 `hello`，返回 porter 版本、协议版本、架构、HOME 路径、可用工具（`systemctl --user`、`git`、`npm`、`uv`、`rsync`、`rclone`），以及**未完成的交换日志**。协议主版本不一致时，客户端拒绝继续。交换日志的内容格式在 M4 定义；在此之前，`hello` 只按 `journal/` 目录中的 `<op_id>.json` 文件名列出 op_id。
+- **控制面**：`ssh -T <host> "<porter_path> rpc"` 启动一个会话级子进程，通过 stdin/stdout 交换单行 JSON-RPC 2.0 消息。首个请求必须是 `hello`，返回 porter 版本、协议版本、架构、HOME 路径、可用工具（`systemctl --user`、`git`、`npm`、`uv`、`rsync`、`rclone`；按登录环境的 PATH 查找，与登记、复活一致），以及**未完成的交换日志**。协议主版本不一致时，客户端拒绝继续。交换日志的内容格式在 M4 定义；在此之前，`hello` 只按 `journal/` 目录中的 `<op_id>.json` 文件名列出 op_id。
 - **数据面**：大数据流使用独立的一次性 SSH 调用，例如 `porter blob-read`（加密 blob 从服务器流向客户端）和 `porter stage-write --op <id>`（复活时，明文 tar 流从客户端流向服务器）。明文只会出现在客户端内存中，以及目标服务器的暂存目录里。
 - **连接复用**：优先复用用户已有的 ControlMaster；没有时，使用 `-o ControlMaster=auto -o ControlPath=<客户端缓存目录>/cm-%C -o ControlPersist=60`。Unix 套接字路径有长度上限（macOS 为 104 字节，OpenSSH 建立 master 时还会追加约 17 字节的临时后缀），缓存目录过长时改用 `/tmp/valise-<uid>`（必须是本人所有、权限 0700 的真实目录）；仍不满足时不使用连接复用。
 - **协议版本**：格式为 `<主>.<次>`，当前为 `1.0`。主版本号不一致时客户端拒绝继续；次版本号只表示向后兼容的新增。
@@ -193,6 +193,7 @@
 - **其他进程**：服务单元之外仍在使用状态目录的进程（工作目录或打开的文件位于 root 内，Linux 上通过 `/proc` 判断），会在交换期间按路径重新创建活动目录。计划阶段发现就列为阻断项；服务停止后、移走活动目录之前再检查一次，仍有就停止并退回。Valise 不会替用户结束这些进程。（M4 在靶机上发现：Hermes 的 dashboard 进程独立于网关服务运行。）
 - **路径被重新创建**：交换或退回时，如果目标路径已被其他进程重新创建，先把它改名挪到 `.valise-intruder-<op>-<root>` 保留（不删除），再完成改名，并在改名后核实；结果中提示用户检查。`valise prev drop` 一并清理。
 - **健康检查**：按 profile 的 `health.checks` 执行（`systemd_active`、`tcp`、`http`、`argv`）。没有服务单元的实例（前台运行）不由 Valise 启动：计划中说明，交换完成后结果为"已恢复、未启动"，不做健康检查。
+- **新实例的记录**：迁移与克隆成功后，在目标服务器写入实例记录和 profile 副本。`roots` 取目标路径；`provenance`、`service`、`entries` 在目标上重新探测（快照里的记录描述的是原服务器，例如 npm 前缀、二进制路径）；目标上的身体与快照的来源种类不同时，保留快照的来源记录。`local_overrides` 目前从空开始（迁移是否沿用原实例的 `local_overrides`，在 M6 引入 agent 提议之前确定）。
 - **交换日志**：`~/.local/state/valise/journal/<op_id>.json`，每次状态变化原子写入并 fsync，内容包括模式、实例、各 root 的 live / stage / prev 路径、已搬动的身体目录、npm 身体的原版本、当前状态与时间。结束（`HEALTHY` 或 `ROLLED_BACK`）后移到 `journal/done/`，`hello` 只报告未完成的日志。
 - **故障注入**（仅用于演练与测试）：客户端隐藏参数 `--inject-fault health|crash-at=<状态>` 通过环境变量传给本次 porter：`health` 让健康检查一律失败；`crash-at` 在写入该状态后立即退出进程。
 - **prev**：`valise prev list <服务器>` 列出保留的旧状态及其天数；`valise prev drop <服务器> <op_id>` 由用户显式执行，porter 在 Go 代码中调用 `os.RemoveAll` 删除。

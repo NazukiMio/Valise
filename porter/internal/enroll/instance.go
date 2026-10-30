@@ -1,6 +1,7 @@
 package enroll
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -54,6 +55,24 @@ func ReadProfile(home, id string) (*profile.Profile, error) {
 		return nil, valise.New("instance_profile_corrupt", "服务器上的 profile 副本无法解析："+id, "重新登记以覆盖它")
 	}
 	return &p, nil
+}
+
+// Refresh replaces the facts in rec that describe the server it lives on
+// with what this server shows: the body as installed here, and service and
+// entry state. A migrate or clone record starts from the snapshot, which
+// describes the source server (its npm prefix, its paths). Provenance is
+// replaced only when this server shows the same kind of body.
+func Refresh(ctx context.Context, e *Env, p *profile.Profile, rec *enroll.Record) {
+	roots := make([]enroll.Root, 0, len(rec.Roots))
+	for id, path := range rec.Roots {
+		roots = append(roots, enroll.Root{ID: id, Path: path, Exists: true})
+	}
+	if pv := Provenance(ctx, e, p, roots); pv.Kind == rec.Provenance.Kind {
+		rec.Provenance = pv
+	}
+	var warns []string
+	rec.Service = services(ctx, e, p, &warns)
+	rec.Entries = entries(p)
 }
 
 // WriteRecord writes the record and the profile atomically with mode 0600.

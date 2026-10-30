@@ -174,7 +174,9 @@ func (r *Runner) advance(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 			}
 		case revive.StateHealthy, revive.StateRestored:
 			if j.Plan.Record != nil {
-				if _, err := porterenroll.WriteRecord(r.Env.Home, *j.Plan.Record, j.Plan.Profile); err != nil {
+				rec := *j.Plan.Record
+				porterenroll.Refresh(ctx, r.Env, &j.Plan.Profile, &rec)
+				if _, err := porterenroll.WriteRecord(r.Env.Home, rec, j.Plan.Profile); err != nil {
 					return nil, err
 				}
 			}

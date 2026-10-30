@@ -20,7 +20,7 @@ import (
 type Config struct {
 	Version string
 	Home    string
-	// DetectTools defaults to tools.Detect.
+	// DetectTools defaults to tools.Detect on the login PATH.
 	DetectTools func(context.Context) []rpc.Tool
 	// LoadEnv defaults to enroll.LoadEnv; tests replace it.
 	LoadEnv func(context.Context, string) *porterenroll.Env
@@ -34,12 +34,14 @@ func JournalDir(home string) string {
 // Serve answers requests until r reaches EOF. The first request must be
 // hello.
 func Serve(ctx context.Context, r io.Reader, w io.Writer, cfg Config) error {
-	if cfg.DetectTools == nil {
-		cfg.DetectTools = tools.Detect
-	}
 	conn := rpc.NewConn(r, w)
 	helloed := false
 	s := &session{cfg: cfg}
+	if cfg.DetectTools == nil {
+		cfg.DetectTools = func(ctx context.Context) []rpc.Tool {
+			return tools.Detect(ctx, s.loginEnv(ctx).LookPath)
+		}
+	}
 	for {
 		line, err := conn.ReadLine()
 		if errors.Is(err, io.EOF) {

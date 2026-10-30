@@ -236,6 +236,116 @@ for h in "${m3_hosts[@]}"; do
 	done < "$work/m3-snaps.txt"
 done
 
+# ---------------------------------------------------------------- M4 -----
+# Revive. Stops and restarts harness services on the targets, so it runs only
+# with VALISE_DRILL_REVIVE=1.
+#   VALISE_DRILL_REVIVE_ON   host:instance for rollback, fault and crash
+#   VALISE_DRILL_MIGRATE     source:target:instance for clone, then migrate
+# Hermes on ubuntu-vm-x86 is not the default: its dashboard runs outside the
+# gateway unit and blocks a swap (by design; Valise never kills processes).
+if [ "${VALISE_DRILL_REVIVE:-0}" = 1 ]; then
+	IFS=: read -r rh ri <<<"${VALISE_DRILL_REVIVE_ON:-ubuntu-vm:openclaw}"
+	IFS=: read -r ms mt mi <<<"${VALISE_DRILL_MIGRATE:-ubuntu-vm:ubuntu-vm-x86:openclaw}"
+	R() { # R <args...>: revive with the drill passphrase; output in $work/revive.out
+		V revive "$@" --allow-draft-profile --yes < "$keydir/passphrase.txt" > "$work/revive.out" 2>&1
+	}
+	opid() { sed -n 's/^复活计划.*op \(op_[0-9A-Z]*\).*/\1/p' "$work/revive.out" | head -1; }
+	unit_active() { ssh -T -o BatchMode=yes -- "$1" "systemctl --user is-active '$2'" 2>/dev/null | grep -qx active; }
+	# State root of an instance, and a listing of every file with its digest
+	# and mtime; the root's inode tells whether the original directory is back.
+	state_root() { ssh -T -o BatchMode=yes -- "$1" "python3 -c 'import json,os; print(json.load(open(os.path.expanduser(\"~/.config/valise/instances/$2.json\")))[\"roots\"][\"state\"])'"; }
+	snap() { # snap <host> <dir> <out>
+		ssh -T -o BatchMode=yes -- "$1" "stat -c %i '$2'; cd '$2' && find . -type f -printf '%P\t%T@\n' | sort | while IFS=\$(printf '\t') read -r f m; do printf '%s\t%s\t%s\n' \"\$(sha256sum < \"\$f\" | cut -c1-64)\" \"\${m%.*}\" \"\$f\"; done" > "$3"
+	}
+	# baseline <host> <unit> <dir> <out>: the listing taken while the service
+	# is stopped. A running harness removes its own locks and temp files when
+	# it stops (OpenClaw: tmp/openclaw-<uid>/*.lock, tmp/plugin-captures/<id>/),
+	# so a listing of the running instance cannot be compared after a swap.
+	baseline() {
+		ssh -T -o BatchMode=yes -- "$1" "systemctl --user stop '$2'"
+		snap "$1" "$3" "$4"
+		t0="$(date +%s)"
+		ssh -T -o BatchMode=yes -- "$1" "systemctl --user start '$2'; for i in 1 2 3 4 5 6 7 8 9 10; do systemctl --user is-active -q '$2' && break; sleep 1; done; sleep 10"
+	}
+	# same_state <before> <after> <since>: same directory, and every file that
+	# differs was written by the running harness after <since>.
+	same_state() {
+		python3 - "$1" "$2" "$3" <<'EOF'
+import sys
+def load(p):
+    lines = open(p).read().splitlines()
+    return lines[0], {l.split("\t")[2]: (l.split("\t")[0], int(l.split("\t")[1])) for l in lines[1:]}
+ia, a = load(sys.argv[1]); ib, b = load(sys.argv[2]); since = int(sys.argv[3])
+bad = [f for f in a if f in b and a[f][0] != b[f][0] and b[f][1] < since]
+gone = [f for f in a if f not in b]
+for f in bad: print("   MISMATCH (not rewritten since):", f)
+for f in gone: print("   MISSING:", f)
+sys.exit(0 if ia == ib and not bad and not gone else 1)
+EOF
+	}
+	unit="$(V doctor "$rh" >/dev/null 2>&1; ssh -T -o BatchMode=yes -- "$rh" "python3 -c 'import json,os; print(json.load(open(os.path.expanduser(\"~/.config/valise/instances/$ri.json\")))[\"service\"][0][\"unit\"])'")"
+	dir="$(state_root "$rh" "$ri")"
+
+	echo "== M4: rollback $ri on $rh"
+	read -r soul _ < <(seal_json "$rh" "$ri" soul)
+	if R "$rh" --snapshot "$soul" --mode rollback && grep -q '复活完成，服务健康' "$work/revive.out"; then
+		pass "$rh/$ri: rollback to a soul snapshot is healthy"
+		V prev drop "$rh" "$(opid)" --yes >/dev/null && pass "$rh/$ri: prev dropped" || fail "$rh/$ri: prev drop"
+	else
+		fail "$rh/$ri: rollback"; cat "$work/revive.out"
+	fi
+
+	echo "== M4: fault injection (health) on $rh"
+	read -r soul _ < <(seal_json "$rh" "$ri" soul)
+	baseline "$rh" "$unit" "$dir" "$work/before.txt"
+	R "$rh" --snapshot "$soul" --mode rollback --inject-fault health
+	if grep -q '结果：rolled_back' "$work/revive.out"; then pass "$rh/$ri: failed health check rolled back"; else fail "$rh/$ri: no rollback on failed health"; cat "$work/revive.out"; fi
+	snap "$rh" "$dir" "$work/after.txt"
+	same_state "$work/before.txt" "$work/after.txt" "$t0" && pass "$rh/$ri: original state directory back, files unchanged" || fail "$rh/$ri: state changed by a rolled-back revive"
+	unit_active "$rh" "$unit" && pass "$rh/$ri: $unit active again" || fail "$rh/$ri: $unit not active"
+	V prev drop "$rh" "$(opid)" --yes >/dev/null
+
+	echo "== M4: crash at LIVE_MOVED on $rh"
+	baseline "$rh" "$unit" "$dir" "$work/before.txt"
+	R "$rh" --snapshot "$soul" --mode rollback --inject-fault crash-at=LIVE_MOVED
+	op="$(opid)"
+	pending="$(V doctor "$rh" --json | python3 -c 'import json,sys; print(" ".join(p["op_id"]+":"+p["state"] for p in json.load(sys.stdin).get("pending_ops") or []))')"
+	[ "$pending" = "$op:LIVE_MOVED" ] && pass "$rh: doctor reports the unfinished op" || fail "$rh: pending ops = '$pending', want $op:LIVE_MOVED"
+	V revive resume "$rh" "$op" --back > "$work/resume.out" 2>&1 && grep -q 'rolled_back' "$work/resume.out" \
+		&& pass "$rh/$ri: resume --back rolled back" || { fail "$rh/$ri: resume --back"; cat "$work/resume.out"; }
+	snap "$rh" "$dir" "$work/after.txt"
+	same_state "$work/before.txt" "$work/after.txt" "$t0" && pass "$rh/$ri: original state directory back after the crash" || fail "$rh/$ri: state changed after crash + back"
+	unit_active "$rh" "$unit" && pass "$rh/$ri: $unit active again" || fail "$rh/$ri: $unit not active"
+	V prev drop "$rh" "$op" --yes >/dev/null
+
+	if in_hosts "$ms" && in_hosts "$mt"; then
+		echo "== M4: clone $mi $ms -> $mt"
+		munit="$(ssh -T -o BatchMode=yes -- "$ms" "python3 -c 'import json,os; print(json.load(open(os.path.expanduser(\"~/.config/valise/instances/$mi.json\")))[\"service\"][0][\"unit\"])'")"
+		unit_active "$ms" "$munit" || ssh -T -o BatchMode=yes -- "$ms" "systemctl --user start '$munit'"
+		read -r full _ < <(seal_json "$ms" "$mi" full)
+		if R "$mt" --from "$ms" --snapshot "$full" --mode clone && grep -q '复活完成，服务健康' "$work/revive.out"; then
+			pass "$ms->$mt: clone healthy"
+			unit_active "$ms" "$munit" && pass "$ms: source still running next to the clone" || fail "$ms: source stopped by a clone"
+			V prev drop "$mt" "$(opid)" --yes >/dev/null 2>&1
+		else
+			fail "$ms->$mt: clone"; cat "$work/revive.out"
+		fi
+		echo "== M4: migrate $mi $ms -> $mt (over the clone)"
+		read -r full _ < <(seal_json "$ms" "$mi" full)
+		if R "$mt" --from "$ms" --snapshot "$full" --mode migrate && grep -q '复活完成，服务健康' "$work/revive.out"; then
+			pass "$ms->$mt: migrate healthy"
+			unit_active "$ms" "$munit" && fail "$ms: source still running after migrate" || pass "$ms: source service stopped (files untouched)"
+			prefix="$(ssh -T -o BatchMode=yes -- "$mt" "python3 -c 'import json,os; d=json.load(open(os.path.expanduser(\"~/.config/valise/instances/$mi.json\"))); print((d[\"provenance\"].get(\"npm\") or {}).get(\"prefix\",\"\"))'")"
+			case "$prefix" in "" | "$(ssh -T -o BatchMode=yes -- "$mt" 'echo $HOME')"/*) pass "$mt: instance record describes the target" ;; *) fail "$mt: record prefix $prefix is the source's" ;; esac
+			V prev drop "$mt" "$(opid)" --yes >/dev/null && pass "$mt: prev dropped" || fail "$mt: prev drop"
+		else
+			fail "$ms->$mt: migrate"; cat "$work/revive.out"
+		fi
+		# Leave the source as it was found: running.
+		ssh -T -o BatchMode=yes -- "$ms" "systemctl --user start '$munit'"
+	fi
+fi
+
 # ------------------------------------------------------------- result -----
 if [ "$failures" -eq 0 ]; then
 	echo "ALL_PASS (failures=0)"

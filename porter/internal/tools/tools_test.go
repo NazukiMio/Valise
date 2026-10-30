@@ -9,15 +9,13 @@ import (
 )
 
 func TestDetectOrderAndLookup(t *testing.T) {
-	old := LookPath
-	t.Cleanup(func() { LookPath = old })
-	LookPath = func(name string) (string, error) {
+	lookPath := func(name string) (string, error) {
 		if name == "git" {
 			return "/usr/bin/git", nil
 		}
 		return "", errors.New("not found")
 	}
-	got := Detect(context.Background())
+	got := Detect(context.Background(), lookPath)
 	if len(got) != len(rpc.ToolNames) {
 		t.Fatalf("%+v", got)
 	}
