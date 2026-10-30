@@ -28,6 +28,15 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
                                                  登记 agent：展示登记报告，加 --accept 才写入实例记录
   porter deploy <服务器> --release <版本>         从 GitHub Release 下载、校验并部署 porter
   porter deploy <服务器> --local <文件>           上传本地构建的 porter
+  key register <服务器>                           把本机公钥登记为服务器的封存收件人
+  seal <服务器> <实例> [--tier soul|soul-secrets|full] [--reason 原因]
+                                                 封存一次
+  vault status <服务器> [--json]                   列出快照与同步状态（不需要私钥）
+  vault verify <服务器>                           在服务器上做不需要私钥的校验
+  target add <服务器> <名称> --rsync <主机:路径>     添加异地同步目标
+  sync <服务器> <目标>                            把服务器金库同步到异地
+  pull <服务器> [--to 目录]                       把金库拉取到本机
+  verify --vault <目录> [--key]                   校验本机金库；--key 用私钥解密并逐个文件校验
   key init                                       生成新的密钥（口令至少 12 个字符）
   key import --file <身份文件>                    导入已有的 age 身份
   key show                                       显示公钥与指纹
@@ -50,7 +59,10 @@ type cli struct {
 	lines   *bufio.Reader
 }
 
-var errUsage = errors.New("usage")
+var (
+	errUsage    = errors.New("usage")
+	errProblems = errors.New("verification problems")
+)
 
 func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("valise", flag.ContinueOnError)
@@ -88,8 +100,22 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.enroll(ctx, args[1:])
 	case args[0] == "porter" && len(args) > 1 && args[1] == "deploy":
 		return c.deploy(ctx, args[2:])
+	case args[0] == "key" && len(args) > 1 && args[1] == "register":
+		return c.keyRegister(ctx, args[2:])
 	case args[0] == "key" && len(args) > 1:
 		return c.key(args[1], args[2:])
+	case args[0] == "seal":
+		return c.seal(ctx, args[1:])
+	case args[0] == "vault" && len(args) > 1:
+		return c.vaultCmd(ctx, args[1:])
+	case args[0] == "target" && len(args) > 1:
+		return c.target(ctx, args[1:])
+	case args[0] == "sync":
+		return c.sync(ctx, args[1:])
+	case args[0] == "pull":
+		return c.pull(ctx, args[1:])
+	case args[0] == "verify":
+		return c.verify(args[1:])
 	}
 	return errUsage
 }
@@ -101,6 +127,9 @@ func (c *cli) report(err error) int {
 	if errors.Is(err, errUsage) {
 		fmt.Fprintln(c.errOut, usage)
 		return 2
+	}
+	if errors.Is(err, errProblems) {
+		return 1
 	}
 	c.printProblem(err)
 	return 1
