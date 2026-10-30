@@ -29,7 +29,7 @@
 
 ## M2：Profile 引擎与登记
 
-- **状态**：`Ready`
+- **状态**：`Done`（2026-10-30）
 - **交付**：
   1. porter 的 detect、resolve、classify 实现（包括凭据优先、未分类统计、roots 的 `discover_argv`）。
   2. 来源记录：npm、git（包括 dirty 状态与补丁）、uv/pipx、二进制哈希。
@@ -42,11 +42,11 @@
   - 已完成：交付 1–3 的代码与测试；在靶机上安装 OpenClaw 2026.10.9 与 DSH 0.2.1-rc.5（`ubuntu-vm`，Node 24.22.2 官方二进制包与 npm 都装在用户目录），Hermes 0.22.5 沿用 `ubuntu-vm-x86` 上已有的官方安装；三份 profile 已按官方文档和真实安装核实并写回（见 PROFILES.md 第 6 节）。
   - `testbed/drill.sh` M1 + M2 输出 `ALL_PASS (failures=0)`：三种 harness 的登记报告完整，凭据全部识别，身体被排除，npm 来源带 integrity（已与 registry 交叉核对），git 来源带 commit；`--accept` 写入 0600 的实例记录，再次登记能读到上次记录。
   - 新增设计（已写入文档）：SQLite 表级凭据剥离 `secret_tables`（M3 实现）；登记细节与默认值（ARCHITECTURE.md 第 4 节）。
-  - 等待用户决定：PROFILES.md 6.2 中仍未核实的条目如何处理（三份 profile 因此仍为 `draft`），以及 Hermes 的 14 个未分类文件。
+  - 用户决定：PROFILES.md 6.2 中仍未核实的条目留到对应里程碑再核实，三份 profile 保持 `draft`；Hermes 的 14 个未分类文件保持未分类；6.4 示例 id 改为 `dsh-memory-json-store`。
 
 ## M3：封存与金库
 
-- **状态**：`Blocked (depends on M2)`
+- **状态**：`Ready`
 - **交付**：
   1. `core` 中金库格式的完整读写：blob、pack、index、快照、元数据、epoch。
   2. porter 的封存流水线：SQLite `VACUUM INTO`、`unstable` 检测、三个档位、凭据分层。

@@ -156,7 +156,9 @@ agent_kit:
 | hermes | `native.export_argv`、`quiesce` | 属于封存 | M3 |
 | 全部 | 体检的会话表结构、`native_options_doc`、`new_session_hint`、`mcp_config_doc` | 属于 agent-kit | M6 |
 
-`ubuntu-vm-x86` 上的 Hermes 还有 14 个文件没有任何规则（`shared-state.db`、`source-checks/`、`gateway_state.json`、`state/`、`spawn-ledger.json`、`gateway-starts.log`、`context_length_cache.yaml`、`install_id`、`plugin-update-checks/`、`kanban/`、`runtime/` 等，合计约 158 KiB）。它们在登记报告中显示为未分类，不会被封存；没有文档依据，就不为它们编写规则。
+**用户决定（2026-10-30）**：三份 profile 保持 `draft`，上表各条目在对应的里程碑（或配置凭据实际运行 harness 后）再核实，不阻塞 M2。
+
+`ubuntu-vm-x86` 上的 Hermes 还有 14 个文件没有任何规则（`shared-state.db`、`source-checks/`、`gateway_state.json`、`state/`、`spawn-ledger.json`、`gateway-starts.log`、`context_length_cache.yaml`、`install_id`、`plugin-update-checks/`、`kanban/`、`runtime/` 等，合计约 158 KiB）。它们在登记报告中显示为未分类，不会被封存；没有文档依据，就不为它们编写规则。**用户决定**：保持未分类，由用户登记时用 `--assign` 自行归类。
 
 ### 6.3 额外样本：`ubuntu-vm` 上的旧版 Hermes
 
@@ -168,7 +170,7 @@ agent_kit:
 
 ```yaml
 schema: valise-profile/1
-id: dsh.memory-json-store
+id: dsh-memory-json-store
 display_name: DSH 记忆存储（单 JSON 文件形态）
 profile_version: 1
 status: draft
