@@ -1,41 +1,53 @@
+# DeepSeek Harness (dsh). Verified on ubuntu-vm (arm64) with
+# @deepseek-ai/dsh 0.2.1-rc.5 installed from npm into a user-level prefix and
+# initialised by `dsh web --dump-config` (no credentials, never booted).
+# Sources: the package READMEs shipped with that exact version — dsh (README),
+# dsh-credentials-local (CRED) — the composed web profile from
+# `dsh web --dump-config` (DUMP), and observation of the install (OBS).
+# DSH is a developer preview: re-verify on every version bump.
 schema: valise-profile/1
 id: dsh
 display_name: DeepSeek Harness
-profile_version: 1
+profile_version: 2
 status: draft
-harness_versions_tested: []
+harness_versions_tested: ["0.2.1-rc.5"]
 docs: https://github.com/deepseek-ai/deepseek-harness
 
 detect:
   binaries: [dsh]
-  version_argv: [dsh, --version]   # verify: pending
-  state_dir_candidates: ["${env:DSH_HOME}", "${HOME}/.dsh"]   # 环境变量名 verify: pending
-  markers_any: []                  # verify: pending
+  version_argv: [dsh, --version]                               # OBS: prints "0.2.1-rc.5"
+  state_dir_candidates: ["${env:DSH_HOME}", "${HOME}/.dsh"]    # README, CRED
+  markers_any: [profiles]                                       # OBS: created on first use of a shipped profile
 
 roots: []
 
 paths:
-  - { root: state, glob: "credentials/**", category: secrets, verify: pending }
-  - { root: state, glob: "profiles/*/package.json", category: config, verify: pending }
-  - { root: state, glob: "profiles/*/*.yml", category: config, verify: pending }
-  - { root: state, glob: "profiles/*/node_modules/**", category: cache, verify: pending }
-  - { root: state, glob: "sessions/**", category: sessions, verify: pending }
-  - { root: state, glob: "logs/**", category: ignore }
+  - { root: state, glob: ".credentials.yaml", category: secrets }   # CRED: default credential store
+  - { root: state, glob: ".env", category: secrets }                # CRED: harness-home .env fallback
+  - { root: state, glob: "cordis.patch.yml", category: config }     # README: home-level patch layer
+  - { root: state, glob: "profiles/*/node_modules/**", category: cache, note: "pnpm 按 package.json 安装的插件，可重建" }   # README
+  - { root: state, glob: "profiles/*/package.json", category: config }       # README
+  - { root: state, glob: "profiles/*/cordis.patch.yml", category: config }   # README
+  - { root: state, glob: "profiles/*/cordis.yml", category: config }         # OBS
+  - { root: state, glob: "profiles/*/pnpm-workspace.yaml", category: config }   # OBS
+  - { root: state, glob: "profiles/*/pnpm-lock.yaml", category: config, verify: pending }
+  - { root: state, glob: "sessions/**", category: sessions }        # DUMP: session-persistence-jsonl root dshHomePath('sessions')
+  - { root: state, glob: "storages/**", category: state }           # DUMP: storage-json root dshHomePath('storages')
 
-consistency: { sqlite: [], quiesce: none }
+consistency: { sqlite: [], quiesce: none }   # DUMP: session-query-sqlite runs in memory
 
 provenance:
   kind: npm_global
-  npm: { package: "@deepseek-ai/dsh" }
+  npm: { package: "@deepseek-ai/dsh" }   # OBS
 
 body: { paths: [], bootstrap_argv: [], fresh_install_doc: https://github.com/deepseek-ai/deepseek-harness }
 
-relocation: null                   # verify: pending
+relocation: { env: DSH_HOME }   # CRED: dshHome defaults to $DSH_HOME or ~/.dsh
 
-service: { candidates: [] }
+service: { candidates: [] }     # runs in the foreground (`dsh web`)
 
 entries:
-  - { id: web, kind: web, host: 127.0.0.1, port: 3080, path: "/" }
+  - { id: web, kind: web, host: 127.0.0.1, port: 3080, path: "/" }   # DUMP: host ?? '127.0.0.1', port ?? 3080
 
 health:
   grace_seconds: 15
@@ -49,7 +61,7 @@ exclusive_secrets: []              # verify: pending
 native: { export_argv: null }
 
 checkup:
-  sessions: { root: state, glob: "sessions/**", format: jsonl, usage_fields: null }   # verify: pending
+  sessions: { root: state, glob: "sessions/**", format: jsonl, usage_fields: null }   # DUMP: jsonl persistence; file layout verify: pending (no session yet)
   memory_files: []
   memory_mechanism_markers: []     # 由各记忆插件的子 profile 追加
   native_options_doc: null
@@ -59,5 +71,5 @@ handoff:
   new_session_hint: null
 
 agent_kit:
-  skills_dir: null                 # verify: pending
+  skills_dir: null                 # DUMP: dsh-skill-filesystem is disabled in the web profile; verify: pending for other profiles
   mcp_config_doc: null             # verify: pending

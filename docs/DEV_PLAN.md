@@ -38,6 +38,11 @@
 - **验收**：
   - 三种 harness 上的 `valise enroll` 都能输出完整报告，凭据全部正确识别，身体被正确排除。
   - 每一条无法核实的条目都在文档中写明原因，并请用户决定如何处理。
+- **进度**（2026-10-30）：
+  - 已完成：交付 1–3 的代码与测试；在靶机上安装 OpenClaw 2026.10.9 与 DSH 0.2.1-rc.5（`ubuntu-vm`，Node 24.22.2 官方二进制包与 npm 都装在用户目录），Hermes 0.22.5 沿用 `ubuntu-vm-x86` 上已有的官方安装；三份 profile 已按官方文档和真实安装核实并写回（见 PROFILES.md 第 6 节）。
+  - `testbed/drill.sh` M1 + M2 输出 `ALL_PASS (failures=0)`：三种 harness 的登记报告完整，凭据全部识别，身体被排除，npm 来源带 integrity（已与 registry 交叉核对），git 来源带 commit；`--accept` 写入 0600 的实例记录，再次登记能读到上次记录。
+  - 新增设计（已写入文档）：SQLite 表级凭据剥离 `secret_tables`（M3 实现）；登记细节与默认值（ARCHITECTURE.md 第 4 节）。
+  - 等待用户决定：PROFILES.md 6.2 中仍未核实的条目如何处理（三份 profile 因此仍为 `draft`），以及 Hermes 的 14 个未分类文件。
 
 ## M3：封存与金库
 

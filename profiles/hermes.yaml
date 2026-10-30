@@ -1,60 +1,105 @@
+# Hermes Agent. Verified on ubuntu-vm-x86 (x86_64, no sudo) with Hermes Agent
+# v0.22.5 (2026.9.24), commit bf0203a794, installed the official way and
+# running as a systemd user service.
+# Sources: the docs shipped in that exact checkout (hermes-agent/website/docs):
+# user-guide/configuration.md (CFG), user-guide/profile-distributions.md
+# (DIST: list of credential stores), developer-guide/session-storage.md (SS),
+# user-guide/security.md (SEC), plus observation of the install (OBS).
+# NOTE: the body (hermes-agent/, tools/, installs/) lives inside the state
+# directory and is never sealed; rebuilding it is M4 work.
 schema: valise-profile/1
 id: hermes
 display_name: Hermes Agent
-profile_version: 1
+profile_version: 2
 status: draft
-harness_versions_tested: []
+harness_versions_tested: ["0.22.5"]
 docs: https://hermes-agent.nousresearch.com
 
 detect:
   binaries: [hermes]
-  version_argv: [hermes, --version]          # verify: pending
-  state_dir_candidates: ["${env:HERMES_HOME}", "${HOME}/.hermes"]   # 环境变量名 verify: pending
-  markers_any: [config.yaml]
+  version_argv: [hermes, --version]                                  # OBS: "Hermes Agent v0.22.5 (2026.9.24) · stable · local bf0203a794a0"
+  state_dir_candidates: ["${env:HERMES_HOME}", "${HOME}/.hermes"]    # SS, OBS (the service unit sets HERMES_HOME)
+  markers_any: [config.yaml]                                         # CFG
 
 roots: []
 
 paths:
+  # Credentials (CFG, DIST)
   - { root: state, glob: ".env", category: secrets }
-  - { root: state, glob: "auth.json", category: secrets, verify: pending }
+  - { root: state, glob: "auth.json", category: secrets }
+  - { root: state, glob: "config.yaml", category: secrets, note: "配置 schema 中有 api_key 字段，可能内联密钥，整个文件按凭据处理" }   # CFG
+  - { root: state, glob: ".op.env", category: secrets }
+  - { root: state, glob: "npmrc", category: secrets }
+  - { root: state, glob: "honcho.json", category: secrets }
+  - { root: state, glob: "mem0.json", category: secrets }
+  - { root: state, glob: "teams_pipeline_store.json", category: secrets }
+  - { root: state, glob: "mcp-tokens/**", category: secrets }
+  - { root: state, glob: "vault/**", category: secrets }
+  - { root: state, glob: "proxy/**", category: secrets }
+  - { root: state, glob: "platforms/**", category: secrets, note: "SEC：平台会话与加密密钥（例如 Matrix）" }
+  - { root: state, glob: "shared/nous_auth.json", category: secrets, verify: pending }   # OBS: name only, undocumented
+  - { root: state, glob: ".envrc", category: secrets }
+  - { root: state, glob: "skills/**/.envrc", category: secrets }   # DIST: ".envrc at the root or nested under a skill"
+  # Soul (CFG)
   - { root: state, glob: "SOUL.md", category: identity }
-  - { root: state, glob: "AGENTS.md", category: identity, verify: pending }
+  - { root: state, glob: "AGENTS.md", category: identity }
   - { root: state, glob: "memories/USER.md", category: identity }
   - { root: state, glob: "memories/**", category: memory }
   - { root: state, glob: "skills/**", category: skills }
-  - { root: state, glob: "config.yaml", category: config, note: "需确认密钥不会内联在 config.yaml 中", verify: pending }
-  - { root: state, glob: "cron/**", category: config, verify: pending }
-  - { root: state, glob: "state.db", category: state }
-  - { root: state, glob: "sessions/**", category: sessions, verify: pending }
+  - { root: state, glob: "plugins/**", category: skills, verify: pending, note: "用户插件代码，无法按来源重建" }
+  - { root: state, glob: "hooks/**", category: config }
+  - { root: state, glob: "cron/**", category: config }
+  - { root: state, glob: "pairing/**", category: config }           # SEC: pending / approved users, rate limits
+  - { root: state, glob: "state.db", category: state }              # SS: sessions and messages
+  - { root: state, glob: "kanban.db", category: state }             # OBS + kanban docs
+  - { root: state, glob: "sessions/**", category: sessions }
+  # Body: rebuilt, never sealed (OBS: git checkout, installer-managed runtimes
+  # referenced by the service unit's PATH, per-install environments)
   - { root: state, glob: "hermes-agent/**", category: body }
-  - { root: state, glob: "backups/**", category: ignore }
-  - { root: state, glob: "logs/**", category: ignore, verify: pending }
+  - { root: state, glob: "tools/**", category: body }
+  - { root: state, glob: "installs/**", category: body }
+  # Not sealed
+  - { root: state, glob: "cache/**", category: cache }              # OBS: model catalogs, uv cache
+  - { root: state, glob: "audio_cache/**", category: cache }        # CFG: TTS output
+  - { root: state, glob: "image_cache/**", category: cache, verify: pending }
+  - { root: state, glob: "channel_directory.json", category: cache }   # rebuilt listing
+  - { root: state, glob: "backups/**", category: ignore }           # OBS: config.yaml.good.* copies made by hermes
+  - { root: state, glob: "logs/**", category: ignore }              # CFG
+  - { root: state, glob: "telemetry/**", category: ignore }
+  - { root: state, glob: "*.lock", category: ignore }               # OBS: lock files
+  - { root: state, glob: "gateway.pid", category: ignore }          # OBS
 
 consistency:
-  sqlite: [ { root: state, glob: "state.db" } ]
+  sqlite:
+    - { root: state, glob: "state.db" }          # SS: WAL mode
+    - { root: state, glob: "kanban.db" }
+    - { root: state, glob: "cron/executions.db" }   # OBS
   quiesce: none                    # 如果存在向量库等二进制目录，可能需要改为 stop_service；verify: pending
 
 provenance:
   kind: git
-  git: { root: state, path: "hermes-agent" }
+  git: { root: state, path: "hermes-agent" }   # OBS: origin https://github.com/NousResearch/hermes-agent.git
 
 body:
-  paths: [ { root: state, glob: "hermes-agent/**" } ]
-  bootstrap_argv: []               # verify: pending —— 需要根据官方安装脚本确认 venv 的创建与依赖安装步骤，以及全局 hermes 命令的链接方式
+  paths:
+    - { root: state, glob: "hermes-agent/**" }
+    - { root: state, glob: "tools/**" }
+    - { root: state, glob: "installs/**" }
+  bootstrap_argv: []               # verify: pending —— 官方安装程序还会下载 tools/ 下的运行时并创建 installs/ 环境，重建步骤在 M4 核实
   fresh_install_doc: https://hermes-agent.nousresearch.com
 
-relocation: { env: HERMES_HOME }   # verify: pending
+relocation: { env: HERMES_HOME }   # SS
 
 service:
-  candidates: [ { scope: user, unit: hermes-gateway.service } ]   # verify: pending
+  candidates: [ { scope: user, unit: hermes-gateway.service } ]   # OBS: loaded, active, enabled
 
-entries: []                        # verify: pending
+entries: []                        # gateway talks to messaging platforms; no local web entry observed
 
 health:
   grace_seconds: 20
   checks:
     - { kind: systemd_active }
-    - { kind: argv, argv: [hermes, doctor], ok_exit: [0] }   # verify: pending
+    # No argv check: `hermes doctor` probes the model provider over the network.
 
 login: []                          # M5 阶段补充
 
@@ -64,7 +109,7 @@ native:
   export_argv: null                # hermes backup 的输出路径参数 verify: pending
 
 checkup:
-  sessions: { root: state, glob: "state.db", format: sqlite, usage_fields: null }   # 表结构 verify: pending
+  sessions: { root: state, glob: "state.db", format: sqlite, usage_fields: null }   # SS; table layout verify: pending (M6)
   memory_files:
     - { root: state, glob: "memories/MEMORY.md", warn_lines: 600 }
     - { root: state, glob: "memories/USER.md", warn_lines: 300 }
@@ -76,5 +121,5 @@ handoff:
   new_session_hint: null           # verify: pending
 
 agent_kit:
-  skills_dir: { root: state, path: "skills/" }
+  skills_dir: { root: state, path: "skills/" }   # CFG: agent-created skills
   mcp_config_doc: null             # verify: pending

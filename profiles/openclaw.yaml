@@ -1,85 +1,103 @@
+# OpenClaw. Verified on ubuntu-vm (arm64) with openclaw 2026.10.9 installed
+# from npm into a user-level prefix and initialised with `openclaw setup
+# --baseline` (no credentials, no gateway service).
+# Sources: docs.openclaw.ai pages "Secrets, storage, and logs" (S&S),
+# "Agent workspace" (WS), "Gateway ports" FAQ (GP), "Logging" (LOG), and
+# observation of the real install (OBS).
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 1
+profile_version: 2
 status: draft
-harness_versions_tested: []
+harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
 
 detect:
   binaries: [openclaw]
-  version_argv: [openclaw, --version]
-  state_dir_candidates: ["${env:OPENCLAW_STATE_DIR}", "${HOME}/.openclaw"]   # 环境变量名 verify: pending
-  markers_any: [openclaw.json]                                              # verify: pending
+  version_argv: [openclaw, --version]                                       # OBS: "OpenClaw 2026.10.9 (8b18b55)"
+  state_dir_candidates: ["${env:OPENCLAW_STATE_DIR}", "${HOME}/.openclaw"]  # S&S
+  markers_any: [openclaw.json]                                              # OBS + S&S
 
 roots:
   - id: workspace
-    discover_argv: null            # verify: pending —— 待确认是否有只读命令可以读出工作区路径
-    default: "${STATE_DIR}/workspace"
+    discover_argv: [openclaw, config, get, agents.defaults.workspace]   # OBS: read-only, prints one absolute path
+    default: "${STATE_DIR}/workspace"                                   # WS: non-default state dir keeps workspace at <state-dir>/workspace
 
 paths:
+  # Credentials (S&S lists every file below as holding secrets)
+  - { root: state, glob: "openclaw.json", category: secrets, note: "配置中可能内联网关与渠道令牌，整个文件按凭据处理" }
+  - { root: state, glob: "openclaw.json.bak", category: secrets, note: "setup 写入的配置备份，与 openclaw.json 同等对待" }   # OBS
+  - { root: state, glob: ".env", category: secrets }
+  - { root: state, glob: "secrets.json", category: secrets }
+  - { root: state, glob: "credentials/**", category: secrets }
   - { root: state, glob: "agents/*/agent/auth-profiles.json", category: secrets }
-  - { root: state, glob: "credentials/**", category: secrets, verify: pending }
-  - { root: state, glob: "openclaw.json", category: secrets, note: "配置中可能内联令牌，整个文件按凭据处理", verify: pending }
-  - { root: workspace, glob: "SOUL.md", category: identity, verify: pending }
-  - { root: workspace, glob: "IDENTITY.md", category: identity, verify: pending }
-  - { root: workspace, glob: "USER.md", category: identity, verify: pending }
-  - { root: workspace, glob: "AGENTS.md", category: identity, verify: pending }
-  - { root: workspace, glob: "TOOLS.md", category: config, verify: pending }
-  - { root: workspace, glob: "HEARTBEAT.md", category: config, verify: pending }
-  - { root: workspace, glob: "MEMORY.md", category: memory, verify: pending }
-  - { root: workspace, glob: "memory/**", category: memory, verify: pending }
-  - { root: workspace, glob: "skills/**", category: skills, verify: pending }
-  - { root: state, glob: "skills/**", category: skills, verify: pending }
-  - { root: state, glob: "agents/*/sessions/**", category: sessions, verify: pending }
-  - { root: state, glob: "agents/*/agent/*.sqlite", category: state }
-  - { root: state, glob: "cron/**", category: config, verify: pending }
-  - { root: state, glob: "logs/**", category: ignore, verify: pending }
-  - { root: state, glob: "**/node_modules/**", category: cache }
+  - { root: state, glob: "agents/*/agent/auth.json", category: secrets }
+  - { root: state, glob: "agents/*/agent/codex-home/**", category: secrets, note: "WS：含每个 agent 的 Codex 运行时账户" }
+  - { root: state, glob: "config-journal-fingerprint.key", category: secrets, verify: pending }   # OBS: 32-byte 0600 key file, purpose undocumented
+  # Workspace (WS: standard files)
+  - { root: workspace, glob: "SOUL.md", category: identity }
+  - { root: workspace, glob: "IDENTITY.md", category: identity }
+  - { root: workspace, glob: "USER.md", category: identity }
+  - { root: workspace, glob: "AGENTS.md", category: identity }
+  - { root: workspace, glob: "BOOT.md", category: config }
+  - { root: workspace, glob: "BOOTSTRAP.md", category: config }
+  - { root: workspace, glob: "MEMORY.md", category: memory }
+  - { root: workspace, glob: "memory/**", category: memory }
+  - { root: workspace, glob: "skills/**", category: skills }
   - { root: workspace, glob: "**", category: workspace }
+  # State dir (WS "What is NOT in the workspace")
+  - { root: state, glob: "skills/**", category: skills }
+  - { root: state, glob: "state/openclaw.sqlite", category: state }
+  - { root: state, glob: "agents/*/agent/openclaw-agent.sqlite", category: state, note: "含会话与转录" }
+  - { root: state, glob: "agents/*/sessions/**", category: sessions }
+  - { root: state, glob: "cron/**", category: config, verify: pending }
+  - { root: state, glob: "**/node_modules/**", category: cache }
 
 consistency:
-  sqlite: [ { root: state, glob: "agents/*/agent/*.sqlite" } ]
+  sqlite:
+    - { root: state, glob: "state/openclaw.sqlite", secret_tables: [mcp_oauth_stores] }   # S&S; OBS: table present, WAL mode
+    - { root: state, glob: "agents/*/agent/openclaw-agent.sqlite", secret_tables: [auth_profile_store] }   # S&S; verify: pending (no agent has run yet, table not observed)
   quiesce: none
 
 provenance:
   kind: npm_global
-  npm: { package: openclaw }       # verify: pending
+  npm: { package: openclaw }   # OBS
 
 body: { paths: [], bootstrap_argv: [], fresh_install_doc: https://docs.openclaw.ai }
 
-relocation: { env: OPENCLAW_STATE_DIR }   # verify: pending
+relocation: { env: OPENCLAW_STATE_DIR }   # S&S, WS
 
 service:
-  candidates: [ { scope: user, unit: openclaw-gateway.service } ]   # verify: pending
+  candidates: [ { scope: user, unit: openclaw-gateway.service } ]   # GP: default profile's systemd unit
 
 entries:
-  - { id: gateway, kind: web, host: 127.0.0.1, port: 18789, path: "/" }   # verify: pending
+  - { id: gateway, kind: web, host: 127.0.0.1, port: 18789, path: "/" }   # GP: default ws://127.0.0.1:18789, Control UI on the same port
 
 health:
   grace_seconds: 20
   checks:
     - { kind: systemd_active }
     - { kind: tcp, entry: gateway }
-    - { kind: argv, argv: [openclaw, doctor], ok_exit: [0] }   # 需要确认是否存在非交互模式 verify: pending
+    # No argv check: a read-only health command with documented exit codes was not found.
 
-login: []                          # M5 阶段补充
+login: []                          # M5
 
-exclusive_secrets: [ { root: state, glob: "credentials/**" } ]   # verify: pending
+exclusive_secrets:
+  - { root: state, glob: "credentials/**" }   # S&S: channel credentials (e.g. WhatsApp creds); tokens inlined in openclaw.json: verify: pending
 
 native:
-  export_argv: [openclaw, backup, create, --output, "${OUT}", --verify]
+  export_argv: [openclaw, backup, create, --output, "${OUT}", --verify]   # OBS: `openclaw backup create --help`
 
 checkup:
-  sessions: { root: state, glob: "agents/*/sessions/*.jsonl", format: jsonl, usage_fields: null }   # verify: pending
+  sessions: { root: state, glob: "agents/*/agent/openclaw-agent.sqlite", format: sqlite, usage_fields: null }   # S&S: transcripts live here; schema verify: pending (M6)
   memory_files: [ { root: workspace, glob: "MEMORY.md", warn_lines: 600 } ]
-  memory_mechanism_markers: [ { root: workspace, glob: "memory/*.md" } ]   # verify: pending
+  memory_mechanism_markers: [ { root: workspace, glob: "memory/*.md" } ]   # WS: memory/YYYY-MM-DD.md daily log
   native_options_doc: null         # verify: pending
 
 handoff:
-  targets: [ { root: workspace, glob: "MEMORY.md", mode: append_section, max_lines: 120 } ]
+  targets: [ { root: workspace, glob: "MEMORY.md", mode: append_section, max_lines: 120 } ]   # WS: curated long-term memory
   new_session_hint: null           # verify: pending
 
 agent_kit:
-  skills_dir: { root: workspace, path: "skills/" }   # verify: pending
+  skills_dir: { root: workspace, path: "skills/" }   # WS: workspace skills, highest precedence
   mcp_config_doc: null             # verify: pending

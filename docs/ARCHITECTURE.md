@@ -59,6 +59,20 @@
 
 实例记录包含：`instance_id`、`profile_id`、`profile_version`、`roots`（解析后的绝对路径）、`provenance`、`service`、`entries`、`local_overrides`、`enrolled_at`。harness 升级后再次登记时，展示与上次的差异。
 
+实现细节（M2 确定）：
+
+- **profile 来源**：客户端内置仓库 `profiles/*.yaml`，另外读取客户端本机的 `os.UserConfigDir()/valise/profiles/*.yaml`（标记为"本地，未经审核"）。porter 自身不携带任何 profile。
+- **PATH**：非交互 SSH 的 PATH 通常不包含用户级安装前缀。porter 执行 `detect.binaries`、`version_argv`、`discover_argv` 和来源查询时，使用用户登录 shell 的 PATH（`$SHELL -lc` 读取一次），并补上 `~/.local/bin`。这些命令都设有超时。
+- **实例范围**：M2 每种 harness 在每台服务器上只探测默认状态目录（`state_dir_candidates` 中第一个存在且有标记文件的）。harness 自身的多 profile（例如 `~/.hermes/profiles/<name>`、`~/.openclaw-<name>`）推迟处理。
+- **instance_id**：默认等于 profile id，可用 `--id` 指定，命名规则与 profile id 相同。
+- **嵌套 root**：一个文件只属于包含它的最深的 root。例如工作区位于状态目录内部时，工作区中的文件只按 `workspace` root 的规则分类。
+- **分类优先级**：凭据规则（profile 与 `local_overrides` 中的 `secrets`）> `local_overrides` > `body.paths` > `paths` 中第一条命中的规则。
+- **SQLite 附属文件**：`consistency.sqlite` 声明的数据库，其 `-wal`、`-shm`、`-journal` 附属文件归入该数据库，不单独分类、不单独计数（封存时由 `VACUUM INTO` 覆盖）。
+- **符号链接**：root 内部的符号链接只记录，不跟随。root 自身的路径是（或经过）符号链接时（例如把状态目录软链到另一块磁盘），按解析后的真实目录扫描，报告中同时展示两者。**M4 待定**：这种情况下复活的目录交换应该作用于链接还是目标。
+- **确认**：`valise enroll` 默认只展示报告；加 `--accept` 才写入实例记录。未分类文件可用 `--assign <root>:<glob>=<类别>` 归类，写进 `local_overrides`；其余保持未分类并计数。
+- **npm 来源**：全局安装没有锁文件。包名与版本取自已安装包的 `package.json`；registry 取自 `npm config get registry`；integrity 用 `npm view <包>@<版本> dist.integrity` 向该 registry 查询。查不到时如实记录缺失，并给出警告。
+- **git 来源**：记录 remote、commit、是否 dirty；dirty 时差异（`git diff HEAD --binary`）作为 `body_patch`，未跟踪文件只计数并警告（不进入补丁）。
+
 ## 5. 类别与封存档位
 
 | 类别 | 含义 | soul | soul-secrets | full |
@@ -86,6 +100,7 @@
 1. **预检**：确认实例记录与 profile 版本一致，并确认 `~/.local/state/valise/tmp/` 的剩余空间足够容纳 SQLite 副本。
 2. **一致性处理**：
    - profile 声明的 SQLite 文件：用 `modernc.org/sqlite`（纯 Go 实现，兼容 `CGO_ENABLED=0`）以只读方式打开，执行 `VACUUM INTO` 生成临时副本，再对副本执行 `PRAGMA integrity_check`，结果必须为 `ok`。封存的是副本的内容，记录的是原文件的路径。
+   - **表级凭据剥离**：profile 在 `consistency.sqlite` 条目上用 `secret_tables` 声明哪些表存放凭据。`soul` 档封存时，只在临时副本中清空这些表（`DELETE FROM`）后再 `VACUUM`，绝不修改原文件；`soul-secrets` 与 `full` 档封存未剥离的副本。这仍是"只按声明分类"，代码不扫描表内容。（M3 实现；M2 只在登记报告中展示。）
    - profile 声明 `quiesce: stop_service` 的实例：停止服务，封存，再启动服务并做健康检查。停机时长需要在计划中提前告知用户。默认值为 `none`。
    - 其他文件：读取前后各比较一次 size 和 mtime。发生变化时重读一次；仍然变化就标记为 `unstable` 并写入报告，不视为失败。
 3. **分块与去重**：按 `VAULT_FORMAT.md` 的规则执行。

@@ -31,7 +31,7 @@ detect:
 
 roots:                           # 除 state 之外的其他根目录
   - id: workspace
-    discover_argv: null          # 可选：调用 harness 自己的 CLI 读出实际路径（只读命令）
+    discover_argv: null          # 可选：调用 harness 自己的 CLI 读出实际路径（只读命令；标准输出必须恰好是一个绝对路径，失败时退回 default 并警告）
     default: "${STATE_DIR}/workspace"
 
 paths:                           # 按顺序匹配；凭据规则无论排在哪里都优先
@@ -39,13 +39,18 @@ paths:                           # 按顺序匹配；凭据规则无论排在哪
   - { root: state, glob: "memories/**", category: memory, verify: pending }
 
 consistency:
-  sqlite: [ { root: state, glob: "*.db" } ]
+  sqlite:
+    - { root: state, glob: "*.db" }
+    - { root: state, glob: "agent.sqlite", secret_tables: [auth_store] }   # 可选：该库中存放凭据的表，soul 档封存时在副本中清空（见 ARCHITECTURE.md 第 6 节）
   quiesce: none                  # none | stop_service
 
 provenance:
   kind: npm_global               # npm_global | git | uv_tool | pipx | binary
-  npm: { package: example }
-  git: { root: state, path: "example-agent" }
+  npm: { package: example }      # kind: npm_global 时必填
+  git: { root: state, path: "example-agent" }   # kind: git 时必填
+  uv: { package: example }       # kind: uv_tool 时必填
+  pipx: { package: example }     # kind: pipx 时必填
+  binary: { name: example }      # kind: binary 时必填，取 PATH 中的该命令计算哈希
 
 body:
   paths: [ { root: state, glob: "example-agent/**" } ]   # 状态目录中属于身体的部分
@@ -106,6 +111,7 @@ agent_kit:
 - "未核实"标记有两种写法，profilelint 都会统计：规则中的 `verify: pending` 字段，以及任何包含 `verify: pending` 的 YAML 注释。`verify` 字段只允许取值 `pending`。
 - "同时出现"按两种情况判定：glob 字符串完全相同；或者 `secrets` 的 glob 不含通配符，并且能被同一 root 下某条 `body`、`cache`、`ignore` 规则（包括 `body.paths`）匹配。
 - glob 语法：以 `/` 分隔路径段，`**` 匹配零个或多个路径段，其余段使用 Go `path.Match` 的语法。
+- `secret_tables` 中的表名只能包含字母、数字和下划线。
 - profile 使用严格解析，出现 schema 中没有的字段即报错。子 profile 只能包含元信息字段（`schema`、`id`、`display_name`、`profile_version`、`status`、`harness_versions_tested`、`docs`、`extends`、`when`）以及 `paths`、`consistency`、`checkup`；它的父 profile 必须出现在同一次 lint 的文件集合中。
 
 ## 4. 子 profile
@@ -118,262 +124,43 @@ agent_kit:
 
 ---
 
-## 6. 初稿
+## 6. 核实记录（M2，2026-10-30）
 
-> 以下三份初稿根据 2026-10-30 时可查到的官方文档与社区资料整理。**凡是标注 `verify: pending` 的条目，都必须在 M2 阶段于靶机上逐条核实。**放进 `profiles/` 时，应拆成独立的 `.yaml` 文件。
+初稿已经拆成 `profiles/*.yaml`，**以那里的文件为准**。每条规则的依据都写在文件注释里（官方文档页面或真实安装的观察结果）。三份 profile 的 `profile_version` 均为 2，状态仍为 `draft`。
 
-### 6.1 `profiles/openclaw.yaml`
+| profile | 核实环境 | 版本 | 待核实条目 |
+| :--- | :--- | :--- | :---: |
+| `openclaw` | `ubuntu-vm`（arm64），npm 用户级前缀，`openclaw setup --baseline`，未配置凭据、未安装服务 | 2026.10.9 | 30 → 8 |
+| `dsh` | `ubuntu-vm`（arm64），npm 用户级前缀，`dsh web --dump-config` 初始化，未配置凭据、未启动 | 0.2.1-rc.5 | 14 → 6 |
+| `hermes` | `ubuntu-vm-x86`（x86_64，无 sudo），官方安装，systemd 用户服务运行中 | 0.22.5（commit bf0203a794） | 20 → 11 |
 
-依据：官方 `openclaw backup` 文档说明，备份范围是状态目录（通常为 `~/.openclaw`）加上当前生效的配置文件；auth profile 位于 `agents/<agentId>/agent/auth-profiles.json`；每个 agent 的运行时状态保存在 `agents/<agentId>/agent/openclaw-agent.sqlite` 中。工作区内的文件名来自社区资料，需要核实。
+### 6.1 对初稿的主要更正
 
-```yaml
-schema: valise-profile/1
-id: openclaw
-display_name: OpenClaw
-profile_version: 1
-status: draft
-harness_versions_tested: []
-docs: https://docs.openclaw.ai
+- **OpenClaw**：运行时状态库是 `state/openclaw.sqlite`，另有每个 agent 的 `agents/<id>/agent/openclaw-agent.sqlite`；后者同时存放模型凭据和会话转录，因此引入表级凭据剥离（`secret_tables`，见 ARCHITECTURE.md 第 6 节）。会话不再是 JSONL，体检改为读 SQLite。工作区标准文件中没有 `TOOLS.md`、`HEARTBEAT.md`，新增 `BOOT.md`。补充凭据文件 `.env`、`secrets.json`、`auth.json`、`codex-home/`、`openclaw.json.bak`。日志默认在 `/tmp/openclaw/`，不在状态目录里，删除 `logs/**` 规则。服务单元名、端口 18789、`OPENCLAW_STATE_DIR` 均已由官方文档核实。工作区路径改由只读命令 `openclaw config get agents.defaults.workspace` 读出。健康检查删除 `openclaw doctor`（没有找到退出码有文档的只读命令）。
+- **DSH**：凭据在 `.credentials.yaml` 和 `.env`，不在 `credentials/`；会话为 `sessions/` 下的 JSONL；存储在 `storages/`；profile 目录下的 `node_modules/` 由 pnpm 按 `package.json` 安装，归为缓存。状态目录的标记文件为 `profiles`。`DSH_HOME` 和默认地址 `127.0.0.1:3080` 已核实。
+- **Hermes**：`config.yaml` 的 schema 中有 `api_key` 字段，可以内联密钥，整体改为凭据。按官方文档补充凭据存储（`.op.env`、`npmrc`、`mcp-tokens/`、`vault/`、`proxy/`、`platforms/` 等）。身体除 `hermes-agent/` 外还包括安装程序管理的 `tools/`（约 1 GB 的 node、python、uv、chromium 等运行时）和 `installs/`（约 0.5 GB 的安装环境）。新增 `kanban.db`、`cron/executions.db` 两个 SQLite。健康检查删除 `hermes doctor`（会联网探测模型提供商）。
 
-detect:
-  binaries: [openclaw]
-  version_argv: [openclaw, --version]
-  state_dir_candidates: ["${env:OPENCLAW_STATE_DIR}", "${HOME}/.openclaw"]   # 环境变量名 verify: pending
-  markers_any: [openclaw.json]                                              # verify: pending
+### 6.2 仍未核实的条目与原因
 
-roots:
-  - id: workspace
-    discover_argv: null            # verify: pending —— 待确认是否有只读命令可以读出工作区路径
-    default: "${STATE_DIR}/workspace"
+| profile | 条目 | 原因 | 何时能核实 |
+| :--- | :--- | :--- | :--- |
+| openclaw | `config-journal-fingerprint.key` 归为凭据 | 文档没有说明用途，只按文件名保守处理 | 需要 OpenClaw 文档或源码说明 |
+| openclaw | `openclaw-agent.sqlite` 的凭据表 `auth_profile_store` | 表名来自官方文档，但还没有 agent 运行过，库不存在 | 配置凭据并运行一次 agent 后 |
+| openclaw | `cron/**` 归为配置 | 未观察到该目录 | 创建一个定时任务后 |
+| openclaw | `openclaw.json` 中内联的渠道令牌是否属于独占凭据 | 需要接入渠道才能观察 | M4（克隆时） |
+| dsh | `profiles/*/pnpm-lock.yaml` | 未观察到 | 安装一个插件后 |
+| dsh | 会话文件布局、独占凭据、交接目标、技能目录 | 未配置凭据，没有运行过会话；web profile 禁用了文件系统技能 | 配置凭据并运行后；交接与技能属于 M6 |
+| hermes | `shared/nous_auth.json` 归为凭据 | 文档没有说明，只按文件名保守处理 | 需要 Hermes 文档或源码说明 |
+| hermes | `plugins/**` 归为技能、`image_cache/**` 归为缓存 | 文档提到目录，但没有说明是否可再生 | 安装一个插件后 |
+| hermes | `bootstrap_argv`（重建 `tools/`、`installs/`） | 属于身体重建 | M4 |
+| hermes | `native.export_argv`、`quiesce` | 属于封存 | M3 |
+| 全部 | 体检的会话表结构、`native_options_doc`、`new_session_hint`、`mcp_config_doc` | 属于 agent-kit | M6 |
 
-paths:
-  - { root: state, glob: "agents/*/agent/auth-profiles.json", category: secrets }
-  - { root: state, glob: "credentials/**", category: secrets, verify: pending }
-  - { root: state, glob: "openclaw.json", category: secrets, note: "配置中可能内联令牌，整个文件按凭据处理", verify: pending }
-  - { root: workspace, glob: "SOUL.md", category: identity, verify: pending }
-  - { root: workspace, glob: "IDENTITY.md", category: identity, verify: pending }
-  - { root: workspace, glob: "USER.md", category: identity, verify: pending }
-  - { root: workspace, glob: "AGENTS.md", category: identity, verify: pending }
-  - { root: workspace, glob: "TOOLS.md", category: config, verify: pending }
-  - { root: workspace, glob: "HEARTBEAT.md", category: config, verify: pending }
-  - { root: workspace, glob: "MEMORY.md", category: memory, verify: pending }
-  - { root: workspace, glob: "memory/**", category: memory, verify: pending }
-  - { root: workspace, glob: "skills/**", category: skills, verify: pending }
-  - { root: state, glob: "skills/**", category: skills, verify: pending }
-  - { root: state, glob: "agents/*/sessions/**", category: sessions, verify: pending }
-  - { root: state, glob: "agents/*/agent/*.sqlite", category: state }
-  - { root: state, glob: "cron/**", category: config, verify: pending }
-  - { root: state, glob: "logs/**", category: ignore, verify: pending }
-  - { root: state, glob: "**/node_modules/**", category: cache }
-  - { root: workspace, glob: "**", category: workspace }
+`ubuntu-vm-x86` 上的 Hermes 还有 14 个文件没有任何规则（`shared-state.db`、`source-checks/`、`gateway_state.json`、`state/`、`spawn-ledger.json`、`gateway-starts.log`、`context_length_cache.yaml`、`install_id`、`plugin-update-checks/`、`kanban/`、`runtime/` 等，合计约 158 KiB）。它们在登记报告中显示为未分类，不会被封存；没有文档依据，就不为它们编写规则。
 
-consistency:
-  sqlite: [ { root: state, glob: "agents/*/agent/*.sqlite" } ]
-  quiesce: none
+### 6.3 额外样本：`ubuntu-vm` 上的旧版 Hermes
 
-provenance:
-  kind: npm_global
-  npm: { package: openclaw }       # verify: pending
-
-body: { paths: [], bootstrap_argv: [], fresh_install_doc: https://docs.openclaw.ai }
-
-relocation: { env: OPENCLAW_STATE_DIR }   # verify: pending
-
-service:
-  candidates: [ { scope: user, unit: openclaw-gateway.service } ]   # verify: pending
-
-entries:
-  - { id: gateway, kind: web, host: 127.0.0.1, port: 18789, path: "/" }   # verify: pending
-
-health:
-  grace_seconds: 20
-  checks:
-    - { kind: systemd_active }
-    - { kind: tcp, entry: gateway }
-    - { kind: argv, argv: [openclaw, doctor], ok_exit: [0] }   # 需要确认是否存在非交互模式 verify: pending
-
-login: []                          # M5 阶段补充
-
-exclusive_secrets: [ { root: state, glob: "credentials/**" } ]   # verify: pending
-
-native:
-  export_argv: [openclaw, backup, create, --output, "${OUT}", --verify]
-
-checkup:
-  sessions: { root: state, glob: "agents/*/sessions/*.jsonl", format: jsonl, usage_fields: null }   # verify: pending
-  memory_files: [ { root: workspace, glob: "MEMORY.md", warn_lines: 600 } ]
-  memory_mechanism_markers: [ { root: workspace, glob: "memory/*.md" } ]   # verify: pending
-  native_options_doc: null         # verify: pending
-
-handoff:
-  targets: [ { root: workspace, glob: "MEMORY.md", mode: append_section, max_lines: 120 } ]
-  new_session_hint: null           # verify: pending
-
-agent_kit:
-  skills_dir: { root: workspace, path: "skills/" }   # verify: pending
-  mcp_config_doc: null             # verify: pending
-```
-
-### 6.2 `profiles/hermes.yaml`
-
-依据：社区迁移指南显示，`config.yaml`、存放密钥的 `.env`、`skills/`、`memories/`、`state.db` 都位于 `~/.hermes/` 下；Python 虚拟环境位于 `~/.hermes/hermes-agent/venv`；官方提供 `hermes backup` 和 `hermes import` 命令。另据 OpenClaw 的迁移文档，Hermes 的记忆文件为 `memories/MEMORY.md` 和 `memories/USER.md`。
-
-**注意：**身体（`hermes-agent/`，包括其中的 venv）位于状态目录内部。venv 中大量使用绝对路径，因此**绝不封存、绝不复制，一律按来源记录重建**。
-
-```yaml
-schema: valise-profile/1
-id: hermes
-display_name: Hermes Agent
-profile_version: 1
-status: draft
-harness_versions_tested: []
-docs: https://hermes-agent.nousresearch.com
-
-detect:
-  binaries: [hermes]
-  version_argv: [hermes, --version]          # verify: pending
-  state_dir_candidates: ["${env:HERMES_HOME}", "${HOME}/.hermes"]   # 环境变量名 verify: pending
-  markers_any: [config.yaml]
-
-roots: []
-
-paths:
-  - { root: state, glob: ".env", category: secrets }
-  - { root: state, glob: "auth.json", category: secrets, verify: pending }
-  - { root: state, glob: "SOUL.md", category: identity }
-  - { root: state, glob: "AGENTS.md", category: identity, verify: pending }
-  - { root: state, glob: "memories/USER.md", category: identity }
-  - { root: state, glob: "memories/**", category: memory }
-  - { root: state, glob: "skills/**", category: skills }
-  - { root: state, glob: "config.yaml", category: config, note: "需确认密钥不会内联在 config.yaml 中", verify: pending }
-  - { root: state, glob: "cron/**", category: config, verify: pending }
-  - { root: state, glob: "state.db", category: state }
-  - { root: state, glob: "sessions/**", category: sessions, verify: pending }
-  - { root: state, glob: "hermes-agent/**", category: body }
-  - { root: state, glob: "backups/**", category: ignore }
-  - { root: state, glob: "logs/**", category: ignore, verify: pending }
-
-consistency:
-  sqlite: [ { root: state, glob: "state.db" } ]
-  quiesce: none                    # 如果存在向量库等二进制目录，可能需要改为 stop_service；verify: pending
-
-provenance:
-  kind: git
-  git: { root: state, path: "hermes-agent" }
-
-body:
-  paths: [ { root: state, glob: "hermes-agent/**" } ]
-  bootstrap_argv: []               # verify: pending —— 需要根据官方安装脚本确认 venv 的创建与依赖安装步骤，以及全局 hermes 命令的链接方式
-  fresh_install_doc: https://hermes-agent.nousresearch.com
-
-relocation: { env: HERMES_HOME }   # verify: pending
-
-service:
-  candidates: [ { scope: user, unit: hermes-gateway.service } ]   # verify: pending
-
-entries: []                        # verify: pending
-
-health:
-  grace_seconds: 20
-  checks:
-    - { kind: systemd_active }
-    - { kind: argv, argv: [hermes, doctor], ok_exit: [0] }   # verify: pending
-
-login: []                          # M5 阶段补充
-
-exclusive_secrets: [ { root: state, glob: ".env" } ]   # 其中包含社交平台的 Bot Token；更细的拆分 verify: pending
-
-native:
-  export_argv: null                # hermes backup 的输出路径参数 verify: pending
-
-checkup:
-  sessions: { root: state, glob: "state.db", format: sqlite, usage_fields: null }   # 表结构 verify: pending
-  memory_files:
-    - { root: state, glob: "memories/MEMORY.md", warn_lines: 600 }
-    - { root: state, glob: "memories/USER.md", warn_lines: 300 }
-  memory_mechanism_markers: [ { root: state, glob: "memories/MEMORY.md" } ]
-  native_options_doc: null         # verify: pending
-
-handoff:
-  targets: [ { root: state, glob: "memories/MEMORY.md", mode: append_section, max_lines: 120 } ]
-  new_session_hint: null           # verify: pending
-
-agent_kit:
-  skills_dir: { root: state, path: "skills/" }
-  mcp_config_doc: null             # verify: pending
-```
-
-### 6.3 `profiles/dsh.yaml`
-
-依据：DSH 于 2026-08-13 开源，基于 Node.js，通过 npm 包 `@deepseek-ai/dsh` 分发，Web UI 默认地址为 `127.0.0.1:3080`。插件按 profile 安装（`dsh plugin --profile web add …`），会话日志采用只追加设计。社区插件的数据位于 `~/.dsh/` 下。DSH 目前处于开发者预览阶段，官方明确提示可能出现破坏性变更，所以 `harness_versions_tested` 必须写到精确版本。
-
-**注意：**DSH 通常以 `npx` 或前台 `dsh web` 的方式运行，可能没有 systemd 单元。如果用户没有全局安装，就无法记录稳定的来源；此时登记报告应提示用户先进行全局安装（用户级前缀）。
-
-```yaml
-schema: valise-profile/1
-id: dsh
-display_name: DeepSeek Harness
-profile_version: 1
-status: draft
-harness_versions_tested: []
-docs: https://github.com/deepseek-ai/deepseek-harness
-
-detect:
-  binaries: [dsh]
-  version_argv: [dsh, --version]   # verify: pending
-  state_dir_candidates: ["${env:DSH_HOME}", "${HOME}/.dsh"]   # 环境变量名 verify: pending
-  markers_any: []                  # verify: pending
-
-roots: []
-
-paths:
-  - { root: state, glob: "credentials/**", category: secrets, verify: pending }
-  - { root: state, glob: "profiles/*/package.json", category: config, verify: pending }
-  - { root: state, glob: "profiles/*/*.yml", category: config, verify: pending }
-  - { root: state, glob: "profiles/*/node_modules/**", category: cache, verify: pending }
-  - { root: state, glob: "sessions/**", category: sessions, verify: pending }
-  - { root: state, glob: "logs/**", category: ignore }
-
-consistency: { sqlite: [], quiesce: none }
-
-provenance:
-  kind: npm_global
-  npm: { package: "@deepseek-ai/dsh" }
-
-body: { paths: [], bootstrap_argv: [], fresh_install_doc: https://github.com/deepseek-ai/deepseek-harness }
-
-relocation: null                   # verify: pending
-
-service: { candidates: [] }
-
-entries:
-  - { id: web, kind: web, host: 127.0.0.1, port: 3080, path: "/" }
-
-health:
-  grace_seconds: 15
-  checks:
-    - { kind: tcp, entry: web }
-
-login: []
-
-exclusive_secrets: []              # verify: pending
-
-native: { export_argv: null }
-
-checkup:
-  sessions: { root: state, glob: "sessions/**", format: jsonl, usage_fields: null }   # verify: pending
-  memory_files: []
-  memory_mechanism_markers: []     # 由各记忆插件的子 profile 追加
-  native_options_doc: null
-
-handoff:
-  targets: []                      # 没有记忆插件时，交接写入的目标 verify: pending
-  new_session_hint: null
-
-agent_kit:
-  skills_dir: null                 # verify: pending
-  mcp_config_doc: null             # verify: pending
-```
+这份 Hermes 由旧版 Fathom 部署：`~/.hermes` 是指向 `/slots/active → /slots/b` 的符号链接（AB 槽位），目录中还有 `FATHOM_RESTORE_MARKER.txt`。它只用于只读观察：登记报告能穿过根目录的符号链接正确扫描，旧项目的文件都落在"未分类"中。它不作为核实依据，也不在其上写入实例记录。
 
 ### 6.4 子 profile 机制示例（仅用于演示机制，不代表推荐）
 

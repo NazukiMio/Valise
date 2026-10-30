@@ -76,6 +76,63 @@ for h in "${hosts[@]}"; do
 	fi
 done
 
+# ---------------------------------------------------------------- M2 -----
+# Enrollment of the real harnesses (see AGENT.md target matrix).
+#   host:profile:expected secrets (comma-separated, root-relative)
+enrollments=(
+	"ubuntu-vm:openclaw:openclaw.json"
+	"ubuntu-vm:dsh:"
+	"ubuntu-vm-x86:hermes:.env,auth.json,config.yaml"
+)
+in_hosts() { local h; for h in "${hosts[@]}"; do [ "$h" = "$1" ] && return 0; done; return 1; }
+
+for e in "${enrollments[@]}"; do
+	IFS=: read -r h p want <<<"$e"
+	in_hosts "$h" || continue
+	echo "== M2: $p on $h"
+	out="$work/$h.$p.enroll.json"
+	if ! "$valise" enroll "$h" --profile "$p" --report-json > "$out" 2> "$out.err"; then
+		fail "$h/$p: enroll report"; cat "$out.err"; continue
+	fi
+	pass "$h/$p: enroll report"
+	r() { json_field "$out" "$1"; }
+	[ "$(r 'd["report"]["profile_id"]')" = "$p" ] && pass "$h/$p: profile matched" || fail "$h/$p: profile"
+	for s in ${want//,/ }; do
+		[ "$(r "any(x['path']=='$s' for x in d['report']['secrets'])")" = True ] \
+			&& pass "$h/$p: secret $s identified" || fail "$h/$p: secret $s missing"
+	done
+	# Secrets are only ever declared files: nothing in the body is a secret.
+	[ "$(r "all(not x['path'].startswith(('hermes-agent/','tools/','installs/')) for x in d['report']['secrets'])")" = True ] \
+		&& pass "$h/$p: no secrets inside the body" || fail "$h/$p: secret inside body"
+	kind="$(r 'd["report"]["provenance"]["kind"]')"
+	case "$kind" in
+		npm_global)
+			[ -n "$(r 'd["report"]["provenance"]["npm"]["version"]')" ] && [ -n "$(r 'd["report"]["provenance"]["npm"].get("integrity","")')" ] \
+				&& pass "$h/$p: npm provenance with integrity" || fail "$h/$p: npm provenance incomplete" ;;
+		git)
+			[ "$(r 'len(d["report"]["provenance"]["git"]["commit"])')" = 40 ] && [ -n "$(r 'd["report"]["provenance"]["git"]["remote"]')" ] \
+				&& pass "$h/$p: git provenance" || fail "$h/$p: git provenance incomplete"
+			[ "$(r 'd["report"]["categories"].get("body",{}).get("files",0) > 0')" = True ] \
+				&& pass "$h/$p: body excluded from sealing" || fail "$h/$p: body not recognised" ;;
+		*) fail "$h/$p: provenance kind '$kind'" ;;
+	esac
+	echo "   unclassified: $(r 'd["report"]["unclassified"]["files"]') files"
+
+	if "$valise" enroll "$h" --profile "$p" --accept > "$work/$h.$p.accept.txt" 2>&1; then
+		pass "$h/$p: enroll --accept"
+	else
+		fail "$h/$p: enroll --accept"; cat "$work/$h.$p.accept.txt"; continue
+	fi
+	if ssh -T -o BatchMode=yes -- "$h" "test \"\$(stat -c %a ~/.config/valise/instances/$p.json)\" = 600"; then
+		pass "$h/$p: instance record written (0600)"
+	else
+		fail "$h/$p: instance record"
+	fi
+	"$valise" enroll "$h" --profile "$p" --report-json > "$out.2" 2>/dev/null
+	[ "$(json_field "$out.2" 'd["report"]["previous"] is not None and not d["report"].get("changes")')" = True ] \
+		&& pass "$h/$p: re-enroll sees record, no changes" || fail "$h/$p: re-enroll diff"
+done
+
 # ------------------------------------------------------------- result -----
 if [ "$failures" -eq 0 ]; then
 	echo "ALL_PASS (failures=0)"
