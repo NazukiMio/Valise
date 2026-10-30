@@ -58,7 +58,7 @@
 5. **登记报告**：客户端展示各类别的文件数量与大小、未分类文件、凭据文件清单（只列路径）、身体与来源、服务、入口、哪些 profile 条目未核实。用户确认，并对未分类文件做出处理决定后，才写入实例记录。
 6. **agent 补充**（可选）：agent 通过 MCP 提议额外的路径和类别，这些提议以"待确认"状态保存。用户在客户端确认后，才合入实例记录的 `local_overrides`。
 
-实例记录包含：`instance_id`、`profile_id`、`profile_version`、`roots`（解析后的绝对路径）、`provenance`、`service`、`entries`、`local_overrides`、`enrolled_at`。harness 升级后再次登记时，展示与上次的差异。
+实例记录包含：`instance_id`、`profile_id`、`profile_version`、`roots`（解析后的绝对路径）、`provenance`、`service`、`entries`、`local_overrides`、`enrolled_at`，以及被取代时的 `superseded`（见 8.2.1）。harness 升级后再次登记时，展示与上次的差异。
 
 实现细节（M2 确定）：
 
@@ -194,6 +194,8 @@
 - **路径被重新创建**：交换或退回时，如果目标路径已被其他进程重新创建，先把它改名挪到 `.valise-intruder-<op>-<root>` 保留（不删除），再完成改名，并在改名后核实；结果中提示用户检查。`valise prev drop` 一并清理。
 - **健康检查**：按 profile 的 `health.checks` 执行（`systemd_active`、`tcp`、`http`、`argv`）。没有服务单元的实例（前台运行）不由 Valise 启动：计划中说明，交换完成后结果为"已恢复、未启动"，不做健康检查。
 - **新实例的记录**：迁移与克隆成功后，在目标服务器写入实例记录和 profile 副本。`roots` 取目标路径；`provenance`、`service`、`entries` 在目标上重新探测（快照里的记录描述的是原服务器，例如 npm 前缀、二进制路径）；目标上的身体与快照的来源种类不同时，保留快照的来源记录。`local_overrides` 目前从空开始（迁移是否沿用原实例的 `local_overrides`，在 M6 引入 agent 提议之前确定）。
+- **被取代的实例**：迁移或克隆的目标路径与目标服务器上另一个已登记实例的 root 重叠（相同或互相包含）时，计划中列出该实例并说明后果（警告，不阻断）。交换成功后不删除它的记录，而是标记为"已被取代"（`superseded`：取代它的实例、op_id、时间）；它原来的目录按流程保留为 prev。被取代的实例不能再封存，也不能作为回滚目标；用同一 id 重新登记会清除标记。实例 id 不改名，因为金库中的快照按 id 关联。
+- **旧实例清理**：`valise old list <服务器>` 列出被取代的实例、取代它的操作，以及那次操作保留的旧目录和大小。`valise old cleanup <服务器> <实例>` 在用户再次确认后删除这个实例的记录、profile 副本，以及取代它的那次操作保留的旧目录（与 `prev drop` 相同）。只能由用户显式执行，porter 在 Go 代码中删除。金库中该实例的快照不受影响（金库只追加，prune 见 M8）。
 - **交换日志**：`~/.local/state/valise/journal/<op_id>.json`，每次状态变化原子写入并 fsync，内容包括模式、实例、各 root 的 live / stage / prev 路径、已搬动的身体目录、npm 身体的原版本、当前状态与时间。结束（`HEALTHY` 或 `ROLLED_BACK`）后移到 `journal/done/`，`hello` 只报告未完成的日志。
 - **故障注入**（仅用于演练与测试）：客户端隐藏参数 `--inject-fault health|crash-at=<状态>` 通过环境变量传给本次 porter：`health` 让健康检查一律失败；`crash-at` 在写入该状态后立即退出进程。
 - **prev**：`valise prev list <服务器>` 列出保留的旧状态及其天数；`valise prev drop <服务器> <op_id>` 由用户显式执行，porter 在 Go 代码中调用 `os.RemoveAll` 删除。

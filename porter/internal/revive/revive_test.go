@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"valise/core/enroll"
 	"valise/core/profile"
 	"valise/core/revive"
 	porterenroll "valise/porter/internal/enroll"
@@ -378,5 +379,60 @@ func TestBusyProcessesFromProc(t *testing.T) {
 	}
 	if got := busyProcesses([]string{"/home/u/.demo"}, ""); len(got) != 2 {
 		t.Fatalf("unit processes must count once the unit should be stopped: %+v", got)
+	}
+}
+
+func TestCloneSupersedesOverlappingInstance(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	old := enroll.Record{InstanceID: "old", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": w.state}}
+	if _, err := porterenroll.WriteRecord(w.home, old, w.p); err != nil {
+		t.Fatal(err)
+	}
+	roots := []revive.RootPlan{{ID: "state", Path: w.state}}
+	facts, err := Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{Profile: w.p, InstanceID: "new", Roots: roots})
+	if err != nil || len(facts.Overlapping) != 1 || facts.Overlapping[0] != "old" {
+		t.Fatalf("overlapping = %v, %v", facts.Overlapping, err)
+	}
+
+	p := revive.Plan{OpID: revive.NewOpID(time.Now()), Mode: revive.ModeClone, InstanceID: "new", Tier: "full",
+		Profile: w.p, Roots: roots, Body: revive.BodyPlan{Action: revive.BodyKeep}, Unit: "demo.service",
+		Record:     &enroll.Record{InstanceID: "new", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": w.state}},
+		Supersedes: facts.Overlapping}
+	w.stage(t, p, snapshot)
+	res, err := w.r.Swap(ctx, p.OpID)
+	if err != nil || res.State != revive.StateHealthy {
+		t.Fatalf("%+v %v", res, err)
+	}
+	rec, _ := porterenroll.ReadRecord(w.home, "old")
+	if rec == nil || rec.Superseded == nil || rec.Superseded.By != "new" || rec.Superseded.OpID != p.OpID {
+		t.Fatalf("old record not marked: %+v", rec)
+	}
+	// A superseded instance no longer overlaps (it is not replaced twice).
+	facts, _ = Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{Profile: w.p, InstanceID: "other", Roots: roots})
+	if len(facts.Overlapping) != 1 || facts.Overlapping[0] != "new" {
+		t.Fatalf("overlapping after supersede = %v", facts.Overlapping)
+	}
+
+	list, err := OldList(w.r.Store)
+	if err != nil || len(list.Entries) != 1 || list.Entries[0].InstanceID != "old" ||
+		len(list.Entries[0].Leftovers) != 1 || list.Entries[0].Leftovers[0].Path != res.Prev[0] {
+		t.Fatalf("%+v %v", list, err)
+	}
+	if _, err := OldCleanup(w.r.Store, "new"); err == nil {
+		t.Fatal("cleanup of a live instance accepted")
+	}
+	removed, err := OldCleanup(w.r.Store, "old")
+	if err != nil || len(removed) != 3 {
+		t.Fatalf("%v %v", removed, err)
+	}
+	if _, err := os.Stat(res.Prev[0]); !os.IsNotExist(err) {
+		t.Fatal("kept directory survived cleanup")
+	}
+	if r, _ := porterenroll.ReadRecord(w.home, "old"); r != nil {
+		t.Fatal("old record survived cleanup")
+	}
+	if r, _ := porterenroll.ReadRecord(w.home, "new"); r == nil || read(t, filepath.Join(w.state, "SOUL.md")) != "old soul" {
+		t.Fatal("cleanup touched the live instance")
 	}
 }

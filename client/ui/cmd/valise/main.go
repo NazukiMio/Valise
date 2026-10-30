@@ -42,6 +42,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
                                                  复活：先出计划，暂存校验后再确认交换
   revive resume <服务器> <op> --continue|--back   处理未完成的复活操作
   prev list <服务器> | prev drop <服务器> <op>    查看 / 删除交换前保留的旧状态
+  old list <服务器> | old cleanup <服务器> <实例>  查看 / 清理被迁移或克隆取代的旧实例
   key unregister <服务器> [--recipient age1…]     移除收件人公钥（旧快照仍可被它解开）
   key init                                       生成新的密钥（口令至少 12 个字符）
   key import --file <身份文件>                    导入已有的 age 身份
@@ -110,6 +111,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.revive(ctx, args[1:])
 	case args[0] == "prev" && len(args) > 1:
 		return c.prev(ctx, args[1:])
+	case args[0] == "old" && len(args) > 1:
+		return c.old(ctx, args[1:])
 	case args[0] == "key" && len(args) > 1 && args[1] == "unregister":
 		return c.keyUnregister(ctx, args[2:])
 	case args[0] == "key" && len(args) > 1 && args[1] == "register":

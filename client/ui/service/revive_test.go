@@ -144,4 +144,33 @@ func TestCloneToAnotherServer(t *testing.T) {
 	if st, _ := os.Stat(filepath.Join(home2, ".demo/.env")); st.Mode().Perm() != 0o600 {
 		t.Fatalf("secret mode %v", st.Mode())
 	}
+
+	// Migrating the original over the clone supersedes the clone.
+	rp, err = s.PlanRevive(ctx, ReviveOptions{Target: "box2", From: "box", SnapshotID: ss, Mode: revive.ModeMigrate, AllowDraft: true}, pass)
+	if err != nil || len(rp.Blockers) != 0 || len(rp.Plan.Supersedes) != 1 || rp.Plan.Supersedes[0] != "demo-clone" ||
+		!strings.Contains(strings.Join(rp.Warnings, "\n"), "demo-clone") {
+		t.Fatalf("%+v %+v %v", rp.Plan, rp.Warnings, err)
+	}
+	mres, err := s.ExecuteRevive(ctx, rp, "", func(*revive.StageVerifyResult) bool { return true })
+	if err != nil || mres.State != revive.StateRestored {
+		t.Fatalf("%+v %v", mres, err)
+	}
+	old, err := s.OldList(ctx, "box2")
+	if err != nil || len(old.Entries) != 1 || old.Entries[0].InstanceID != "demo-clone" || old.Entries[0].Superseded.By != "demo" ||
+		len(old.Entries[0].Leftovers) != 1 {
+		t.Fatalf("%+v %v", old, err)
+	}
+	if _, err := s.Seal(ctx, "box2", vaultrpc.SealParams{InstanceID: "demo-clone", Tier: vault.TierSoul}); err == nil {
+		t.Fatal("sealed a superseded instance")
+	}
+	removed, err := s.OldCleanup(ctx, "box2", "demo-clone")
+	if err != nil || len(removed) != 3 {
+		t.Fatalf("%v %v", removed, err)
+	}
+	if old, _ := s.OldList(ctx, "box2"); len(old.Entries) != 0 {
+		t.Fatalf("%+v", old)
+	}
+	if readFile(t, filepath.Join(home2, ".demo/.env")) != "K=v" {
+		t.Fatal("cleanup touched the live instance")
+	}
 }

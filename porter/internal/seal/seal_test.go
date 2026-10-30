@@ -247,6 +247,10 @@ func TestSealErrors(t *testing.T) {
 	if _, err := Seal(ctx, w.env, w.p, vaultrpc.SealParams{InstanceID: "demo", Tier: "soul"}, "client"); code(err) != "no_recipients" {
 		t.Fatal(err)
 	}
+	porterenroll.MarkSuperseded(w.p.Home, "demo", enroll.Supersession{By: "demo-2", OpID: "op_x"})
+	if _, err := Seal(ctx, w.env, w.p, vaultrpc.SealParams{InstanceID: "demo", Tier: "soul"}, "client"); code(err) != "instance_superseded" {
+		t.Fatal(err)
+	}
 }
 
 func TestBodyPatch(t *testing.T) {

@@ -181,9 +181,16 @@ func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if o.Mode == revive.ModeRollback {
 		if facts.Record == nil {
 			rp.block("not_enrolled", "目标服务器上没有登记实例 "+instance, "回滚针对已登记的实例；跨服务器请用 migrate")
+		} else if sup := facts.Record.Superseded; sup != nil {
+			rp.block("superseded", "实例 "+instance+" 的目录已被实例 "+sup.By+" 取代（操作 "+sup.OpID+"）",
+				"回滚 "+sup.By+"；不再需要旧实例时用 valise old cleanup 清理")
 		} else {
 			plan.Overrides = facts.Record.LocalOverrides
 		}
+	} else if len(facts.Overlapping) > 0 {
+		plan.Supersedes = facts.Overlapping
+		rp.Warnings = append(rp.Warnings, "目标上已登记的实例 "+strings.Join(facts.Overlapping, "、")+
+			" 使用同一目录：交换成功后它的旧目录保留为 prev，记录标记为\"已被取代\"，不再能封存；用 valise old list 查看，valise old cleanup 清理")
 	}
 	for _, f := range facts.Roots {
 		if f.Symlinked {

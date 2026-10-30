@@ -33,6 +33,10 @@ func Seal(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.Sea
 	if rec == nil {
 		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+params.InstanceID, "先运行 valise enroll <服务器> --accept")
 	}
+	if rec.Superseded != nil {
+		return nil, valise.New("instance_superseded", "实例 "+params.InstanceID+" 的目录已被实例 "+rec.Superseded.By+" 取代（操作 "+rec.Superseded.OpID+"）",
+			"封存 "+rec.Superseded.By+"；不再需要旧实例时用 valise old cleanup 清理")
+	}
 	prof, err := porterenroll.ReadProfile(p.Home, params.InstanceID)
 	if err != nil {
 		return nil, err

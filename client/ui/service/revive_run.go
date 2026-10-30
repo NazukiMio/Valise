@@ -170,6 +170,23 @@ func (s *Service) PrevDrop(ctx context.Context, host, op string) ([]string, erro
 	return res["removed"], err
 }
 
+// OldList lists superseded instances on host.
+func (s *Service) OldList(ctx context.Context, host string) (*revive.OldListResult, error) {
+	var res revive.OldListResult
+	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error { return c.Call(ctx, revive.MethodOldList, struct{}{}, &res) })
+	return &res, err
+}
+
+// OldCleanup removes a superseded instance's kept directories and record
+// (explicit).
+func (s *Service) OldCleanup(ctx context.Context, host, instance string) ([]string, error) {
+	var res map[string][]string
+	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+		return c.Call(ctx, revive.MethodOldCleanup, revive.OldCleanupParams{InstanceID: instance}, &res)
+	})
+	return res["removed"], err
+}
+
 // KeyUnregister removes a recipient from host. Snapshots already sealed stay
 // decryptable by that key.
 func (s *Service) KeyUnregister(ctx context.Context, host, recipient string) ([]string, bool, error) {

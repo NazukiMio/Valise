@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"valise/core/enroll"
 	"valise/core/profile"
@@ -34,6 +35,11 @@ func ReadRecord(home, id string) (*enroll.Record, error) {
 		return nil, valise.New("instance_record_corrupt", "服务器上的实例记录无法解析："+id, "重新登记以覆盖它").WithDetail(err.Error())
 	}
 	return &r, nil
+}
+
+// RecordPath is instances/<id>.json.
+func RecordPath(home, id string) string {
+	return filepath.Join(InstancesDir(home), id+".json")
 }
 
 // ProfilePath is instances/<id>.profile.json.
@@ -124,4 +130,56 @@ func writeFile0600(dir, final string, b []byte) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), final)
+}
+
+// ListRecords returns every instance record on this server, sorted by id.
+// Unreadable records are skipped.
+func ListRecords(home string) ([]enroll.Record, error) {
+	ents, err := os.ReadDir(InstancesDir(home))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []enroll.Record
+	for _, e := range ents {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".profile.json") {
+			continue
+		}
+		if r, err := ReadRecord(home, strings.TrimSuffix(name, ".json")); err == nil && r != nil {
+			out = append(out, *r)
+		}
+	}
+	return out, nil
+}
+
+// MarkSuperseded records that an operation replaced the instance's
+// directories. The record is kept; only `valise old cleanup` removes it.
+func MarkSuperseded(home, id string, s enroll.Supersession) error {
+	r, err := ReadRecord(home, id)
+	if err != nil || r == nil {
+		return err
+	}
+	r.Superseded = &s
+	b, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFile0600(InstancesDir(home), RecordPath(home, id), b)
+}
+
+// RemoveRecord deletes the record and profile copy of an instance. It runs
+// only on the user's explicit `valise old cleanup`.
+func RemoveRecord(home, id string) error {
+	if err := enroll.ValidInstanceID(id); err != nil {
+		return valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
+	}
+	for _, p := range []string{RecordPath(home, id), ProfilePath(home, id)} {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }

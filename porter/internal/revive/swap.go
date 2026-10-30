@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"valise/core/enroll"
 	"valise/core/revive"
 	"valise/core/valise"
 	"valise/core/vault"
@@ -178,6 +179,12 @@ func (r *Runner) advance(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 				porterenroll.Refresh(ctx, r.Env, &j.Plan.Profile, &rec)
 				if _, err := porterenroll.WriteRecord(r.Env.Home, rec, j.Plan.Profile); err != nil {
 					return nil, err
+				}
+				for _, id := range j.Plan.Supersedes {
+					sup := enroll.Supersession{By: rec.InstanceID, OpID: j.Plan.OpID, At: time.Now().UTC()}
+					if err := porterenroll.MarkSuperseded(r.Env.Home, id, sup); err != nil {
+						return nil, err
+					}
 				}
 			}
 			r.Store.Finish(j)

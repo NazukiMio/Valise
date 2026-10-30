@@ -207,6 +207,16 @@ type Record struct {
 	Entries        []EntryState       `json:"entries"`
 	LocalOverrides []profile.Override `json:"local_overrides"`
 	EnrolledAt     time.Time          `json:"enrolled_at"`
+	// Superseded is set when a migrate or clone replaced this instance's
+	// directories with another instance (ARCHITECTURE.md 8.2.1).
+	Superseded *Supersession `json:"superseded,omitempty"`
+}
+
+// Supersession says which operation replaced an instance.
+type Supersession struct {
+	By   string    `json:"by"`
+	OpID string    `json:"op_id"`
+	At   time.Time `json:"at"`
 }
 
 // RecordFrom builds the record the user accepts from a report.

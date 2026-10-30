@@ -46,6 +46,8 @@ const (
 	MethodJournal     = "journal_get"
 	MethodPrevList    = "prev_list"
 	MethodPrevDrop    = "prev_drop"
+	MethodOldList     = "old_list"
+	MethodOldCleanup  = "old_cleanup"
 	MethodService     = "service_control"
 	MethodRecipientRm = "recipient_remove"
 )
@@ -92,19 +94,22 @@ type RootFacts struct {
 
 // InspectResult is what the target reports for planning.
 type InspectResult struct {
-	Home          string                `json:"home"`
-	OS            string                `json:"os"`
-	Arch          string                `json:"arch"`
-	StateDir      string                `json:"state_dir"` // resolved by detect candidates on the target
-	Roots         []RootFacts           `json:"roots"`
-	Tools         map[string]bool       `json:"tools"`
-	Provenance    enroll.Provenance     `json:"provenance"` // body currently installed on the target
-	Service       []enroll.ServiceState `json:"service"`
-	Listening     []enroll.EntryState   `json:"entries"`
-	Record        *enroll.Record        `json:"record,omitempty"`
-	PendingOps    []string              `json:"pending_ops"`
-	Busy          []Process             `json:"busy,omitempty"`
-	RegistryCheck string                `json:"registry_integrity,omitempty"`
+	Home       string                `json:"home"`
+	OS         string                `json:"os"`
+	Arch       string                `json:"arch"`
+	StateDir   string                `json:"state_dir"` // resolved by detect candidates on the target
+	Roots      []RootFacts           `json:"roots"`
+	Tools      map[string]bool       `json:"tools"`
+	Provenance enroll.Provenance     `json:"provenance"` // body currently installed on the target
+	Service    []enroll.ServiceState `json:"service"`
+	Listening  []enroll.EntryState   `json:"entries"`
+	Record     *enroll.Record        `json:"record,omitempty"`
+	PendingOps []string              `json:"pending_ops"`
+	Busy       []Process             `json:"busy,omitempty"`
+	// Overlapping lists other enrolled instances whose roots overlap the
+	// planned roots (they would be superseded by a migrate or clone).
+	Overlapping   []string `json:"overlapping,omitempty"`
+	RegistryCheck string   `json:"registry_integrity,omitempty"`
 }
 
 // BodyAction is how the body is handled.
@@ -143,6 +148,8 @@ type Plan struct {
 	InstallService bool `json:"install_service"`
 	// Record is written on the target when the swap succeeds (migrate, clone).
 	Record *enroll.Record `json:"record,omitempty"`
+	// Supersedes are instances marked superseded when the swap succeeds.
+	Supersedes []string `json:"supersedes,omitempty"`
 }
 
 // BodyMove records a body directory carried across the swap.
@@ -290,4 +297,23 @@ func Describe(s string) string {
 		return "正在退回"
 	}
 	return fmt.Sprintf("状态 %s", s)
+}
+
+// OldEntry is one superseded instance and what cleaning it up removes.
+type OldEntry struct {
+	InstanceID string              `json:"instance_id"`
+	Superseded enroll.Supersession `json:"superseded"`
+	Roots      map[string]string   `json:"roots"`
+	// Leftovers are the directories the superseding operation kept.
+	Leftovers []PrevEntry `json:"leftovers"`
+}
+
+// OldListResult lists superseded instances.
+type OldListResult struct {
+	Entries []OldEntry `json:"entries"`
+}
+
+// OldCleanupParams names the superseded instance to remove.
+type OldCleanupParams struct {
+	InstanceID string `json:"instance_id"`
 }

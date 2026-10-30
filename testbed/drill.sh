@@ -337,7 +337,13 @@ EOF
 			unit_active "$ms" "$munit" && fail "$ms: source still running after migrate" || pass "$ms: source service stopped (files untouched)"
 			prefix="$(ssh -T -o BatchMode=yes -- "$mt" "python3 -c 'import json,os; d=json.load(open(os.path.expanduser(\"~/.config/valise/instances/$mi.json\"))); print((d[\"provenance\"].get(\"npm\") or {}).get(\"prefix\",\"\"))'")"
 			case "$prefix" in "" | "$(ssh -T -o BatchMode=yes -- "$mt" 'echo $HOME')"/*) pass "$mt: instance record describes the target" ;; *) fail "$mt: record prefix $prefix is the source's" ;; esac
-			V prev drop "$mt" "$(opid)" --yes >/dev/null && pass "$mt: prev dropped" || fail "$mt: prev drop"
+			# The clone it replaced is marked superseded, not deleted.
+			old="$(V old list "$mt")"
+			echo "$old" | grep -q "$mi-clone（已被取代）：.* 由 $mi 取代" && pass "$mt: $mi-clone marked superseded" || { fail "$mt: $mi-clone not marked superseded"; echo "$old"; }
+			V seal "$mt" "$mi-clone" --tier soul >/dev/null 2>&1 && fail "$mt: sealed a superseded instance" || pass "$mt: superseded instance refuses to seal"
+			V old cleanup "$mt" "$mi-clone" --yes >/dev/null && ! V old list "$mt" | grep -q "$mi-clone" \
+				&& pass "$mt: old cleanup removed $mi-clone and its kept directory" || fail "$mt: old cleanup"
+			unit_active "$mt" "$munit" && pass "$mt: $munit still active after cleanup" || fail "$mt: cleanup stopped $munit"
 		else
 			fail "$ms->$mt: migrate"; cat "$work/revive.out"
 		fi

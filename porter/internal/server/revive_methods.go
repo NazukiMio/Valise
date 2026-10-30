@@ -84,6 +84,17 @@ func init() {
 		removed, err := porterrevive.PrevDrop(store(s), p.OpID)
 		return map[string][]string{"removed": removed}, err
 	}
+	methods[revive.MethodOldList] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		return porterrevive.OldList(store(s))
+	}
+	methods[revive.MethodOldCleanup] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[revive.OldCleanupParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		removed, err := porterrevive.OldCleanup(store(s), p.InstanceID)
+		return map[string][]string{"removed": removed}, err
+	}
 	methods[revive.MethodService] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[revive.ServiceParams](raw)
 		if err != nil {

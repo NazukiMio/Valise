@@ -89,6 +89,7 @@ func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.Inspect
 	if enroll.ValidInstanceID(p.InstanceID) == nil {
 		res.Record, _ = porterenroll.ReadRecord(e.Home, p.InstanceID)
 	}
+	res.Overlapping = overlapping(e.Home, p.InstanceID, p.Roots)
 	pend, err := s.Pending()
 	if err != nil {
 		return nil, err
@@ -421,4 +422,32 @@ func integrity(path string) error {
 // classifierFor builds the classifier of a plan.
 func classifierFor(p revive.Plan) *profile.Classifier {
 	return profile.NewClassifier(&p.Profile, p.Overrides)
+}
+
+// overlapping lists other enrolled, not yet superseded instances with a root
+// equal to, inside or containing one of the planned roots.
+func overlapping(home, self string, roots []revive.RootPlan) []string {
+	recs, _ := porterenroll.ListRecords(home)
+	var out []string
+	for _, r := range recs {
+		if r.InstanceID == self || r.Superseded != nil {
+			continue
+		}
+	match:
+		for _, a := range r.Roots {
+			for _, b := range roots {
+				if within(a, b.Path) || within(b.Path, a) {
+					out = append(out, r.InstanceID)
+					break match
+				}
+			}
+		}
+	}
+	return out
+}
+
+// within reports whether path is dir or inside it.
+func within(path, dir string) bool {
+	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 }
