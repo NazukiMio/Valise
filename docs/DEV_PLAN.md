@@ -21,6 +21,11 @@
   - 单元测试覆盖 keystore 的往返加解密、错误口令、篡改检测，以及用标准 `age` CLI 解开 `keystore.age`。
   - fake-ssh 测试覆盖 RPC 往返。
   - 在三台靶机上部署 porter，`valise doctor` 输出正确。在 `ubuntu-vm-x86` 上确认 porter 安装到 `~/.local/bin`，全程不需要 sudo。
+- **进度**（2026-10-30）：
+  - 已完成：交付 1–8 的代码与测试；CLAUDE.md 自检清单全部通过（`testbed/selfcheck.sh`）；keystore 的往返、错误口令、篡改检测和标准 `age` CLI 解密均有单元测试；fake-ssh 覆盖 RPC 往返与连接失败、延迟、中途断线三种故障注入。
+  - 额外验证：在开发容器内用本机 sshd（127.0.0.1，非 root、无 sudo 用户）跑通 `testbed/drill.sh` 的 M1 步骤，并确认错误架构的 porter 会被拒绝、旧 porter 保持不变。**这不能代替靶机验收。**
+  - 未完成：三台靶机上的 `testbed/drill.sh` 验收（需要在能连到靶机的 Mac 上执行）。
+  - 尚未配置：Release 的 minisign 签名公钥（`client/porter.ReleasePublicKey`）。配置之前，只能用 `--local` 部署。
 
 ## M2：Profile 引擎与登记
 
