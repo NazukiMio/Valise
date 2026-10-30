@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -37,7 +38,25 @@ type RPCClient struct {
 // Dial starts the RPC session and performs hello, refusing a porter with a
 // different protocol major version.
 func Dial(ctx context.Context, t *Transport, porterPath, clientVersion string) (*RPCClient, *rpc.HelloResult, error) {
-	cmd, err := t.Command(Quote(porterPath) + " rpc")
+	return DialEnv(ctx, t, porterPath, clientVersion, nil)
+}
+
+var envRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*=[A-Za-z0-9_.=:-]*$`)
+
+// DialEnv is Dial with extra environment variables for this porter process
+// (used only for fault injection in drills).
+func DialEnv(ctx context.Context, t *Transport, porterPath, clientVersion string, env []string) (*RPCClient, *rpc.HelloResult, error) {
+	prefix := ""
+	for _, kv := range env {
+		if !envRe.MatchString(kv) {
+			return nil, nil, fmt.Errorf("invalid environment entry %q", kv)
+		}
+		prefix += kv + " "
+	}
+	if prefix != "" {
+		prefix = "env " + prefix
+	}
+	cmd, err := t.Command(prefix + Quote(porterPath) + " rpc")
 	if err != nil {
 		return nil, nil, err
 	}

@@ -37,6 +37,12 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   sync <服务器> <目标>                            把服务器金库同步到异地
   pull <服务器> [--to 目录]                       把金库拉取到本机
   verify --vault <目录> [--key]                   校验本机金库；--key 用私钥解密并逐个文件校验
+  revive <服务器> --snapshot <id> [--mode rollback|migrate|clone] [--from <服务器>] [--id 新实例]
+         [--root id=路径]... [--allow-draft-profile] [--dry-run] [--yes]
+                                                 复活：先出计划，暂存校验后再确认交换
+  revive resume <服务器> <op> --continue|--back   处理未完成的复活操作
+  prev list <服务器> | prev drop <服务器> <op>    查看 / 删除交换前保留的旧状态
+  key unregister <服务器> [--recipient age1…]     移除收件人公钥（旧快照仍可被它解开）
   key init                                       生成新的密钥（口令至少 12 个字符）
   key import --file <身份文件>                    导入已有的 age 身份
   key show                                       显示公钥与指纹
@@ -100,6 +106,12 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.enroll(ctx, args[1:])
 	case args[0] == "porter" && len(args) > 1 && args[1] == "deploy":
 		return c.deploy(ctx, args[2:])
+	case args[0] == "revive":
+		return c.revive(ctx, args[1:])
+	case args[0] == "prev" && len(args) > 1:
+		return c.prev(ctx, args[1:])
+	case args[0] == "key" && len(args) > 1 && args[1] == "unregister":
+		return c.keyUnregister(ctx, args[2:])
 	case args[0] == "key" && len(args) > 1 && args[1] == "register":
 		return c.keyRegister(ctx, args[2:])
 	case args[0] == "key" && len(args) > 1:
