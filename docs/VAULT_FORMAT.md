@@ -100,6 +100,7 @@
   "tier": "soul | soul-secrets | full | raw",
   "profile": { "id": "openclaw", "version": 2, "status": "draft | verified" },
   "provenance": { "...": "登记时的来源记录" },
+  "local_overrides": [ { "root": "state", "glob": "plugins/foo/**", "category": "memory" } ],
   "created_at": "…",
   "epoch": 1,
   "roots": { "state": "/home/u/.openclaw", "workspace": "/home/u/.openclaw/workspace" },
@@ -109,6 +110,8 @@
   "notes": { "unstable": ["…"], "unclassified_count": 3 }
 }
 ```
+
+`local_overrides` 是封存时这个实例生效的补充归类规则（与实例记录中的同名字段相同），可选；没有这个字段的快照按空列表处理。
 
 文件列表（`format` 为 `valise-files/1`；`files` 与 `symlinks` 都按 `root`、`path` 的字节序排序）：
 

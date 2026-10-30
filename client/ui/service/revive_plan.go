@@ -239,7 +239,7 @@ func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase st
 			rootsMap[r.ID] = r.Path
 		}
 		rec := enroll.Record{InstanceID: instance, ProfileID: prof.ID, ProfileVersion: prof.ProfileVersion, Roots: rootsMap,
-			Provenance: head.Provenance, LocalOverrides: []profile.Override{}, EnrolledAt: time.Now().UTC()}
+			Provenance: head.Provenance, LocalOverrides: append([]profile.Override{}, head.LocalOverrides...), EnrolledAt: time.Now().UTC()}
 		plan.Record = &rec
 	}
 

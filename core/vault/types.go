@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"valise/core/enroll"
+	"valise/core/profile"
 )
 
 // Format identifiers.
@@ -104,19 +105,22 @@ type BlobEntry struct {
 
 // Snapshot is the age-encrypted snapshot header.
 type Snapshot struct {
-	Format      string            `json:"format"`
-	SnapshotID  string            `json:"snapshot_id"`
-	InstanceID  string            `json:"instance_id"`
-	Tier        string            `json:"tier"`
-	Profile     ProfileRef        `json:"profile"`
-	Provenance  enroll.Provenance `json:"provenance"`
-	CreatedAt   time.Time         `json:"created_at"`
-	Epoch       int               `json:"epoch"`
-	Roots       map[string]string `json:"roots"`
-	FilesBlobs  []string          `json:"files_blobs"`
-	FilesSHA256 string            `json:"files_sha256"`
-	SQLite      []SQLiteNote      `json:"sqlite"`
-	Notes       Notes             `json:"notes"`
+	Format     string            `json:"format"`
+	SnapshotID string            `json:"snapshot_id"`
+	InstanceID string            `json:"instance_id"`
+	Tier       string            `json:"tier"`
+	Profile    ProfileRef        `json:"profile"`
+	Provenance enroll.Provenance `json:"provenance"`
+	// LocalOverrides are the instance's extra classification rules at seal
+	// time; carried into the record of a migrated or cloned instance.
+	LocalOverrides []profile.Override `json:"local_overrides,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
+	Epoch          int                `json:"epoch"`
+	Roots          map[string]string  `json:"roots"`
+	FilesBlobs     []string           `json:"files_blobs"`
+	FilesSHA256    string             `json:"files_sha256"`
+	SQLite         []SQLiteNote       `json:"sqlite"`
+	Notes          Notes              `json:"notes"`
 }
 
 // ProfileRef records which profile a snapshot was sealed with.

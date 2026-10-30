@@ -21,7 +21,7 @@ func sealedWorld(t *testing.T) (*Service, string, string, string) {
 	if _, err := s.KeyInit(pass); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Assign: []string{"state:notes/**=memory"}, Accept: true}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.KeyRegister(ctx, "box", "test"); err != nil {
@@ -138,8 +138,12 @@ func TestCloneToAnotherServer(t *testing.T) {
 	if err != nil || res.State != revive.StateRestored {
 		t.Fatalf("%+v %v", res, err)
 	}
-	if readFile(t, filepath.Join(home2, ".demo/.env")) != "K=v" || !strings.Contains(readFile(t, filepath.Join(home2, ".config/valise/instances/demo-clone.json")), home2) {
+	cloneRec := readFile(t, filepath.Join(home2, ".config/valise/instances/demo-clone.json"))
+	if readFile(t, filepath.Join(home2, ".demo/.env")) != "K=v" || !strings.Contains(cloneRec, home2) {
 		t.Fatal("clone not in place or record missing")
+	}
+	if !strings.Contains(cloneRec, `"glob": "notes/**"`) {
+		t.Fatalf("local_overrides not carried into the clone:\n%s", cloneRec)
 	}
 	if st, _ := os.Stat(filepath.Join(home2, ".demo/.env")); st.Mode().Perm() != 0o600 {
 		t.Fatalf("secret mode %v", st.Mode())
