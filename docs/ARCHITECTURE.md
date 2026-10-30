@@ -122,6 +122,7 @@
 - **body_patch**：git 来源且工作树 dirty 时，封存当时的 `git diff HEAD --binary` 作为虚拟文件 `valise:body.patch`。
 - **互斥**：同一台服务器同一时刻只允许一个封存或同步，用 `~/.local/state/valise/vault.lock`（flock）保证。
 - **临时文件**：SQLite 副本写在 `~/.local/state/valise/tmp/`，封存结束后由 Go 代码删除。
+- **变动统计**（M4 实现）：每次封存后，porter 更新 `~/.local/state/valise/seen/<instance_id>.json`，记录 identity、config、skills 类文件的路径、SHA-256、连续发生变化的封存次数。它只包含路径和哈希，不含文件内容；服务器本来就持有这些明文文件，因此不新增暴露面。这份统计是给 agent 和用户的归类线索（见 AGENT_KIT.md 第 3.1 节），不会自动修改任何分类。
 
 触发封存的方式有四种：
 

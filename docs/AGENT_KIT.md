@@ -30,12 +30,24 @@ agent-kit 属于健康区，**不是灾难恢复工具**。推荐用法是：用
 
 | 工具 | 输入 | 行为 | 限制 |
 | :--- | :--- | :--- | :--- |
-| `valise_status` | 无 | 返回实例 id、profile 及其核实状态、最近一次封存的时间和档位、是否已同步到异地、当前的体检 finding id 列表 | 只读 |
+| `valise_status` | 无 | 返回实例 id、profile 及其核实状态、最近一次封存的时间和档位、是否已同步到异地、当前的体检 finding id 列表，以及归类线索：未分类文件的路径、以及在本应稳定的类别（identity、config、skills）中连续多次封存都发生变化的文件路径（来自服务器端的变动统计，见 ARCHITECTURE.md 第 6 节） | 只读；只返回路径与计数，不返回任何文件内容 |
 | `valise_checkup` | 无 | 运行代码体检（见 ARCHITECTURE.md 第 9 节），返回各项指标和 finding id | 只读，最短间隔 10 分钟 |
 | `valise_seal` | `{ "reason": string }` | 封存一次 `soul` 档，返回快照 id | 只能封存 `soul` 档，最短间隔 10 分钟，`reason` 写入审计记录 |
-| `valise_propose_enrollment` | `{ "items": [{ "root", "path", "category", "reason" }] }` | 由代码校验路径确实存在、没有路径穿越、类别合法，然后以"待确认"状态保存 | 不得提议 `secrets` 以外的类别去覆盖已有的 `secrets` 规则；需要用户在客户端确认 |
+| `valise_propose_enrollment` | `{ "items": [{ "root", "path", "category", "reason" }] }` | 由代码校验路径确实存在、没有路径穿越、类别合法，然后以"待确认"状态保存；确认后写入该实例的 `local_overrides` | 不得提议 `secrets` 以外的类别去覆盖已有的 `secrets` 规则；把文件移出 `soul` 档的提议（改为 `ignore`、`cache`、`body`）标记为"降级"；所有提议都需要用户在客户端确认 |
 | `valise_handoff_begin` | 无 | 先封存一次 `soul` 档（包含当前会话），再返回快照 id、当前会话的统计数据、profile 中的 `handoff.targets`、每个目标的行数上限，以及 `new_session_hint` | 每次交接只能调用一次 |
 | `valise_handoff_finish` | `{ "snapshot_id" }` | 由代码检查交接目标文件确实被修改、没有超过行数上限，并且只有指定的区段发生了变化；写入审计记录，返回给用户看的下一步提示 | 检查失败时返回具体原因，原文件可以从快照中恢复 |
+
+### 3.1 由 agent 补充归类（M6）
+
+运行时文件（心跳、锁、临时状态）因 harness、因用户而异，不写进官方 profile，而是作为每个实例的本地覆盖处理：
+
+1. **代码提供证据**：`valise_status` 给出未分类文件，以及在 identity、config、skills 中连续多次封存都发生变化的文件。
+2. **agent 解释并提议**：agent 结合它对自身 harness 的了解，用 `valise_propose_enrollment` 提出归类和理由。
+3. **用户拍板**：客户端列出全部提议；"降级"提议（会让文件离开 `soul` 档）单独列出、单独确认，防止 agent 误判或被注入后让记忆从备份中消失。
+4. **兜底**：`raw` 档不受任何覆盖影响，始终包含实例目录下的全部文件。
+5. **回流**：如果某个模式对所有用户都成立，应以 PR 的形式带证据修改官方 profile。Valise 不收集遥测。
+
+在 M6 之前，用户可以用 `valise enroll --assign` 手动写入本地覆盖。
 
 ## 4. 四个技能
 
