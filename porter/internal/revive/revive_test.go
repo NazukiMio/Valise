@@ -324,3 +324,59 @@ func TestPendingOperationBlocksNewOne(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestIntruderIsMovedAsideOnBack(t *testing.T) {
+	w := newWorld(t)
+	p := w.plan()
+	w.stage(t, p, snapshot)
+	j, _ := w.r.Store.Load(p.OpID)
+	StopUnit(context.Background(), w.r.Env, "demo.service")
+	j.ServiceWasActive = true
+	w.r.Store.Set(j, revive.StateStopped)
+	os.Rename(j.Roots[0].Live, j.Roots[0].Prev)
+	w.r.Store.Set(j, revive.StateLiveMoved)
+	// Another process of the harness recreates the live path by writing to it.
+	write(t, filepath.Join(w.state, "shared-state.db"), "written during the crash", 0o644)
+
+	res, err := w.r.Resume(context.Background(), revive.ResumeParams{OpID: p.OpID, Action: "back"})
+	if err != nil || res.State != revive.StateRolledBack || len(res.Intruders) != 1 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if read(t, filepath.Join(w.state, "SOUL.md")) != "current soul" {
+		t.Fatal("pre-swap state not restored")
+	}
+	if read(t, filepath.Join(res.Intruders[0], "shared-state.db")) != "written during the crash" {
+		t.Fatal("intruder content not kept")
+	}
+	// prev drop also lists the intruder for removal.
+	if removed, _ := PrevDrop(w.r.Store, p.OpID); len(removed) == 0 || removed[0] != res.Intruders[0] {
+		t.Fatalf("%v", removed)
+	}
+}
+
+func TestBusyProcessesFromProc(t *testing.T) {
+	fake := t.TempDir()
+	old := procRoot
+	procRoot = fake
+	t.Cleanup(func() { procRoot = old })
+	mk := func(pid, cwd, fd, cgroup, cmd string) {
+		d := filepath.Join(fake, pid)
+		os.MkdirAll(filepath.Join(d, "fd"), 0o755)
+		os.Symlink(cwd, filepath.Join(d, "cwd"))
+		if fd != "" {
+			os.Symlink(fd, filepath.Join(d, "fd", "3"))
+		}
+		os.WriteFile(filepath.Join(d, "cgroup"), []byte(cgroup), 0o644)
+		os.WriteFile(filepath.Join(d, "cmdline"), []byte(cmd), 0o644)
+	}
+	mk("100", "/home/u", "/home/u/.demo/shared.db", "0::/user.slice/app.slice/other.scope", "dashboard\x00--port\x009119")
+	mk("101", "/home/u/.demo", "", "0::/user.slice/app.slice/demo.service", "gateway")
+	mk("102", "/tmp", "/home/u/.demo-other/x", "0::/", "unrelated")
+	got := busyProcesses([]string{"/home/u/.demo"}, "demo.service")
+	if len(got) != 1 || got[0].PID != 100 || got[0].Command != "dashboard --port 9119" {
+		t.Fatalf("%+v", got)
+	}
+	if got := busyProcesses([]string{"/home/u/.demo"}, ""); len(got) != 2 {
+		t.Fatalf("unit processes must count once the unit should be stopped: %+v", got)
+	}
+}

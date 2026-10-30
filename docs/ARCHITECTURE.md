@@ -190,6 +190,8 @@
 - **服务单元**：目标服务器上没有 profile 声明的服务单元时，执行 profile 的 `service.install_argv`（harness 自带的安装命令）。计划中逐字展示这条命令，用户确认后才执行。Valise 不自己写单元文件。
 - **克隆范围**：v0.1 的克隆只支持到另一台服务器（或另一个用户），同一服务器内的克隆推迟（通常需要改端口、服务名等 harness 配置）。
 - **独占凭据**：迁移默认在目标启动前停止原实例的服务（原实例的文件不动）；克隆默认不暂存匹配 `exclusive_secrets` 的文件。复活失败回退后，客户端重新启动原实例的服务。
+- **其他进程**：服务单元之外仍在使用状态目录的进程（工作目录或打开的文件位于 root 内，Linux 上通过 `/proc` 判断），会在交换期间按路径重新创建活动目录。计划阶段发现就列为阻断项；服务停止后、移走活动目录之前再检查一次，仍有就停止并退回。Valise 不会替用户结束这些进程。（M4 在靶机上发现：Hermes 的 dashboard 进程独立于网关服务运行。）
+- **路径被重新创建**：交换或退回时，如果目标路径已被其他进程重新创建，先把它改名挪到 `.valise-intruder-<op>-<root>` 保留（不删除），再完成改名，并在改名后核实；结果中提示用户检查。`valise prev drop` 一并清理。
 - **健康检查**：按 profile 的 `health.checks` 执行（`systemd_active`、`tcp`、`http`、`argv`）。没有服务单元的实例（前台运行）不由 Valise 启动：计划中说明，交换完成后结果为"已恢复、未启动"，不做健康检查。
 - **交换日志**：`~/.local/state/valise/journal/<op_id>.json`，每次状态变化原子写入并 fsync，内容包括模式、实例、各 root 的 live / stage / prev 路径、已搬动的身体目录、npm 身体的原版本、当前状态与时间。结束（`HEALTHY` 或 `ROLLED_BACK`）后移到 `journal/done/`，`hello` 只报告未完成的日志。
 - **故障注入**（仅用于演练与测试）：客户端隐藏参数 `--inject-fault health|crash-at=<状态>` 通过环境变量传给本次 porter：`health` 让健康检查一律失败；`crash-at` 在写入该状态后立即退出进程。

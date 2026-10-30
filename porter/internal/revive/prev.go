@@ -13,6 +13,7 @@ import (
 // leftovers are the directories an operation left next to live roots.
 func leftovers(j *revive.Journal) []string {
 	var out []string
+	out = append(out, j.Intruders...)
 	for _, jr := range j.Roots {
 		for _, p := range []string{jr.Prev, jr.Failed, jr.Stage} {
 			if exists(p) && strings.HasPrefix(filepath.Base(p), ".valise-") && p != jr.Live {

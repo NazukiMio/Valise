@@ -167,6 +167,14 @@ func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase st
 	rp.TargetArch = facts.OS + "/" + facts.Arch
 	plan := revive.Plan{OpID: revive.NewOpID(time.Now()), Mode: o.Mode, InstanceID: instance, SnapshotID: o.SnapshotID,
 		Tier: head.Tier, Profile: prof, Roots: roots, Carry: o.Mode == revive.ModeRollback}
+	if len(facts.Busy) > 0 {
+		var desc []string
+		for _, b := range facts.Busy {
+			desc = append(desc, fmt.Sprintf("pid %d（%s）", b.PID, b.Command))
+		}
+		rp.block("root_busy", "除了服务 "+firstUnit(prof)+" 之外，还有进程在使用状态目录："+strings.Join(desc, "；"),
+			"先停止这些进程再复活（Valise 不会替你结束它们）；否则交换期间它们可能重新创建目录")
+	}
 	if len(facts.PendingOps) > 0 {
 		rp.block("op_pending", "目标服务器上有未完成的操作："+strings.Join(facts.PendingOps, "、"), "先用 valise revive resume 处理")
 	}
@@ -366,6 +374,13 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 	default:
 		plan.Body = revive.BodyPlan{Action: revive.BodyKeep}
 	}
+}
+
+func firstUnit(p profile.Profile) string {
+	if p.Service != nil && len(p.Service.Candidates) > 0 {
+		return p.Service.Candidates[0].Unit
+	}
+	return "（无）"
 }
 
 func freshDoc(p profile.Profile) string {

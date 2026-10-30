@@ -96,6 +96,17 @@ func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.Inspect
 	for _, j := range pend {
 		res.PendingOps = append(res.PendingOps, j.Plan.OpID)
 	}
+	unit := ""
+	if p.Profile.Service != nil && len(p.Profile.Service.Candidates) > 0 {
+		unit = p.Profile.Service.Candidates[0].Unit
+	}
+	var paths []string
+	for _, f := range res.Roots {
+		if f.Exists {
+			paths = append(paths, f.Path)
+		}
+	}
+	res.Busy = busyProcesses(paths, unit)
 	return res, nil
 }
 

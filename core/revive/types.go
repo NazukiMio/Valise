@@ -103,6 +103,7 @@ type InspectResult struct {
 	Listening     []enroll.EntryState   `json:"entries"`
 	Record        *enroll.Record        `json:"record,omitempty"`
 	PendingOps    []string              `json:"pending_ops"`
+	Busy          []Process             `json:"busy,omitempty"`
 	RegistryCheck string                `json:"registry_integrity,omitempty"`
 }
 
@@ -179,7 +180,10 @@ type Journal struct {
 	ServiceWasActive bool          `json:"service_was_active"`
 	ServiceInstalled bool          `json:"service_installed,omitempty"`
 	StageVerified    bool          `json:"stage_verified"`
-	Error            string        `json:"error,omitempty"`
+	// Intruders are live paths recreated by other processes during the
+	// swap, moved aside and kept.
+	Intruders []string `json:"intruders,omitempty"`
+	Error     string   `json:"error,omitempty"`
 }
 
 // ManifestEntry is one staged file the target must verify.
@@ -228,6 +232,7 @@ type SwapResult struct {
 	Logs      string   `json:"logs,omitempty"` // service logs on rollback; shown, never audited
 	Message   string   `json:"message"`
 	Carried   int      `json:"carried_files"`
+	Intruders []string `json:"intruders,omitempty"`
 	HealthLog []string `json:"health_log,omitempty"`
 }
 
@@ -242,6 +247,13 @@ type PrevEntry struct {
 // PrevListResult lists kept states.
 type PrevListResult struct {
 	Entries []PrevEntry `json:"entries"`
+}
+
+// Process is another process using a root (blocks a swap).
+type Process struct {
+	PID     int    `json:"pid"`
+	Command string `json:"command"`
+	Path    string `json:"path"`
 }
 
 // ServiceParams starts or stops a user unit (used to stop the source of a

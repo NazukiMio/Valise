@@ -95,6 +95,20 @@ func (r *Runner) advance(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 				return nil, err
 			}
 		case revive.StateStopped:
+			var lives []string
+			for _, jr := range j.Roots {
+				if exists(jr.Live) {
+					lives = append(lives, jr.Live)
+				}
+			}
+			if busy := busyProcesses(lives, ""); len(busy) > 0 {
+				var desc []string
+				for _, b := range busy {
+					desc = append(desc, fmt.Sprintf("pid %d：%s", b.PID, b.Command))
+				}
+				return fail(valise.New("root_busy", "服务停止后，仍有进程在使用状态目录", "先停止这些进程再重试（Valise 不会替你结束它们）").
+					WithDetail(strings.Join(desc, "\n")))
+			}
 			if j.Plan.Carry {
 				n, err := r.carry(j)
 				if err != nil {
@@ -114,10 +128,11 @@ func (r *Runner) advance(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 			}
 		case revive.StateLiveMoved:
 			for _, jr := range j.Roots {
-				if !exists(jr.Live) {
-					if err := os.Rename(jr.Stage, jr.Live); err != nil {
-						return fail(err)
-					}
+				if !exists(jr.Stage) && exists(jr.Live) {
+					continue // already moved (resumed after a crash)
+				}
+				if err := r.placeAt(j, jr, jr.Stage); err != nil {
+					return fail(err)
 				}
 			}
 			if err := r.set(j, revive.StageMoved); err != nil {
@@ -171,6 +186,7 @@ func (r *Runner) advance(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 					res.Prev = append(res.Prev, jr.Prev)
 				}
 			}
+			res.Intruders = j.Intruders
 			if j.State == revive.StateHealthy {
 				res.Message = "复活完成，服务健康"
 			} else {
@@ -192,8 +208,8 @@ func (r *Runner) back(ctx context.Context, j *revive.Journal, why string) (*revi
 		return r.finishBack(ctx, j, why)
 	case revive.StateLiveMoved:
 		for _, jr := range j.Roots {
-			if jr.LiveExisted && exists(jr.Prev) && !exists(jr.Live) {
-				if err := os.Rename(jr.Prev, jr.Live); err != nil {
+			if jr.LiveExisted && exists(jr.Prev) {
+				if err := r.placeAt(j, jr, jr.Prev); err != nil {
 					return nil, err
 				}
 			}
@@ -240,13 +256,41 @@ func (r *Runner) rollback(ctx context.Context, j *revive.Journal, why string) (*
 		r.npmInstall(ctx, j.Plan.Body.Package, j.NPMOldVersion, j.Plan.Body.Registry)
 	}
 	for _, jr := range j.Roots {
-		if jr.LiveExisted && exists(jr.Prev) && !exists(jr.Live) {
-			if err := os.Rename(jr.Prev, jr.Live); err != nil {
+		if jr.LiveExisted && exists(jr.Prev) {
+			if err := r.placeAt(j, jr, jr.Prev); err != nil {
 				return nil, err
 			}
 		}
 	}
 	return r.finishBack(ctx, j, why)
+}
+
+// placeAt renames from to the live path. If something recreated the live
+// path in the meantime (another process of the harness writing by path), it
+// is moved aside to .valise-intruder-<op>-<root>, never deleted. The live
+// path is checked afterwards so a skipped rename can never be reported as
+// success.
+func (r *Runner) placeAt(j *revive.Journal, jr revive.JournalRoot, from string) error {
+	if exists(jr.Live) {
+		aside := sibling(jr.Live, "intruder", j.Plan.OpID, jr.ID)
+		for i := 2; exists(aside); i++ {
+			aside = sibling(jr.Live, fmt.Sprintf("intruder%d", i), j.Plan.OpID, jr.ID)
+		}
+		if err := os.Rename(jr.Live, aside); err != nil {
+			return err
+		}
+		j.Intruders = append(j.Intruders, aside)
+		if err := r.Store.Save(j); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(from, jr.Live); err != nil {
+		return valise.New("swap_rename_failed", "无法把 "+from+" 放到 "+jr.Live, "不要手动改动这些目录；用 valise revive resume 重试").WithDetail(err.Error())
+	}
+	if exists(from) || !exists(jr.Live) {
+		return valise.New("swap_rename_unverified", "改名后核实失败："+jr.Live, "不要手动改动这些目录；用 valise revive resume 重试")
+	}
+	return nil
 }
 
 func (r *Runner) finishBack(ctx context.Context, j *revive.Journal, why string) (*revive.SwapResult, error) {
@@ -275,6 +319,7 @@ func (r *Runner) finishBack(ctx context.Context, j *revive.Journal, why string) 
 			}
 		}
 	}
+	res.Intruders = j.Intruders
 	return res, nil
 }
 

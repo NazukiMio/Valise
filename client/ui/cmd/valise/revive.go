@@ -163,6 +163,9 @@ func printSwap(c *cli, r *revive.SwapResult) {
 	for _, p := range r.Prev {
 		fmt.Fprintf(w, "  保留：%s（用 valise prev drop 删除）\n", p)
 	}
+	for _, p := range r.Intruders {
+		fmt.Fprintf(w, "  注意：交换期间有其他进程重新创建了活动目录，已原样挪到 %s 保留，请检查\n", p)
+	}
 }
 
 func (c *cli) reviveResume(ctx context.Context, args []string) error {
