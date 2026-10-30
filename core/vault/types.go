@@ -1,14 +1,22 @@
-// Package vault defines the data structures of the public vault format
-// valise-vault/1 (docs/VAULT_FORMAT.md). Reading and writing come in M3.
+// Package vault implements the public vault format valise-vault/1
+// (docs/VAULT_FORMAT.md): types, the append-only writer used by porter, the
+// reader used by the client, and verification.
 package vault
 
-import "time"
+import (
+	"time"
+
+	"valise/core/enroll"
+)
 
 // Format identifiers.
 const (
 	FormatVault    = "valise-vault/1"
+	FormatDedupe   = "valise-dedupe/1"
 	FormatIndex    = "valise-index/1"
 	FormatSnapshot = "valise-snapshot/1"
+	FormatFiles    = "valise-files/1"
+	FormatMeta     = "valise-meta/1"
 )
 
 // Seal tiers.
@@ -18,13 +26,21 @@ const (
 	TierFull        = "full"
 )
 
-// Descriptor is the plaintext VAULT file.
+// Tiers lists every tier.
+var Tiers = []string{TierSoul, TierSoulSecrets, TierFull}
+
+// BodyPatchRoot and BodyPatchPath name the virtual body_patch file.
+const (
+	BodyPatchRoot = "valise"
+	BodyPatchPath = "body.patch"
+)
+
+// Descriptor is the plaintext VAULT file. It is written once.
 type Descriptor struct {
 	Format    string    `json:"format"`
 	VaultID   string    `json:"vault_id"`
 	CreatedAt time.Time `json:"created_at"`
 	Chunker   Chunker   `json:"chunker"`
-	Epochs    []Epoch   `json:"epochs"`
 }
 
 // Chunker holds the content-defined chunking parameters.
@@ -39,11 +55,22 @@ type Chunker struct {
 // DefaultChunker is the chunker of new vaults.
 var DefaultChunker = Chunker{Algo: "restic-chunker", Min: 512 << 10, Avg: 1 << 20, Max: 8 << 20, SmallFileMax: 1 << 20}
 
-// Epoch is one recipient set. Dedupe only happens within an epoch.
+// Epoch is epochs/<n>.json: one recipient set. Dedupe only happens within
+// an epoch.
 type Epoch struct {
 	Epoch                 int       `json:"epoch"`
 	Since                 time.Time `json:"since"`
 	RecipientFingerprints []string  `json:"recipient_fingerprints"`
+}
+
+// DedupeParams is the plaintext of keys/dedupe.<n>.age and of the server's
+// dedupe/<vault_id>.key.
+type DedupeParams struct {
+	Format     string `json:"format"`
+	VaultID    string `json:"vault_id"`
+	Epoch      int    `json:"epoch"`
+	HMACKey    string `json:"hmac_key"`
+	ChunkerPol string `json:"chunker_pol"`
 }
 
 // Index lists the blobs a seal added.
@@ -63,19 +90,21 @@ type BlobEntry struct {
 	PlainSize int64  `json:"plain_size"`
 }
 
-// Snapshot is the age-encrypted snapshot manifest.
+// Snapshot is the age-encrypted snapshot header.
 type Snapshot struct {
-	Format     string            `json:"format"`
-	SnapshotID string            `json:"snapshot_id"`
-	InstanceID string            `json:"instance_id"`
-	Tier       string            `json:"tier"`
-	Profile    ProfileRef        `json:"profile"`
-	Provenance map[string]any    `json:"provenance"`
-	CreatedAt  time.Time         `json:"created_at"`
-	Roots      map[string]string `json:"roots"`
-	Files      []File            `json:"files"`
-	Symlinks   []Symlink         `json:"symlinks"`
-	Notes      Notes             `json:"notes"`
+	Format      string            `json:"format"`
+	SnapshotID  string            `json:"snapshot_id"`
+	InstanceID  string            `json:"instance_id"`
+	Tier        string            `json:"tier"`
+	Profile     ProfileRef        `json:"profile"`
+	Provenance  enroll.Provenance `json:"provenance"`
+	CreatedAt   time.Time         `json:"created_at"`
+	Epoch       int               `json:"epoch"`
+	Roots       map[string]string `json:"roots"`
+	FilesBlobs  []string          `json:"files_blobs"`
+	FilesSHA256 string            `json:"files_sha256"`
+	SQLite      []SQLiteNote      `json:"sqlite"`
+	Notes       Notes             `json:"notes"`
 }
 
 // ProfileRef records which profile a snapshot was sealed with.
@@ -83,6 +112,26 @@ type ProfileRef struct {
 	ID      string `json:"id"`
 	Version int    `json:"version"`
 	Status  string `json:"status"`
+}
+
+// SQLiteNote records a database sealed from a VACUUM INTO copy.
+type SQLiteNote struct {
+	Root           string   `json:"root"`
+	Path           string   `json:"path"`
+	StrippedTables []string `json:"stripped_tables,omitempty"`
+}
+
+// Notes records what happened while sealing.
+type Notes struct {
+	Unstable          []string `json:"unstable"`
+	UnclassifiedCount int      `json:"unclassified_count"`
+}
+
+// Files is the content-addressed file list (valise-files/1).
+type Files struct {
+	Format   string    `json:"format"`
+	Files    []File    `json:"files"`
+	Symlinks []Symlink `json:"symlinks"`
 }
 
 // File is one regular file in a snapshot.
@@ -104,16 +153,11 @@ type Symlink struct {
 	Target string `json:"target"`
 }
 
-// Notes records what happened while sealing.
-type Notes struct {
-	SQLiteVacuumed    []string `json:"sqlite_vacuumed"`
-	Unstable          []string `json:"unstable"`
-	UnclassifiedCount int      `json:"unclassified_count"`
-}
-
 // Meta is the plaintext <snapshot_id>.meta.json. It never contains paths or
 // file names.
 type Meta struct {
+	Format     string    `json:"format"`
+	SnapshotID string    `json:"snapshot_id"`
 	InstanceID string    `json:"instance_id"`
 	Tier       string    `json:"tier"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -122,4 +166,22 @@ type Meta struct {
 	AddedBytes int64     `json:"added_bytes"`
 	Epoch      int       `json:"epoch"`
 	ProfileID  string    `json:"profile_id"`
+}
+
+// TierCategories are the categories each tier seals
+// (docs/ARCHITECTURE.md section 5).
+var TierCategories = map[string][]string{
+	TierSoul:        {"identity", "memory", "skills", "config", "sessions", "state", "body_patch"},
+	TierSoulSecrets: {"identity", "memory", "skills", "config", "sessions", "state", "body_patch", "secrets"},
+	TierFull:        {"identity", "memory", "skills", "config", "sessions", "state", "body_patch", "secrets", "workspace"},
+}
+
+// InTier reports whether category is sealed by tier.
+func InTier(tier, category string) bool {
+	for _, c := range TierCategories[tier] {
+		if c == category {
+			return true
+		}
+	}
+	return false
 }
