@@ -7,7 +7,10 @@ import (
 	"valise/core/enroll"
 	"valise/core/rpc"
 	"valise/core/valise"
+	"valise/core/vault"
+	"valise/core/vaultrpc"
 	porterenroll "valise/porter/internal/enroll"
+	"valise/porter/internal/seal"
 )
 
 // session holds per-connection state.
@@ -62,9 +65,58 @@ var methods = map[string]handler{
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
 		}
-		path, err := porterenroll.WriteRecord(s.cfg.Home, p.Record)
+		path, err := porterenroll.WriteRecord(s.cfg.Home, p.Record, p.Profile)
 		return enroll.InstanceWriteResult{Path: path}, err
 	},
+}
+
+func init() {
+	paths := func(s *session) seal.Paths { return seal.Paths{Home: s.cfg.Home} }
+	methods[vaultrpc.MethodRecipientAdd] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.RecipientAddParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		added, all, err := seal.AddRecipient(paths(s), p.Recipient)
+		if err != nil {
+			return nil, err
+		}
+		res := vaultrpc.RecipientAddResult{Added: added, Fingerprints: []string{}}
+		for _, r := range all {
+			res.Fingerprints = append(res.Fingerprints, vault.Fingerprint(r))
+		}
+		return res, nil
+	}
+	methods[vaultrpc.MethodSeal] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.SealParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.Seal(ctx, s.loginEnv(ctx), paths(s), p, vaultrpc.InitiatorClient)
+	}
+	methods[vaultrpc.MethodStatus] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		return seal.Status(paths(s))
+	}
+	methods[vaultrpc.MethodVerify] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		return seal.Verify(paths(s))
+	}
+	methods[vaultrpc.MethodFiles] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		return seal.Files(paths(s))
+	}
+	methods[vaultrpc.MethodTargetSet] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.TargetSetParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return struct{}{}, seal.SetTarget(paths(s), p.Target)
+	}
+	methods[vaultrpc.MethodSync] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.SyncParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.Sync(ctx, s.loginEnv(ctx), paths(s), p.Target, vaultrpc.InitiatorClient)
+	}
 }
 
 var errInvalidParams = &rpc.Error{Code: rpc.CodeInvalidParams, Message: "invalid params"}

@@ -1,0 +1,301 @@
+package seal
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"math/rand"
+
+	"filippo.io/age"
+
+	"valise/core/enroll"
+	"valise/core/profile"
+	"valise/core/valise"
+	"valise/core/vault"
+	"valise/core/vaultrpc"
+	porterenroll "valise/porter/internal/enroll"
+)
+
+type world struct {
+	p     Paths
+	id    *age.X25519Identity
+	state string
+	db    *sql.DB
+	env   *porterenroll.Env
+}
+
+func write(t *testing.T, path, content string) {
+	t.Helper()
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	if err := os.WriteFile(path, []byte(content), 0o640); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// newWorld enrolls a fixture instance (harness names here are fixtures).
+func newWorld(t *testing.T) *world {
+	t.Helper()
+	home := t.TempDir()
+	w := &world{p: Paths{Home: home}, state: filepath.Join(home, ".demo"),
+		env: &porterenroll.Env{Home: home, Vars: []string{"PATH=/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin"}}}
+	write(t, filepath.Join(w.state, "SOUL.md"), "soul")
+	write(t, filepath.Join(w.state, ".env"), "API_KEY=secret")
+	write(t, filepath.Join(w.state, "workspace/notes.md"), "notes")
+	write(t, filepath.Join(w.state, "logs/x.log"), "log")
+	write(t, filepath.Join(w.state, "mystery.bin"), "?")
+	session := make([]byte, 300<<10)
+	rand.New(rand.NewSource(7)).Read(session)
+	write(t, filepath.Join(w.state, "sessions/a.jsonl"), string(session))
+	os.Symlink("SOUL.md", filepath.Join(w.state, "soul-link"))
+	db, err := sql.Open("sqlite", filepath.Join(w.state, "agent.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"PRAGMA journal_mode=wal", "CREATE TABLE auth_store(k TEXT)", "CREATE TABLE sessions(v TEXT)",
+		"INSERT INTO auth_store VALUES('TOPSECRET-TOKEN')", "INSERT INTO sessions VALUES('hello session')"} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	w.db = db // kept open so the -wal file exists while sealing
+	t.Cleanup(func() { db.Close() })
+
+	p := profile.Profile{ID: "demo", ProfileVersion: 2, Status: "draft",
+		Paths: []profile.PathRule{
+			{Root: "state", Glob: ".env", Category: "secrets"},
+			{Root: "state", Glob: "SOUL.md", Category: "identity"},
+			{Root: "state", Glob: "sessions/**", Category: "sessions"},
+			{Root: "state", Glob: "agent.sqlite", Category: "state"},
+			{Root: "state", Glob: "workspace/**", Category: "workspace"},
+			{Root: "state", Glob: "logs/**", Category: "ignore"},
+			{Root: "state", Glob: "soul-link", Category: "identity"},
+		},
+		Consistency: &profile.Consistency{SQLite: []profile.SQLiteRef{{Root: "state", Glob: "agent.sqlite", SecretTables: []string{"auth_store", "missing_table"}}}},
+	}
+	rec := enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 2, Roots: map[string]string{"state": w.state}}
+	if _, err := porterenroll.WriteRecord(home, rec, p); err != nil {
+		t.Fatal(err)
+	}
+	w.id, _ = age.GenerateX25519Identity()
+	if _, _, err := AddRecipient(w.p, w.id.Recipient().String()); err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
+func (w *world) seal(t *testing.T, tier string) *vaultrpc.SealReport {
+	t.Helper()
+	rep, err := Seal(context.Background(), w.env, w.p, vaultrpc.SealParams{InstanceID: "demo", Tier: tier, Reason: "test"}, vaultrpc.InitiatorClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rep
+}
+
+func (w *world) restore(t *testing.T, sid string) map[string][]byte {
+	t.Helper()
+	v, err := vault.Open(w.p.Vault())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, files, err := v.Snapshot(sid, w.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string][]byte{}
+	for _, f := range files.Files {
+		var b bytes.Buffer
+		if err := v.WriteFile(f, &b, w.id); err != nil {
+			t.Fatal(err)
+		}
+		out[f.Root+":"+f.Path] = b.Bytes()
+	}
+	for _, s := range files.Symlinks {
+		out["link "+s.Root+":"+s.Path] = []byte(s.Target)
+	}
+	return out
+}
+
+func dbRows(t *testing.T, content []byte, table string) int {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "x.sqlite")
+	os.WriteFile(p, content, 0o600)
+	db, _ := sql.Open("sqlite", p)
+	defer db.Close()
+	var n int
+	if err := db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func TestSealTiers(t *testing.T) {
+	w := newWorld(t)
+	soul := w.seal(t, vault.TierSoul)
+	if soul.Epoch != 1 || !soul.NewEpoch || soul.UnclassifiedCount != 1 || len(soul.SQLite) != 1 ||
+		len(soul.SQLite[0].StrippedTables) != 1 || soul.SQLite[0].StrippedTables[0] != "auth_store" {
+		t.Fatalf("%+v", soul)
+	}
+	got := w.restore(t, soul.SnapshotID)
+	if _, ok := got["state:.env"]; ok {
+		t.Fatal("soul tier contains a secrets file")
+	}
+	if _, ok := got["state:workspace/notes.md"]; ok {
+		t.Fatal("soul tier contains workspace")
+	}
+	if string(got["state:SOUL.md"]) != "soul" || string(got["link state:soul-link"]) != "SOUL.md" {
+		t.Fatalf("%v", got)
+	}
+	for k := range got {
+		if strings.HasSuffix(k, "-wal") || strings.HasSuffix(k, "-shm") || strings.Contains(k, "logs/") {
+			t.Fatalf("unexpected %s", k)
+		}
+	}
+	db := got["state:agent.sqlite"]
+	if dbRows(t, db, "auth_store") != 0 || dbRows(t, db, "sessions") != 1 || bytes.Contains(db, []byte("TOPSECRET")) {
+		t.Fatal("secret table not stripped from the soul copy")
+	}
+	// The live database is untouched.
+	var n int
+	w.db.QueryRow("SELECT count(*) FROM auth_store").Scan(&n)
+	if n != 1 {
+		t.Fatal("live database was modified")
+	}
+
+	ss := w.seal(t, vault.TierSoulSecrets)
+	got = w.restore(t, ss.SnapshotID)
+	if string(got["state:.env"]) != "API_KEY=secret" || dbRows(t, got["state:agent.sqlite"], "auth_store") != 1 || len(ss.SQLite[0].StrippedTables) != 0 {
+		t.Fatal("soul-secrets must hold secrets and the unstripped database")
+	}
+	full := w.seal(t, vault.TierFull)
+	if string(w.restore(t, full.SnapshotID)["state:workspace/notes.md"]) != "notes" {
+		t.Fatal("full tier lacks workspace")
+	}
+
+	// Unchanged instance: the second seal adds < 1% of the first.
+	again := w.seal(t, vault.TierSoul)
+	if again.AddedBytes*100 >= soul.AddedBytes || again.NewEpoch {
+		t.Fatalf("second seal added %d of %d", again.AddedBytes, soul.AddedBytes)
+	}
+	if probs, err := vault.VerifyNoKey(w.p.Vault()); err != nil || len(probs) != 0 {
+		t.Fatal(probs, err)
+	}
+	audit, _ := os.ReadFile(w.p.Audit())
+	if strings.Count(string(audit), `"op":"seal"`) != 4 || strings.Contains(string(audit), "secret") {
+		t.Fatalf("audit: %s", audit)
+	}
+}
+
+func TestSealErrors(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	code := func(err error) string {
+		ue, _ := valise.As(err)
+		if ue == nil {
+			return ""
+		}
+		return ue.Code
+	}
+	if _, err := Seal(ctx, w.env, w.p, vaultrpc.SealParams{InstanceID: "demo", Tier: "everything"}, "client"); code(err) != "tier_invalid" {
+		t.Fatal(err)
+	}
+	if _, err := Seal(ctx, w.env, w.p, vaultrpc.SealParams{InstanceID: "nope", Tier: "soul"}, "client"); code(err) != "instance_not_enrolled" {
+		t.Fatal(err)
+	}
+	unlock, err := w.p.Lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Seal(ctx, w.env, w.p, vaultrpc.SealParams{InstanceID: "demo", Tier: "soul"}, "client"); code(err) != "vault_busy" {
+		t.Fatal(err)
+	}
+	unlock()
+	os.Remove(w.p.Recipients())
+	if _, err := Seal(ctx, w.env, w.p, vaultrpc.SealParams{InstanceID: "demo", Tier: "soul"}, "client"); code(err) != "no_recipients" {
+		t.Fatal(err)
+	}
+}
+
+func TestBodyPatch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	w := newWorld(t)
+	body := filepath.Join(w.state, "agent-src")
+	write(t, filepath.Join(body, "main.py"), "print(1)\n")
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "i"}} {
+		if b, err := exec.Command("git", append([]string{"-C", body}, args...)...).CombinedOutput(); err != nil {
+			t.Fatal(string(b))
+		}
+	}
+	rec, _ := porterenroll.ReadRecord(w.p.Home, "demo")
+	rec.Provenance = enroll.Provenance{Kind: "git", Git: &enroll.GitRecord{Path: body}}
+	prof, _ := porterenroll.ReadProfile(w.p.Home, "demo")
+	porterenroll.WriteRecord(w.p.Home, *rec, *prof)
+
+	if rep := w.seal(t, vault.TierSoul); rep.BodyPatch {
+		t.Fatal("clean work tree produced a patch")
+	}
+	write(t, filepath.Join(body, "main.py"), "print(2)\n")
+	rep := w.seal(t, vault.TierSoul)
+	patch := w.restore(t, rep.SnapshotID)["valise:body.patch"]
+	if !rep.BodyPatch || !bytes.Contains(patch, []byte("+print(2)")) {
+		t.Fatalf("%+v %s", rep, patch)
+	}
+}
+
+func TestVaultOps(t *testing.T) {
+	w := newWorld(t)
+	if st, err := Status(w.p); err != nil || st.Exists || len(st.Recipients) != 1 {
+		t.Fatal(st, err)
+	}
+	rep := w.seal(t, vault.TierSoul)
+	st, err := Status(w.p)
+	if err != nil || !st.Exists || len(st.Snapshots) != 1 || st.Snapshots[0].SnapshotID != rep.SnapshotID {
+		t.Fatal(st, err)
+	}
+	files, err := Files(w.p)
+	if err != nil || len(files.Files) < 6 {
+		t.Fatal(files, err)
+	}
+	for _, f := range files.Files {
+		fh, err := OpenVaultFile(w.p, f.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fh.Close()
+	}
+	for _, bad := range []string{"../.config/valise/recipients.txt", "VAULT/../../x", "packs/tmp-1"} {
+		if _, err := OpenVaultFile(w.p, bad); err == nil {
+			t.Errorf("%s served", bad)
+		}
+	}
+	if res, err := Verify(w.p); err != nil || len(res.Problems) != 0 {
+		t.Fatal(res, err)
+	}
+	for _, bad := range []vaultrpc.Target{
+		{Name: "Nas", Kind: "rsync", Dest: "nas:/x"},
+		{Name: "nas", Kind: "ftp", Dest: "nas:/x"},
+		{Name: "nas", Kind: "rclone", Dest: "nas:/x"},
+		{Name: "nas", Kind: "rsync", Dest: "nas:relative"},
+		{Name: "nas", Kind: "rsync", Dest: "-e:/x"},
+		{Name: "nas", Kind: "rsync", Dest: "nas:/x;rm"},
+	} {
+		if err := SetTarget(w.p, bad); err == nil && !strings.Contains(bad.Dest, ";") {
+			t.Errorf("%+v accepted", bad)
+		}
+	}
+	if err := SetTarget(w.p, vaultrpc.Target{Name: "nas", Kind: "rsync", Dest: "nas-test:/mnt/test/nas/valise-vault/"}); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = Status(w.p)
+	if len(st.Targets) != 1 || st.Targets[0].LastOK != nil {
+		t.Fatal(st.Targets)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"runtime"
 
 	"valise/core/rpc"
+	"valise/porter/internal/seal"
 	"valise/porter/internal/server"
 )
 
@@ -26,7 +27,8 @@ func main() {
 
 const usage = `用法：
   valise-porter version [--json]
-  valise-porter rpc`
+  valise-porter rpc
+  valise-porter vault-cat <金库内的相对路径>`
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -45,6 +47,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		cfg := server.Config{Version: version, Home: home}
 		if err := server.Serve(context.Background(), stdin, stdout, cfg); err != nil {
 			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		return 0
+	case "vault-cat":
+		if len(args) != 2 {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		f, err := seal.OpenVaultFile(seal.Paths{Home: home}, args[1])
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		defer f.Close()
+		if _, err := io.Copy(stdout, f); err != nil {
 			return 1
 		}
 		return 0

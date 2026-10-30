@@ -44,6 +44,8 @@ type Writer struct {
 	added      int64
 	plainTotal int64
 	now        time.Time
+
+	newEpochStarted bool
 }
 
 // Recipients parses age1… lines; blank lines and # comments are skipped.
@@ -113,6 +115,7 @@ func OpenWriter(dir string, recipients []string, keyFile func(vaultID string) st
 		if err := w.newEpoch(next, fps, kf); err != nil {
 			return nil, err
 		}
+		w.newEpochStarted = true
 	}
 	if w.hmacKey, err = hex.DecodeString(w.params.HMACKey); err != nil || len(w.hmacKey) != 32 {
 		return nil, errors.New("vault: bad dedupe key")
@@ -138,6 +141,9 @@ func OpenWriter(dir string, recipients []string, keyFile func(vaultID string) st
 	}
 	return w, nil
 }
+
+// NewEpoch reports whether opening the writer started a new epoch.
+func (w *Writer) NewEpoch() bool { return w.newEpochStarted }
 
 // Epoch returns the epoch this writer seals into.
 func (w *Writer) Epoch() int { return w.params.Epoch }

@@ -105,7 +105,7 @@ func (s *Service) Enroll(ctx context.Context, host string, opts EnrollOptions) (
 	if opts.Accept {
 		var w enroll.InstanceWriteResult
 		rec := enroll.RecordFrom(&rep, time.Now())
-		if err := c.Call(ctx, enroll.MethodInstanceWrite, enroll.InstanceWriteParams{Record: rec}, &w); err != nil {
+		if err := c.Call(ctx, enroll.MethodInstanceWrite, enroll.InstanceWriteParams{Record: rec, Profile: *loaded.Effective}, &w); err != nil {
 			return res, err
 		}
 		res.Written = w.Path

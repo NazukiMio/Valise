@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"valise/core/enroll"
+	"valise/core/profile"
 	"valise/core/valise"
 )
 
@@ -34,8 +35,29 @@ func ReadRecord(home, id string) (*enroll.Record, error) {
 	return &r, nil
 }
 
-// WriteRecord writes the record atomically with mode 0600.
-func WriteRecord(home string, r enroll.Record) (string, error) {
+// ProfilePath is instances/<id>.profile.json.
+func ProfilePath(home, id string) string {
+	return filepath.Join(InstancesDir(home), id+".profile.json")
+}
+
+// ReadProfile returns the profile stored at enrollment.
+func ReadProfile(home, id string) (*profile.Profile, error) {
+	b, err := os.ReadFile(ProfilePath(home, id))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, valise.New("instance_profile_missing", "服务器上没有实例 "+id+" 登记时的 profile", "重新登记：valise enroll <服务器> --accept")
+	}
+	if err != nil {
+		return nil, err
+	}
+	var p profile.Profile
+	if err := json.Unmarshal(b, &p); err != nil {
+		return nil, valise.New("instance_profile_corrupt", "服务器上的 profile 副本无法解析："+id, "重新登记以覆盖它")
+	}
+	return &p, nil
+}
+
+// WriteRecord writes the record and the profile atomically with mode 0600.
+func WriteRecord(home string, r enroll.Record, p profile.Profile) (string, error) {
 	if err := enroll.ValidInstanceID(r.InstanceID); err != nil {
 		return "", valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
 	}
@@ -43,30 +65,44 @@ func WriteRecord(home string, r enroll.Record) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
+	if p.ID == "" || p.ProfileVersion != r.ProfileVersion {
+		return "", valise.New("instance_profile_mismatch", "实例记录与 profile 版本不一致", "重新运行登记")
+	}
+	pb, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	if err := writeFile0600(dir, ProfilePath(home, r.InstanceID), pb); err != nil {
+		return "", err
+	}
 	b, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return "", err
 	}
 	final := filepath.Join(dir, r.InstanceID+".json")
-	tmp, err := os.CreateTemp(dir, "."+r.InstanceID+".tmp-*")
+	return final, writeFile0600(dir, final, b)
+}
+
+func writeFile0600(dir, final string, b []byte) error {
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer os.Remove(tmp.Name())
 	if err := tmp.Chmod(0o600); err != nil {
 		tmp.Close()
-		return "", err
+		return err
 	}
 	if _, err := tmp.Write(append(b, '\n')); err != nil {
 		tmp.Close()
-		return "", err
+		return err
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		return "", err
+		return err
 	}
 	if err := tmp.Close(); err != nil {
-		return "", err
+		return err
 	}
-	return final, os.Rename(tmp.Name(), final)
+	return os.Rename(tmp.Name(), final)
 }

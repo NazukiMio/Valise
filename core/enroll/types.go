@@ -243,9 +243,11 @@ type InstanceGetResult struct {
 	Record *Record `json:"record"`
 }
 
-// InstanceWriteParams writes an accepted record.
+// InstanceWriteParams writes an accepted record and the effective profile
+// it was enrolled with (used for sealing while the client is offline).
 type InstanceWriteParams struct {
-	Record Record `json:"record"`
+	Record  Record          `json:"record"`
+	Profile profile.Profile `json:"profile"`
 }
 
 // InstanceWriteResult reports where the record was written.

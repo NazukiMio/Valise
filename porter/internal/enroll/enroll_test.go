@@ -276,7 +276,7 @@ func TestInstanceRecordRoundTrip(t *testing.T) {
 		t.Fatalf("%v %v", r, err)
 	}
 	rec := enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": "/x"}}
-	path, err := WriteRecord(home, rec)
+	path, err := WriteRecord(home, rec, profile.Profile{ID: "demo", ProfileVersion: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,13 @@ func TestInstanceRecordRoundTrip(t *testing.T) {
 	if err != nil || got.Roots["state"] != "/x" {
 		t.Fatalf("%+v %v", got, err)
 	}
-	if _, err := WriteRecord(home, enroll.Record{InstanceID: "../evil"}); err == nil {
+	if p, err := ReadProfile(home, "demo"); err != nil || p.ID != "demo" {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if _, err := WriteRecord(home, enroll.Record{InstanceID: "demo", ProfileVersion: 2}, profile.Profile{ID: "demo", ProfileVersion: 1}); err == nil {
+		t.Fatal("version mismatch accepted")
+	}
+	if _, err := WriteRecord(home, enroll.Record{InstanceID: "../evil"}, profile.Profile{}); err == nil {
 		t.Fatal("path traversal in instance id accepted")
 	}
 }

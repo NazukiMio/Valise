@@ -122,19 +122,30 @@ func discover(ctx context.Context, e *Env, argv []string, vars map[string]string
 	return filepath.Clean(path), true
 }
 
-// classify walks every existing root. A file belongs only to the deepest
-// root containing it.
-func classify(r *enroll.Report, p *profile.Profile, overrides []profile.Override) {
-	c := profile.NewClassifier(p, overrides)
-	groups := map[[2]string]*enroll.UnclassifiedGroup{}
-	sqlite := map[enroll.FileRef]*enroll.SQLiteFile{}
-	sidecars := map[enroll.FileRef][]string{}
-	for _, root := range r.Roots {
+// Item is one entry found by Walk.
+type Item struct {
+	Root string
+	Rel  string // slash-separated, relative to the root
+	Abs  string
+	Info fs.FileInfo
+	// Symlink is set for symbolic links (never followed).
+	Symlink bool
+	// SidecarOf is the declared SQLite database this file belongs to.
+	SidecarOf string
+	Match     profile.Match
+	SQLite    *profile.SQLiteRef
+}
+
+// Walk visits every regular file and symlink of every existing root; a file
+// belongs only to the deepest root containing it. Unreadable paths are
+// passed to bad.
+func Walk(roots []enroll.Root, c *profile.Classifier, fn func(Item), bad func(root, rel string)) {
+	for _, root := range roots {
 		if !root.Exists {
 			continue
 		}
 		var nested []string
-		for _, other := range r.Roots {
+		for _, other := range roots {
 			if other.ID != root.ID && other.Exists && strings.HasPrefix(other.Dir(), root.Dir()+string(filepath.Separator)) {
 				nested = append(nested, other.Dir())
 			}
@@ -143,9 +154,7 @@ func classify(r *enroll.Report, p *profile.Profile, overrides []profile.Override
 			rel, _ := filepath.Rel(root.Dir(), path)
 			rel = filepath.ToSlash(rel)
 			if err != nil {
-				if len(r.Unreadable) < maxUnreadable {
-					r.Unreadable = append(r.Unreadable, enroll.FileRef{Root: root.ID, Path: rel})
-				}
+				bad(root.ID, rel)
 				if d != nil && d.IsDir() {
 					return fs.SkipDir
 				}
@@ -159,8 +168,10 @@ func classify(r *enroll.Report, p *profile.Profile, overrides []profile.Override
 				}
 				return nil
 			}
+			it := Item{Root: root.ID, Rel: rel, Abs: path}
 			if d.Type()&fs.ModeSymlink != 0 {
-				r.Symlinks++
+				it.Symlink = true
+				fn(it)
 				return nil
 			}
 			if !d.Type().IsRegular() {
@@ -168,41 +179,69 @@ func classify(r *enroll.Report, p *profile.Profile, overrides []profile.Override
 			}
 			info, err := d.Info()
 			if err != nil {
+				bad(root.ID, rel)
 				return nil
 			}
-			ref := enroll.FileRef{Root: root.ID, Path: rel}
+			it.Info = info
 			if db, ok := c.Sidecar(root.ID, rel); ok {
-				dbRef := enroll.FileRef{Root: root.ID, Path: db}
-				sidecars[dbRef] = append(sidecars[dbRef], strings.TrimPrefix(rel, db))
+				it.SidecarOf = db
+				fn(it)
 				return nil
 			}
-			m := c.Classify(root.ID, rel)
-			if m.Category == "" {
-				r.Unclassified.Files++
-				r.Unclassified.Bytes += info.Size()
-				key := [2]string{root.ID, groupPrefix(rel)}
-				g := groups[key]
-				if g == nil {
-					g = &enroll.UnclassifiedGroup{Root: root.ID, Prefix: key[1]}
-					groups[key] = g
-				}
-				g.Files++
-				g.Bytes += info.Size()
-				return nil
-			}
-			t := r.Categories[m.Category]
-			t.Files++
-			t.Bytes += info.Size()
-			r.Categories[m.Category] = t
-			if m.Category == profile.CategorySecrets {
-				r.Secrets = append(r.Secrets, ref)
-			}
+			it.Match = c.Classify(root.ID, rel)
 			if decl, ok := c.SQLite(root.ID, rel); ok {
-				sqlite[ref] = &enroll.SQLiteFile{FileRef: ref, Category: m.Category, SecretTables: decl.SecretTables}
+				it.SQLite = &decl
 			}
+			fn(it)
 			return nil
 		})
 	}
+}
+
+// classify tallies every file into the report.
+func classify(r *enroll.Report, p *profile.Profile, overrides []profile.Override) {
+	c := profile.NewClassifier(p, overrides)
+	groups := map[[2]string]*enroll.UnclassifiedGroup{}
+	sqlite := map[enroll.FileRef]*enroll.SQLiteFile{}
+	sidecars := map[enroll.FileRef][]string{}
+	Walk(r.Roots, c, func(it Item) {
+		ref := enroll.FileRef{Root: it.Root, Path: it.Rel}
+		switch {
+		case it.Symlink:
+			r.Symlinks++
+			return
+		case it.SidecarOf != "":
+			dbRef := enroll.FileRef{Root: it.Root, Path: it.SidecarOf}
+			sidecars[dbRef] = append(sidecars[dbRef], strings.TrimPrefix(it.Rel, it.SidecarOf))
+			return
+		case it.Match.Category == "":
+			r.Unclassified.Files++
+			r.Unclassified.Bytes += it.Info.Size()
+			key := [2]string{it.Root, groupPrefix(it.Rel)}
+			g := groups[key]
+			if g == nil {
+				g = &enroll.UnclassifiedGroup{Root: it.Root, Prefix: key[1]}
+				groups[key] = g
+			}
+			g.Files++
+			g.Bytes += it.Info.Size()
+			return
+		}
+		t := r.Categories[it.Match.Category]
+		t.Files++
+		t.Bytes += it.Info.Size()
+		r.Categories[it.Match.Category] = t
+		if it.Match.Category == profile.CategorySecrets {
+			r.Secrets = append(r.Secrets, ref)
+		}
+		if it.SQLite != nil {
+			sqlite[ref] = &enroll.SQLiteFile{FileRef: ref, Category: it.Match.Category, SecretTables: it.SQLite.SecretTables}
+		}
+	}, func(root, rel string) {
+		if len(r.Unreadable) < maxUnreadable {
+			r.Unreadable = append(r.Unreadable, enroll.FileRef{Root: root, Path: rel})
+		}
+	})
 	for ref, s := range sqlite {
 		sort.Strings(sidecars[ref])
 		s.Sidecars = sidecars[ref]
