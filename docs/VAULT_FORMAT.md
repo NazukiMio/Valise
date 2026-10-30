@@ -100,6 +100,7 @@
   "tier": "soul | soul-secrets | full | raw",
   "profile": { "id": "openclaw", "version": 2, "status": "draft | verified" },
   "provenance": { "...": "登记时的来源记录" },
+  "profile_doc": { "...": "封存时使用的完整 profile" },
   "local_overrides": [ { "root": "state", "glob": "plugins/foo/**", "category": "memory" } ],
   "created_at": "…",
   "epoch": 1,
@@ -110,6 +111,8 @@
   "notes": { "unstable": ["…"], "unclassified_count": 3 }
 }
 ```
+
+`profile_doc` 是封存时使用的完整 profile（已合并子 profile，JSON 形式，与实例的 `<id>.profile.json` 相同），可选。客户端没有同一 id 与版本的 profile 时，复活可以改用它（见 ARCHITECTURE.md 8.2.1）。
 
 `local_overrides` 是封存时这个实例生效的补充归类规则（与实例记录中的同名字段相同），可选；没有这个字段的快照按空列表处理。
 

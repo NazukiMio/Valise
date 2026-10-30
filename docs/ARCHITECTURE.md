@@ -180,7 +180,7 @@
 
 ### 8.2.1 实现细节（M4 确定）
 
-- **快照来源**：客户端先从快照所在服务器 `valise pull` 到本机，在内存中解密快照与 blob；明文以 tar 流经 `porter stage-write --op <id>` 写入目标服务器的暂存目录。profile 取客户端内置（或本地）的同 id profile，其 `profile_version` 必须与快照记录的一致，否则停止并提示先升级或重新登记。`status: draft` 的 profile 必须显式传入 `--allow-draft-profile`。
+- **快照来源**：客户端先从快照所在服务器 `valise pull` 到本机，在内存中解密快照与 blob；明文以 tar 流经 `porter stage-write --op <id>` 写入目标服务器的暂存目录。profile 优先取客户端内置（或本地）的同 id、同 `profile_version` 的 profile；没有时，改用快照头中的 `profile_doc`（封存时使用的完整 profile），计划中标明"来自快照，未经当前客户端审核"，并且必须显式传入 `--allow-snapshot-profile`（其中的服务安装命令等仍逐字展示）。两者都没有时停止。`status: draft` 的 profile 必须显式传入 `--allow-draft-profile`。
 - **目标路径**：目标的状态目录由目标服务器按 profile 的 `detect.state_dir_candidates` 解析（使用目标用户的 HOME）。其余 root：原路径在原状态目录下的，映射到新状态目录下的同一相对路径；在原 HOME 下的，映射到新 HOME 下；都不是时停止，由用户用 `--root <id>=<路径>` 指定。
 - **符号链接**：目标的 root 本身是符号链接时，v0.1 拒绝复活并说明原因（链接常由其他工具管理；交换时被改名的会是链接而不是数据）；封存不受影响。root 的上级路径中有符号链接（例如 macOS 的 `/var`、把 `/home` 软链到数据盘）不影响原子交换，允许。
 - **交换单位**：只交换没有嵌套在其他 root 内的 root（例如工作区在状态目录内时，只交换状态目录，工作区随之移动）。暂存目录为 `<root 的父目录>/.valise-stage-<op>-<root>`，必须与 root 在同一文件系统。

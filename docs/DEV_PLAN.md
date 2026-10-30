@@ -96,7 +96,8 @@
 
 ## M5：登录中继与 Web 入口
 
-- **状态**：`Blocked (depends on M4)`
+- **状态**：`In progress`（2026-10-31 开始）
+- **用户决定**（2026-10-31）：隧道由客户端自己在回环地址上监听、每个连接经 ControlMaster 用 `ssh -W` 转发（LOGIN_RELAY.md 第 5 节）；快照头保存封存时的完整 profile（`profile_doc`），客户端没有同版本 profile 时可显式改用它复活，避免 profile 升级后旧快照无法复活；验收用 `ubuntu-vm` 上 OpenClaw 的 OpenAI Codex 回环登录，由用户在本机浏览器授权，验收后登出；Web 入口空闲超时默认 30 分钟。
 - **交付**：LOGIN_RELAY.md 中的 `loopback_oauth`、`device_code`、`paste_code` 三种方式，以及 Web 入口；在 profile 中补充 `login` 声明。
 - **验收**：从 macOS 客户端，对靶机上至少一个真实的回环 OAuth 登录完成授权；本机端口被占用时给出明确的报错；Web 入口的三个状态独立展示。
 

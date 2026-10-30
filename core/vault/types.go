@@ -111,6 +111,9 @@ type Snapshot struct {
 	Tier       string            `json:"tier"`
 	Profile    ProfileRef        `json:"profile"`
 	Provenance enroll.Provenance `json:"provenance"`
+	// ProfileDoc is the effective profile the snapshot was sealed with; a
+	// client without that profile version may revive with it explicitly.
+	ProfileDoc *profile.Profile `json:"profile_doc,omitempty"`
 	// LocalOverrides are the instance's extra classification rules at seal
 	// time; carried into the record of a migrated or cloned instance.
 	LocalOverrides []profile.Override `json:"local_overrides,omitempty"`

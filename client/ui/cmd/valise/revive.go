@@ -49,6 +49,7 @@ func (c *cli) revive(ctx context.Context, args []string) error {
 	fs.StringVar(&o.InstanceID, "id", "", "")
 	fs.Var(mapFlag(o.Roots), "root", "")
 	fs.BoolVar(&o.AllowDraft, "allow-draft-profile", false, "")
+	fs.BoolVar(&o.AllowSnapshotProfile, "allow-snapshot-profile", false, "")
 	dry := fs.Bool("dry-run", false, "")
 	yes := fs.Bool("yes", false, "")
 	fs.StringVar(&o.Fault, "inject-fault", "", "")
@@ -100,6 +101,9 @@ func printPlan(c *cli, rp *service.RevivePlan) {
 	origin := "官方"
 	if rp.ProfileLocal {
 		origin = "本地，未经审核"
+	}
+	if rp.ProfileFromSnapshot {
+		origin = "来自快照，未经当前客户端审核"
 	}
 	status := "已核实"
 	if p.Profile.Status != "verified" {

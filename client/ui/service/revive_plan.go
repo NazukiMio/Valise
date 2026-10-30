@@ -28,28 +28,34 @@ type ReviveOptions struct {
 	InstanceID string            `json:"instance_id,omitempty"` // clone: the new id
 	Roots      map[string]string `json:"roots,omitempty"`       // --root id=path overrides
 	AllowDraft bool              `json:"allow_draft_profile"`
-	Fault      string            `json:"-"` // drills only
+	// AllowSnapshotProfile revives with the profile stored in the snapshot
+	// when the client has no profile of that id and version.
+	AllowSnapshotProfile bool   `json:"allow_snapshot_profile"`
+	Fault                string `json:"-"` // drills only
 }
 
 // RevivePlan is shown to the user before anything changes.
 type RevivePlan struct {
-	Plan          revive.Plan        `json:"plan"`
-	Snapshot      vault.Meta         `json:"snapshot"`
-	Target        string             `json:"target"`
-	From          string             `json:"from"`
-	TargetArch    string             `json:"target_arch"`
-	ProfileLocal  bool               `json:"profile_local"`
-	Files         int                `json:"files"`
-	Bytes         int64              `json:"bytes"`
-	Excluded      []string           `json:"excluded_exclusive_secrets,omitempty"`
-	RestoreSecret bool               `json:"restores_secrets"`
-	StopSource    string             `json:"stop_source_unit,omitempty"` // migrate: unit stopped on From
-	InstallArgv   []string           `json:"service_install_argv,omitempty"`
-	Downtime      string             `json:"downtime"`
-	NeedBytes     int64              `json:"need_bytes"`
-	FreeBytes     uint64             `json:"free_bytes"`
-	Warnings      []string           `json:"warnings,omitempty"`
-	Blockers      []valise.UserError `json:"blockers,omitempty"`
+	Plan         revive.Plan `json:"plan"`
+	Snapshot     vault.Meta  `json:"snapshot"`
+	Target       string      `json:"target"`
+	From         string      `json:"from"`
+	TargetArch   string      `json:"target_arch"`
+	ProfileLocal bool        `json:"profile_local"`
+	// ProfileFromSnapshot: the profile came from the snapshot header, not
+	// reviewed by this client.
+	ProfileFromSnapshot bool               `json:"profile_from_snapshot"`
+	Files               int                `json:"files"`
+	Bytes               int64              `json:"bytes"`
+	Excluded            []string           `json:"excluded_exclusive_secrets,omitempty"`
+	RestoreSecret       bool               `json:"restores_secrets"`
+	StopSource          string             `json:"stop_source_unit,omitempty"` // migrate: unit stopped on From
+	InstallArgv         []string           `json:"service_install_argv,omitempty"`
+	Downtime            string             `json:"downtime"`
+	NeedBytes           int64              `json:"need_bytes"`
+	FreeBytes           uint64             `json:"free_bytes"`
+	Warnings            []string           `json:"warnings,omitempty"`
+	Blockers            []valise.UserError `json:"blockers,omitempty"`
 
 	files   []vault.File
 	links   []vault.Symlink
@@ -117,13 +123,21 @@ func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if err != nil {
 		return nil, err
 	}
-	lp := set.ByID[head.Profile.ID]
-	if lp == nil || lp.Effective.ProfileVersion != head.Profile.Version {
-		return nil, valise.New("profile_version", fmt.Sprintf("快照使用 profile %s v%d，客户端中没有同一版本", head.Profile.ID, head.Profile.Version),
+	var prof profile.Profile
+	if lp := set.ByID[head.Profile.ID]; lp != nil && lp.Effective.ProfileVersion == head.Profile.Version {
+		prof = *lp.Effective
+		rp.ProfileLocal = lp.Local
+	} else if d := head.ProfileDoc; d != nil && d.ID == head.Profile.ID && d.ProfileVersion == head.Profile.Version {
+		prof = *d
+		rp.ProfileFromSnapshot = true
+		if !o.AllowSnapshotProfile {
+			rp.block("profile_from_snapshot", fmt.Sprintf("客户端中没有 profile %s v%d，只能使用快照里保存的副本（未经当前客户端审核）", d.ID, d.ProfileVersion),
+				"检查计划中的命令后加上 --allow-snapshot-profile；或升级客户端")
+		}
+	} else {
+		return nil, valise.New("profile_version", fmt.Sprintf("快照使用 profile %s v%d，客户端中没有同一版本，快照里也没有保存副本", head.Profile.ID, head.Profile.Version),
 			"升级客户端，或用当前 profile 重新登记并封存后再复活")
 	}
-	prof := *lp.Effective
-	rp.ProfileLocal = lp.Local
 	if prof.Status != profile.StatusVerified && !o.AllowDraft {
 		rp.block("profile_draft", "profile "+prof.ID+" 仍是 draft（未核实），复活需要显式同意", "确认风险后加上 --allow-draft-profile")
 	}

@@ -38,7 +38,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   pull <服务器> [--to 目录]                       把金库拉取到本机
   verify --vault <目录> [--key]                   校验本机金库；--key 用私钥解密并逐个文件校验
   revive <服务器> --snapshot <id> [--mode rollback|migrate|clone] [--from <服务器>] [--id 新实例]
-         [--root id=路径]... [--allow-draft-profile] [--dry-run] [--yes]
+         [--root id=路径]... [--allow-draft-profile] [--allow-snapshot-profile] [--dry-run] [--yes]
                                                  复活：先出计划，暂存校验后再确认交换
   revive resume <服务器> <op> --continue|--back   处理未完成的复活操作
   prev list <服务器> | prev drop <服务器> <op>    查看 / 删除交换前保留的旧状态

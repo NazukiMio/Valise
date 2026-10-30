@@ -178,3 +178,31 @@ func TestCloneToAnotherServer(t *testing.T) {
 		t.Fatal("cleanup touched the live instance")
 	}
 }
+
+func TestReviveWithProfileFromSnapshot(t *testing.T) {
+	s, home, soul, _ := sealedWorld(t)
+	ctx := context.Background()
+	// The client's profile moves on to a newer version after the seal.
+	p := filepath.Join(s.Dirs.Data, "profiles", "demo.yaml")
+	newer := strings.Replace(readFile(t, p), "profile_version: 1", "profile_version: 2", 1)
+	if newer == readFile(t, p) {
+		t.Fatal("fixture profile_version not found")
+	}
+	os.WriteFile(p, []byte(newer), 0o644)
+
+	o := ReviveOptions{Target: "box", SnapshotID: soul, Mode: revive.ModeRollback, AllowDraft: true}
+	rp, err := s.PlanRevive(ctx, o, pass)
+	if err != nil || !rp.ProfileFromSnapshot || len(rp.Blockers) != 1 || rp.Blockers[0].Code != "profile_from_snapshot" {
+		t.Fatalf("%+v %v", rp, err)
+	}
+	o.AllowSnapshotProfile = true
+	rp, err = s.PlanRevive(ctx, o, pass)
+	if err != nil || len(rp.Blockers) != 0 || rp.Plan.Profile.ProfileVersion != 1 {
+		t.Fatalf("%+v %v", rp.Blockers, err)
+	}
+	os.WriteFile(filepath.Join(home, ".demo/memory/a.md"), []byte("changed"), 0o644)
+	res, err := s.ExecuteRevive(ctx, rp, "", func(*revive.StageVerifyResult) bool { return true })
+	if err != nil || res.State != revive.StateRestored || readFile(t, filepath.Join(home, ".demo/memory/a.md")) != "m" {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
