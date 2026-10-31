@@ -64,8 +64,16 @@ var methods = map[string]handler{
 		recs, err := porterenroll.ListRecords(s.cfg.Home)
 		res := enroll.InstanceListResult{Instances: []enroll.InstanceSummary{}}
 		for _, r := range recs {
-			res.Instances = append(res.Instances, enroll.InstanceSummary{InstanceID: r.InstanceID, ProfileID: r.ProfileID,
-				ProfileVersion: r.ProfileVersion, Roots: r.Roots, Superseded: r.Superseded})
+			sum := enroll.InstanceSummary{InstanceID: r.InstanceID, ProfileID: r.ProfileID,
+				ProfileVersion: r.ProfileVersion, Roots: r.Roots, Superseded: r.Superseded,
+				Service: []enroll.ServiceState{}, Entries: []enroll.EntryState{}}
+			if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
+				sum.ProfileStatus = p.Status
+				if r.Superseded == nil {
+					sum.Service, sum.Entries = porterenroll.Live(ctx, s.loginEnv(ctx), p)
+				}
+			}
+			res.Instances = append(res.Instances, sum)
 		}
 		return res, err
 	},

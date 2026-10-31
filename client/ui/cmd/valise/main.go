@@ -43,6 +43,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   revive resume <服务器> <op> --continue|--back   处理未完成的复活操作
   prev list <服务器> | prev drop <服务器> <op>    查看 / 删除交换前保留的旧状态
   old list <服务器> | old cleanup <服务器> <实例>  查看 / 清理被迁移或克隆取代的旧实例
+  tui                                            终端界面：服务器与实例总览、封存、复活、登录中继、逃生舱技能、设置
   checkup <服务器> <实例> [--json]                 体检：会话、记忆文件、记忆机制（只读）
   proposals <服务器> <实例> [--accept id,…|all] [--accept-demotion id,…] [--reject id,…|all]
                                                  查看 / 确认 agent 提出的归类提议
@@ -75,6 +76,9 @@ type cli struct {
 	errOut  io.Writer
 	verbose bool
 	lines   *bufio.Reader
+	// configDir is the --config-dir given on the command line ("" for the
+	// default), passed on to CLI steps the TUI runs.
+	configDir string
 }
 
 var (
@@ -100,7 +104,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	if *configDir != "" {
 		dirs, err = config.Dirs{Data: *configDir, Cache: filepath.Join(*configDir, "cache")}, nil
 	}
-	c := &cli{in: in, out: out, errOut: errOut, verbose: *verbose}
+	c := &cli{in: in, out: out, errOut: errOut, verbose: *verbose, configDir: *configDir}
 	if err == nil {
 		c.svc, err = service.New(dirs, version)
 	}
@@ -128,6 +132,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.checkup(ctx, args[1:])
 	case args[0] == "proposals":
 		return c.proposals(ctx, args[1:])
+	case args[0] == "tui" && len(args) == 1:
+		return c.tui(ctx)
 	case args[0] == "server":
 		return c.server(args[1:])
 	case args[0] == "kit":

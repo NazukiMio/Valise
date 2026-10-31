@@ -81,6 +81,13 @@ func Refresh(ctx context.Context, e *Env, p *profile.Profile, rec *enroll.Record
 	rec.Entries = entries(p)
 }
 
+// Live reads the current service and entry state of a profile on this
+// server (read-only).
+func Live(ctx context.Context, e *Env, p *profile.Profile) ([]enroll.ServiceState, []enroll.EntryState) {
+	var warns []string
+	return services(ctx, e, p, &warns), entries(p)
+}
+
 // WriteRecord writes the record and the profile atomically with mode 0600.
 func WriteRecord(home string, r enroll.Record, p profile.Profile) (string, error) {
 	if err := enroll.ValidInstanceID(r.InstanceID); err != nil {

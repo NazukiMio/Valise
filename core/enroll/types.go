@@ -261,6 +261,10 @@ type InstanceSummary struct {
 	ProfileVersion int               `json:"profile_version"`
 	Roots          map[string]string `json:"roots"`
 	Superseded     *Supersession     `json:"superseded,omitempty"`
+	ProfileStatus  string            `json:"profile_status"`
+	// Live state read when listing (systemctl show, a TCP dial).
+	Service []ServiceState `json:"service"`
+	Entries []EntryState   `json:"entries"`
 }
 
 // InstanceListResult lists the enrolled instances, sorted by id.
