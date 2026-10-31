@@ -130,7 +130,7 @@
 
 ## M7a：终端 UI（TUI）
 
-- **状态**：`Ready`
+- **状态**：`In progress`（2026-10-31 开始；等待用户亲自试用后验收）
 - **用户决定**（2026-10-31）：UI 分两步，先 TUI（M7a）后 GUI（M7b）；TUI 用 Bubble Tea，作为 `valise tui` 子命令；功能范围与 GUI 计划一致，并加上 agent-kit。规范见 `docs/UI.md` 第 8 节。顺带加上 `valise kit status` 与 `valise kit uninstall`（被修改过的技能保留，`--force` 才删，AGENT_KIT.md 8.5）。已记录服务器显式维护：`servers.json` 只存别名，`valise server add|remove|list`，TUI 可从 `~/.ssh/config` 导入（ARCHITECTURE.md 第 3 节）。
 - **交付**：
   - 已记录服务器（`servers.json`、`valise server`、导入 SSH 配置）与实例列表 RPC；`valise kit status`、`valise kit uninstall`。
@@ -140,6 +140,11 @@
   - agent-kit：体检、归类提议的确认（降级单独确认）、安装逃生舱技能。
   - 设置与信任根：密钥（生成、导入、显示、导出恢复套件）、登记与移除公钥、同步目标。
 - **验收**：服务层零改动或只做通用扩展（不出现 TUI 专用逻辑）；TUI 的状态与渲染有单元测试（不依赖真实终端）；连接 `ubuntu-vm` 与 `ubuntu-vm-x86` 完成真实的交互验收（总览、一次封存、一次回滚、一次登录中继、一次入口）；CLI 全部功能不受影响。
+- **进度**（2026-10-31）：
+  - 已完成交付：`valise tui`（Bubble Tea v2.1.1）——服务器总览、实例详情（封存档位选择、体检、归类提议逐个确认降级、逃生舱技能状态与安装卸载、登录中继、入口）、金库（快照、同步、同步目标、交换前状态、被取代的旧实例）、复活向导（选项 → 掩码口令只用一次 → 计划 → 暂存确认 → 交换确认 → 结果）、设置与信任根；`valise server`、`valise kit status|uninstall`；`instance_list` 返回实例的实时服务与入口状态。服务层只有通用扩展（服务器列表、实例列表、kit 状态与卸载），没有 TUI 专用逻辑。
+  - 单元测试直接驱动 `Update`/`View`（含 fake-ssh 上的完整回滚向导与"复活期间拒绝退出"），`-race` 通过。
+  - 真机（经伪终端驱动真实的 `valise tui`）：两台 VM 的总览（5 个实例的实时服务、入口、封存与同步、体检）、一次封存、一次 OpenClaw 回滚（计划正确拦下 v7 实例需要快照内 profile，同意后暂存、交换，服务健康）、一次入口（三个状态、Ctrl-C 关闭后回到 TUI）、一次登录中继（端口被占用的路径：报错停留在屏幕上，回车回到 TUI，服务器无残留）。`kit status/uninstall` 在 Hermes 上实测：被改过的技能保留，`--force` 才删。
+  - 冒烟测试中发现并修复：服务层在确认交换后仍跟随调用方的取消（Ctrl-C 可能打断交换）——改为 `context.WithoutCancel`；TUI 交换期间按 Ctrl-C 会退出；关闭入口时 SIGINT 连带结束 TUI；CLI 步骤的输出被 TUI 立即覆盖；封存后详情不刷新；计划的建议写的是 CLI 参数。
 
 ## M7b：桌面 UI（mygo）
 
