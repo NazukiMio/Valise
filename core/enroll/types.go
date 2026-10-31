@@ -17,6 +17,7 @@ const (
 	MethodScan          = "enroll_scan"
 	MethodInstanceGet   = "instance_get"
 	MethodInstanceWrite = "instance_write"
+	MethodInstanceList  = "instance_list"
 )
 
 var idRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -251,6 +252,20 @@ type InstanceGetParams struct {
 // InstanceGetResult is nil Record when not enrolled.
 type InstanceGetResult struct {
 	Record *Record `json:"record"`
+}
+
+// InstanceSummary is one enrolled instance on a server.
+type InstanceSummary struct {
+	InstanceID     string            `json:"instance_id"`
+	ProfileID      string            `json:"profile_id"`
+	ProfileVersion int               `json:"profile_version"`
+	Roots          map[string]string `json:"roots"`
+	Superseded     *Supersession     `json:"superseded,omitempty"`
+}
+
+// InstanceListResult lists the enrolled instances, sorted by id.
+type InstanceListResult struct {
+	Instances []InstanceSummary `json:"instances"`
 }
 
 // InstanceWriteParams writes an accepted record and the effective profile

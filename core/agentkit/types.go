@@ -14,6 +14,8 @@ const (
 	MethodProposalsList   = "proposals_list"
 	MethodProposalsDecide = "proposals_decide"
 	MethodKitInstall      = "kit_install"
+	MethodKitStatus       = "kit_status"
+	MethodKitUninstall    = "kit_uninstall"
 )
 
 // Finding ids (docs/AGENT_KIT.md section 5).
@@ -153,4 +155,49 @@ type KitInstallResult struct {
 // IsDemotion reports whether a category takes files out of the soul tier.
 func IsDemotion(category string) bool {
 	return category == "ignore" || category == "cache" || category == "body"
+}
+
+// Skill states in kit status.
+const (
+	SkillCurrent  = "current"  // same content as this client ships
+	SkillModified = "modified" // present with other content
+	SkillMissing  = "missing"
+)
+
+// KitStatusParams compares the installed skills with the shipped ones.
+type KitStatusParams struct {
+	InstanceID string      `json:"instance_id"`
+	Files      []SkillFile `json:"files"`
+}
+
+// SkillState is one skill in the skills directory.
+type SkillState struct {
+	Skill   string `json:"skill"`
+	Path    string `json:"path"`
+	State   string `json:"state"`
+	Backups int    `json:"backups"`
+}
+
+// KitStatusResult describes what agent-kit left on the instance.
+type KitStatusResult struct {
+	Dir      string       `json:"dir,omitempty"` // empty when the profile has no skills_dir
+	Skills   []SkillState `json:"skills"`
+	LastMCP  *time.Time   `json:"last_mcp_call,omitempty"`
+	MCPCalls int          `json:"mcp_calls"`
+}
+
+// KitUninstallParams removes installed skills. Only files equal to the
+// shipped content (and Valise's own backups) go, unless Force is set.
+type KitUninstallParams struct {
+	InstanceID string      `json:"instance_id"`
+	Files      []SkillFile `json:"files"`
+	Force      bool        `json:"force"`
+	DryRun     bool        `json:"dry_run"`
+}
+
+// KitUninstallResult lists removed (or, in a dry run, removable) paths and
+// the modified files that were kept.
+type KitUninstallResult struct {
+	Removed []string `json:"removed"`
+	Kept    []string `json:"kept,omitempty"`
 }

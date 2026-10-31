@@ -294,6 +294,9 @@ type AgentKit struct {
 	// MCPConfigSnippet is a configuration fragment to paste when the
 	// harness has no command for it (shown only; ${PORTER}, ${INSTANCE}).
 	MCPConfigSnippet string `yaml:"mcp_config_snippet" json:"mcp_config_snippet,omitempty"`
+	// MCPRemoveArgv is the harness's own command for removing the server,
+	// shown by kit uninstall (never run by Valise).
+	MCPRemoveArgv Argv `yaml:"mcp_remove_argv" json:"mcp_remove_argv,omitempty"`
 }
 
 // RootPath is a plain relative path (not a glob) under a root.

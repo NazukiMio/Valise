@@ -45,7 +45,8 @@
 - **收件人**：对应的 `age1…` 公钥登记到服务器的 `recipients.txt`。支持多个收件人，例如再加一把离线纸质备份钥匙。
 - **指纹**：收件人公钥字符串（`age1…`）的 SHA-256 十六进制值的前 16 位。`VAULT` 中的 `recipient_fingerprints` 使用同一定义。
 - **口令长度**：按 Unicode 字符计数，至少 12 个字符。
-- **客户端数据目录**：`os.UserConfigDir()/valise/`（macOS 为 `~/Library/Application Support/valise/`，Linux 为 `~/.config/valise/`），其中包括 `keystore.age` 与 `config.json`。ControlMaster 套接字放在 `os.UserCacheDir()/valise/` 下。
+- **客户端数据目录**：`os.UserConfigDir()/valise/`（macOS 为 `~/Library/Application Support/valise/`，Linux 为 `~/.config/valise/`），其中包括 `keystore.age`、`config.json` 与 `servers.json`。ControlMaster 套接字放在 `os.UserCacheDir()/valise/` 下。
+- **已记录服务器**（M7a）：`servers.json` 只保存 SSH 别名列表（`{"servers": ["ubuntu-vm", …]}`），不保存地址、用户名或任何凭据，这些一律交给 `~/.ssh/config`。用 `valise server add|remove|list` 或 TUI 的"导入 SSH 配置"（从 `~/.ssh/config` 中具体的 `Host` 别名里勾选，跳过含通配符的模式）维护。CLI 仍然接受任意别名，不要求先记录；TUI 的总览只列已记录的服务器。服务器上的实例由 RPC `instance_list` 列出（实例 id、profile、是否被取代）。
 - **离线恢复套件**：导出内容包括 `keystore.age`、收件人公钥、指纹，以及一页恢复说明（指向 `tools/standalone-restore/`）。导出为一个目录，内含 `keystore.age`、`recipient.txt`、`FINGERPRINT`、`RECOVERY.md`。导入时核对指纹：先确认 `FINGERPRINT` 与 `recipient.txt` 一致，解锁后再确认身份对应的公钥与 `recipient.txt` 一致，并把指纹展示给用户，与纸质记录比对。
 - **内存处理**：解锁后的身份封装在 `UnlockedKey` 中，`Lock()` 时尽力清零。文档和 UI 中要如实说明：Go 的垃圾回收可能产生副本，无法保证彻底清除。UI 空闲 15 分钟后自动锁定（时长可配置）。
 

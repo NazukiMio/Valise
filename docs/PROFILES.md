@@ -105,6 +105,7 @@ agent_kit:
   mcp_config_doc: https://…      # 如何为该 harness 配置 MCP Server（Valise 只展示，不自动修改配置）
   mcp_add_argv: [example, mcp, add, valise, --command, "${PORTER}", --arg=mcp, --arg=--instance, "--arg=${INSTANCE}"]   # 可选：只打印给用户，Valise 不执行
   mcp_config_snippet: null       # 可选：harness 没有添加命令时，打印给用户粘贴的配置片段（可用 ${PORTER}、${INSTANCE}）
+  mcp_remove_argv: [example, mcp, remove, valise]   # 可选：kit uninstall 时打印的撤除命令，Valise 不执行（可用 ${INSTANCE}）
 ```
 
 变量说明：`${HOME}` 表示用户主目录；`${STATE_DIR}` 表示解析后的状态目录；`${env:NAME}` 表示环境变量，变量未设置时这一项视为不存在；`${OUT}` 只在 `export_argv` 中使用。

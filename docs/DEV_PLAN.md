@@ -131,8 +131,9 @@
 ## M7a：终端 UI（TUI）
 
 - **状态**：`Ready`
-- **用户决定**（2026-10-31）：UI 分两步，先 TUI（M7a）后 GUI（M7b）；TUI 用 Bubble Tea，作为 `valise tui` 子命令；功能范围与 GUI 计划一致，并加上 agent-kit。规范见 `docs/UI.md` 第 8 节。
+- **用户决定**（2026-10-31）：UI 分两步，先 TUI（M7a）后 GUI（M7b）；TUI 用 Bubble Tea，作为 `valise tui` 子命令；功能范围与 GUI 计划一致，并加上 agent-kit。规范见 `docs/UI.md` 第 8 节。顺带加上 `valise kit status` 与 `valise kit uninstall`（被修改过的技能保留，`--force` 才删，AGENT_KIT.md 8.5）。已记录服务器显式维护：`servers.json` 只存别名，`valise server add|remove|list`，TUI 可从 `~/.ssh/config` 导入（ARCHITECTURE.md 第 3 节）。
 - **交付**：
+  - 已记录服务器（`servers.json`、`valise server`、导入 SSH 配置）与实例列表 RPC；`valise kit status`、`valise kit uninstall`。
   - 实例总览：每台已记录服务器上的实例，展示 profile 的核实状态、服务状态、最近一次封存与同步状态、finding 和入口。
   - 金库：快照列表、封存（档位选择）、同步、复活向导（计划 → 暂存 → 确认 → 交换进度 → 结果）、prev 与旧实例清理。
   - 登录中继与入口：选择登录方式后暂停 TUI、把终端交给登录中继，结束后回到 TUI；入口的三个状态分开展示。

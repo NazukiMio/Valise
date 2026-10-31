@@ -69,3 +69,61 @@ func TestHandoffCreatesMissingTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestStatusAndUninstall(t *testing.T) {
+	home := t.TempDir()
+	ws := filepath.Join(home, "ws")
+	p := profile.Profile{ID: "demo", ProfileVersion: 1, Roots: []profile.Root{{ID: "workspace"}},
+		AgentKit: &profile.AgentKit{SkillsDir: &profile.RootPath{Root: "workspace", Path: "skills/"}}}
+	rec := enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": home, "workspace": ws}}
+	porterenroll.WriteRecord(home, rec, p)
+	shipped := []agentkit.SkillFile{
+		{Skill: "valise-upkeep", Name: "SKILL.md", Content: []byte("upkeep v2")},
+		{Skill: "valise-enroll", Name: "SKILL.md", Content: []byte("enroll v2")},
+		{Skill: "valise-checkup", Name: "SKILL.md", Content: []byte("checkup v2")},
+	}
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	Install(home, agentkit.KitInstallParams{InstanceID: "demo", Files: shipped[:2]}, now)
+	// The user edits one skill; an older install left a backup.
+	os.WriteFile(filepath.Join(ws, "skills/valise-enroll/SKILL.md"), []byte("enroll, edited by the user"), 0o644)
+	os.WriteFile(filepath.Join(ws, "skills/valise-upkeep/SKILL.md.valise-bak-20261030T000000Z"), []byte("upkeep v1"), 0o644)
+
+	st, err := Status(home, agentkit.KitStatusParams{InstanceID: "demo", Files: shipped})
+	if err != nil || len(st.Skills) != 3 {
+		t.Fatalf("%+v %v", st, err)
+	}
+	want := map[string]string{"valise-upkeep": agentkit.SkillCurrent, "valise-enroll": agentkit.SkillModified, "valise-checkup": agentkit.SkillMissing}
+	for _, s := range st.Skills {
+		if s.State != want[s.Skill] {
+			t.Errorf("%s: %s", s.Skill, s.State)
+		}
+		if s.Skill == "valise-upkeep" && s.Backups != 1 {
+			t.Errorf("backups %d", s.Backups)
+		}
+	}
+
+	dry, _ := Uninstall(home, agentkit.KitUninstallParams{InstanceID: "demo", Files: shipped, DryRun: true})
+	if len(dry.Removed) != 2 || len(dry.Kept) != 1 {
+		t.Fatalf("%+v", dry)
+	}
+	if _, err := os.Stat(filepath.Join(ws, "skills/valise-upkeep/SKILL.md")); err != nil {
+		t.Fatal("dry run removed a file")
+	}
+	res, err := Uninstall(home, agentkit.KitUninstallParams{InstanceID: "demo", Files: shipped})
+	if err != nil || len(res.Removed) != 2 || len(res.Kept) != 1 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if _, err := os.Stat(filepath.Join(ws, "skills/valise-upkeep")); !os.IsNotExist(err) {
+		t.Fatal("empty skill directory left behind")
+	}
+	if b, _ := os.ReadFile(filepath.Join(ws, "skills/valise-enroll/SKILL.md")); string(b) != "enroll, edited by the user" {
+		t.Fatal("modified skill removed without --force")
+	}
+	res, _ = Uninstall(home, agentkit.KitUninstallParams{InstanceID: "demo", Files: shipped, Force: true})
+	if len(res.Removed) != 1 {
+		t.Fatalf("%+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(ws, "skills")); err != nil {
+		t.Fatal("the skills directory itself must stay")
+	}
+}

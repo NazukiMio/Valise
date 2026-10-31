@@ -60,6 +60,15 @@ var methods = map[string]handler{
 		r, err := porterenroll.ReadRecord(s.cfg.Home, p.InstanceID)
 		return enroll.InstanceGetResult{Record: r}, err
 	},
+	enroll.MethodInstanceList: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		recs, err := porterenroll.ListRecords(s.cfg.Home)
+		res := enroll.InstanceListResult{Instances: []enroll.InstanceSummary{}}
+		for _, r := range recs {
+			res.Instances = append(res.Instances, enroll.InstanceSummary{InstanceID: r.InstanceID, ProfileID: r.ProfileID,
+				ProfileVersion: r.ProfileVersion, Roots: r.Roots, Superseded: r.Superseded})
+		}
+		return res, err
+	},
 	enroll.MethodInstanceWrite: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p enroll.InstanceWriteParams
 		if err := json.Unmarshal(raw, &p); err != nil {

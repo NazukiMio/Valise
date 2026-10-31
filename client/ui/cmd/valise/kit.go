@@ -144,6 +144,12 @@ func (c *cli) proposals(ctx context.Context, args []string) error {
 }
 
 func (c *cli) kit(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "status" {
+		return c.kitStatus(ctx, args[1:])
+	}
+	if len(args) > 0 && args[0] == "uninstall" {
+		return c.kitUninstall(ctx, args[1:])
+	}
 	if len(args) == 0 || args[0] != "install" {
 		return errUsage
 	}
@@ -208,4 +214,87 @@ func shellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+var skillStates = map[string]string{agentkit.SkillCurrent: "已安装（当前版本）", agentkit.SkillModified: "已安装（内容与当前版本不同）", agentkit.SkillMissing: "未安装"}
+
+func (c *cli) kitStatus(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("kit status", flag.ContinueOnError)
+	pos, err := parseArgs(fs, args, 2)
+	if err != nil {
+		return err
+	}
+	st, err := c.svc.KitStatus(ctx, pos[0], pos[1])
+	if err != nil {
+		return err
+	}
+	if st.Dir == "" {
+		fmt.Fprintln(c.out, "这个实例的 profile 没有声明技能目录。")
+	} else {
+		fmt.Fprintf(c.out, "技能目录：%s\n", st.Dir)
+		for _, s := range st.Skills {
+			bak := ""
+			if s.Backups > 0 {
+				bak = fmt.Sprintf("，另有 %d 个 Valise 备份", s.Backups)
+			}
+			fmt.Fprintf(c.out, "  %-16s %s%s\n", s.Skill, skillStates[s.State], bak)
+		}
+	}
+	if st.LastMCP != nil {
+		fmt.Fprintf(c.out, "MCP：agent 最近一次经 MCP 调用是 %s（共 %d 次记录）\n", st.LastMCP.Local().Format("2006-01-02 15:04"), st.MCPCalls)
+	} else {
+		fmt.Fprintln(c.out, "MCP：还没有 agent 经 MCP 调用的记录（Valise 不读取 harness 的配置，无法确认是否已接入）")
+	}
+	return nil
+}
+
+func (c *cli) kitUninstall(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("kit uninstall", flag.ContinueOnError)
+	force := fs.Bool("force", false, "")
+	yes := fs.Bool("yes", false, "")
+	pos, err := parseArgs(fs, args, 2)
+	if err != nil {
+		return err
+	}
+	host, instance := pos[0], pos[1]
+	plan, err := c.svc.KitUninstall(ctx, host, instance, *force, true)
+	if err != nil {
+		return err
+	}
+	if len(plan.Result.Removed) == 0 {
+		fmt.Fprintln(c.out, "没有可删除的逃生舱技能文件。")
+	} else {
+		fmt.Fprintln(c.out, "将删除：")
+		for _, p := range plan.Result.Removed {
+			fmt.Fprintf(c.out, "  %s\n", p)
+		}
+	}
+	for _, p := range plan.Result.Kept {
+		fmt.Fprintf(c.out, "保留（内容已被修改；确认不需要时加 --force）：%s\n", p)
+	}
+	if len(plan.Result.Removed) > 0 {
+		if !*yes && !c.confirm("删除这些文件？") {
+			fmt.Fprintln(c.out, "已取消，没有删除任何文件。")
+			return nil
+		}
+		if plan, err = c.svc.KitUninstall(ctx, host, instance, *force, false); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.out, "已删除 %d 个文件。\n", len(plan.Result.Removed))
+	}
+	fmt.Fprintln(c.out, "\n撤除 MCP（Valise 不会修改 harness 的配置）：")
+	switch {
+	case len(plan.MCPCommand) > 0:
+		quoted := make([]string, len(plan.MCPCommand))
+		for i, a := range plan.MCPCommand {
+			quoted[i] = shellQuote(a)
+		}
+		fmt.Fprintf(c.out, "  在服务器 %s 上运行：\n    %s\n", host, strings.Join(quoted, " "))
+	case plan.MCPSnippet:
+		fmt.Fprintln(c.out, "  从当初粘贴配置片段的文件中删除名为 valise 的 MCP 条目（valise kit install 打印过它的位置）。")
+	default:
+		fmt.Fprintf(c.out, "  在 harness 的 MCP 配置中删除名为 %s 的服务器，或请 agent 删除。\n", plan.MCPServerName)
+	}
+	fmt.Fprintln(c.out, "另外，agent 学习逃生舱时可能在它的常驻指令里加过一行提及 valise_seal 的提醒，请自行删除或让 agent 删除。")
+	return nil
 }

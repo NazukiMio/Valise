@@ -113,3 +113,52 @@ func (s *Service) KitInstall(ctx context.Context, host, instance string, dryRun 
 	}
 	return plan, nil
 }
+
+// KitStatus reports the agent-kit skills on an instance and its last agent
+// call through MCP.
+func (s *Service) KitStatus(ctx context.Context, host, instance string) (*agentkit.KitStatusResult, error) {
+	files, err := KitFiles()
+	if err != nil {
+		return nil, err
+	}
+	var res agentkit.KitStatusResult
+	err = s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+		return c.Call(ctx, agentkit.MethodKitStatus, agentkit.KitStatusParams{InstanceID: instance, Files: files}, &res)
+	})
+	return &res, err
+}
+
+// KitRemovalPlan is what uninstalling does and how to unwire MCP.
+type KitRemovalPlan struct {
+	Result        *agentkit.KitUninstallResult `json:"result"`
+	MCPCommand    []string                     `json:"mcp_command,omitempty"` // never run by Valise
+	MCPSnippet    bool                         `json:"mcp_snippet"`           // MCP was added by pasting configuration
+	MCPServerName string                       `json:"mcp_server_name"`
+}
+
+// KitUninstall removes the installed skills (dryRun only reports). Modified
+// skills are kept unless force.
+func (s *Service) KitUninstall(ctx context.Context, host, instance string, force, dryRun bool) (*KitRemovalPlan, error) {
+	files, err := KitFiles()
+	if err != nil {
+		return nil, err
+	}
+	target, err := s.LoginMethods(ctx, host, instance)
+	if err != nil {
+		return nil, err
+	}
+	var res agentkit.KitUninstallResult
+	if err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+		return c.Call(ctx, agentkit.MethodKitUninstall, agentkit.KitUninstallParams{InstanceID: instance, Files: files, Force: force, DryRun: dryRun}, &res)
+	}); err != nil {
+		return nil, err
+	}
+	plan := &KitRemovalPlan{Result: &res, MCPServerName: "valise"}
+	if ak := target.Profile.AgentKit; ak != nil {
+		for _, a := range ak.MCPRemoveArgv {
+			plan.MCPCommand = append(plan.MCPCommand, strings.ReplaceAll(a, "${INSTANCE}", instance))
+		}
+		plan.MCPSnippet = len(ak.MCPRemoveArgv) == 0 && ak.MCPConfigSnippet != ""
+	}
+	return plan, nil
+}

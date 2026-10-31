@@ -56,6 +56,35 @@ func TestKitInstallAndCheckup(t *testing.T) {
 	if ps, err := s.Proposals(ctx, "box", "demo"); err != nil || len(ps) != 0 {
 		t.Fatalf("%v %v", ps, err)
 	}
+
+	st, err := s.KitStatus(ctx, "box", "demo")
+	if err != nil || len(st.Skills) != 4 || st.Skills[0].State != "current" || st.LastMCP != nil {
+		t.Fatalf("%+v %v", st, err)
+	}
+	os.WriteFile(filepath.Join(home, ".demo/skills/valise-checkup/SKILL.md"), []byte("edited"), 0o644)
+	rm, err := s.KitUninstall(ctx, "box", "demo", false, false)
+	if err != nil || len(rm.Result.Removed) != 3 || len(rm.Result.Kept) != 1 || !rm.MCPSnippet && len(rm.MCPCommand) != 0 {
+		t.Fatalf("%+v %v", rm.Result, err)
+	}
+	if insts, err := s.Instances(ctx, "box"); err != nil || len(insts) != 1 || insts[0].InstanceID != "demo" {
+		t.Fatalf("%+v %v", insts, err)
+	}
+}
+
+func TestServerList(t *testing.T) {
+	s, _ := enrollWorld(t)
+	if added, err := s.AddServers("box", "box", "other"); err != nil || len(added) != 2 {
+		t.Fatalf("%v %v", added, err)
+	}
+	if _, err := s.AddServers("-oProxyCommand=x"); err == nil {
+		t.Fatal("option-like alias accepted")
+	}
+	if ok, _ := s.RemoveServer("other"); !ok {
+		t.Fatal("remove failed")
+	}
+	if list, _ := s.Servers(); len(list) != 1 || list[0] != "box" {
+		t.Fatalf("%v", list)
+	}
 }
 
 func TestKitFilesShipFourSkills(t *testing.T) {

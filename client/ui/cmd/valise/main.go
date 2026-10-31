@@ -47,6 +47,10 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   proposals <服务器> <实例> [--accept id,…|all] [--accept-demotion id,…] [--reject id,…|all]
                                                  查看 / 确认 agent 提出的归类提议
   kit install <服务器> <实例>                      安装逃生舱技能，并给出接入 MCP 的方法
+  kit status <服务器> <实例>                       查看技能安装状态与最近一次 agent 经 MCP 的调用
+  kit uninstall <服务器> <实例> [--force]          删除逃生舱技能（被修改过的需 --force），并给出撤除 MCP 的方法
+  server list | add <别名>… | remove <别名> | import [<别名>…]
+                                                 已记录服务器（只存 SSH 别名；import 从 ~/.ssh/config 选择）
   login <服务器> <实例> [--method id]              登录中继：在本机浏览器中完成服务器上的登录
   open <服务器> <实例> [--entry id] [--idle 30m] [--no-browser]
                                                  Web 入口：把管理页面经隧道转到本机并打开
@@ -124,6 +128,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.checkup(ctx, args[1:])
 	case args[0] == "proposals":
 		return c.proposals(ctx, args[1:])
+	case args[0] == "server":
+		return c.server(args[1:])
 	case args[0] == "kit":
 		return c.kit(ctx, args[1:])
 	case args[0] == "login":

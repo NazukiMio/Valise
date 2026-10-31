@@ -92,3 +92,13 @@ func TestSplitLineErrors(t *testing.T) {
 		t.Fatal("accepted")
 	}
 }
+
+func TestHosts(t *testing.T) {
+	c, err := Parse(strings.NewReader("Host a b\n  HostName x\nHost *.lan !c\nHost a\nMatch host d\nHost e\n"), "/home/u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(c.Hosts(), ","); got != "a,b,e" {
+		t.Fatalf("%s", got)
+	}
+}

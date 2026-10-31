@@ -46,6 +46,20 @@ func init() {
 		}
 		return kit.Decide(s.cfg.Home, p)
 	}
+	methods[agentkit.MethodKitStatus] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[agentkit.KitStatusParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		return kit.Status(s.cfg.Home, p)
+	}
+	methods[agentkit.MethodKitUninstall] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[agentkit.KitUninstallParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		return kit.Uninstall(s.cfg.Home, p)
+	}
 	methods[agentkit.MethodKitInstall] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[agentkit.KitInstallParams](raw)
 		if err != nil {

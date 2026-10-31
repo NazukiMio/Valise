@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 7
+profile_version: 8
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -130,4 +130,5 @@ handoff:
 agent_kit:
   skills_dir: { root: workspace, path: "skills/" }   # WS: workspace skills, highest precedence
   mcp_config_doc: null             # verify: pending
+  mcp_remove_argv: [openclaw, config, unset, mcp.servers.valise]   # OBS (M6 cleanup): `openclaw mcp` has no remove; applies without a gateway restart
   mcp_add_argv: [openclaw, mcp, add, valise, --command, "${PORTER}", --arg=mcp, --arg=--instance, "--arg=${INSTANCE}"]   # OBS: `openclaw mcp add --help`; verify: pending

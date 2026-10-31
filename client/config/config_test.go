@@ -21,3 +21,16 @@ func TestLoad(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 }
+
+func TestServersRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if s, err := LoadServers(dir); err != nil || len(s) != 0 {
+		t.Fatalf("%v %v", s, err)
+	}
+	if err := SaveServers(dir, []string{"a", "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := LoadServers(dir); len(s) != 2 || s[1] != "b" {
+		t.Fatalf("%v", s)
+	}
+}
