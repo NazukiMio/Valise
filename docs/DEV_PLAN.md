@@ -157,6 +157,12 @@
   - 管理页令牌的代取与"打开服务器终端"。
   - harness 资料包（PROFILES.md 1.1，用户 2026-10-31 提议并决定并入本步）：客户端不再内置 profile；`profilepack` 打包工具、验签安装（在线 / 本地文件）、未签名包作为本地 profile 安装、`valise profiles status|install`；演练与测试改用仓库 `profiles/` 作为本地 profile 或测试钥匙签名的包。
 - **验收**：fake-ssh 单元测试覆盖周期切换（含修改周期设置）、删除中断后续删、同步跳过 `DELETING`；在 `ubuntu-vm`、`ubuntu-vm-x86` 与 `nas-test` 上实测：跨月份的两个叶子、同步到 NAS 后的目录结构、NAS 上删除一个周期、用 `restore.py` 脱离 Valise 恢复一个叶子、随逃生舱顺带同步、定时器开关；OpenClaw 管理页经代取令牌直接进入；drill 追加对应步骤并 `ALL_PASS`。
+- **进度**（2026-10-31）：
+  - 已完成交付（提交 `6cc7a29`、`d4e1f11`、`a905617`）：资料包（`profilepack`、验签安装、未签名作为本地 profile、`valise profiles`）；schema 的 `display`、`entries[].auth`（另加 `url_field`，见下）、`checkup.remedies`；金库树与周期、服务器名、按周期同步、云端列表、服务器与云端按周期删除、随封存自动同步、定时器、管理页令牌与 `valise shell`、`valise server setup|name`、`period`、`timer`、`target list|delete|auto`、`vault delete`、`pull --leaf`；`restore.py` 与恢复套件说明指向周期文件夹；drill 新增 M7a.1 段。
+  - 单元测试：周期切换（改周期设置、长时间未封存）、旧金库可读、删除中断后续删、当前周期拒绝删除、定时器单元内容（无 capability 设置）、令牌命令输出不进入错误信息、资料包验签与篡改。依赖 GNU rsync（`--mkpath`）的云备份测试在 macOS（openrsync）上跳过，交叉编译后在 `ubuntu-vm` 上运行通过（同步、云端列表、云端删除、自动同步）。
+  - 真机（`ubuntu-vm`、`ubuntu-vm-x86`）：部署新 porter；`server setup` 两台；旧金库显示为周期 `-`（107 个逃生舱）；封存写入新周期并生成 `TREE`、`PERIOD`；封存后自动同步子进程按间隔启动（间隔未到时不启动）；OpenClaw 管理页令牌经 `openclaw dashboard --no-open --json` 的一次性配对链接取得，不显示；定时器写入、手动触发一次成功封存（发起者 timer）、关闭后单元删除；服务器上删除过去周期（复制出的测试周期）与拒绝删除当前周期；拉取一个周期后用 `restore.py` 脱离 Valise 恢复。未签名资料包作为本地 profile 安装。
+  - 核实 profile 时发现并修正：OpenClaw `dashboard --no-open` 的纯文本输出不带令牌，`--json` 同时给出长期令牌 `url` 与一次性 `browserUrl`，`gateway auth-token --show` 拒绝在非终端运行，因此 schema 增加 `url_field` 并选用 `browserUrl`；官方字符画比原定上限大（OpenClaw 10×20、Hermes 15×30），上限放宽为 16×32、原样保存，缩放由界面完成；DSH 安装包中没有字符画，使用占位图标。
+  - **阻塞**：两台 VM 的 `~/.ssh/config` 中 `nas-test` 仍指向 192.168.101.101，NAS 现在在 192.168.101.109（DHCP 变化，主机密钥也随之不同），服务器无法同步到 NAS。需要用户更新两台 VM 的 SSH 配置（或同意由 Claude 更新）后，完成 NAS 上的同步、云端列表、云端删除与自动同步实测及完整 drill。
 
 ### M7a.2：TUI 重做
 
