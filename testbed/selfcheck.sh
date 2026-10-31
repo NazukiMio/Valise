@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the self-check list from CLAUDE.md section 6. Before M7 (no mygo in
+# Runs the self-check list from CLAUDE.md section 6. Before M7b (no mygo in
 # client/ui/go.mod) the mygo generate / bun typecheck / bun build:web steps
 # are skipped.
 set -euo pipefail
