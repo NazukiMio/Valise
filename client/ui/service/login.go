@@ -161,12 +161,21 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 	}
 	cmd := exec.CommandContext(ctx, t.Binary(), t.TTYArgs(remote)...)
 	out := io.MultiWriter(lio.Stdout, scan)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = lio.Stdin, out, out
+	cmd.Stdout, cmd.Stderr = out, out
 	// After ssh is killed, do not wait long for its output pipes.
 	cmd.WaitDelay = 3 * time.Second
+	// Keystrokes are copied by our own goroutine: a terminal never reaches
+	// EOF, and Wait must not wait for it once the login command has exited.
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
 	status(LoginStatus{State: LoginWaitingLink})
 	if err := cmd.Start(); err != nil {
 		return nil, err
+	}
+	if lio.Stdin != nil {
+		go func() { io.Copy(stdin, lio.Stdin); stdin.Close() }()
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()

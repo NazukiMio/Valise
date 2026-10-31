@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,5 +125,27 @@ func TestUnknownLoginMethod(t *testing.T) {
 	_, err := s.RunLogin(context.Background(), "box", "demo", "nope", LoginIO{})
 	if ue, _ := valise.As(err); ue == nil || ue.Code != "login_method_unknown" {
 		t.Fatal(err)
+	}
+}
+
+// A terminal never reaches EOF; the login must still end with the command.
+func TestLoginEndsWhileStdinStaysOpen(t *testing.T) {
+	s, _ := loginWorld(t)
+	r, w := io.Pipe() // a terminal: never reaches EOF
+	defer w.Close()
+	done := make(chan error, 1)
+	go func() {
+		var out bytes.Buffer
+		_, err := s.RunLogin(context.Background(), "box", "demo", "device", LoginIO{Stdin: r, Stdout: &out,
+			ConfirmOpen: func(string, string) bool { return false }})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("RunLogin did not return after the login command exited")
 	}
 }
