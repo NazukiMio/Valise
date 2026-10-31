@@ -334,8 +334,12 @@ func sqliteSessions(rec *enroll.Record, s *profile.SessionsSpec, daily map[strin
 		size = "coalesce(" + q(t.SizeColumn) + "," + size + ")"
 	}
 	tokens := "NULL"
-	if t.TokensColumn != "" {
+	switch {
+	case t.TokensColumn != "":
 		tokens = q(t.TokensColumn)
+	case t.TokensJSON != nil:
+		// Identifiers and the path are validated by profile lint.
+		tokens = "CAST(json_extract(" + q(t.TokensJSON.Column) + ", '$." + t.TokensJSON.Path + "') AS INTEGER)"
 	}
 	ts := q(t.TimeColumn) + "/" + div
 	sessQuery := fmt.Sprintf(`SELECT %s, COUNT(*), MIN(%s), MAX(%s), SUM(%s), SUM(%s), COUNT(%s) FROM %s GROUP BY 1`,

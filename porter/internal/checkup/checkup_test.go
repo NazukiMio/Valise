@@ -146,3 +146,20 @@ func TestUsageTableReplacesEstimates(t *testing.T) {
 		t.Fatalf("daily %+v", r.Daily)
 	}
 }
+
+func TestTokensFromJSON(t *testing.T) {
+	root := t.TempDir()
+	db, _ := sql.Open("sqlite", filepath.Join(root, "a.sqlite"))
+	db.Exec(`CREATE TABLE ev (session_id TEXT, created_at INTEGER, event_json TEXT)`)
+	db.Exec(`INSERT INTO ev VALUES ('s', ?, '{"type":"message","message":{"usage":{"totalTokens":1500}}}'), ('s', ?, '{"type":"session"}')`,
+		now.UnixMilli()-2000, now.UnixMilli()-1000)
+	db.Close()
+	rec := &enroll.Record{InstanceID: "demo", Roots: map[string]string{"state": root}}
+	p := &profile.Profile{Checkup: &profile.Checkup{Sessions: &profile.SessionsSpec{Root: "state", Glob: "a.sqlite", Format: "sqlite",
+		SQLite: &profile.SessionTable{Table: "ev", SessionColumn: "session_id", TimeColumn: "created_at", TimeUnit: "ms",
+			BytesColumns: []string{"event_json"}, TokensJSON: &profile.JSONField{Column: "event_json", Path: "message.usage.totalTokens"}}}}}
+	r := Run(rec, p, now)
+	if r.Current == nil || r.Current.Tokens != 1500 || r.Current.Estimated || r.Current.Days > 0.001 {
+		t.Fatalf("%+v %v", r.Current, r.Notes)
+	}
+}

@@ -88,6 +88,7 @@ checkup:
   #             sqlite: { table: messages, session_column: session_id, time_column: timestamp, time_unit: s,
   #                       tokens_column: token_count, size_column: null, bytes_columns: [content] } }
   # 每行的大小取 size_column（非空时），否则为 bytes_columns 各列 length() 之和。
+  # token 在 JSON 列里时，用 tokens_json: { column, path }（点分路径，经 json_extract 读取），与 tokens_column 二选一。
   # token 按会话汇总在另一张表时，加 usage: { table, session_column, tokens_columns: [...], time_column, time_unit }，
   # 用它代替每行的 tokens_column 与字节估算；每日用量按 time_column（最后更新时间）归日。
   thresholds: {}                 # 可选，覆盖体检默认阈值（AGENT_KIT.md 8.4）

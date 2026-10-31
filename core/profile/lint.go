@@ -461,6 +461,14 @@ func (c *checker) checkCheckup(ck *Checkup) {
 				if t.TimeUnit != "s" && t.TimeUnit != "ms" {
 					c.add("checkup.sessions.sqlite.time_unit", "只能是 s 或 ms")
 				}
+				if j := t.TokensJSON; j != nil {
+					if !identRe.MatchString(j.Column) || !fieldPathRe.MatchString(j.Path) {
+						c.add("checkup.sessions.sqlite.tokens_json", "column 必须是标识符，path 必须是点分字段路径")
+					}
+					if t.TokensColumn != "" {
+						c.add("checkup.sessions.sqlite.tokens_json", "与 tokens_column 只能二选一")
+					}
+				}
 				if u := t.Usage; u != nil {
 					idents := append([]string{u.Table, u.SessionColumn}, u.TokensColumns...)
 					if u.TimeColumn != "" {

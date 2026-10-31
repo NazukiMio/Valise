@@ -234,16 +234,24 @@ type SessionsSpec struct {
 
 // SessionTable describes session events stored as table rows.
 type SessionTable struct {
-	Table         string   `yaml:"table" json:"table"`
-	SessionColumn string   `yaml:"session_column" json:"session_column"`
-	TimeColumn    string   `yaml:"time_column" json:"time_column"`
-	TimeUnit      string   `yaml:"time_unit" json:"time_unit"` // s or ms
-	TokensColumn  string   `yaml:"tokens_column" json:"tokens_column,omitempty"`
-	SizeColumn    string   `yaml:"size_column" json:"size_column,omitempty"`
-	BytesColumns  []string `yaml:"bytes_columns" json:"bytes_columns,omitempty"`
+	Table         string `yaml:"table" json:"table"`
+	SessionColumn string `yaml:"session_column" json:"session_column"`
+	TimeColumn    string `yaml:"time_column" json:"time_column"`
+	TimeUnit      string `yaml:"time_unit" json:"time_unit"` // s or ms
+	TokensColumn  string `yaml:"tokens_column" json:"tokens_column,omitempty"`
+	// TokensJSON reads the token count from a JSON column (json_extract).
+	TokensJSON   *JSONField `yaml:"tokens_json" json:"tokens_json,omitempty"`
+	SizeColumn   string     `yaml:"size_column" json:"size_column,omitempty"`
+	BytesColumns []string   `yaml:"bytes_columns" json:"bytes_columns,omitempty"`
 	// Usage holds per-session token totals kept in another table; when set
 	// it replaces the per-event tokens column and the byte estimate.
 	Usage *UsageTable `yaml:"usage" json:"usage,omitempty"`
+}
+
+// JSONField is a dotted path inside a JSON text column.
+type JSONField struct {
+	Column string `yaml:"column" json:"column"`
+	Path   string `yaml:"path" json:"path"`
 }
 
 // UsageTable is a table of token totals per session.
