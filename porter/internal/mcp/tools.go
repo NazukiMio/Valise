@@ -63,6 +63,8 @@ type Tools struct {
 	Version  string
 	Env      func(context.Context) *porterenroll.Env
 	Now      func() time.Time
+
+	autoSealed bool // the safety-net seal of this connection is done
 }
 
 func (t *Tools) now() time.Time {
@@ -102,8 +104,14 @@ func rateLimited(last, now time.Time) error {
 	return nil
 }
 
-// Call runs one tool.
+// Call runs one tool. The first tool call of a connection seals first when
+// the last seal is older than MinInterval (docs/AGENT_KIT.md 8.1): models do
+// not reliably call valise_seal before changing their memory.
 func (t *Tools) Call(ctx context.Context, name string, args json.RawMessage) (any, error) {
+	if !t.autoSealed && name != "valise_seal" && name != "valise_handoff_begin" && slices.ContainsFunc(toolList, func(m map[string]any) bool { return m["name"] == name }) {
+		t.autoSealed = true
+		t.autoSeal(ctx, name)
+	}
 	switch name {
 	case "valise_status":
 		return t.status(ctx)
@@ -349,4 +357,27 @@ func (t *Tools) handoffFinish(snapshotID string) (any, error) {
 	}
 	return map[string]any{"checks": checks, "snapshot_id": snapshotID, "next_for_user": hint,
 		"note": "旧会话保存在快照 " + snapshotID + " 中"}, nil
+}
+
+// autoSeal is the safety-net seal; failures are audited and never block the
+// tool the agent asked for.
+func (t *Tools) autoSeal(ctx context.Context, tool string) {
+	if _, _, err := t.load(); err != nil {
+		return
+	}
+	st, err := kit.LoadState(t.Home, t.Instance)
+	if err != nil {
+		return
+	}
+	now := t.now()
+	if !st.LastSeal.IsZero() && now.Sub(st.LastSeal) < kit.MinInterval {
+		return
+	}
+	reason := "auto: first tool call (" + tool + ")"
+	if _, err := seal.Seal(ctx, t.Env(ctx), t.paths(), vaultrpc.SealParams{InstanceID: t.Instance, Tier: vault.TierSoul, Reason: reason}, vaultrpc.InitiatorAgentMCP); err != nil {
+		t.audit("seal", "auto_failed", "", reason)
+		return
+	}
+	st.LastSeal = now.UTC()
+	kit.SaveState(t.Home, t.Instance, st)
 }

@@ -120,6 +120,15 @@ func TestProtocolAndTools(t *testing.T) {
 		}
 	}
 
+	// The first tool call of a connection seals first (safety net).
+	if _, text, isErr := c.tool("valise_status", map[string]any{}); isErr {
+		t.Fatalf("%s", text)
+	}
+	if audit, _ := os.ReadFile(seal.Paths{Home: home}.Audit()); !strings.Contains(string(audit), "auto: first tool call (valise_status)") {
+		t.Fatalf("no safety-net seal: %s", audit)
+	}
+	*now = now.Add(11 * time.Minute)
+
 	// Seal, then the rate limit.
 	if _, text, isErr := c.tool("valise_seal", map[string]any{"reason": ""}); !isErr || !strings.Contains(text, "原因") {
 		t.Fatalf("empty reason accepted: %s", text)

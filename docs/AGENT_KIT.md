@@ -131,6 +131,7 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 - 工具结果同时放在 `structuredContent`（JSON 对象）和一段 `text` 中；用户错误（频率限制、校验失败等）以 `isError: true` 返回"原因 + 建议"，不中断会话。
 - 审计记录的发起者为 `agent-mcp`；被频率限制挡回的封存尝试也记一条（结果 `rate_limited`，附原因）。频率限制与交接状态保存在 `~/.local/state/valise/mcp/<实例>.json`。
 - MCP 进程以实例在服务器上的 profile 副本为准（与封存相同），不需要客户端在线。
+- **代码兜底**（用户决定，2026-10-31）：同一个 MCP 连接中，agent 第一次调用任何工具（`valise_seal` 与 `valise_handoff_begin` 本身会封存，除外）时，如果距上次封存已超过 10 分钟，先自动封存一次 `soul` 档，审计原因为 `auto: first tool call (<工具名>)`，并计入频率限制。原因：M6 验收中观察到，模型在写记忆、改人格前并不可靠地调用 `valise_seal`。局限：只覆盖调用了 Valise 工具的会话；不依赖 agent 的定时封存属于 M8。
 
 ### 8.2 归类提议
 
