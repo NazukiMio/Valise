@@ -43,6 +43,10 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   revive resume <服务器> <op> --continue|--back   处理未完成的复活操作
   prev list <服务器> | prev drop <服务器> <op>    查看 / 删除交换前保留的旧状态
   old list <服务器> | old cleanup <服务器> <实例>  查看 / 清理被迁移或克隆取代的旧实例
+  checkup <服务器> <实例> [--json]                 体检：会话、记忆文件、记忆机制（只读）
+  proposals <服务器> <实例> [--accept id,…|all] [--accept-demotion id,…] [--reject id,…|all]
+                                                 查看 / 确认 agent 提出的归类提议
+  kit install <服务器> <实例>                      安装逃生舱技能，并给出接入 MCP 的方法
   login <服务器> <实例> [--method id]              登录中继：在本机浏览器中完成服务器上的登录
   open <服务器> <实例> [--entry id] [--idle 30m] [--no-browser]
                                                  Web 入口：把管理页面经隧道转到本机并打开
@@ -116,6 +120,12 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.prev(ctx, args[1:])
 	case args[0] == "old" && len(args) > 1:
 		return c.old(ctx, args[1:])
+	case args[0] == "checkup":
+		return c.checkup(ctx, args[1:])
+	case args[0] == "proposals":
+		return c.proposals(ctx, args[1:])
+	case args[0] == "kit":
+		return c.kit(ctx, args[1:])
 	case args[0] == "login":
 		return c.login(ctx, args[1:])
 	case args[0] == "open":

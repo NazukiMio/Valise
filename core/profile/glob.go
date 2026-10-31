@@ -89,6 +89,8 @@ const (
 	VarHome     = "HOME"
 	VarStateDir = "STATE_DIR"
 	VarOut      = "OUT"
+	VarPorter   = "PORTER"
+	VarInstance = "INSTANCE"
 )
 
 // checkVars validates every ${...} in s against the allowed names. env:NAME

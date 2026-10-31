@@ -10,7 +10,7 @@
 schema: valise-profile/1
 id: hermes
 display_name: Hermes Agent
-profile_version: 2
+profile_version: 3
 status: draft
 harness_versions_tested: ["0.22.5"]
 docs: https://hermes-agent.nousresearch.com
@@ -109,7 +109,12 @@ native:
   export_argv: null                # hermes backup 的输出路径参数 verify: pending
 
 checkup:
-  sessions: { root: state, glob: "state.db", format: sqlite, usage_fields: null }   # SS; table layout verify: pending (M6)
+  # OBS (2026-10-31): messages(session_id, role, content, timestamp REAL seconds, token_count, reasoning, ...); no rows yet: verify: pending
+  sessions:
+    root: state
+    glob: "state.db"
+    format: sqlite
+    sqlite: { table: messages, session_column: session_id, time_column: timestamp, time_unit: s, tokens_column: token_count, bytes_columns: [content, reasoning] }
   memory_files:
     - { root: state, glob: "memories/MEMORY.md", warn_lines: 600 }
     - { root: state, glob: "memories/USER.md", warn_lines: 300 }
@@ -123,3 +128,4 @@ handoff:
 agent_kit:
   skills_dir: { root: state, path: "skills/" }   # CFG: agent-created skills
   mcp_config_doc: null             # verify: pending
+  mcp_add_argv: [hermes, mcp, add, valise, --command, "${PORTER}", --args, mcp, --instance, "${INSTANCE}"]   # OBS: `hermes mcp add --help` ("--args must be the last option"); verify: pending

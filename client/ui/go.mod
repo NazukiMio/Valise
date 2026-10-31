@@ -3,7 +3,9 @@ module valise/ui
 go 1.26
 
 require (
+	filippo.io/age v1.3.1
 	golang.org/x/term v0.37.0
+	valise/agentkit v0.0.0
 	valise/client v0.0.0
 	valise/core v0.0.0
 	valise/testbed v0.0.0
@@ -12,7 +14,6 @@ require (
 require go.yaml.in/yaml/v3 v3.0.4 // indirect
 
 require (
-	filippo.io/age v1.3.1 // indirect
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/restic/chunker v0.5.0 // indirect
@@ -28,3 +29,5 @@ replace (
 )
 
 replace valise/profiles => ../../profiles
+
+replace valise/agentkit => ../../agent-kit

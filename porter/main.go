@@ -16,7 +16,9 @@ import (
 
 	"valise/core/login"
 	"valise/core/rpc"
+	porterenroll "valise/porter/internal/enroll"
 	porterlogin "valise/porter/internal/login"
+	"valise/porter/internal/mcp"
 	porterrevive "valise/porter/internal/revive"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/server"
@@ -35,7 +37,8 @@ const usage = `用法：
   valise-porter vault-cat <金库内的相对路径>
   valise-porter stage-write --op <op_id>
   valise-porter login-run <会话> [<列数> <行数>]
-  valise-porter browser-shim <链接>...`
+  valise-porter browser-shim <链接>...
+  valise-porter mcp --instance <实例>`
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -97,6 +100,28 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stderr, "login-run:", porterlogin.Exec(home, args[1], self, cols, rows))
 		return 1
+	case "mcp":
+		if len(args) != 3 || args[1] != "--instance" {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		var env *porterenroll.Env
+		t := &mcp.Tools{Home: home, Instance: args[2], Version: version, Env: func(ctx context.Context) *porterenroll.Env {
+			if env == nil {
+				env = porterenroll.LoadEnv(ctx, home)
+			}
+			return env
+		}}
+		if err := mcp.Serve(context.Background(), stdin, stdout, t); err != nil {
+			fmt.Fprintln(stderr, "mcp:", err)
+			return 1
+		}
+		return 0
 	case "browser-shim":
 		home, _ := os.UserHomeDir()
 		if err := porterlogin.Shim(home, os.Getenv(login.SessionEnv), args[1:]); err != nil {

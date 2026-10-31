@@ -171,7 +171,7 @@ func (c *checker) checkDoc(d *Document, eff *Profile) {
 		if p.Consistency != nil && p.Consistency.Quiesce != "" {
 			c.add("consistency.quiesce", "子 profile 只能追加规则，不能修改 quiesce")
 		}
-		if p.Checkup != nil && (p.Checkup.Sessions != nil || p.Checkup.NativeOptionsDoc != "") {
+		if p.Checkup != nil && (p.Checkup.Sessions != nil || p.Checkup.NativeOptionsDoc != "" || p.Checkup.Thresholds != nil) {
 			c.add("checkup", "子 profile 只能追加 memory_files 与 memory_mechanism_markers")
 		}
 	} else if p.When != nil {
@@ -349,6 +349,9 @@ func (c *checker) checkTop(p *Profile) {
 			c.add("agent_kit.skills_dir.path", "%v", err)
 		}
 	}
+	if a := p.AgentKit; a != nil && a.MCPAddArgv != nil {
+		c.argvVars("agent_kit.mcp_add_argv", a.MCPAddArgv, true, VarPorter, VarInstance)
+	}
 }
 
 func (c *checker) checkProvenance(pv *Provenance) {
@@ -414,12 +417,57 @@ func (c *checker) checkHealth(f string, ch HealthCheck, entries map[string]bool)
 	}
 }
 
+var (
+	identRe     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	fieldPathRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$`)
+)
+
 func (c *checker) checkCheckup(ck *Checkup) {
 	if s := ck.Sessions; s != nil {
 		c.ref("checkup.sessions", PathRef{s.Root, s.Glob})
-		if s.Format != "jsonl" && s.Format != "sqlite" {
+		switch s.Format {
+		case "jsonl":
+			if s.SQLite != nil {
+				c.add("checkup.sessions.sqlite", "只用于 format: sqlite")
+			}
+			for i, u := range s.UsageFields {
+				if !fieldPathRe.MatchString(u) {
+					c.add(fmt.Sprintf("checkup.sessions.usage_fields[%d]", i), "必须是点分字段路径")
+				}
+			}
+			if s.TimeField != "" && !fieldPathRe.MatchString(s.TimeField) {
+				c.add("checkup.sessions.time_field", "必须是点分字段路径")
+			}
+		case "sqlite":
+			if len(s.UsageFields) > 0 || s.TimeField != "" {
+				c.add("checkup.sessions", "format: sqlite 用 sqlite 子项声明列，不用 usage_fields、time_field")
+			}
+			if t := s.SQLite; t != nil {
+				for f, v := range map[string]string{"table": t.Table, "session_column": t.SessionColumn, "time_column": t.TimeColumn} {
+					if !identRe.MatchString(v) {
+						c.add("checkup.sessions.sqlite."+f, "必须是标识符（字母、数字、下划线）")
+					}
+				}
+				for f, v := range map[string]string{"tokens_column": t.TokensColumn, "size_column": t.SizeColumn} {
+					if v != "" && !identRe.MatchString(v) {
+						c.add("checkup.sessions.sqlite."+f, "必须是标识符（字母、数字、下划线）")
+					}
+				}
+				for i, v := range t.BytesColumns {
+					if !identRe.MatchString(v) {
+						c.add(fmt.Sprintf("checkup.sessions.sqlite.bytes_columns[%d]", i), "必须是标识符（字母、数字、下划线）")
+					}
+				}
+				if t.TimeUnit != "s" && t.TimeUnit != "ms" {
+					c.add("checkup.sessions.sqlite.time_unit", "只能是 s 或 ms")
+				}
+			}
+		default:
 			c.add("checkup.sessions.format", "只能是 jsonl 或 sqlite")
 		}
+	}
+	if t := ck.Thresholds; t != nil && (t.LongSessionDays < 0 || t.LongSessionTokens < 0 || t.CostGrowthMin < 0 || t.PileupBytes < 0 || t.ColdDays < 0) {
+		c.add("checkup.thresholds", "不能为负数")
 	}
 	for i, m := range ck.MemoryFiles {
 		f := fmt.Sprintf("checkup.memory_files[%d]", i)

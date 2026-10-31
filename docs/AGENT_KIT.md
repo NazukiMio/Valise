@@ -122,3 +122,44 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 - Valise 的核心功能在没有任何伴生插件时必须完整可用。
 - 伴生插件和其他第三方方案在推荐时**地位相同**，同样只能通过第 6 节的标准被选择，不得在 UI 中获得特殊位置。
 - 冷存档插件与 Valise 之间只约定一份索引格式。Valise 能读到这份索引就利用它（例如在体检中显示哪些会话已经归档），读不到就降级处理，不影响任何功能。
+
+## 8. 实现细节（M6 确定）
+
+### 8.1 MCP 服务端
+
+- `valise-porter mcp --instance <id>`：stdio 上的 JSON-RPC 2.0，一行一条消息。只实现 `initialize`、`notifications/initialized`、`ping`、`tools/list`、`tools/call`，不引入第三方 MCP 库。协议版本：客户端请求的版本在支持列表（`2025-06-18`、`2025-03-26`、`2024-11-05`）内就照用，否则回复最新的。
+- 工具结果同时放在 `structuredContent`（JSON 对象）和一段 `text` 中；用户错误（频率限制、校验失败等）以 `isError: true` 返回"原因 + 建议"，不中断会话。
+- 审计记录的发起者为 `agent-mcp`。频率限制与交接状态保存在 `~/.local/state/valise/mcp/<实例>.json`。
+- MCP 进程以实例在服务器上的 profile 副本为准（与封存相同），不需要客户端在线。
+
+### 8.2 归类提议
+
+- `valise_propose_enrollment` 的 `path` 是相对 root 的路径：指向文件时生成精确规则，指向目录时生成 `<path>/**`。代码校验：路径存在、不含 `..` 与绝对路径、不经过符号链接逃出 root、类别合法；与已有 `secrets` 规则冲突的非 `secrets` 提议直接拒绝。
+- 提议保存在 `~/.config/valise/instances/<实例>.proposals.json`（0600），每条有 id、规则、理由、时间、是否"降级"。同一规则重复提议时只更新理由。
+- 客户端：`valise proposals <服务器> <实例>` 列出全部待确认提议，降级提议单独成组；`--accept <id,…|all>` 只接受非降级提议；降级提议必须用 `--accept-demotion <id,…>` 单独接受，执行前再次说明"这些文件将不再进入 soul 档"；`--reject <id,…|all>` 拒绝。接受的提议写入实例记录的 `local_overrides`，从下一次封存起生效。
+
+### 8.3 交接
+
+- `valise_handoff_begin`：封存一次 `soul` 档（不受 `valise_seal` 的 10 分钟限制），记录每个交接目标文件当时的 SHA-256 与长度，返回快照 id、最近活跃会话的统计、目标、行数上限与 `new_session_hint`。同一时间只能有一个未完成的交接；新的 begin 会作废旧的。
+- `valise_handoff_finish`：`append_section` 模式下逐个检查目标文件：原内容必须原样保留为前缀；追加部分不超过 `max_lines` 行，第一行非空行必须是带日期（`YYYY-MM-DD`）的 Markdown 标题。至少一个目标被修改才算成功。失败时返回具体原因，并说明可以从 begin 的快照恢复原文件。
+
+### 8.4 体检
+
+- 会话来源由 profile 的 `checkup.sessions` 声明：`format: jsonl` 时每个文件是一个会话，每行一个事件，`usage_fields` 为要求和的 token 字段（点分路径），`time_field` 为事件时间字段（RFC 3339 或 Unix 秒/毫秒）；`format: sqlite` 时由 `sqlite` 子项声明表名、会话列、时间列与单位、token 列、大小列（见 PROFILES.md）。没有 token 字段时按字节数除以 4 估算，并标注为"估算"。
+- 默认阈值（全局，profile 可在 `checkup.thresholds` 中覆盖）：
+
+| finding | 默认条件 |
+| :--- | :--- |
+| `long_session` | 单个会话持续 ≥ 14 天，或 token ≥ 500,000 |
+| `cost_growth` | 最近 3 个自然日（UTC）的 token 量逐日上升，且最后一天 ≥ 第一天的 1.5 倍、≥ 50,000 |
+| `memory_bloat` | 记忆文件行数超过 profile 的 `warn_lines` |
+| `session_pileup` | 会话总体积 ≥ 100 MiB，且最后活动在 90 天前的会话占体积 ≥ 50% |
+| `no_memory_mechanism` | profile 声明的记忆机制标记一个都不存在（没有声明标记时也视为不存在） |
+
+- 体检只读：SQLite 以只读方式打开，不修改任何文件。
+
+### 8.5 安装逃生舱技能
+
+- `valise kit install <服务器> <实例>`：先列出将要写入的文件，用户确认后由 porter 把 `agent-kit/skills/` 下的四个技能写到 profile 的 `agent_kit.skills_dir`（每个技能一个子目录，已存在且内容不同时先备份为 `SKILL.md.valise-bak-<时间>`）。技能文件随客户端分发。
+- 然后打印 MCP 的接入方法：profile 有 `agent_kit.mcp_add_argv` 时，展开 `${PORTER}`、`${INSTANCE}` 后打印 harness 自己的命令供用户执行；同时打印一句可以转告 agent 的话。Valise 不执行这条命令，也不修改 harness 配置。
+- 技能正文用英文书写，并要求 agent 用用户的语言与用户交流；触发说明同时列出中英文说法。

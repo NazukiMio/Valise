@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 5
+profile_version: 6
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -109,7 +109,13 @@ native:
   export_argv: [openclaw, backup, create, --output, "${OUT}", --verify]   # OBS: `openclaw backup create --help`
 
 checkup:
-  sessions: { root: state, glob: "agents/*/agent/openclaw-agent.sqlite", format: sqlite, usage_fields: null }   # S&S: transcripts live here; schema verify: pending (M6)
+  # S&S: transcripts live here. OBS (2026-10-31): transcript_events(session_id, seq, event_json | event_zstd, created_at INTEGER,
+  # event_utf8_bytes); no rows yet, so the time unit and where token usage lives: verify: pending
+  sessions:
+    root: state
+    glob: "agents/*/agent/openclaw-agent.sqlite"
+    format: sqlite
+    sqlite: { table: transcript_events, session_column: session_id, time_column: created_at, time_unit: ms, size_column: event_utf8_bytes, bytes_columns: [event_json] }
   memory_files: [ { root: workspace, glob: "MEMORY.md", warn_lines: 600 } ]
   memory_mechanism_markers: [ { root: workspace, glob: "memory/*.md" } ]   # WS: memory/YYYY-MM-DD.md daily log
   native_options_doc: null         # verify: pending
@@ -121,3 +127,4 @@ handoff:
 agent_kit:
   skills_dir: { root: workspace, path: "skills/" }   # WS: workspace skills, highest precedence
   mcp_config_doc: null             # verify: pending
+  mcp_add_argv: [openclaw, mcp, add, valise, --command, "${PORTER}", --arg=mcp, --arg=--instance, "--arg=${INSTANCE}"]   # OBS: `openclaw mcp add --help`; verify: pending

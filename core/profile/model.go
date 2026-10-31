@@ -206,14 +206,41 @@ type Checkup struct {
 	MemoryFiles            []MemoryFile  `yaml:"memory_files" json:"memory_files,omitempty"`
 	MemoryMechanismMarkers []PathRef     `yaml:"memory_mechanism_markers" json:"memory_mechanism_markers,omitempty"`
 	NativeOptionsDoc       string        `yaml:"native_options_doc" json:"native_options_doc,omitempty"`
+	// Thresholds override the checkup defaults (docs/AGENT_KIT.md 8.4).
+	Thresholds *Thresholds `yaml:"thresholds" json:"thresholds,omitempty"`
 }
 
-// SessionsSpec locates session logs. UsageFields is defined in M6.
+// Thresholds are checkup limits; zero means the default.
+type Thresholds struct {
+	LongSessionDays   int   `yaml:"long_session_days" json:"long_session_days,omitempty"`
+	LongSessionTokens int64 `yaml:"long_session_tokens" json:"long_session_tokens,omitempty"`
+	CostGrowthMin     int64 `yaml:"cost_growth_min_tokens" json:"cost_growth_min_tokens,omitempty"`
+	PileupBytes       int64 `yaml:"session_pileup_bytes" json:"session_pileup_bytes,omitempty"`
+	ColdDays          int   `yaml:"cold_days" json:"cold_days,omitempty"`
+}
+
+// SessionsSpec locates session logs: one JSONL file per session, or rows
+// of a SQLite table.
 type SessionsSpec struct {
-	Root        string `yaml:"root" json:"root"`
-	Glob        string `yaml:"glob" json:"glob"`
-	Format      string `yaml:"format" json:"format"`
-	UsageFields any    `yaml:"usage_fields" json:"usage_fields,omitempty"`
+	Root   string `yaml:"root" json:"root"`
+	Glob   string `yaml:"glob" json:"glob"`
+	Format string `yaml:"format" json:"format"`
+	// JSONL: dotted paths of token counts to sum, and the event time field.
+	UsageFields []string `yaml:"usage_fields" json:"usage_fields,omitempty"`
+	TimeField   string   `yaml:"time_field" json:"time_field,omitempty"`
+	// SQLite: where the events are.
+	SQLite *SessionTable `yaml:"sqlite" json:"sqlite,omitempty"`
+}
+
+// SessionTable describes session events stored as table rows.
+type SessionTable struct {
+	Table         string   `yaml:"table" json:"table"`
+	SessionColumn string   `yaml:"session_column" json:"session_column"`
+	TimeColumn    string   `yaml:"time_column" json:"time_column"`
+	TimeUnit      string   `yaml:"time_unit" json:"time_unit"` // s or ms
+	TokensColumn  string   `yaml:"tokens_column" json:"tokens_column,omitempty"`
+	SizeColumn    string   `yaml:"size_column" json:"size_column,omitempty"`
+	BytesColumns  []string `yaml:"bytes_columns" json:"bytes_columns,omitempty"`
 }
 
 // MemoryFile is a memory file with a line threshold.
@@ -241,6 +268,9 @@ type HandoffTarget struct {
 type AgentKit struct {
 	SkillsDir    *RootPath `yaml:"skills_dir" json:"skills_dir,omitempty"`
 	MCPConfigDoc string    `yaml:"mcp_config_doc" json:"mcp_config_doc,omitempty"`
+	// MCPAddArgv is the harness's own command for adding an MCP server,
+	// shown to the user (never run by Valise).
+	MCPAddArgv Argv `yaml:"mcp_add_argv" json:"mcp_add_argv,omitempty"`
 }
 
 // RootPath is a plain relative path (not a glob) under a root.

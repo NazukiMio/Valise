@@ -82,7 +82,13 @@ native:
   export_argv: null              # 可选：调用 harness 自带的导出功能，产物作为附加文件存入金库（${OUT} 为输出路径）
 
 checkup:
-  sessions: { root: state, glob: "sessions/*.jsonl", format: jsonl, usage_fields: null }
+  sessions: { root: state, glob: "sessions/*.jsonl", format: jsonl, usage_fields: null, time_field: null }
+  # format: sqlite 时改用 sqlite 子项（标识符只能是字母、数字、下划线）：
+  # sessions: { root: state, glob: "state.db", format: sqlite,
+  #             sqlite: { table: messages, session_column: session_id, time_column: timestamp, time_unit: s,
+  #                       tokens_column: token_count, size_column: null, bytes_columns: [content] } }
+  # 每行的大小取 size_column（非空时），否则为 bytes_columns 各列 length() 之和。
+  thresholds: {}                 # 可选，覆盖体检默认阈值（AGENT_KIT.md 8.4）
   memory_files: [ { root: state, glob: "MEMORY.md", warn_lines: 800 } ]
   memory_mechanism_markers: [ { root: state, glob: "memories/*.md" } ]
   native_options_doc: https://…  # 官方文档中关于记忆、压缩、冷存档功能的说明页
@@ -94,6 +100,7 @@ handoff:
 agent_kit:
   skills_dir: { root: workspace, path: "skills/" }
   mcp_config_doc: https://…      # 如何为该 harness 配置 MCP Server（Valise 只展示，不自动修改配置）
+  mcp_add_argv: [example, mcp, add, valise, --command, "${PORTER}", --arg=mcp, --arg=--instance, "--arg=${INSTANCE}"]   # 可选：只打印给用户，Valise 不执行
 ```
 
 变量说明：`${HOME}` 表示用户主目录；`${STATE_DIR}` 表示解析后的状态目录；`${env:NAME}` 表示环境变量，变量未设置时这一项视为不存在；`${OUT}` 只在 `export_argv` 中使用。
