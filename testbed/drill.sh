@@ -79,6 +79,9 @@ done
 # ---------------------------------------------------------------- M2 -----
 # Enrollment of the real harnesses (see AGENT.md target matrix).
 #   host:profile:expected secrets (comma-separated, root-relative)
+# The client ships no profiles (docs/PROFILES.md 1.1); a development build has
+# no release key, so the repository's profiles are used as local profiles.
+mkdir -p "$work/config/profiles" && cp "$root"/profiles/*.yaml "$work/config/profiles/"
 enrollments=(
 	"ubuntu-vm:openclaw:openclaw.json"
 	"ubuntu-vm:dsh:"
@@ -91,7 +94,7 @@ for e in "${enrollments[@]}"; do
 	in_hosts "$h" || continue
 	echo "== M2: $p on $h"
 	out="$work/$h.$p.enroll.json"
-	if ! "$valise" enroll "$h" --profile "$p" --report-json > "$out" 2> "$out.err"; then
+	if ! "$valise" --config-dir "$work/config" enroll "$h" --profile "$p" --report-json > "$out" 2> "$out.err"; then
 		fail "$h/$p: enroll report"; cat "$out.err"; continue
 	fi
 	pass "$h/$p: enroll report"
@@ -118,7 +121,7 @@ for e in "${enrollments[@]}"; do
 	esac
 	echo "   unclassified: $(r 'd["report"]["unclassified"]["files"]') files"
 
-	if "$valise" enroll "$h" --profile "$p" --accept > "$work/$h.$p.accept.txt" 2>&1; then
+	if "$valise" --config-dir "$work/config" enroll "$h" --profile "$p" --accept > "$work/$h.$p.accept.txt" 2>&1; then
 		pass "$h/$p: enroll --accept"
 	else
 		fail "$h/$p: enroll --accept"; cat "$work/$h.$p.accept.txt"; continue
@@ -128,7 +131,7 @@ for e in "${enrollments[@]}"; do
 	else
 		fail "$h/$p: instance record"
 	fi
-	"$valise" enroll "$h" --profile "$p" --report-json > "$out.2" 2>/dev/null
+	"$valise" --config-dir "$work/config" enroll "$h" --profile "$p" --report-json > "$out.2" 2>/dev/null
 	[ "$(json_field "$out.2" 'd["report"]["previous"] is not None and not d["report"].get("changes")')" = True ] \
 		&& pass "$h/$p: re-enroll sees record, no changes" || fail "$h/$p: re-enroll diff"
 done
@@ -145,6 +148,7 @@ if [ ! -f "$keydir/config/keystore.age" ]; then
 	chmod 600 "$keydir/identity.txt" "$keydir/passphrase.txt"
 	"$valise" --config-dir "$keydir/config" key import --file "$keydir/identity.txt" < "$keydir/passphrase.txt" >/dev/null
 fi
+mkdir -p "$keydir/config/profiles" && cp "$root"/profiles/*.yaml "$keydir/config/profiles/"
 V() { "$valise" --config-dir "$keydir/config" "$@"; }
 restore_py="$root/tools/standalone-restore/restore.py"
 nas_dest="nas-test:/mnt/test/nas/valise-vault/"

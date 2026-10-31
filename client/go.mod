@@ -13,7 +13,6 @@ require (
 	filippo.io/hpke v0.4.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	valise/core v0.0.0
-	valise/profiles v0.0.0
 	valise/testbed v0.0.0
 )
 
@@ -21,5 +20,3 @@ replace (
 	valise/core => ../core
 	valise/testbed => ../testbed
 )
-
-replace valise/profiles => ../profiles

@@ -248,3 +248,53 @@ func TestRepositoryProfilesPass(t *testing.T) {
 		}
 	}
 }
+
+func TestLintDisplayAuthRemedies(t *testing.T) {
+	base := `schema: valise-profile/1
+id: x
+display_name: X
+profile_version: 1
+status: draft
+detect: { binaries: [x], state_dir_candidates: ["${HOME}/.x"] }
+paths: [ { root: state, glob: "**", category: memory, verify: pending } ]
+provenance: { kind: binary, binary: { name: x } }
+`
+	cases := map[string]string{
+		"display.color": "display: { color: red }\n",
+		"display.icon":  "display: { icon: \"1\\n2\\n3\\n4\\n5\\n6\" }\n",
+		"第 1 行":         "display: { icon: \"一二三四五六七\" }\n",
+		"entries[0].auth": `entries: [ { id: m, kind: web, host: 127.0.0.1, port: 1, path: "/",
+  auth: { url_argv: [x, url], token_argv: [x, tok] } } ]
+`,
+		"url_suffix": `entries: [ { id: m, kind: web, host: 127.0.0.1, port: 1, path: "/", auth: { url_suffix: "#t=${TOKEN}" } } ]
+`,
+		"checkup.remedies.nope": "checkup: { remedies: { nope: [a] } }\n",
+	}
+	for want, extra := range cases {
+		d, err := Parse([]byte(base + extra))
+		if err != nil {
+			t.Fatalf("%s: %v", want, err)
+		}
+		res := Lint([]*Document{d})
+		found := false
+		for _, i := range res[0].Issues {
+			if strings.Contains(i.String(), want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: no issue in %v", want, res[0].Issues)
+		}
+	}
+	ok := base + `display: { color: "#E8603C", icon: "┌─┐\n│◕│\n└─┘", icon_source: x }
+entries: [ { id: m, kind: web, host: 127.0.0.1, port: 1, path: "/", auth: { token_argv: [x, tok], url_suffix: "#token=${TOKEN}", hint: h } } ]
+checkup: { remedies: { long_session: ["send /new"] } }
+`
+	d, err := Parse([]byte(ok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res := Lint([]*Document{d}); len(res[0].Issues) > 0 {
+		t.Fatal(res[0].Issues)
+	}
+}

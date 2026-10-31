@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // Issue is one profilelint finding. Every issue is an error.
@@ -296,6 +297,24 @@ func (c *checker) checkTop(p *Profile) {
 		if len(e.Path) == 0 || e.Path[0] != '/' {
 			c.add(f+".path", "必须以 / 开头")
 		}
+		if a := e.Auth; a != nil {
+			c.argv(f+".auth.url_argv", a.URLArgv, false)
+			c.argv(f+".auth.token_argv", a.TokenArgv, false)
+			switch {
+			case len(a.URLArgv) > 0 && len(a.TokenArgv) > 0:
+				c.add(f+".auth", "url_argv 与 token_argv 最多出现一个")
+			case a.URLSuffix != "" && len(a.TokenArgv) == 0:
+				c.add(f+".auth.url_suffix", "只能与 token_argv 一起使用")
+			}
+			if a.URLSuffix != "" {
+				if err := checkVars(a.URLSuffix, VarToken); err != nil {
+					c.add(f+".auth.url_suffix", "%v", err)
+				}
+			}
+		}
+	}
+	if d := p.Display; d != nil {
+		c.checkDisplay(d)
 	}
 	if h := p.Health; h != nil {
 		if h.GraceSeconds < 0 {
@@ -426,11 +445,64 @@ func (c *checker) checkHealth(f string, ch HealthCheck, entries map[string]bool)
 }
 
 var (
+	colorRe     = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 	identRe     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	fieldPathRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$`)
 )
 
+// FindingCodes are the checkup findings a profile may declare remedies for
+// (docs/AGENT_KIT.md 8.4).
+var FindingCodes = []string{"long_session", "cost_growth", "memory_bloat", "session_pileup", "no_memory_mechanism"}
+
+// Icon limits, see docs/PROFILES.md section 3.
+const (
+	MaxIconLines = 5
+	MaxIconWidth = 12
+)
+
+func (c *checker) checkDisplay(d *Display) {
+	if d.Color != "" && !colorRe.MatchString(d.Color) {
+		c.add("display.color", "必须是 #RRGGBB")
+	}
+	lines := strings.Split(strings.TrimRight(d.Icon, "\n"), "\n")
+	if len(lines) > MaxIconLines {
+		c.add("display.icon", "最多 %d 行", MaxIconLines)
+	}
+	for i, l := range lines {
+		if strings.IndexFunc(l, unicode.IsControl) >= 0 {
+			c.add(fmt.Sprintf("display.icon 第 %d 行", i+1), "不能包含控制字符或 ANSI 转义")
+		}
+		if w := DisplayWidth(l); w > MaxIconWidth {
+			c.add(fmt.Sprintf("display.icon 第 %d 行", i+1), "显示宽度 %d 超过 %d", w, MaxIconWidth)
+		}
+	}
+}
+
+// DisplayWidth is the terminal width of s: East Asian wide and fullwidth
+// characters count two columns, everything else one.
+func DisplayWidth(s string) int {
+	w := 0
+	for _, r := range s {
+		w++
+		if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hangul, r) || unicode.Is(unicode.Hiragana, r) ||
+			unicode.Is(unicode.Katakana, r) || (r >= 0xFF00 && r <= 0xFF60) || (r >= 0x1F300 && r <= 0x1FAFF) {
+			w++
+		}
+	}
+	return w
+}
+
 func (c *checker) checkCheckup(ck *Checkup) {
+	for code, rs := range ck.Remedies {
+		if !slices.Contains(FindingCodes, code) {
+			c.add("checkup.remedies."+code, "不是已知的体检发现")
+		}
+		for i, r := range rs {
+			if strings.TrimSpace(r) == "" {
+				c.add(fmt.Sprintf("checkup.remedies.%s[%d]", code, i), "不能为空")
+			}
+		}
+	}
 	if s := ck.Sessions; s != nil {
 		c.ref("checkup.sessions", PathRef{s.Root, s.Glob})
 		switch s.Format {

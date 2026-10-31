@@ -23,6 +23,7 @@ type Profile struct {
 	Status                string       `yaml:"status" json:"status"`
 	HarnessVersionsTested []string     `yaml:"harness_versions_tested" json:"harness_versions_tested,omitempty"`
 	Docs                  string       `yaml:"docs" json:"docs,omitempty"`
+	Display               *Display     `yaml:"display" json:"display,omitempty"`
 	Extends               string       `yaml:"extends" json:"extends,omitempty"`
 	When                  *When        `yaml:"when" json:"when,omitempty"`
 	Detect                *Detect      `yaml:"detect" json:"detect,omitempty"`
@@ -41,6 +42,14 @@ type Profile struct {
 	Checkup               *Checkup     `yaml:"checkup" json:"checkup,omitempty"`
 	Handoff               *Handoff     `yaml:"handoff" json:"handoff,omitempty"`
 	AgentKit              *AgentKit    `yaml:"agent_kit" json:"agent_kit,omitempty"`
+}
+
+// Display is how the instance card looks in the UI (docs/PROFILES.md).
+type Display struct {
+	Color string `yaml:"color" json:"color,omitempty"`
+	// Icon is character art taken from the harness's own TUI.
+	Icon       string `yaml:"icon" json:"icon,omitempty"`
+	IconSource string `yaml:"icon_source" json:"icon_source,omitempty"`
 }
 
 // When is the activation condition of a child profile.
@@ -168,6 +177,18 @@ type Entry struct {
 	Host string `yaml:"host" json:"host"`
 	Port int    `yaml:"port" json:"port"`
 	Path string `yaml:"path" json:"path"`
+	// Auth says how the harness's own command yields the entry's token
+	// (docs/LOGIN_RELAY.md 4.1).
+	Auth *EntryAuth `yaml:"auth" json:"auth,omitempty"`
+}
+
+// EntryAuth obtains an entry's token with a harness command. At most one of
+// URLArgv and TokenArgv is set; URLSuffix goes with TokenArgv.
+type EntryAuth struct {
+	URLArgv   Argv   `yaml:"url_argv" json:"url_argv,omitempty"`
+	TokenArgv Argv   `yaml:"token_argv" json:"token_argv,omitempty"`
+	URLSuffix string `yaml:"url_suffix" json:"url_suffix,omitempty"`
+	Hint      string `yaml:"hint" json:"hint,omitempty"`
 }
 
 // Health declares how to tell the instance is healthy.
@@ -208,6 +229,9 @@ type Checkup struct {
 	NativeOptionsDoc       string        `yaml:"native_options_doc" json:"native_options_doc,omitempty"`
 	// Thresholds override the checkup defaults (docs/AGENT_KIT.md 8.4).
 	Thresholds *Thresholds `yaml:"thresholds" json:"thresholds,omitempty"`
+	// Remedies are the harness's own ways to handle each finding, keyed by
+	// finding code; shown to the user, never executed (docs/AGENT_KIT.md 8.6).
+	Remedies map[string][]string `yaml:"remedies" json:"remedies,omitempty"`
 }
 
 // Thresholds are checkup limits; zero means the default.

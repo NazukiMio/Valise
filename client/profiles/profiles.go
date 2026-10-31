@@ -1,17 +1,15 @@
-// Package profiles loads the official profiles embedded in the client and
-// the user's local profiles, and lints them as one set.
+// Package profiles loads the official profiles from the installed, signed
+// profile pack and the user's local profiles, and lints them as one set.
+// The client ships no profile of its own (docs/PROFILES.md 1.1).
 package profiles
 
 import (
 	"errors"
-	"fmt"
-	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"valise/core/profile"
-	official "valise/profiles"
 )
 
 // Loaded is a profile ready to use.
@@ -27,31 +25,31 @@ type Set struct {
 	ByID map[string]*Loaded
 	// Rejected lists local profiles that failed lint, with reasons.
 	Rejected []string
+	// Pack is the installed pack's manifest, nil when none is installed or
+	// it failed verification (then PackProblem says why).
+	Pack        *Manifest
+	PackProblem error
 }
 
 // LocalDir is os.UserConfigDir()/valise/profiles.
 func LocalDir(dataDir string) string { return filepath.Join(dataDir, "profiles") }
 
-// Load reads the embedded official profiles and *.yaml in localDir (which
-// may be missing). An official profile failing lint is a build defect and an
-// error; a failing local profile is skipped and reported in Rejected.
-func Load(localDir string) (*Set, error) {
+// Load reads the installed pack (verified against publicKey) and *.yaml in
+// the local profile directory. A pack that fails verification is left out
+// and reported in PackProblem; a failing local profile is skipped and
+// reported in Rejected.
+func Load(dataDir, publicKey string) (*Set, error) {
 	var docs []*profile.Document
 	local := map[*profile.Document]bool{}
-	names, _ := fs.Glob(official.FS, "*.yaml")
-	for _, n := range names {
-		b, err := official.FS.ReadFile(n)
-		if err != nil {
-			return nil, err
-		}
-		d, err := profile.Parse(b)
-		if err != nil {
-			return nil, fmt.Errorf("内置 profile %s 无法解析：%w", n, err)
-		}
-		d.Path = "profiles/" + n
-		docs = append(docs, d)
-	}
 	set := &Set{ByID: map[string]*Loaded{}}
+	pack, err := Installed(dataDir, publicKey)
+	if err != nil {
+		set.PackProblem = err
+	} else if pack != nil {
+		set.Pack = &pack.Manifest
+		docs = append(docs, pack.Docs...)
+	}
+	localDir := LocalDir(dataDir)
 	files, _ := filepath.Glob(filepath.Join(localDir, "*.yaml"))
 	sort.Strings(files)
 	for _, f := range files {
@@ -70,7 +68,7 @@ func Load(localDir string) (*Set, error) {
 				msgs = append(msgs, i.String())
 			}
 			if !local[r.Doc] {
-				return nil, errors.New("内置 profile 未通过 lint：" + strings.Join(msgs, "; "))
+				return nil, errors.New("资料包中的 profile 未通过 lint：" + strings.Join(msgs, "; "))
 			}
 			set.Rejected = append(set.Rejected, strings.Join(msgs, "; "))
 			continue

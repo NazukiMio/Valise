@@ -50,6 +50,9 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   kit install <服务器> <实例>                      安装逃生舱技能，并给出接入 MCP 的方法
   kit status <服务器> <实例>                       查看技能安装状态与最近一次 agent 经 MCP 的调用
   kit uninstall <服务器> <实例> [--force]          删除逃生舱技能（被修改过的需 --force），并给出撤除 MCP 的方法
+  profiles status                                查看 harness 资料包与本地 profile
+  profiles install [--tag profiles-…] [--file <文件>] [--yes]
+                                                 安装 harness 资料包（在线拉取最新版，或本地文件；未签名的只能作为本地 profile）
   server list | add <别名>… | remove <别名> | import [<别名>…]
                                                  已记录服务器（只存 SSH 别名；import 从 ~/.ssh/config 选择）
   login <服务器> <实例> [--method id]              登录中继：在本机浏览器中完成服务器上的登录
@@ -134,6 +137,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.proposals(ctx, args[1:])
 	case args[0] == "tui" && len(args) == 1:
 		return c.tui(ctx)
+	case args[0] == "profiles":
+		return c.profilesCmd(ctx, args[1:])
 	case args[0] == "server":
 		return c.server(args[1:])
 	case args[0] == "kit":

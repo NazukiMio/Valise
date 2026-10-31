@@ -10,7 +10,6 @@ import (
 	"filippo.io/age"
 
 	"valise/client/porter"
-	"valise/client/profiles"
 	"valise/client/ssh"
 	"valise/core/enroll"
 	"valise/core/profile"
@@ -119,7 +118,7 @@ func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase st
 			rp.Snapshot = m
 		}
 	}
-	set, err := profiles.Load(profiles.LocalDir(s.Dirs.Data))
+	set, err := s.Profiles()
 	if err != nil {
 		return nil, err
 	}

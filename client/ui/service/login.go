@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"valise/client/porter"
-	"valise/client/profiles"
 	"valise/client/relay"
 	"valise/client/ssh"
 	"valise/client/tunnel"
@@ -73,13 +72,13 @@ func (s *Service) LoginMethods(ctx context.Context, host, instance string) (*Log
 	if res.Record == nil {
 		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+instance, "先运行 valise enroll <服务器> --accept")
 	}
-	set, err := profiles.Load(profiles.LocalDir(s.Dirs.Data))
+	set, err := s.Profiles()
 	if err != nil {
 		return nil, err
 	}
 	lp := set.ByID[res.Record.ProfileID]
 	if lp == nil {
-		return nil, valise.New("profile_missing", "客户端中没有 profile "+res.Record.ProfileID, "升级客户端")
+		return nil, valise.New("profile_missing", "本机没有 profile "+res.Record.ProfileID, "安装或更新 harness 资料包：valise profiles install")
 	}
 	return &LoginTarget{Record: res.Record, Profile: *lp.Effective, Local: lp.Local}, nil
 }

@@ -56,9 +56,12 @@ func (s *Service) session(ctx context.Context, host string) (*ssh.RPCClient, err
 
 // Enroll detects, scans and (with Accept) records one instance.
 func (s *Service) Enroll(ctx context.Context, host string, opts EnrollOptions) (*EnrollResult, error) {
-	set, err := profiles.Load(profiles.LocalDir(s.Dirs.Data))
+	set, err := s.Profiles()
 	if err != nil {
-		return nil, valise.New("profiles_broken", "内置 profile 损坏", "重新安装 Valise 客户端").WithDetail(err.Error())
+		return nil, err
+	}
+	if err := needProfiles(set); err != nil {
+		return nil, err
 	}
 	var overrides []profile.Override
 	for _, a := range opts.Assign {

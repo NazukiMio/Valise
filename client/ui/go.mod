@@ -3,6 +3,9 @@ module valise/ui
 go 1.26.0
 
 require (
+	charm.land/bubbles/v2 v2.2.1
+	charm.land/bubbletea/v2 v2.1.1
+	charm.land/lipgloss/v2 v2.0.6
 	filippo.io/age v1.3.1
 	golang.org/x/term v0.37.0
 	valise/agentkit v0.0.0
@@ -14,9 +17,6 @@ require (
 require go.yaml.in/yaml/v3 v3.0.4 // indirect
 
 require (
-	charm.land/bubbles/v2 v2.2.1 // indirect
-	charm.land/bubbletea/v2 v2.1.1 // indirect
-	charm.land/lipgloss/v2 v2.0.6 // indirect
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
@@ -37,7 +37,6 @@ require (
 	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	valise/profiles v0.0.0 // indirect
 )
 
 replace (
@@ -45,7 +44,5 @@ replace (
 	valise/core => ../../core
 	valise/testbed => ../../testbed
 )
-
-replace valise/profiles => ../../profiles
 
 replace valise/agentkit => ../../agent-kit

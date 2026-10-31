@@ -5,25 +5,128 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"valise/client/minisign/minisigntest"
+	"valise/core/valise"
 )
 
-func TestLoadOfficial(t *testing.T) {
-	s, err := Load(filepath.Join(t.TempDir(), "missing"))
+const repoProfiles = "../../profiles"
+
+func buildPack(t *testing.T) []byte {
+	t.Helper()
+	b, err := Build(repoProfiles, "2026.10.31", time.Unix(1_800_000_000, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.ByID) < 3 {
-		t.Fatalf("official profiles: %v", s.ByID)
+	return b
+}
+
+func code(err error) string {
+	if ue, ok := valise.As(err); ok {
+		return ue.Code
+	}
+	return ""
+}
+
+func TestNoPack(t *testing.T) {
+	s, err := Load(t.TempDir(), "")
+	if err != nil || len(s.ByID) != 0 || s.Pack != nil || s.PackProblem != nil {
+		t.Fatalf("%+v %v", s, err)
+	}
+}
+
+func TestSignedPack(t *testing.T) {
+	signer := minisigntest.New()
+	data := t.TempDir()
+	tgz := buildPack(t)
+	if again := buildPack(t); string(again) != string(tgz) {
+		t.Fatal("Build is not deterministic")
+	}
+	sig := signer.Sign(tgz, "file:"+PackAsset)
+	if _, err := Install(data, tgz, signer.Sign(append([]byte{}, tgz[:len(tgz)-1]...), "x"), signer.PublicKey); code(err) != "pack_signature_invalid" {
+		t.Fatalf("bad signature: %v", err)
+	}
+	if _, err := Install(data, tgz, nil, signer.PublicKey); code(err) != "pack_unsigned" {
+		t.Fatalf("no signature: %v", err)
+	}
+	p, err := Install(data, tgz, sig, signer.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Manifest.Profiles) < 3 {
+		t.Fatalf("%+v", p.Manifest)
+	}
+	s, err := Load(data, signer.PublicKey)
+	if err != nil || s.PackProblem != nil || s.Pack == nil || s.Pack.Version != "2026.10.31" {
+		t.Fatalf("%+v %v", s, err)
 	}
 	for id, l := range s.ByID {
 		if l.Local || l.Effective == nil {
 			t.Errorf("%s: %+v", id, l)
 		}
 	}
+	// A different key (or none) makes the installed pack unusable.
+	s, _ = Load(data, minisigntest.New().PublicKey)
+	if len(s.ByID) != 0 || code(s.PackProblem) != "pack_signature_invalid" {
+		t.Fatalf("%+v", s)
+	}
+	s, _ = Load(data, "")
+	if len(s.ByID) != 0 || code(s.PackProblem) != "pack_key_missing" {
+		t.Fatalf("%+v", s)
+	}
+	// Tampering on disk is caught on load.
+	os.WriteFile(filepath.Join(PackDir(data), PackAsset), append(tgz, 0), 0o600)
+	if s, _ = Load(data, signer.PublicKey); s.PackProblem == nil {
+		t.Fatal("tampered pack loaded")
+	}
+}
+
+func TestReadRejects(t *testing.T) {
+	if _, err := Read([]byte("not gzip")); code(err) != "pack_invalid" {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	b, _ := os.ReadFile(filepath.Join(repoProfiles, "dsh.yaml"))
+	os.WriteFile(filepath.Join(dir, "dsh.yaml"), b, 0o644)
+	os.WriteFile(filepath.Join(dir, "broken.yaml"), []byte(strings.Replace(string(b), "id: dsh", "id: Bad", 1)), 0o644)
+	if _, err := Build(dir, "x", time.Now()); err == nil {
+		t.Fatal("Build accepted a profile failing lint")
+	}
+}
+
+func TestUnsignedPackAsLocal(t *testing.T) {
+	data := t.TempDir()
+	p, err := Read(buildPack(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmds := 0
+	for _, d := range p.Docs {
+		cmds += len(Commands(d.Profile))
+	}
+	if cmds == 0 {
+		t.Fatal("no commands listed for review")
+	}
+	paths, err := InstallLocal(data, p)
+	if err != nil || len(paths) != len(p.Docs) {
+		t.Fatal(paths, err)
+	}
+	s, err := Load(data, "")
+	if err != nil || len(s.ByID) != len(p.Docs) {
+		t.Fatalf("%+v %v", s, err)
+	}
+	for _, l := range s.ByID {
+		if !l.Local {
+			t.Fatal("unsigned profiles must be local")
+		}
+	}
 }
 
 func TestLocalProfiles(t *testing.T) {
-	dir := t.TempDir()
+	data := t.TempDir()
+	dir := LocalDir(data)
+	os.MkdirAll(dir, 0o755)
 	good := `schema: valise-profile/1
 id: my-local
 display_name: Mine
@@ -35,7 +138,7 @@ provenance: { kind: binary, binary: { name: mine } }
 `
 	os.WriteFile(filepath.Join(dir, "mine.yaml"), []byte(good), 0o644)
 	os.WriteFile(filepath.Join(dir, "bad.yaml"), []byte(strings.Replace(good, "id: my-local", "id: Bad", 1)), 0o644)
-	s, err := Load(dir)
+	s, err := Load(data, "")
 	if err != nil {
 		t.Fatal(err)
 	}
