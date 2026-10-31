@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"valise/core/valise"
@@ -82,7 +84,26 @@ func (t *Transport) controlDir() string {
 
 // Args builds the ssh argument list for a remote command.
 func (t *Transport) Args(remoteCmd string) []string {
-	args := []string{"-T"}
+	return append(t.base("-T"), "--", t.host, remoteCmd)
+}
+
+// TTYArgs runs remoteCmd under a remote PTY (ssh -tt), for interactive
+// login commands.
+func (t *Transport) TTYArgs(remoteCmd string) []string {
+	return append(t.base("-tt"), "--", t.host, remoteCmd)
+}
+
+// ForwardArgs connects stdin/stdout to host:port as seen from the server
+// (ssh -W), one connection of a tunnel.
+func (t *Transport) ForwardArgs(host string, port int) []string {
+	return append(t.base("-W", net.JoinHostPort(host, strconv.Itoa(port))), "--", t.host)
+}
+
+// Binary is the ssh executable.
+func (t *Transport) Binary() string { return t.opts.Binary }
+
+func (t *Transport) base(first ...string) []string {
+	args := append([]string{}, first...)
 	if dir := t.controlDir(); dir != "" {
 		args = append(args,
 			"-o", "ControlMaster=auto",
@@ -90,7 +111,7 @@ func (t *Transport) Args(remoteCmd string) []string {
 			"-o", fmt.Sprintf("ControlPersist=%d", ControlPersistSeconds),
 		)
 	}
-	return append(args, "--", t.host, remoteCmd)
+	return args
 }
 
 // Command returns an unstarted ssh command for remoteCmd.

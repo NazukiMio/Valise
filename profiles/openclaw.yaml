@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 3
+profile_version: 4
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -81,7 +81,26 @@ health:
     - { kind: tcp, entry: gateway }
     # No argv check: a read-only health command with documented exit codes was not found.
 
-login: []                          # M5
+# OBS: `openclaw models auth login --help` (2026.10.9). Over ssh (a "remote/VPS
+# environment") the openai provider prints its authorization link and also
+# listens for the browser callback on the server at localhost:1455; pasting
+# the final redirect URL back works too.
+login:
+  - id: openai-codex
+    display_name: "OpenAI（ChatGPT 账号）"
+    kind: loopback_oauth
+    argv: [openclaw, models, auth, login, --provider, openai]   # OBS: redirect_uri http://localhost:1455/auth/callback; completion: verify: pending
+    timeout_seconds: 300
+  - id: openai-codex-device
+    display_name: "OpenAI（ChatGPT 账号，设备码）"
+    kind: device_code
+    argv: [openclaw, models, auth, login, --provider, openai, --device-code]   # OBS: flag in --help; flow: verify: pending
+    timeout_seconds: 600
+  - id: github-copilot
+    display_name: "GitHub Copilot（设备码）"
+    kind: device_code
+    argv: [openclaw, models, auth, login-github-copilot]   # OBS: listed in `models auth --help` ("GitHub device flow"); flow: verify: pending
+    timeout_seconds: 600
 
 exclusive_secrets:
   - { root: state, glob: "credentials/**" }   # S&S: channel credentials (e.g. WhatsApp creds); tokens inlined in openclaw.json: verify: pending

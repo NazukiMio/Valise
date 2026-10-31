@@ -102,3 +102,16 @@ func TestMissingSSHBinary(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestTTYAndForwardArgs(t *testing.T) {
+	tr, _ := New("box", Options{})
+	if got := tr.TTYArgs("login"); !reflect.DeepEqual(got, []string{"-tt", "--", "box", "login"}) {
+		t.Fatalf("%v", got)
+	}
+	if got := tr.ForwardArgs("::1", 1455); !reflect.DeepEqual(got, []string{"-W", "[::1]:1455", "--", "box"}) {
+		t.Fatalf("%v", got)
+	}
+	if got := tr.ForwardArgs("127.0.0.1", 18789); !reflect.DeepEqual(got, []string{"-W", "127.0.0.1:18789", "--", "box"}) {
+		t.Fatalf("%v", got)
+	}
+}

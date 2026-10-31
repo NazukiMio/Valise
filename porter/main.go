@@ -12,8 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 
+	"valise/core/login"
 	"valise/core/rpc"
+	porterlogin "valise/porter/internal/login"
 	porterrevive "valise/porter/internal/revive"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/server"
@@ -30,7 +33,9 @@ const usage = `用法：
   valise-porter version [--json]
   valise-porter rpc
   valise-porter vault-cat <金库内的相对路径>
-  valise-porter stage-write --op <op_id>`
+  valise-porter stage-write --op <op_id>
+  valise-porter login-run <会话> [<列数> <行数>]
+  valise-porter browser-shim <链接>...`
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -68,6 +73,36 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(stdout, "%d\n", n)
+		return 0
+	case "login-run":
+		if len(args) != 2 && len(args) != 4 {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		self, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		// Exec only returns on failure.
+		cols, rows := 0, 0
+		if len(args) == 4 {
+			cols, _ = strconv.Atoi(args[2])
+			rows, _ = strconv.Atoi(args[3])
+		}
+		fmt.Fprintln(stderr, "login-run:", porterlogin.Exec(home, args[1], self, cols, rows))
+		return 1
+	case "browser-shim":
+		home, _ := os.UserHomeDir()
+		if err := porterlogin.Shim(home, os.Getenv(login.SessionEnv), args[1:]); err != nil {
+			fmt.Fprintln(stderr, "browser-shim:", err)
+			return 1
+		}
 		return 0
 	case "vault-cat":
 		if len(args) != 2 {
