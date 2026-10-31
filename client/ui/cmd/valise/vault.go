@@ -89,7 +89,12 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 	for _, s := range rep.Warnings {
 		fmt.Fprintf(w, "  · %s\n", s)
 	}
-	fmt.Fprintln(w, "状态：已写入服务器金库；尚未同步到异地（valise sync <服务器> <目标>）")
+	fmt.Fprintf(w, "周期：%s\n", rep.Leaf)
+	if len(rep.AutoSync) > 0 {
+		fmt.Fprintf(w, "状态：已写入服务器金库；正在后台顺带同步到 %s（结果见 valise vault status）\n", strings.Join(rep.AutoSync, "、"))
+	} else {
+		fmt.Fprintln(w, "状态：已写入服务器金库；尚未同步到云备份（valise sync <服务器> <目标>）")
+	}
 	return nil
 }
 

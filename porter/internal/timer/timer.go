@@ -56,6 +56,9 @@ func formatEvery(d time.Duration) string {
 	if d%(24*time.Hour) == 0 {
 		return fmt.Sprintf("%dd", d/(24*time.Hour))
 	}
+	if d%time.Hour == 0 {
+		return fmt.Sprintf("%dh", d/time.Hour)
+	}
 	return d.String()
 }
 

@@ -153,6 +153,10 @@ V() { "$valise" --config-dir "$keydir/config" "$@"; }
 restore_py="$root/tools/standalone-restore/restore.py"
 nas_dest="nas-test:/mnt/test/nas/valise-vault/"
 
+leaf_of() { # leaf_of <host> <snapshot_id> -> the period holding it
+	V vault status "$1" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(l["leaf"] for l in d["leaves"] if sys.argv[1] in l["snapshots"]))' "$2"
+}
+
 seal_json() { # seal_json <host> <instance> <tier> -> prints snapshot_id added_bytes
 	V seal "$1" "$2" --tier "$3" --json 2>"$work/seal.err" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["snapshot_id"], d["added_bytes"])'
 }
@@ -166,6 +170,9 @@ for e in "${enrollments[@]}"; do
 		echo "== M3: keys and target on $h"
 		V key register "$h" --label "valise-drill TEST key (identity in ~/.cache/valise-drill on the dev Mac); safe to remove once valise key unregister exists" >/dev/null && pass "$h: key registered" || fail "$h: key register"
 		V target add "$h" nas --rsync "$nas_dest" >/dev/null && pass "$h: sync target" || fail "$h: target add"
+		# The server name is the cloud folder (docs/VAULT_FORMAT.md 10.1); set once.
+		V server name "$h" "$h" >/dev/null 2>&1 || V vault status "$h" --json | grep -q "\"server_name\": \"$h\"" \
+			&& pass "$h: server named $h" || fail "$h: server name"
 	;; esac
 	echo "== M3: seal $p on $h"
 	read -r s1 a1 < <(seal_json "$h" "$p" soul) || { fail "$h/$p: seal soul"; cat "$work/seal.err"; continue; }
@@ -195,19 +202,22 @@ for h in "${m3_hosts[@]}"; do
 	echo "== M3: vault on $h"
 	V vault verify "$h" >/dev/null && pass "$h: server vault verifies (no key)" || fail "$h: server vault verify"
 	V sync "$h" nas >/dev/null && pass "$h: synced to nas" || fail "$h: sync"
-	vid="$(V vault status "$h" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["vault_id"])')"
-	V pull "$h" --to "$work/pull-$h" >/dev/null && pass "$h: pulled" || fail "$h: pull"
+	first_snap="$(awk -v h="$h" '$1==h {print $3; exit}' "$work/m3-snaps.txt")"
+	leaf="$(leaf_of "$h" "$first_snap")"
+	V pull "$h" --leaf "$leaf" --to "$work/pull-$h" >/dev/null && pass "$h: pulled period $leaf" || fail "$h: pull"
 	V verify --vault "$work/pull-$h" --key < "$keydir/passphrase.txt" >/dev/null \
 		&& pass "$h: local copy verifies with the key" || fail "$h: verify --key"
 	cp -R "$work/pull-$h" "$work/tamper-$h"
 	python3 -c 'import sys,glob; p=sorted(glob.glob(sys.argv[1]+"/packs/*/*.pack"))[0]; b=bytearray(open(p,"rb").read()); b[len(b)//2]^=1; open(p,"wb").write(b)' "$work/tamper-$h"
 	if V verify --vault "$work/tamper-$h" >/dev/null 2>&1; then fail "$h: tampered pack not detected"; else pass "$h: tampered pack detected"; fi
 
-	# Restore from the NAS copy with restore.py + age + zstd only.
-	nas="$work/nas-$h"
-	rsync -a "nas-test:/mnt/test/nas/valise-vault/$vid/" "$nas/" && pass "$h: fetched NAS copy" || { fail "$h: fetch NAS copy"; continue; }
+	# Restore from the NAS copy with restore.py + age + zstd only; each
+	# period folder on the NAS is a complete vault.
 	while read -r hh p s1 ss want; do
 		[ "$hh" = "$h" ] || continue
+		leaf="$(leaf_of "$h" "$s1")"
+		nas="$work/nas-$h-${leaf//\//_}"
+		rsync -a "nas-test:/mnt/test/nas/valise-vault/$h/$leaf/" "$nas/" && pass "$h/$p: fetched NAS period $leaf" || { fail "$h/$p: fetch NAS copy"; continue; }
 		python3 -I "$restore_py" --vault "$nas" --identity "$keydir/identity.txt" --snapshot "$s1" --out "$work/r-$p-soul" --include-secrets >/dev/null \
 			&& pass "$h/$p: restore.py soul" || { fail "$h/$p: restore.py soul"; continue; }
 		python3 -I "$restore_py" --vault "$nas" --identity "$keydir/identity.txt" --snapshot "$ss" --out "$work/r-$p-ss" --include-secrets >/dev/null \
@@ -494,6 +504,44 @@ EOF
 		| ssh -T -o BatchMode=yes -- "$kh" "$porter_path mcp --instance drill-synthetic" > "$work/mcp-finish.jsonl" 2>&1
 	grep -q '"isError":true' "$work/mcp-finish.jsonl" && grep -q '原有内容被修改' "$work/mcp-finish.jsonl" \
 		&& pass "$kh: handoff that changed earlier content is refused" || { fail "$kh: handoff check"; cat "$work/mcp-finish.jsonl"; }
+fi
+
+# -------------------------------------------------------------- M7a.1 -----
+# Vault periods and cloud backup on the synthetic instance of M6: auto sync
+# after a seal, the period on the NAS, a past period (copied from the current
+# one on the server, then deleted on the server and on the NAS) and the timer.
+if in_hosts "$kh"; then
+	echo "== M7a.1: periods and cloud backup on $kh"
+	V period "$kh" drill-synthetic month --tz Europe/Madrid >/dev/null && pass "$kh: period set" || fail "$kh: period"
+	V target auto "$kh" nas 1h >/dev/null && pass "$kh: auto sync on" || fail "$kh: target auto"
+	# Make the interval due: the last successful sync is in the server's state.
+	ssh -T -o BatchMode=yes -- "$kh" 'f=~/.local/state/valise/sync/nas.json; [ -f "$f" ] && python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d.pop(\"last_ok\",None); json.dump(d,open(p,\"w\"))" "$f"; true'
+	V seal "$kh" drill-synthetic --json > "$work/m7-seal.json" 2>&1
+	leaf="$(json_field "$work/m7-seal.json" 'd["leaf"]')"
+	[ "$(json_field "$work/m7-seal.json" '",".join(d.get("auto_sync") or [])')" = nas ] && pass "$kh: seal started auto sync" || { fail "$kh: auto sync not started"; cat "$work/m7-seal.json"; }
+	ok=0
+	for _ in $(seq 1 30); do
+		sleep 4
+		if ssh -T -o BatchMode=yes -- "$kh" "grep '\"initiator\":\"auto\"' ~/.local/state/valise/audit.jsonl | tail -1" | grep -q '"result":"ok"'; then ok=1; break; fi
+	done
+	[ "$ok" = 1 ] && pass "$kh: auto sync finished" || fail "$kh: auto sync"
+	ssh -T -o BatchMode=yes nas-test "test -f /mnt/test/nas/valise-vault/$kh/$leaf/PERIOD && test -f /mnt/test/nas/valise-vault/$kh/TREE" \
+		&& pass "$kh: NAS holds $kh/$leaf" || fail "$kh: period missing on the NAS"
+	V target list "$kh" nas | grep -q "$leaf .*两处都有" && pass "$kh: target list matches the server" || fail "$kh: target list"
+	past="drill-synthetic/2026-09-01_2026-09-30"
+	ssh -T -o BatchMode=yes -- "$kh" "cd ~/.local/share/valise/vaults/drill-synthetic && cp -a '${leaf#drill-synthetic/}' 2026-09-01_2026-09-30 && sed -i 's/${leaf:16:10}/2026-09-01/; s/${leaf:27:10}/2026-09-30/' 2026-09-01_2026-09-30/PERIOD"
+	V sync "$kh" nas >/dev/null && pass "$kh: synced the past period" || fail "$kh: sync past period"
+	if V vault delete "$kh" "$leaf" --yes >/dev/null 2>&1; then fail "$kh: deleted the current period"; else pass "$kh: current period refused"; fi
+	V target delete "$kh" nas "$past" --yes >/dev/null && ! ssh -T -o BatchMode=yes nas-test "test -e /mnt/test/nas/valise-vault/$kh/$past" \
+		&& pass "$kh: past period deleted on the NAS" || fail "$kh: NAS period delete"
+	V vault delete "$kh" "$past" --yes >/dev/null && ! ssh -T -o BatchMode=yes -- "$kh" "test -e ~/.local/share/valise/vaults/$past" \
+		&& pass "$kh: past period deleted on the server" || fail "$kh: server period delete"
+	ssh -T -o BatchMode=yes nas-test "test -f /mnt/test/nas/valise-vault/$kh/$leaf/VAULT" && pass "$kh: current period untouched on the NAS" || fail "$kh: NAS current period"
+	V target auto "$kh" nas off >/dev/null
+	V timer "$kh" drill-synthetic 1h >/dev/null && ssh -T -o BatchMode=yes -- "$kh" 'systemctl --user start valise-seal@drill-synthetic.service && tail -1 ~/.local/state/valise/audit.jsonl' | grep -q '"initiator":"timer","result":"ok"' \
+		&& pass "$kh: timer unit seals" || fail "$kh: timer"
+	V timer "$kh" drill-synthetic off >/dev/null && ! ssh -T -o BatchMode=yes -- "$kh" 'ls ~/.config/systemd/user/ | grep -q valise-seal' \
+		&& pass "$kh: timer removed" || fail "$kh: timer off"
 fi
 
 # ------------------------------------------------------------- result -----

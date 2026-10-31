@@ -7,6 +7,10 @@ tools. Implements docs/VAULT_FORMAT.md (valise-vault/1):
     restore.py --vault DIR --identity identity.txt --list
     restore.py --vault DIR --identity identity.txt --snapshot s_... --out DIR [--include-secrets]
 
+The vault tree (docs/VAULT_FORMAT.md section 10) keeps one complete vault per
+period: point --vault at a period folder, e.g. valise-vault/<server>/<instance>/
+2026-10-01_2026-10-31/. The pre-tree vault is one folder per server.
+
 Get identity.txt from your recovery kit with `age -d -o identity.txt keystore.age`.
 Files are written to OUT/<root>/<path> (the body patch to OUT/valise/body.patch)
 with their recorded permissions and mtime, and every file's SHA-256 is checked.

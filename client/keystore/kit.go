@@ -43,7 +43,8 @@ const recoveryDoc = `# Valise 离线恢复套件
        age -d -o identity.txt keystore.age
 
 3. 使用 Valise 仓库中的 tools/standalone-restore/（只需要 Python 3 标准库、age 与 zstd），
-   按 docs/VAULT_FORMAT.md 第 9 节恢复任意快照。
+   按 docs/VAULT_FORMAT.md 第 9 节恢复任意快照。金库按 <服务器>/<实例>/<周期>/ 分文件夹，
+   每个周期文件夹就是一个完整的金库：把 --vault 指向那个周期文件夹即可。
 4. 恢复完成后，妥善删除 identity.txt。
 `
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 )
@@ -39,14 +40,25 @@ func (c *cli) describeCopies(ctx context.Context, host, leaf, deleting string) (
 		}
 	}
 	for name, e := range errs {
-		fmt.Fprintf(c.out, "  %s：无法列出（", name)
-		c.printProblem(e)
-		fmt.Fprintln(c.out, "）")
+		reason := e.Error()
+		if ue, ok := valise.As(e); ok {
+			reason = ue.Reason + "；" + ue.Suggestion
+		}
+		fmt.Fprintf(c.out, "  %s：无法列出，不知道那里是否有副本（%s）\n", name, reason)
 	}
 	return other, nil
 }
 
 func (c *cli) confirmDelete(ctx context.Context, host, leaf, where string, yes bool) (bool, error) {
+	st, err := c.svc.VaultStatus(ctx, host)
+	if err != nil {
+		return false, err
+	}
+	for _, l := range st.Leaves {
+		if l.Leaf == leaf && l.Current {
+			return false, valise.New("leaf_current", "周期 "+leaf+" 是当前正在写入的周期，不能删除", "等这个周期结束后再删除")
+		}
+	}
 	other, err := c.describeCopies(ctx, host, leaf, where)
 	if err != nil {
 		return false, err
