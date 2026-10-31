@@ -24,7 +24,7 @@ valise/
 ├── core/                     # 共享纯逻辑 (module valise/core)：profile 模型与校验、金库格式、RPC 类型、profilelint
 ├── porter/                   # 远端搬运工 valise-porter (module valise/porter)：静态二进制，按需唤起
 ├── client/                   # 客户端核心 (module valise/client)：keystore、ssh、tunnel、relay、金库读取
-├── client/ui/                # 服务层 + CLI(valise) + mygo 桌面 UI (module valise/ui)
+├── client/ui/                # 服务层 + CLI(valise) + TUI(valise tui, client/ui/tui) + mygo 桌面 UI (module valise/ui)
 ├── agent-kit/skills/         # valise-enroll / valise-upkeep / valise-handoff / valise-checkup
 ├── tools/standalone-restore/ # 不依赖 Valise 的恢复脚本（Python 3 标准库 + age + zstd 命令行）
 └── testbed/                  # module valise/testbed
@@ -34,7 +34,7 @@ valise/
     └── drill.sh              # 靶机全链路演练脚本
 ```
 
-关于 Go 版本：`core`、`porter`、`client` 三个模块的 `go` 指令统一写为 `go 1.26`，这样靶机上自带的 Go 1.26.8 可以直接运行测试。`client/ui` 在 M7 引入 mygo 后，按所锁定版本的要求设定。
+关于 Go 版本：`core`、`porter`、`client` 三个模块的 `go` 指令统一写为 `go 1.26`，这样靶机上自带的 Go 1.26.8 可以直接运行测试。`client/ui` 在 M7b 引入 mygo 后，按所锁定版本的要求设定。
 
 ## 靶机矩阵
 

@@ -13,7 +13,7 @@ Valise 是一个开源的「活体 Agent 逃生舱」。它从零开始开发，
 5. `docs/PROFILES.md`：Harness Profile 规范与 OpenClaw / Hermes / DSH 初稿。
 6. `docs/LOGIN_RELAY.md`：登录中继与 Web 入口。
 7. `docs/AGENT_KIT.md`：MCP 工具与四个技能。
-8. `docs/UI.md`：mygo 桌面 UI 规范（M7 使用；第 1 节的分层原则全程有效）。
+8. `docs/UI.md`：UI 规范（M7a 终端 UI 用第 8 节，M7b 桌面 UI 用 mygo；第 1 节的分层原则全程有效）。
 9. `docs/DEV_PLAN.md`：确认当前里程碑。不跨阶段抢跑，不伪造未实现的状态。
 10. `docs/REFERENCES.md`：已核实的外部参考。
 
@@ -42,7 +42,8 @@ Valise 是一个开源的「活体 Agent 逃生舱」。它从零开始开发，
 
 - `client/ui/src/` 按视图和状态职责拆分（如 `state.ts`、`views/instances.ts`、`views/vault.ts`、`views/settings.ts`、`components/`），单个 `.ts` 文件不得超过 400 行。
 - macOS 下先执行：`export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`
-- UI 框架为 mygo。M7 开始时锁定当时最新的 tag，并记录在 `docs/UI.md` 中；锁定之后，升级必须经过用户同意。M7 之前不得引入 mygo 依赖。mygo CLI 以 Go tool 依赖的方式加入 `client/ui/go.mod`，统一通过 `go tool mygo …` 调用。具体约定见 `docs/UI.md`。
+- 终端 UI（M7a）用 Bubble Tea，版本锁定见 `docs/UI.md` 第 8 节；`client/ui/tui/` 下单个 `.go` 文件不得超过 400 行。
+- 桌面 UI 框架为 mygo，版本锁定为用户指定的 v0.7.3，记录在 `docs/UI.md` 中；锁定之后，升级必须经过用户同意。M7b 之前不得引入 mygo 依赖。mygo CLI 以 Go tool 依赖的方式加入 `client/ui/go.mod`，统一通过 `go tool mygo …` 调用。具体约定见 `docs/UI.md`。
 - 单元测试和集成测试中，"远端"一律通过 fake-ssh 测试替身模拟（规范见 AGENT.md）。fake-ssh 测试通过，不等于靶机验收通过。
 - **禁止执行 `rm -f`**（会触发宿主审批拦截）。清空文件用 `: > file`；Go 测试中一律使用 `t.TempDir()`。porter 删除目录时只能在 Go 代码内调用 `os.RemoveAll`，并且只能由用户显式命令触发。
 
@@ -74,7 +75,7 @@ go test ./... && go vet ./... && test -z "$(gofmt -l .)"
 cd ../testbed
 go test ./... && go vet ./... && test -z "$(gofmt -l .)"
 
-# 5. 服务层、CLI 与 UI（generate、typecheck、build:web 三步从 M7 起执行）
+# 5. 服务层、CLI 与 UI（generate、typecheck、build:web 三步从 M7b 起执行）
 cd ../client/ui
 go tool mygo generate
 go test ./... && go vet ./... && test -z "$(gofmt -l .)"
@@ -82,4 +83,4 @@ bun run typecheck
 bun run build:web
 ```
 
-`testbed/selfcheck.sh` 按上述顺序执行全部检查；M7 之前自动跳过 `go tool mygo generate`、`bun run typecheck`、`bun run build:web` 三步。
+`testbed/selfcheck.sh` 按上述顺序执行全部检查；M7b 之前自动跳过 `go tool mygo generate`、`bun run typecheck`、`bun run build:web` 三步。

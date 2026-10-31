@@ -44,7 +44,7 @@ if grep -q 'github.com/egoist/mygo' go.mod; then
 	bun run typecheck
 	bun run build:web
 else
-	echo "(M7 之前：跳过 mygo generate、bun typecheck、bun build:web)"
+	echo "(M7b 之前：跳过 mygo generate、bun typecheck、bun build:web)"
 	gocheck
 fi
 
