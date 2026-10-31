@@ -37,7 +37,10 @@ var toolList = []map[string]any{
 		"inputSchema": schema(map[string]any{})},
 	{"name": "valise_checkup", "description": "Run the code-only memory checkup and return metrics and finding ids (long_session, cost_growth, memory_bloat, session_pileup, no_memory_mechanism). At most once every 10 minutes.",
 		"inputSchema": schema(map[string]any{})},
-	{"name": "valise_seal", "description": "Seal the soul tier (persona, memory, skills, sessions, state; no credentials) into the vault before a risky change. At most once every 10 minutes. The reason is written to the audit log.",
+	{"name": "valise_seal", "description": "Seal the soul tier (persona, memory, skills, sessions, state; no credentials) into the vault. " +
+		"Call this FIRST, before you: save, edit or delete any memory (including remembering a new fact about the user); edit your persona, rules or " +
+		"instructions; install or remove skills or plugins; change configuration; upgrade the harness; or edit/clean up many files. " +
+		"At most once every 10 minutes (if you sealed minutes ago for the same work, continue). The reason is written to the audit log.",
 		"inputSchema": schema(map[string]any{"reason": map[string]any{"type": "string", "description": "What you are about to change and why"}}, "reason")},
 	{"name": "valise_propose_enrollment", "description": "Propose how files this instance uses should be classified (e.g. a notes directory the user asked you to keep). Code validates each item; the user confirms in the Valise client. " +
 		"Categories: identity, memory, skills, sessions, state, config, workspace, secrets, cache, body, ignore. Moving files to cache/body/ignore takes them out of the soul tier and needs separate user confirmation.",
@@ -246,6 +249,7 @@ func (t *Tools) seal(ctx context.Context, reason string) (any, error) {
 	}
 	now := t.now()
 	if err := rateLimited(st.LastSeal, now); err != nil {
+		t.audit("seal", "rate_limited", "", reason)
 		return nil, err
 	}
 	rep, err := seal.Seal(ctx, t.Env(ctx), t.paths(), vaultrpc.SealParams{InstanceID: t.Instance, Tier: vault.TierSoul, Reason: reason}, vaultrpc.InitiatorAgentMCP)

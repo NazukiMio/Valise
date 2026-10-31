@@ -10,7 +10,7 @@
 schema: valise-profile/1
 id: hermes
 display_name: Hermes Agent
-profile_version: 3
+profile_version: 5
 status: draft
 harness_versions_tested: ["0.22.5"]
 docs: https://hermes-agent.nousresearch.com
@@ -52,6 +52,7 @@ paths:
   - { root: state, glob: "pairing/**", category: config }           # SEC: pending / approved users, rate limits
   - { root: state, glob: "state.db", category: state }              # SS: sessions and messages
   - { root: state, glob: "kanban.db", category: state }             # OBS + kanban docs
+  - { root: state, glob: "sessions/request_dump_*.json", category: secrets }   # OBS (2026-10-31): failed-request dumps carry request.headers.Authorization (redaction not checked): verify: pending
   - { root: state, glob: "sessions/**", category: sessions }
   # Body: rebuilt, never sealed (OBS: git checkout, installer-managed runtimes
   # referenced by the service unit's PATH, per-install environments)
@@ -109,12 +110,19 @@ native:
   export_argv: null                # hermes backup 的输出路径参数 verify: pending
 
 checkup:
-  # OBS (2026-10-31): messages(session_id, role, content, timestamp REAL seconds, token_count, reasoning, ...); no rows yet: verify: pending
+  # OBS (2026-10-31, M6 acceptance with real sessions): messages(session_id, content, timestamp REAL seconds, token_count always NULL);
+  # token totals per session in session_model_usage(input_tokens, output_tokens, last_seen REAL seconds).
   sessions:
     root: state
     glob: "state.db"
     format: sqlite
-    sqlite: { table: messages, session_column: session_id, time_column: timestamp, time_unit: s, tokens_column: token_count, bytes_columns: [content, reasoning] }
+    sqlite:
+      table: messages
+      session_column: session_id
+      time_column: timestamp
+      time_unit: s
+      bytes_columns: [content, reasoning]
+      usage: { table: session_model_usage, session_column: session_id, tokens_columns: [input_tokens, output_tokens], time_column: last_seen, time_unit: s }
   memory_files:
     - { root: state, glob: "memories/MEMORY.md", warn_lines: 600 }
     - { root: state, glob: "memories/USER.md", warn_lines: 300 }

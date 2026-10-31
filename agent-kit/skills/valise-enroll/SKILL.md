@@ -37,11 +37,15 @@ Always talk to the user in the user's language.
    separately. Never propose to reclassify a credentials file.
    Then tell the user to review the proposals in the Valise client
    (`valise proposals <server> <instance>`).
-4. Remember the habits in the `valise-upkeep` skill. If your harness has standing
-   instructions you can edit, add exactly one line, for example:
-   "Before risky changes, follow the valise-upkeep skill." Seal first
-   (`valise_seal`, reason: "add valise-upkeep reference") because this edits your
-   own instructions. Do not copy the whole skill into your instructions.
+4. Remember the habits in the `valise-upkeep` skill: call `valise_seal` before
+   saving or changing memories, persona, rules, skills, plugins or configuration.
+   If your harness has standing instructions you can edit (for example a persona
+   or rules file that is loaded into every session), add exactly one line there,
+   for example: "Before changing my memory, persona, skills or config, call
+   valise_seal (valise-upkeep skill)." Seal first (`valise_seal`, reason: "add
+   valise-upkeep reference") because this edits your own instructions. Do not
+   copy the whole skill into your instructions. Tell the user what you added and
+   where.
 
 ## What you cannot do through Valise
 

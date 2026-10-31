@@ -461,6 +461,23 @@ func (c *checker) checkCheckup(ck *Checkup) {
 				if t.TimeUnit != "s" && t.TimeUnit != "ms" {
 					c.add("checkup.sessions.sqlite.time_unit", "只能是 s 或 ms")
 				}
+				if u := t.Usage; u != nil {
+					idents := append([]string{u.Table, u.SessionColumn}, u.TokensColumns...)
+					if u.TimeColumn != "" {
+						idents = append(idents, u.TimeColumn)
+						if u.TimeUnit != "s" && u.TimeUnit != "ms" {
+							c.add("checkup.sessions.sqlite.usage.time_unit", "只能是 s 或 ms")
+						}
+					}
+					for _, v := range idents {
+						if !identRe.MatchString(v) {
+							c.add("checkup.sessions.sqlite.usage", "必须是标识符（字母、数字、下划线）：%q", v)
+						}
+					}
+					if len(u.TokensColumns) == 0 {
+						c.add("checkup.sessions.sqlite.usage.tokens_columns", "不能为空")
+					}
+				}
 			}
 		default:
 			c.add("checkup.sessions.format", "只能是 jsonl 或 sqlite")

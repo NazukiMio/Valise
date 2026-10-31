@@ -382,6 +382,11 @@ func sqliteSessions(rec *enroll.Record, s *profile.SessionsSpec, daily map[strin
 		}
 		rows.Close()
 		since := float64(now.AddDate(0, 0, -8).Unix())
+		if u := t.Usage; u != nil {
+			usageTotals(db, u, out, daily, since, res, rel)
+			db.Close()
+			continue
+		}
 		if drows, err := db.Query(dayQuery, since); err == nil {
 			for drows.Next() {
 				var d int64
@@ -395,4 +400,59 @@ func sqliteSessions(rec *enroll.Record, s *profile.SessionsSpec, daily map[strin
 		db.Close()
 	}
 	return out
+}
+
+// usageTotals replaces the token counts of the sessions read from db with
+// the per-session totals of the usage table, and fills the daily totals
+// from it (attributed to the day the usage was last updated).
+func usageTotals(db *sql.DB, u *profile.UsageTable, sessions []agentkit.SessionStat, daily map[string]int64, since float64, res *agentkit.CheckupResult, rel string) {
+	q := func(id string) string { return `"` + id + `"` }
+	var cols []string
+	for _, c := range u.TokensColumns {
+		cols = append(cols, "coalesce("+q(c)+",0)")
+	}
+	sum := "SUM(" + strings.Join(cols, "+") + ")"
+	rows, err := db.Query(fmt.Sprintf(`SELECT %s, %s FROM %s GROUP BY 1`, q(u.SessionColumn), sum, q(u.Table)))
+	if err != nil {
+		res.Notes = append(res.Notes, fmt.Sprintf("无法读取 %s 的用量表：%v", rel, err))
+		return
+	}
+	totals := map[string]int64{}
+	for rows.Next() {
+		var id sql.NullString
+		var n sql.NullInt64
+		if rows.Scan(&id, &n) == nil {
+			totals[id.String] = n.Int64
+		}
+	}
+	rows.Close()
+	for i := range sessions {
+		id := sessions[i].ID
+		if j := strings.LastIndex(id, ":"); j >= 0 && strings.HasPrefix(id, rel+":") {
+			id = id[j+1:]
+		}
+		if n, ok := totals[id]; ok {
+			sessions[i].Tokens, sessions[i].Estimated = n, false
+		}
+	}
+	if u.TimeColumn == "" {
+		return
+	}
+	div := "1.0"
+	if u.TimeUnit == "ms" {
+		div = "1000.0"
+	}
+	ts := q(u.TimeColumn) + "/" + div
+	drows, err := db.Query(fmt.Sprintf(`SELECT CAST(%s/86400 AS INTEGER), %s FROM %s WHERE %s >= ? GROUP BY 1`, ts, sum, q(u.Table), ts), since)
+	if err != nil {
+		return
+	}
+	defer drows.Close()
+	for drows.Next() {
+		var d int64
+		var n sql.NullInt64
+		if drows.Scan(&d, &n) == nil {
+			daily[time.Unix(d*86400, 0).UTC().Format("2006-01-02")] += n.Int64
+		}
+	}
 }

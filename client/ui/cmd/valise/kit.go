@@ -103,6 +103,9 @@ func (c *cli) proposals(ctx context.Context, args []string) error {
 					first = false
 				}
 				fmt.Fprintf(c.out, "  %s  %s:%s → %s\n      理由（agent 提供）：%s\n", p.ID, p.Rule.Root, p.Rule.Glob, p.Rule.Category, p.Reason)
+				if p.Unclassified > 0 {
+					fmt.Fprintf(c.out, "      注意：其中 %d 个文件目前未分类（按凭据层封存），接受后将进入 soul 档；请确认里面没有凭据\n", p.Unclassified)
+				}
 			}
 		}
 		print("归类提议：", false)

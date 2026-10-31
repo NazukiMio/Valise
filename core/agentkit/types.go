@@ -95,6 +95,9 @@ type Proposal struct {
 	Rule     profile.Override `json:"rule"`
 	Reason   string           `json:"reason"`
 	Demotion bool             `json:"demotion"` // moves files out of the soul tier
+	// Unclassified counts files now unclassified (sealed with the secrets
+	// layer) that the rule would move into the soul tier.
+	Unclassified int `json:"unclassified,omitempty"`
 	Created  time.Time        `json:"created"`
 }
 

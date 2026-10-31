@@ -60,7 +60,7 @@ func Propose(home string, rec *enroll.Record, p *profile.Profile, items []Propos
 	cls := profile.NewClassifier(p, rec.LocalOverrides)
 	var out []string
 	for _, it := range items {
-		rule, why := checkItem(rec, p, cls, it)
+		rule, unclassified, why := checkItem(rec, p, cls, it)
 		if why != "" {
 			out = append(out, it.Root+":"+it.Path+" — 拒绝："+why)
 			continue
@@ -70,6 +70,9 @@ func Propose(home string, rec *enroll.Record, p *profile.Profile, items []Propos
 			reason = reason[:500]
 		}
 		np := agentkit.Proposal{ID: newID("p_"), Rule: rule, Reason: reason, Demotion: agentkit.IsDemotion(rule.Category), Created: now.UTC()}
+		if rule.Category != "secrets" && !np.Demotion {
+			np.Unclassified = unclassified
+		}
 		i := slices.IndexFunc(ps, func(x agentkit.Proposal) bool { return x.Rule.Root == rule.Root && x.Rule.Glob == rule.Glob })
 		if i >= 0 {
 			np.ID = ps[i].ID
@@ -86,25 +89,26 @@ func Propose(home string, rec *enroll.Record, p *profile.Profile, items []Propos
 	return out, saveProposals(home, rec.InstanceID, ps)
 }
 
-// checkItem turns an item into a rule, or says why it is refused.
-func checkItem(rec *enroll.Record, p *profile.Profile, cls *profile.Classifier, it ProposalItem) (profile.Override, string) {
+// checkItem turns an item into a rule, or says why it is refused. It also
+// counts the files the rule covers that are unclassified today.
+func checkItem(rec *enroll.Record, p *profile.Profile, cls *profile.Classifier, it ProposalItem) (profile.Override, int, string) {
 	root, ok := rec.Roots[it.Root]
 	if !ok {
-		return profile.Override{}, "实例没有 root " + it.Root
+		return profile.Override{}, 0, "实例没有 root " + it.Root
 	}
 	rel := filepath.ToSlash(filepath.Clean(it.Path))
 	if it.Path == "" || filepath.IsAbs(it.Path) || rel == "." || rel == ".." || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
-		return profile.Override{}, "路径必须是 root 内的相对路径"
+		return profile.Override{}, 0, "路径必须是 root 内的相对路径"
 	}
 	full := filepath.Join(root, filepath.FromSlash(rel))
 	st, err := os.Lstat(full)
 	if err != nil {
-		return profile.Override{}, "路径不存在"
+		return profile.Override{}, 0, "路径不存在"
 	}
 	if real, err := filepath.EvalSymlinks(full); err != nil {
-		return profile.Override{}, "路径无法解析"
+		return profile.Override{}, 0, "路径无法解析"
 	} else if realRoot, _ := filepath.EvalSymlinks(root); real != realRoot && !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
-		return profile.Override{}, "路径经符号链接指向 root 之外"
+		return profile.Override{}, 0, "路径经符号链接指向 root 之外"
 	}
 	glob := rel
 	if st.IsDir() {
@@ -112,13 +116,19 @@ func checkItem(rec *enroll.Record, p *profile.Profile, cls *profile.Classifier, 
 	}
 	rule := profile.Override{Root: it.Root, Glob: glob, Category: it.Category}
 	if err := rule.Validate(p); err != nil {
-		return profile.Override{}, err.Error()
+		return profile.Override{}, 0, err.Error()
 	}
+	unclassified := 0
 	if rule.Category != "secrets" {
 		secret := ""
 		check := func(r string) {
-			if secret == "" && cls.Classify(it.Root, r).Category == "secrets" {
-				secret = r
+			switch cls.Classify(it.Root, r).Category {
+			case "secrets":
+				if secret == "" {
+					secret = r
+				}
+			case "":
+				unclassified++
 			}
 		}
 		if st.IsDir() {
@@ -133,10 +143,10 @@ func checkItem(rec *enroll.Record, p *profile.Profile, cls *profile.Classifier, 
 			check(rel)
 		}
 		if secret != "" {
-			return profile.Override{}, secret + " 已按凭据规则保护，不能改为其他类别"
+			return profile.Override{}, 0, secret + " 已按凭据规则保护，不能改为其他类别"
 		}
 	}
-	return rule, ""
+	return rule, unclassified, ""
 }
 
 // Decide applies the user's decisions: accepted rules are appended to the

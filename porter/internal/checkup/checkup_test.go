@@ -90,6 +90,8 @@ func TestSQLiteSessionsAndPileup(t *testing.T) {
 		db.Exec(`INSERT INTO messages (session_id, content, timestamp, token_count) VALUES ('cold', ?, ?, NULL)`, big, old+float64(i))
 	}
 	db.Exec(`INSERT INTO messages (session_id, content, timestamp, token_count) VALUES ('hot', 'hello', ?, 7)`, float64(now.Unix()-60))
+	db.Exec(`CREATE TABLE usage (session_id TEXT, input_tokens INTEGER, output_tokens INTEGER, last_seen REAL)`)
+	db.Exec(`INSERT INTO usage VALUES ('cold', 900, 100, ?)`, old)
 	db.Close()
 	write(t, filepath.Join(root, "memories/MEMORY.md"), "fact\n")
 	rec := &enroll.Record{InstanceID: "demo", Roots: map[string]string{"state": root}}
@@ -120,5 +122,27 @@ func TestUndeclaredSessions(t *testing.T) {
 	r := Run(rec, p, now)
 	if r.SessionsDeclared || len(r.Notes) != 1 || ids(r) != "no_memory_mechanism" {
 		t.Fatalf("%+v", r)
+	}
+}
+
+func TestUsageTableReplacesEstimates(t *testing.T) {
+	root := t.TempDir()
+	db, _ := sql.Open("sqlite", filepath.Join(root, "state.db"))
+	db.Exec(`CREATE TABLE messages (session_id TEXT, content TEXT, timestamp REAL, token_count INTEGER)`)
+	db.Exec(`INSERT INTO messages VALUES ('a', 'hi', ?, NULL)`, float64(now.Unix()-30))
+	db.Exec(`CREATE TABLE usage (session_id TEXT, input_tokens INTEGER, output_tokens INTEGER, last_seen REAL)`)
+	db.Exec(`INSERT INTO usage VALUES ('a', 12000, 400, ?), ('a', 100, 0, ?)`, float64(now.Unix()-20), float64(now.Unix()-10))
+	db.Close()
+	rec := &enroll.Record{InstanceID: "demo", Roots: map[string]string{"state": root}}
+	p := &profile.Profile{Checkup: &profile.Checkup{Sessions: &profile.SessionsSpec{Root: "state", Glob: "state.db", Format: "sqlite",
+		SQLite: &profile.SessionTable{Table: "messages", SessionColumn: "session_id", TimeColumn: "timestamp", TimeUnit: "s", TokensColumn: "token_count",
+			BytesColumns: []string{"content"}, Usage: &profile.UsageTable{Table: "usage", SessionColumn: "session_id",
+				TokensColumns: []string{"input_tokens", "output_tokens"}, TimeColumn: "last_seen", TimeUnit: "s"}}}}}
+	r := Run(rec, p, now)
+	if r.Current == nil || r.Current.Tokens != 12500 || r.Current.Estimated {
+		t.Fatalf("%+v %v", r.Current, r.Notes)
+	}
+	if last := r.Daily[len(r.Daily)-1]; last.Tokens != 12500 {
+		t.Fatalf("daily %+v", r.Daily)
 	}
 }

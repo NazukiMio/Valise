@@ -241,6 +241,18 @@ type SessionTable struct {
 	TokensColumn  string   `yaml:"tokens_column" json:"tokens_column,omitempty"`
 	SizeColumn    string   `yaml:"size_column" json:"size_column,omitempty"`
 	BytesColumns  []string `yaml:"bytes_columns" json:"bytes_columns,omitempty"`
+	// Usage holds per-session token totals kept in another table; when set
+	// it replaces the per-event tokens column and the byte estimate.
+	Usage *UsageTable `yaml:"usage" json:"usage,omitempty"`
+}
+
+// UsageTable is a table of token totals per session.
+type UsageTable struct {
+	Table         string   `yaml:"table" json:"table"`
+	SessionColumn string   `yaml:"session_column" json:"session_column"`
+	TokensColumns []string `yaml:"tokens_columns" json:"tokens_columns"`
+	TimeColumn    string   `yaml:"time_column" json:"time_column,omitempty"` // when the usage was last updated, for daily totals
+	TimeUnit      string   `yaml:"time_unit" json:"time_unit,omitempty"`
 }
 
 // MemoryFile is a memory file with a line threshold.

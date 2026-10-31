@@ -129,13 +129,14 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 
 - `valise-porter mcp --instance <id>`：stdio 上的 JSON-RPC 2.0，一行一条消息。只实现 `initialize`、`notifications/initialized`、`ping`、`tools/list`、`tools/call`，不引入第三方 MCP 库。协议版本：客户端请求的版本在支持列表（`2025-06-18`、`2025-03-26`、`2024-11-05`）内就照用，否则回复最新的。
 - 工具结果同时放在 `structuredContent`（JSON 对象）和一段 `text` 中；用户错误（频率限制、校验失败等）以 `isError: true` 返回"原因 + 建议"，不中断会话。
-- 审计记录的发起者为 `agent-mcp`。频率限制与交接状态保存在 `~/.local/state/valise/mcp/<实例>.json`。
+- 审计记录的发起者为 `agent-mcp`；被频率限制挡回的封存尝试也记一条（结果 `rate_limited`，附原因）。频率限制与交接状态保存在 `~/.local/state/valise/mcp/<实例>.json`。
 - MCP 进程以实例在服务器上的 profile 副本为准（与封存相同），不需要客户端在线。
 
 ### 8.2 归类提议
 
 - `valise_propose_enrollment` 的 `path` 是相对 root 的路径：指向文件时生成精确规则，指向目录时生成 `<path>/**`。代码校验：路径存在、不含 `..` 与绝对路径、不经过符号链接逃出 root、类别合法；与已有 `secrets` 规则冲突的非 `secrets` 提议直接拒绝。
-- 提议保存在 `~/.config/valise/instances/<实例>.proposals.json`（0600），每条有 id、规则、理由、时间、是否"降级"。同一规则重复提议时只更新理由。
+- 提议保存在 `~/.config/valise/instances/<实例>.proposals.json`（0600），每条有 id、规则、理由、时间、是否"降级"，以及它会把多少个目前未分类的文件移出凭据层。同一规则重复提议时只更新理由。
+- 未分类文件按"未知即敏感"随凭据层封存；把它们归入 soul 档类别的提议，客户端会注明"接受后这些文件将从凭据层进入 soul 档"，提醒用户确认其中没有凭据（M6 验收中观察到 agent 会把未知的数据库提议为 `state`）。
 - 客户端：`valise proposals <服务器> <实例>` 列出全部待确认提议，降级提议单独成组；`--accept <id,…|all>` 只接受非降级提议；降级提议必须用 `--accept-demotion <id,…>` 单独接受，执行前再次说明"这些文件将不再进入 soul 档"；`--reject <id,…|all>` 拒绝。接受的提议写入实例记录的 `local_overrides`，从下一次封存起生效。
 
 ### 8.3 交接

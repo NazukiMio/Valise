@@ -131,6 +131,9 @@ func TestProtocolAndTools(t *testing.T) {
 	if _, text, isErr := c.tool("valise_seal", map[string]any{"reason": "again"}); !isErr || !strings.Contains(text, "10 分钟") {
 		t.Fatalf("rate limit missing: %s", text)
 	}
+	if audit, _ := os.ReadFile(seal.Paths{Home: home}.Audit()); !strings.Contains(string(audit), `"result":"rate_limited"`) {
+		t.Fatalf("rate-limited attempt not audited: %s", audit)
+	}
 	*now = now.Add(11 * time.Minute)
 	if _, text, isErr := c.tool("valise_seal", map[string]any{"reason": "later"}); isErr {
 		t.Fatalf("%s", text)
@@ -171,6 +174,11 @@ func TestProtocolAndTools(t *testing.T) {
 	ps, _ := kit.LoadProposals(home, "demo")
 	if len(ps) != 2 {
 		t.Fatalf("%+v", ps)
+	}
+	for _, p := range ps {
+		if p.Rule.Glob == "notes/**" && p.Unclassified != 1 {
+			t.Fatalf("unclassified files moving into soul not counted: %+v", p)
+		}
 	}
 	// "all" never accepts a demotion.
 	res, err := kit.Decide(home, agentkit.DecideParams{InstanceID: "demo", Accept: []string{"all"}})

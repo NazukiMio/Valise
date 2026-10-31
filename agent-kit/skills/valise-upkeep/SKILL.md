@@ -1,6 +1,6 @@
 ---
 name: valise-upkeep
-description: Seal yourself with Valise before risky changes. Use before editing your persona, rules or memory files, installing or removing skills or plugins, changing configuration, upgrading your harness, or bulk-editing or cleaning up files.
+description: Seal yourself with Valise before risky changes. Use before saving, editing or deleting any memory (including remembering a new fact about the user), editing your persona, rules or instructions, installing or removing skills or plugins, changing configuration, upgrading your harness, or bulk-editing or cleaning up files.
 ---
 
 # Seal before risky changes
@@ -8,7 +8,8 @@ description: Seal yourself with Valise before risky changes. Use before editing 
 Before any of the following, call `valise_seal` with a `reason` that says what
 you are about to do:
 
-- editing your own persona, rules or memory files;
+- saving, editing or deleting memories — including remembering one new fact
+  about the user — and editing your own persona, rules or instructions;
 - installing or removing skills or plugins;
 - changing configuration;
 - upgrading the harness;
