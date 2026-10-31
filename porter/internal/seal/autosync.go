@@ -129,7 +129,7 @@ func AutoSync(ctx context.Context, e *porterenroll.Env, p Paths) error {
 	var unlock func()
 	for {
 		var err error
-		if unlock, err = p.Lock(); err == nil {
+		if unlock, err = p.LockFor("autosync"); err == nil {
 			break
 		}
 		if ue, ok := valise.As(err); !ok || ue.Code != "vault_busy" || time.Now().After(deadline) {

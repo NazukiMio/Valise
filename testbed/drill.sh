@@ -384,13 +384,16 @@ if in_hosts "$eh"; then
 		|| echo "   warning: nothing listens on $eh:$ep"
 	V open "$eh" "$ei" --no-browser --idle 6s > "$work/open.out" 2>&1 &
 	opid_bg=$!
-	for i in $(seq 1 30); do grep -q '^入口：' "$work/open.out" && break; sleep 0.5; done
-	url="$(sed -n 's/^入口：//p' "$work/open.out")"
+	for i in $(seq 1 30); do grep -q '^管理页：' "$work/open.out" && break; sleep 0.5; done
+	url="$(sed -n 's/^管理页：//p' "$work/open.out")"
 	grep -q '✓ 隧道已建立' "$work/open.out" && grep -q '✓ 远端端口在监听' "$work/open.out" && grep -q '✓ 健康检查通过' "$work/open.out" \
 		&& pass "$eh/$ei: tunnel, remote listening and health shown separately" || { fail "$eh/$ei: entry steps"; cat "$work/open.out"; }
 	code="$(curl -s -o /dev/null -w '%{http_code}' "$url")"
 	[ "$code" -ge 200 ] && [ "$code" -lt 500 ] && pass "$eh/$ei: entry reachable through the tunnel (HTTP $code)" || fail "$eh/$ei: entry HTTP $code"
-	wait "$opid_bg" && grep -q '入口隧道已关闭' "$work/open.out" && pass "$eh/$ei: closed after idle timeout" || fail "$eh/$ei: idle close"
+	# The token step: either the harness command supplied it (never shown) or a hint.
+	grep -qE '管理页令牌：' "$work/open.out" && ! grep -qE '(token|bootstrapToken)=' "$work/open.out" \
+		&& pass "$eh/$ei: token step shown, no token in the output" || fail "$eh/$ei: token step"
+	wait "$opid_bg" && grep -q '管理页隧道已关闭' "$work/open.out" && pass "$eh/$ei: closed after idle timeout" || fail "$eh/$ei: idle close"
 	lport="${url#http://127.0.0.1:}"; lport="${lport%%/*}"
 	! lsof -nP -iTCP:"$lport" -sTCP:LISTEN >/dev/null 2>&1 && pass "$eh/$ei: local port released" || fail "$eh/$ei: local port still bound"
 
@@ -516,20 +519,22 @@ if in_hosts "$kh"; then
 	V target auto "$kh" nas 1h >/dev/null && pass "$kh: auto sync on" || fail "$kh: target auto"
 	# Make the interval due: the last successful sync is in the server's state.
 	ssh -T -o BatchMode=yes -- "$kh" 'f=~/.local/state/valise/sync/nas.json; [ -f "$f" ] && python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d.pop(\"last_ok\",None); json.dump(d,open(p,\"w\"))" "$f"; true'
+	autos() { ssh -T -o BatchMode=yes -- "$kh" "grep -c '\"initiator\":\"auto\".*\"result\":\"ok\"' ~/.local/state/valise/audit.jsonl || true"; }
+	before="$(autos)"
 	V seal "$kh" drill-synthetic --json > "$work/m7-seal.json" 2>&1
 	leaf="$(json_field "$work/m7-seal.json" 'd["leaf"]')"
 	[ "$(json_field "$work/m7-seal.json" '",".join(d.get("auto_sync") or [])')" = nas ] && pass "$kh: seal started auto sync" || { fail "$kh: auto sync not started"; cat "$work/m7-seal.json"; }
 	ok=0
 	for _ in $(seq 1 30); do
 		sleep 4
-		if ssh -T -o BatchMode=yes -- "$kh" "grep '\"initiator\":\"auto\"' ~/.local/state/valise/audit.jsonl | tail -1" | grep -q '"result":"ok"'; then ok=1; break; fi
+		if [ "$(autos)" -gt "$before" ] && ! ssh -T -o BatchMode=yes -- "$kh" 'pgrep -f "[v]alise-porter autosync" >/dev/null'; then ok=1; break; fi
 	done
 	[ "$ok" = 1 ] && pass "$kh: auto sync finished" || fail "$kh: auto sync"
 	ssh -T -o BatchMode=yes nas-test "test -f /mnt/test/nas/valise-vault/$kh/$leaf/PERIOD && test -f /mnt/test/nas/valise-vault/$kh/TREE" \
 		&& pass "$kh: NAS holds $kh/$leaf" || fail "$kh: period missing on the NAS"
 	V target list "$kh" nas | grep -q "$leaf .*两处都有" && pass "$kh: target list matches the server" || fail "$kh: target list"
 	past="drill-synthetic/2026-09-01_2026-09-30"
-	ssh -T -o BatchMode=yes -- "$kh" "cd ~/.local/share/valise/vaults/drill-synthetic && cp -a '${leaf#drill-synthetic/}' 2026-09-01_2026-09-30 && sed -i 's/${leaf:16:10}/2026-09-01/; s/${leaf:27:10}/2026-09-30/' 2026-09-01_2026-09-30/PERIOD"
+	ssh -T -o BatchMode=yes -- "$kh" "cd ~/.local/share/valise/vaults/drill-synthetic && [ -d 2026-09-01_2026-09-30 ] || cp -a '${leaf#drill-synthetic/}' 2026-09-01_2026-09-30 && sed -i 's/${leaf:16:10}/2026-09-01/; s/${leaf:27:10}/2026-09-30/' 2026-09-01_2026-09-30/PERIOD"
 	V sync "$kh" nas >/dev/null && pass "$kh: synced the past period" || fail "$kh: sync past period"
 	if V vault delete "$kh" "$leaf" --yes >/dev/null 2>&1; then fail "$kh: deleted the current period"; else pass "$kh: current period refused"; fi
 	V target delete "$kh" nas "$past" --yes >/dev/null && ! ssh -T -o BatchMode=yes nas-test "test -e /mnt/test/nas/valise-vault/$kh/$past" \

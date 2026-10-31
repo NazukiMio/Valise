@@ -121,3 +121,21 @@ func TestCloudBackup(t *testing.T) {
 		t.Fatal("server leaves changed")
 	}
 }
+
+func TestBusyNamesAutoSync(t *testing.T) {
+	p := Paths{Home: t.TempDir()}
+	unlock, err := p.LockFor("autosync")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = p.Lock()
+	if err == nil || !strings.Contains(err.Error(), "自动同步到云备份") {
+		t.Fatalf("busy error does not name the holder: %v", err)
+	}
+	unlock()
+	u2, err := p.Lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	u2()
+}

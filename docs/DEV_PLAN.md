@@ -145,7 +145,7 @@
 
 ### M7a.1：金库分档与云备份
 
-- **状态**：`In progress`（2026-10-31 用户确认文档与草图后开始）
+- **状态**：`Done`（2026-10-31）
 - **交付**：
   - 金库树（VAULT_FORMAT.md 第 10 节）：`TREE`、`PERIOD`、周期设置、按周期选择或新建叶子；分档之前的旧金库可读；`tools/standalone-restore/` 的说明更新为"指向一个叶子目录"。
   - 服务器名（`server.json`），云备份目录多一层服务器名；同步按叶子进行并跳过 `DELETING`。
@@ -162,11 +162,13 @@
   - 单元测试：周期切换（改周期设置、长时间未封存）、旧金库可读、删除中断后续删、当前周期拒绝删除、定时器单元内容（无 capability 设置）、令牌命令输出不进入错误信息、资料包验签与篡改。依赖 GNU rsync（`--mkpath`）的云备份测试在 macOS（openrsync）上跳过，交叉编译后在 `ubuntu-vm` 上运行通过（同步、云端列表、云端删除、自动同步）。
   - 真机（`ubuntu-vm`、`ubuntu-vm-x86`）：部署新 porter；`server setup` 两台；旧金库显示为周期 `-`（107 个逃生舱）；封存写入新周期并生成 `TREE`、`PERIOD`；封存后自动同步子进程按间隔启动（间隔未到时不启动）；OpenClaw 管理页令牌经 `openclaw dashboard --no-open --json` 的一次性配对链接取得，不显示；定时器写入、手动触发一次成功封存（发起者 timer）、关闭后单元删除；服务器上删除过去周期（复制出的测试周期）与拒绝删除当前周期；拉取一个周期后用 `restore.py` 脱离 Valise 恢复。未签名资料包作为本地 profile 安装。
   - 核实 profile 时发现并修正：OpenClaw `dashboard --no-open` 的纯文本输出不带令牌，`--json` 同时给出长期令牌 `url` 与一次性 `browserUrl`，`gateway auth-token --show` 拒绝在非终端运行，因此 schema 增加 `url_field` 并选用 `browserUrl`；官方字符画比原定上限大（OpenClaw 10×20、Hermes 15×30），上限放宽为 16×32、原样保存，缩放由界面完成；DSH 安装包中没有字符画，使用占位图标。
-  - **阻塞**：两台 VM 的 `~/.ssh/config` 中 `nas-test` 仍指向 192.168.101.101，NAS 现在在 192.168.101.109（DHCP 变化，主机密钥也随之不同），服务器无法同步到 NAS。需要用户更新两台 VM 的 SSH 配置（或同意由 Claude 更新）后，完成 NAS 上的同步、云端列表、云端删除与自动同步实测及完整 drill。
+  - NAS 实测（用户同意后，两台 VM 的 `nas-test` 改指向 192.168.101.109，主机密钥与用户 Mac 上已信任的 ED25519 指纹一致后才写入 `known_hosts`；原配置备份为 `~/.ssh/config.bak-valise-20261031`）：同步到 `nas-test:/mnt/test/nas/valise-vault/<服务器>/<实例>/<周期>/`、从 NAS 的周期文件夹用 `restore.py` 恢复、云端列表与服务器对照、NAS 上删除过去周期、随封存自动同步成功。
+  - 演练中发现并修复：drill 仍按旧文案找"入口"；等待自动同步时读到上一轮的审计行、`pgrep` 经 ssh 匹配到自身；用户操作撞上后台自动同步时只提示"另一次封存或同步"，现在锁文件记录持有者，提示"正在后台自动同步到云备份"。
+  - `testbed/drill.sh` M1–M7a.1（`VALISE_DRILL_REVIVE=1`）输出 `ALL_PASS (failures=0)`，共 133 项。
 
 ### M7a.2：TUI 重做
 
-- **状态**：`Blocked (depends on M7a.1)`
+- **状态**：`Ready`
 - **交付**：按 UI.md 第 8、9 节重做 `valise tui`：第一次启动引导、首页服务器卡片、服务器页实例卡片（字符画图标）与云备份 / 空间清理 / 服务器设置子页、实例页五个分栏（概览、逃生舱、体检、管理页与登录、设置）、全局设置页六个分栏（含更新）；所有列表可滚动；CLI 的人类可读输出改用界面用语。
 - **验收**：单元测试覆盖滚动、各页面状态迁移与上述两个 bug 的回归；在两台 VM 上由用户亲自试用通过。
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,7 +35,14 @@ func (p Paths) DedupeKey(vaultID string) string {
 }
 
 // Lock takes the vault lock (flock) so only one seal or sync runs at a time.
-func (p Paths) Lock() (unlock func(), err error) {
+func (p Paths) Lock() (unlock func(), err error) { return p.LockFor("") }
+
+// holderNames describe a lock holder to the user.
+var holderNames = map[string]string{"autosync": "正在后台自动同步到云备份"}
+
+// LockFor takes the vault lock and records what holds it, so a refused
+// caller can say what is running.
+func (p Paths) LockFor(holder string) (unlock func(), err error) {
 	if err := os.MkdirAll(p.State(), 0o700); err != nil {
 		return nil, err
 	}
@@ -43,13 +51,21 @@ func (p Paths) Lock() (unlock func(), err error) {
 		return nil, err
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, valise.New("vault_busy", "服务器上正在进行另一次封存或同步", "稍等片刻再试")
+			reason := "服务器上正在进行另一次封存或同步"
+			if b, rerr := os.ReadFile(f.Name()); rerr == nil && holderNames[strings.TrimSpace(string(b))] != "" {
+				reason = "服务器上" + holderNames[strings.TrimSpace(string(b))]
+			}
+			f.Close()
+			return nil, valise.New("vault_busy", reason, "稍等片刻再试")
 		}
+		f.Close()
 		return nil, err
 	}
+	f.Truncate(0)
+	f.WriteAt([]byte(holder), 0)
 	return func() {
+		f.Truncate(0)
 		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		f.Close()
 	}, nil
