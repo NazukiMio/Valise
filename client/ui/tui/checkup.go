@@ -151,6 +151,13 @@ func (c *checkupTab) view(m *Model, p *instancePage, height int) string {
 	return b.String()
 }
 
+func harnessName(p *instancePage) string {
+	if p.target != nil && p.target.Profile.DisplayName != "" {
+		return p.target.Profile.DisplayName
+	}
+	return p.inst.ProfileID
+}
+
 func findingCard(ck *agentkit.CheckupResult, f agentkit.Finding, th *profile.Thresholds, remedies map[string][]string, p *instancePage, w int) string {
 	info := findingInfo[f.ID]
 	var b strings.Builder
@@ -166,7 +173,7 @@ func findingCard(ck *agentkit.CheckupResult, f agentkit.Finding, th *profile.Thr
 	if rs := remedies[f.ID]; len(rs) > 0 {
 		harness = strings.Join(rs, "；")
 	}
-	b.WriteString("1. " + dimStyle.Render(p.inst.ProfileID+" 自己的做法：") + harness + "\n")
+	b.WriteString("1. " + dimStyle.Render(harnessName(p)+" 自己的做法：") + harness + "\n")
 	b.WriteString("2. " + dimStyle.Render("交给 agent：") + "\"" + agentAsk + "\"" + dimStyle.Render("（按 y 复制）") + "\n")
 	b.WriteString("3. " + dimStyle.Render("记忆整理技能：Valise 计划提供自己的 valise-memory 技能，帮 agent 整理、压缩、归档记忆，目前在规划中。"))
 	st := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cWarn).Padding(0, 1).Width(w)

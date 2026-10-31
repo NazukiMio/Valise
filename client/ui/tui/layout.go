@@ -52,7 +52,7 @@ func cardStyle(selected, muted bool, width int) lipgloss.Style {
 }
 
 // cardWidth is the outer width of grid cards.
-const cardWidth = 40
+const cardWidth = 46
 
 // gridCols is how many cards fit the width.
 func gridCols(width int) int {

@@ -153,16 +153,31 @@ func (p *instancePage) view(m *Model) string {
 	return top + content
 }
 
-// renderSmall is the header icon: the profile art scaled to 4 rows.
+// renderSmall is the header icon, at most 10×4: braille art is scaled by
+// dots; other art is shown only when it already fits (sampling it down
+// garbles it), otherwise a colored marker stands in.
 func renderSmall(m *Model, p *instancePage) []string {
 	d := m.display(p.inst.ProfileID)
 	if d == nil || strings.TrimSpace(d.Icon) == "" {
 		return renderIcon(nil)[:4]
 	}
-	small := fitIcon(strings.Split(strings.TrimRight(d.Icon, "\n"), "\n"), 10, 4)
 	st := lipgloss.NewStyle().Foreground(cDim)
 	if d.Color != "" {
 		st = st.Foreground(lipgloss.Color(d.Color))
+	}
+	art := trimArt(strings.Split(strings.TrimRight(d.Icon, "\n"), "\n"))
+	w := 0
+	for _, r := range art {
+		w = max(w, len(r))
+	}
+	var small []string
+	switch {
+	case w <= 10 && len(art) <= 4:
+		small = toStrings(art)
+	case isBraille(art):
+		small = scaleBraille(art, w, 10, 4)
+	default:
+		small = []string{"██", "██"}
 	}
 	for i := range small {
 		small[i] = st.Render(small[i])

@@ -11,8 +11,8 @@ import (
 // Icon box on instance cards. Profiles keep the harness's art verbatim
 // (docs/PROFILES.md); it is scaled here to fit.
 const (
-	iconMaxW = 16
-	iconMaxH = 8
+	iconMaxW = 20
+	iconMaxH = 10
 )
 
 // robotIcon is the placeholder for harnesses whose profile has no art.
