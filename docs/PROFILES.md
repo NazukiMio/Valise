@@ -146,7 +146,7 @@ agent_kit:
 | profile | 条目 | 原因 | 何时能核实 |
 | :--- | :--- | :--- | :--- |
 | openclaw | `config-journal-fingerprint.key` 归为凭据 | 文档没有说明用途，只按文件名保守处理 | 需要 OpenClaw 文档或源码说明 |
-| openclaw | `openclaw-agent.sqlite` 的凭据表 `auth_profile_store` | 表名来自官方文档，但还没有 agent 运行过，库不存在 | 配置凭据并运行一次 agent 后 |
+| openclaw | `state/openclaw.sqlite` 中按列名补充的凭据表（`secret_store_entries`、设备令牌等） | 只看到表结构，没有观察到实际行（`auth_profile_store` 已在 M5 验收中核实） | 配对设备、使用 secret store 后 |
 | openclaw | `cron/**` 归为配置 | 未观察到该目录 | 创建一个定时任务后 |
 | openclaw | `openclaw.json` 中内联的渠道令牌是否属于独占凭据 | 需要接入渠道才能观察 | M4（克隆时） |
 | dsh | `profiles/*/pnpm-lock.yaml` | 未观察到 | 安装一个插件后 |

@@ -276,10 +276,15 @@ def load(p):
     lines = open(p).read().splitlines()
     return lines[0], {l.split("\t")[2]: (l.split("\t")[0], int(l.split("\t")[1])) for l in lines[1:]}
 ia, a = load(sys.argv[1]); ib, b = load(sys.argv[2]); since = int(sys.argv[3])
-bad = [f for f in a if f in b and a[f][0] != b[f][0] and b[f][1] < since]
-gone = [f for f in a if f not in b]
+# Harness scratch space (a "tmp" path segment) is created and swept by the
+# harness itself across restarts; it is counted, not compared.
+tmp = lambda f: f.startswith("tmp/") or "/tmp/" in f
+bad = [f for f in a if f in b and a[f][0] != b[f][0] and b[f][1] < since and not tmp(f)]
+gone = [f for f in a if f not in b and not tmp(f)]
+swept = [f for f in a if f not in b and tmp(f)]
 for f in bad: print("   MISMATCH (not rewritten since):", f)
 for f in gone: print("   MISSING:", f)
+if swept: print("   %d harness temp files swept by the harness (not compared)" % len(swept))
 sys.exit(0 if ia == ib and not bad and not gone else 1)
 EOF
 	}
@@ -350,6 +355,48 @@ EOF
 		# Leave the source as it was found: running.
 		ssh -T -o BatchMode=yes -- "$ms" "systemctl --user start '$munit'"
 	fi
+fi
+
+# ---------------------------------------------------------------- M5 -----
+# Web entry and the login relay's port rule. A real authorization needs a
+# person at the browser; it is recorded in DEV_PLAN.md, not repeated here.
+#   VALISE_DRILL_ENTRY   host:instance:port of a running web entry
+#   VALISE_DRILL_LOGIN   host:instance:method:callback port (loopback OAuth)
+IFS=: read -r eh ei ep <<<"${VALISE_DRILL_ENTRY:-ubuntu-vm:openclaw:18789}"
+if in_hosts "$eh"; then
+	echo "== M5: web entry $ei on $eh"
+	# The service may have just been restarted by the M4 steps.
+	ssh -T -o BatchMode=yes -- "$eh" "for i in \$(seq 1 60); do timeout 1 bash -c '</dev/tcp/127.0.0.1/$ep' 2>/dev/null && exit 0; sleep 1; done; exit 1" \
+		|| echo "   warning: nothing listens on $eh:$ep"
+	V open "$eh" "$ei" --no-browser --idle 6s > "$work/open.out" 2>&1 &
+	opid_bg=$!
+	for i in $(seq 1 30); do grep -q '^入口：' "$work/open.out" && break; sleep 0.5; done
+	url="$(sed -n 's/^入口：//p' "$work/open.out")"
+	grep -q '✓ 隧道已建立' "$work/open.out" && grep -q '✓ 远端端口在监听' "$work/open.out" && grep -q '✓ 健康检查通过' "$work/open.out" \
+		&& pass "$eh/$ei: tunnel, remote listening and health shown separately" || { fail "$eh/$ei: entry steps"; cat "$work/open.out"; }
+	code="$(curl -s -o /dev/null -w '%{http_code}' "$url")"
+	[ "$code" -ge 200 ] && [ "$code" -lt 500 ] && pass "$eh/$ei: entry reachable through the tunnel (HTTP $code)" || fail "$eh/$ei: entry HTTP $code"
+	wait "$opid_bg" && grep -q '入口隧道已关闭' "$work/open.out" && pass "$eh/$ei: closed after idle timeout" || fail "$eh/$ei: idle close"
+	lport="${url#http://127.0.0.1:}"; lport="${lport%%/*}"
+	! lsof -nP -iTCP:"$lport" -sTCP:LISTEN >/dev/null 2>&1 && pass "$eh/$ei: local port released" || fail "$eh/$ei: local port still bound"
+
+	python3 -m http.server "$ep" --bind 127.0.0.1 >/dev/null 2>&1 &
+	blocker=$!; sleep 1
+	V open "$eh" "$ei" --no-browser --idle 2s > "$work/open2.out" 2>&1
+	grep -q "本机端口 $ep 被占用，改用" "$work/open2.out" && pass "$eh/$ei: entry moved to another local port" || { fail "$eh/$ei: entry port conflict"; cat "$work/open2.out"; }
+	kill "$blocker"
+fi
+IFS=: read -r lh li lm lp <<<"${VALISE_DRILL_LOGIN:-ubuntu-vm:openclaw:openai-codex:1455}"
+if in_hosts "$lh"; then
+	echo "== M5: login relay port rule ($lm on $lh)"
+	python3 -m http.server "$lp" --bind 127.0.0.1 >/dev/null 2>&1 &
+	blocker=$!; sleep 1
+	V login "$lh" "$li" --method "$lm" < /dev/null > "$work/login.out" 2>&1
+	grep -q "本机端口 $lp 已被 .*占用；登录回调必须使用同一端口" "$work/login.out" \
+		&& pass "$lh/$li: busy callback port is an error naming the process, never another port" || { fail "$lh/$li: busy port"; tail -5 "$work/login.out"; }
+	kill "$blocker"
+	left="$(ssh -T -o BatchMode=yes -- "$lh" 'ls ~/.local/state/valise/login/ 2>/dev/null | wc -l; pgrep -f "[v]alise-porter login-run" | wc -l')"
+	[ "$(echo $left | tr -d ' ')" = "00" ] && pass "$lh: no login session or process left" || fail "$lh: leftovers after the login relay ($left)"
 fi
 
 # ------------------------------------------------------------- result -----

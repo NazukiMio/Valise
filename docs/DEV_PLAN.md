@@ -96,14 +96,21 @@
 
 ## M5：登录中继与 Web 入口
 
-- **状态**：`In progress`（2026-10-31 开始）
+- **状态**：`Done`（2026-10-31）
 - **用户决定**（2026-10-31）：隧道由客户端自己在回环地址上监听、每个连接经 ControlMaster 用 `ssh -W` 转发（LOGIN_RELAY.md 第 5 节）；快照头保存封存时的完整 profile（`profile_doc`），客户端没有同版本 profile 时可显式改用它复活，避免 profile 升级后旧快照无法复活；验收用 `ubuntu-vm` 上 OpenClaw 的 OpenAI Codex 回环登录，由用户在本机浏览器授权，验收后登出；Web 入口空闲超时默认 30 分钟。
 - **交付**：LOGIN_RELAY.md 中的 `loopback_oauth`、`device_code`、`paste_code` 三种方式，以及 Web 入口；在 profile 中补充 `login` 声明。
 - **验收**：从 macOS 客户端，对靶机上至少一个真实的回环 OAuth 登录完成授权；本机端口被占用时给出明确的报错；Web 入口的三个状态独立展示。
+- **进度**（2026-10-31）：
+  - 已完成全部交付：`loopback_oauth`、`device_code`、`paste_code` 共用一套流程（PTY 转发、browser-shim 与输出扫描两条渠道截获链接、打开前展示域名）；`remote_browser` 按计划未实现。Web 入口 `valise open`。OpenClaw profile v5 声明了三种登录方式。快照头保存完整 profile（`profile_doc`）。
+  - 真实回环 OAuth：从 macOS 对 `ubuntu-vm` 上 OpenClaw 的 OpenAI 登录（回调 `localhost:1455/auth/callback`），由用户在本机浏览器授权，经登录中继完成，登录命令退出码 0，凭据写入 `openclaw-agent.sqlite` 的 `auth_profile_store`（该表早已列为凭据表，现已核实）。验收后用 `openclaw models auth logout` 删除凭据，期间没有封存。
+  - 端口占用：本机 1455 被占用时报错并指出占用进程（如"Python（pid 70210）"），不换端口，服务器上的登录命令被结束、会话文件清理；Web 入口在 18789 被占用时改用 18790 并说明。
+  - Web 入口：隧道、远端监听、健康检查三个状态分别展示；127.0.0.1 与 [::1] 都可访问；空闲超时后关闭并释放端口。
+  - `testbed/drill.sh` M1–M5（`VALISE_DRILL_REVIVE=1`）输出 `ALL_PASS (failures=0)`，共 112 项。
+  - 验收中发现并修复：登录命令退出后客户端仍在等待终端输入（需按键才收尾）。顺带发现 `state/openclaw.sqlite` 中另有 7 张按列名判断为凭据的表，已补进 `secret_tables`（`verify: pending`）。
 
 ## M6：agent-kit
 
-- **状态**：`Blocked (depends on M5)`
+- **状态**：`Ready`
 - **交付**：`valise-porter mcp` 的六个工具、四个技能、体检的计算、"安装逃生舱技能"操作；基于变动统计的 agent 归类提议与"降级"单独确认（AGENT_KIT.md 第 3.1 节）。
 - **验收**：
   - 在每种 harness 上，agent 都能完成"学习逃生舱 → 风险操作前自动封存 → 交接后新会话能读到交接内容"。

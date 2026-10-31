@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 4
+profile_version: 5
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -55,8 +55,8 @@ paths:
 
 consistency:
   sqlite:
-    - { root: state, glob: "state/openclaw.sqlite", secret_tables: [mcp_oauth_stores] }   # S&S; OBS: table present, WAL mode
-    - { root: state, glob: "agents/*/agent/openclaw-agent.sqlite", secret_tables: [auth_profile_store] }   # S&S; verify: pending (no agent has run yet, table not observed)
+    - { root: state, glob: "state/openclaw.sqlite", secret_tables: [mcp_oauth_stores, secret_store_entries, device_auth_tokens, device_bootstrap_tokens, gateway_origin_device_tokens, worker_environment_credentials, config_revision_keys, audit_identity_keys] }   # S&S: mcp_oauth_stores; OBS (2026-10-31): the others by column names (token, value, hmac_key, key), rows not yet observed: verify: pending
+    - { root: state, glob: "agents/*/agent/openclaw-agent.sqlite", secret_tables: [auth_profile_store] }   # S&S; OBS (2026-10-31): the OAuth profile from `models auth login` was stored here (M5 acceptance)
   quiesce: none
 
 provenance:
@@ -89,7 +89,7 @@ login:
   - id: openai-codex
     display_name: "OpenAI（ChatGPT 账号）"
     kind: loopback_oauth
-    argv: [openclaw, models, auth, login, --provider, openai]   # OBS: redirect_uri http://localhost:1455/auth/callback; completion: verify: pending
+    argv: [openclaw, models, auth, login, --provider, openai]   # OBS (2026-10-31): redirect_uri http://localhost:1455/auth/callback; completed through the relay from macOS (M5 acceptance)
     timeout_seconds: 300
   - id: openai-codex-device
     display_name: "OpenAI（ChatGPT 账号，设备码）"
