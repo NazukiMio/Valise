@@ -43,7 +43,7 @@ func TestOpenEntryStepsAndIdle(t *testing.T) {
 	start := time.Now()
 	err := s.OpenEntry(context.Background(), "box", "demo", OpenOptions{Idle: 1500 * time.Millisecond,
 		Status: func(st EntryStatus) { mu.Lock(); steps[st.Step] = st; mu.Unlock() },
-		Ready:  func(u string) { ready = u }})
+		Ready:  func(u, display string) { ready = u }})
 	if err != nil {
 		t.Fatal(err)
 	}

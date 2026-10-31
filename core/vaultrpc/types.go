@@ -17,6 +17,15 @@ const (
 	MethodFiles        = "vault_files"
 	MethodTargetSet    = "target_set"
 	MethodSync         = "sync"
+	// Vault tree and cloud backup (docs/VAULT_FORMAT.md section 10,
+	// docs/ARCHITECTURE.md section 7).
+	MethodServerNameSet = "server_name_set"
+	MethodPeriodSet     = "period_set"
+	MethodLeafDelete    = "leaf_delete"
+	MethodTargetList    = "target_list"
+	MethodTargetLeafDel = "target_leaf_delete"
+	MethodTimerSet      = "timer_set"
+	MethodTimerStatus   = "timer_status"
 )
 
 // Initiators recorded in the audit log.
@@ -24,6 +33,7 @@ const (
 	InitiatorClient   = "client"
 	InitiatorAgentMCP = "agent-mcp"
 	InitiatorTimer    = "timer"
+	InitiatorAuto     = "auto"
 )
 
 // RecipientAddParams registers the client's public key.
@@ -54,8 +64,12 @@ type Tally struct {
 
 // SealReport is the result of a seal (docs/ARCHITECTURE.md section 6).
 type SealReport struct {
-	SnapshotID        string             `json:"snapshot_id"`
-	InstanceID        string             `json:"instance_id"`
+	SnapshotID string `json:"snapshot_id"`
+	InstanceID string `json:"instance_id"`
+	// Leaf is the period the snapshot was written to.
+	Leaf string `json:"leaf"`
+	// AutoSync lists the targets an automatic cloud backup was started for.
+	AutoSync          []string           `json:"auto_sync,omitempty"`
 	Tier              string             `json:"tier"`
 	Epoch             int                `json:"epoch"`
 	NewEpoch          bool               `json:"new_epoch"`
@@ -76,6 +90,13 @@ type Target struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
 	Dest string `json:"dest"`
+	// Auto turns on syncing after seals, at most once per Every.
+	Auto *AutoSync `json:"auto,omitempty"`
+}
+
+// AutoSync is a target's automatic backup setting.
+type AutoSync struct {
+	Every string `json:"every"`
 }
 
 // TargetSetParams adds or replaces a target.
@@ -94,11 +115,36 @@ type TargetState struct {
 // StatusResult describes the server vault without any key.
 type StatusResult struct {
 	Exists     bool          `json:"exists"`
-	VaultID    string        `json:"vault_id,omitempty"`
-	Epochs     int           `json:"epochs"`
+	ServerName string        `json:"server_name,omitempty"`
 	Recipients []string      `json:"recipient_fingerprints"`
 	Snapshots  []vault.Meta  `json:"snapshots"`
+	Leaves     []LeafState   `json:"leaves"`
 	Targets    []TargetState `json:"targets"`
+}
+
+// LeafState is one period vault on the server.
+type LeafState struct {
+	Leaf     string        `json:"leaf"`
+	Period   *vault.Period `json:"period,omitempty"`
+	VaultID  string        `json:"vault_id,omitempty"`
+	Epochs   int           `json:"epochs"`
+	Bytes    int64         `json:"bytes"`
+	Deleting bool          `json:"deleting,omitempty"`
+	// Current is the leaf the instance writes to today.
+	Current   bool     `json:"current,omitempty"`
+	Snapshots []string `json:"snapshots"`
+}
+
+// LeafOf returns the leaf holding a snapshot, "" when unknown.
+func (s *StatusResult) LeafOf(snapshotID string) string {
+	for _, l := range s.Leaves {
+		for _, id := range l.Snapshots {
+			if id == snapshotID {
+				return l.Leaf
+			}
+		}
+	}
+	return ""
 }
 
 // VerifyResult is a no-key verification.
@@ -106,8 +152,14 @@ type VerifyResult struct {
 	Problems []vault.Problem `json:"problems"`
 }
 
-// FilesResult lists every vault file (relative path and size), for pull.
+// FilesParams names the leaf to list.
+type FilesParams struct {
+	Leaf string `json:"leaf"`
+}
+
+// FilesResult lists every file of a leaf (relative path and size), for pull.
 type FilesResult struct {
+	Leaf    string      `json:"leaf"`
 	VaultID string      `json:"vault_id"`
 	Files   []VaultFile `json:"files"`
 }
@@ -127,5 +179,77 @@ type SyncParams struct {
 type SyncResult struct {
 	Target    string   `json:"target"`
 	Dest      string   `json:"dest"`
+	Leaves    []string `json:"leaves"`
 	Snapshots []string `json:"snapshots"`
+}
+
+// ServerNameSetParams names the server (once).
+type ServerNameSetParams struct {
+	Name string `json:"name"`
+}
+
+// PeriodSetParams sets an instance's period unit and time zone.
+type PeriodSetParams struct {
+	InstanceID string              `json:"instance_id"`
+	Setting    vault.PeriodSetting `json:"setting"`
+}
+
+// LeafDeleteParams deletes one whole leaf on the server.
+type LeafDeleteParams struct {
+	Leaf string `json:"leaf"`
+}
+
+// LeafDeleteResult reports a deletion.
+type LeafDeleteResult struct {
+	Leaf  string `json:"leaf"`
+	Bytes int64  `json:"bytes"`
+}
+
+// TargetListParams names the target to list.
+type TargetListParams struct {
+	Target string `json:"target"`
+}
+
+// TargetListResult is what a target holds for this server.
+type TargetListResult struct {
+	Target string       `json:"target"`
+	Dest   string       `json:"dest"`
+	Leaves []RemoteLeaf `json:"leaves"`
+}
+
+// RemoteLeaf is one leaf found on a target.
+type RemoteLeaf struct {
+	Leaf      string   `json:"leaf"`
+	Bytes     int64    `json:"bytes"`
+	Deleting  bool     `json:"deleting,omitempty"`
+	Snapshots []string `json:"snapshots"`
+	Packs     []string `json:"packs"`
+}
+
+// TargetLeafDeleteParams deletes one leaf on a target.
+type TargetLeafDeleteParams struct {
+	Target string `json:"target"`
+	Leaf   string `json:"leaf"`
+}
+
+// TimerSetParams turns the timed seal of an instance on or off.
+type TimerSetParams struct {
+	InstanceID string `json:"instance_id"`
+	Enabled    bool   `json:"enabled"`
+	Every      string `json:"every,omitempty"`
+}
+
+// TimerStatusParams names an instance.
+type TimerStatusParams struct {
+	InstanceID string `json:"instance_id"`
+}
+
+// TimerStatus describes the timed seal of an instance.
+type TimerStatus struct {
+	Enabled bool     `json:"enabled"`
+	Every   string   `json:"every,omitempty"`
+	Units   []string `json:"units,omitempty"`
+	// Linger reports whether the user's systemd instance runs without a
+	// login session; without it the timer only fires while logged in.
+	Linger bool `json:"linger"`
 }

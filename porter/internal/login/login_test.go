@@ -1,8 +1,11 @@
 package login
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"valise/core/enroll"
@@ -75,5 +78,47 @@ func TestListenAddrs(t *testing.T) {
 	}
 	if res, _ := ListenAddrs(9); len(res.Addrs) != 0 {
 		t.Fatalf("%+v", res)
+	}
+}
+
+func TestEntryAuth(t *testing.T) {
+	home := t.TempDir()
+	bin := t.TempDir()
+	os.WriteFile(filepath.Join(bin, "demo"), []byte(`#!/bin/sh
+case "$1" in
+ url) echo 'Dashboard: http://127.0.0.1:9000/ui/?x=1#token=abc%2Fd';;
+ tok) printf '\n s3cr+t \n';;
+ wrongport) echo http://127.0.0.1:1/;;
+ json) echo '{"url":"http://127.0.0.1:9000/#token=long","a":{"b":"http://127.0.0.1:9000/#once=1"}}';;
+ fail) echo leaked-secret >&2; exit 3;;
+esac
+`), 0o755)
+	e := &porterenroll.Env{Home: home, Vars: []string{"PATH=" + bin + ":/usr/bin:/bin"}}
+	porterenroll.WriteRecord(home, enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": home}}, profile.Profile{ID: "demo", ProfileVersion: 1})
+	entry := func(a profile.EntryAuth) login.EntryAuthParams {
+		return login.EntryAuthParams{InstanceID: "demo", Entry: profile.Entry{ID: "m", Port: 9000, Path: "/ui/", Auth: &a}}
+	}
+	ctx := context.Background()
+	r, err := EntryAuth(ctx, e, home, entry(profile.EntryAuth{URLArgv: profile.Argv{"demo", "url"}}))
+	if err != nil || r.Suffix != "/ui/?x=1#token=abc%2Fd" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	r, err = EntryAuth(ctx, e, home, entry(profile.EntryAuth{TokenArgv: profile.Argv{"demo", "tok"}, URLSuffix: "#token=${TOKEN}"}))
+	if err != nil || r.Suffix != "/ui/#token=s3cr%2Bt" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	r, err = EntryAuth(ctx, e, home, entry(profile.EntryAuth{URLArgv: profile.Argv{"demo", "json"}, URLField: "a.b"}))
+	if err != nil || r.Suffix != "/#once=1" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if _, err := EntryAuth(ctx, e, home, entry(profile.EntryAuth{URLArgv: profile.Argv{"demo", "json"}, URLField: "missing"})); err == nil {
+		t.Fatal("missing field accepted")
+	}
+	if _, err := EntryAuth(ctx, e, home, entry(profile.EntryAuth{URLArgv: profile.Argv{"demo", "wrongport"}})); err == nil {
+		t.Fatal("URL for another port accepted")
+	}
+	_, err = EntryAuth(ctx, e, home, entry(profile.EntryAuth{URLArgv: profile.Argv{"demo", "fail"}}))
+	if err == nil || strings.Contains(fmt.Sprint(err), "leaked") {
+		t.Fatalf("command output leaked into the error: %v", err)
 	}
 }

@@ -85,8 +85,9 @@ func (s *Service) Sync(ctx context.Context, host, target string) (*vaultrpc.Sync
 	return &res, err
 }
 
-// PullResult reports a pull.
+// PullResult reports a pull of one leaf.
 type PullResult struct {
+	Leaf       string          `json:"leaf"`
 	Dir        string          `json:"dir"`
 	VaultID    string          `json:"vault_id"`
 	Downloaded int             `json:"downloaded"`
@@ -98,7 +99,7 @@ type PullResult struct {
 // pullRank orders downloads so data lands before what references it.
 func pullRank(rel string) int {
 	switch {
-	case rel == vault.DescriptorFile:
+	case rel == vault.DescriptorFile, rel == vault.PeriodFile:
 		return 0
 	case strings.HasPrefix(rel, vault.EpochsDir+"/"), strings.HasPrefix(rel, vault.KeysDir+"/"):
 		return 1
@@ -117,9 +118,36 @@ func (s *Service) DefaultPullDir(vaultID string) string {
 	return filepath.Join(s.Dirs.Data, "vaults", vaultID)
 }
 
-// Pull copies the files of host's vault that dir lacks (the vault is
-// append-only), then verifies the local copy without a key.
-func (s *Service) Pull(ctx context.Context, host, dir string) (*PullResult, error) {
+// PullAll pulls every leaf on host that is not being deleted, each into
+// its default directory (or <dir>/<leaf> when dir is set).
+func (s *Service) PullAll(ctx context.Context, host, dir string) ([]*PullResult, error) {
+	st, err := s.VaultStatus(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	var out []*PullResult
+	for _, l := range st.Leaves {
+		if l.Deleting || l.VaultID == "" {
+			continue
+		}
+		d := ""
+		if dir != "" {
+			d = filepath.Join(dir, filepath.FromSlash(strings.ReplaceAll(l.Leaf, vault.LegacyLeaf, "legacy")))
+		}
+		r, err := s.Pull(ctx, host, l.Leaf, d)
+		if r != nil {
+			out = append(out, r)
+		}
+		if err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+// Pull copies the files of one leaf of host's vault that dir lacks (leaves
+// are append-only), then verifies the local copy without a key.
+func (s *Service) Pull(ctx context.Context, host, leaf, dir string) (*PullResult, error) {
 	t, _, err := s.transport(host)
 	if err != nil {
 		return nil, err
@@ -133,7 +161,7 @@ func (s *Service) Pull(ctx context.Context, host, dir string) (*PullResult, erro
 		return nil, err
 	}
 	var list vaultrpc.FilesResult
-	err = c.Call(ctx, vaultrpc.MethodFiles, struct{}{}, &list)
+	err = c.Call(ctx, vaultrpc.MethodFiles, vaultrpc.FilesParams{Leaf: leaf}, &list)
 	c.Close()
 	if err != nil {
 		return nil, err
@@ -144,7 +172,7 @@ func (s *Service) Pull(ctx context.Context, host, dir string) (*PullResult, erro
 	if b, err := os.ReadFile(filepath.Join(dir, vault.DescriptorFile)); err == nil && !strings.Contains(string(b), `"`+list.VaultID+`"`) {
 		return nil, valise.New("pull_wrong_vault", "目标目录里已经是另一个金库", "换一个目录，或不指定 --to")
 	}
-	res := &PullResult{Dir: dir, VaultID: list.VaultID}
+	res := &PullResult{Leaf: leaf, Dir: dir, VaultID: list.VaultID}
 	sort.SliceStable(list.Files, func(i, j int) bool { return pullRank(list.Files[i].Path) < pullRank(list.Files[j].Path) })
 	for _, f := range list.Files {
 		if !vault.ValidRel(f.Path) {
@@ -158,7 +186,7 @@ func (s *Service) Pull(ctx context.Context, host, dir string) (*PullResult, erro
 			res.Present++
 			continue
 		}
-		if err := s.fetch(ctx, t, found.Path, f, local); err != nil {
+		if err := s.fetch(ctx, t, found.Path, leaf, f, local); err != nil {
 			return res, err
 		}
 		res.Downloaded++
@@ -175,7 +203,7 @@ func (s *Service) Pull(ctx context.Context, host, dir string) (*PullResult, erro
 	return res, nil
 }
 
-func (s *Service) fetch(ctx context.Context, t *ssh.Transport, porterPath string, f vaultrpc.VaultFile, local string) error {
+func (s *Service) fetch(ctx context.Context, t *ssh.Transport, porterPath, leaf string, f vaultrpc.VaultFile, local string) error {
 	if err := os.MkdirAll(filepath.Dir(local), 0o700); err != nil {
 		return err
 	}
@@ -184,7 +212,7 @@ func (s *Service) fetch(ctx context.Context, t *ssh.Transport, porterPath string
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	cmd, err := t.Command(ssh.Quote(porterPath) + " vault-cat " + ssh.Quote(f.Path))
+	cmd, err := t.Command(ssh.Quote(porterPath) + " vault-cat " + ssh.Quote(leaf) + " " + ssh.Quote(f.Path))
 	if err != nil {
 		tmp.Close()
 		return err
@@ -208,7 +236,7 @@ func (s *Service) fetch(ctx context.Context, t *ssh.Transport, porterPath string
 	}
 	tmp.Close()
 	if copyErr != nil || waitErr != nil || n != f.Size {
-		return valise.New("pull_interrupted", "拉取 "+f.Path+" 时中断", "重新运行 valise pull；已拉取的文件会保留，可以断点续传").
+		return valise.New("pull_interrupted", "拉取 "+leaf+" 的 "+f.Path+" 时中断", "重新运行 valise pull；已拉取的文件会保留，可以断点续传").
 			WithDetail(fmt.Sprintf("got %d of %d bytes", n, f.Size))
 	}
 	if strings.HasPrefix(f.Path, vault.PacksDir+"/") && hex.EncodeToString(h.Sum(nil)) != strings.TrimSuffix(path.Base(f.Path), ".pack") {

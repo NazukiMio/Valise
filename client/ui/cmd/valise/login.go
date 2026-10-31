@@ -183,7 +183,7 @@ func (c *cli) open(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	steps := map[string]string{service.EntryTunnel: "隧道已建立", service.EntryRemote: "远端端口在监听", service.EntryHealth: "健康检查通过"}
+	steps := map[string]string{service.EntryTunnel: "隧道已建立", service.EntryRemote: "远端端口在监听", service.EntryHealth: "健康检查通过", service.EntryAuth: "管理页令牌"}
 	err = c.svc.OpenEntry(ctx, pos[0], pos[1], service.OpenOptions{Entry: *entry, Idle: *idle,
 		Status: func(s service.EntryStatus) {
 			mark := "✓"
@@ -192,10 +192,13 @@ func (c *cli) open(ctx context.Context, args []string) error {
 			}
 			fmt.Fprintf(c.out, "  %s %s：%s\n", mark, steps[s.Step], s.Detail)
 		},
-		Ready: func(url string) {
-			fmt.Fprintf(c.out, "入口：%s\n", url)
+		Ready: func(open, display string) {
+			fmt.Fprintf(c.out, "管理页：%s\n", display)
+			if open != display {
+				fmt.Fprintln(c.out, "（带令牌的地址只直接交给浏览器，不显示）")
+			}
 			if !*noBrowser {
-				if err := service.OpenURL(url); err != nil {
+				if err := service.OpenURL(open); err != nil {
 					fmt.Fprintln(c.out, "无法打开浏览器，请手动打开上面的地址。")
 				}
 			}
@@ -206,7 +209,7 @@ func (c *cli) open(ctx context.Context, args []string) error {
 			fmt.Fprintln(c.out, how+"。")
 		}})
 	if err == nil {
-		fmt.Fprintln(c.out, "入口隧道已关闭。")
+		fmt.Fprintln(c.out, "管理页隧道已关闭。")
 	}
 	return err
 }

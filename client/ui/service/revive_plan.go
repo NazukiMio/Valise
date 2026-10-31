@@ -88,7 +88,15 @@ func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase st
 	default:
 		return nil, valise.New("mode_invalid", "未知的复活模式："+o.Mode, "可选 rollback、migrate、clone")
 	}
-	pull, err := s.Pull(ctx, o.From, "")
+	st, err := s.VaultStatus(ctx, o.From)
+	if err != nil {
+		return nil, err
+	}
+	leaf := st.LeafOf(o.SnapshotID)
+	if leaf == "" {
+		return nil, valise.New("snapshot_unknown", o.From+" 上没有逃生舱 "+o.SnapshotID, "用 valise vault status "+o.From+" 列出现有的逃生舱")
+	}
+	pull, err := s.Pull(ctx, o.From, leaf, "")
 	if err != nil {
 		return nil, err
 	}

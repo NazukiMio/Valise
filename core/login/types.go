@@ -73,3 +73,18 @@ type ListenParams struct {
 type ListenResult struct {
 	Addrs []string `json:"addrs"`
 }
+
+// MethodEntryAuth runs an entry's declared token command (LOGIN_RELAY.md 4.1).
+const MethodEntryAuth = "entry_auth"
+
+// EntryAuthParams carries the entry from the client's effective profile.
+type EntryAuthParams struct {
+	InstanceID string        `json:"instance_id"`
+	Entry      profile.Entry `json:"entry"`
+}
+
+// EntryAuthResult is what to append to the local base URL (scheme, host and
+// port are the tunnel's): path, query and fragment, holding the token.
+type EntryAuthResult struct {
+	Suffix string `json:"suffix"`
+}

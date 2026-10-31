@@ -185,7 +185,10 @@ type Entry struct {
 // EntryAuth obtains an entry's token with a harness command. At most one of
 // URLArgv and TokenArgv is set; URLSuffix goes with TokenArgv.
 type EntryAuth struct {
-	URLArgv   Argv   `yaml:"url_argv" json:"url_argv,omitempty"`
+	URLArgv Argv `yaml:"url_argv" json:"url_argv,omitempty"`
+	// URLField is a dotted JSON field of url_argv's output holding the URL;
+	// without it the first URL on the entry's port is taken.
+	URLField  string `yaml:"url_field" json:"url_field,omitempty"`
 	TokenArgv Argv   `yaml:"token_argv" json:"token_argv,omitempty"`
 	URLSuffix string `yaml:"url_suffix" json:"url_suffix,omitempty"`
 	Hint      string `yaml:"hint" json:"hint,omitempty"`

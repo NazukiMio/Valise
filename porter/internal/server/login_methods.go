@@ -20,6 +20,13 @@ func init() {
 		}
 		return porterlogin.Prepare(s.loginEnv(ctx), p)
 	}
+	methods[login.MethodEntryAuth] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[login.EntryAuthParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		return porterlogin.EntryAuth(ctx, s.loginEnv(ctx), s.cfg.Home, p)
+	}
 	methods[login.MethodURLs] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[login.SessionParams](raw)
 		if err != nil {

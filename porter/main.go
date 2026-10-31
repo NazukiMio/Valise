@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	_ "time/tzdata" // period time zones (docs/VAULT_FORMAT.md 10.2) on servers without zoneinfo
 
 	"valise/core/login"
 	"valise/core/rpc"
@@ -22,6 +23,7 @@ import (
 	porterrevive "valise/porter/internal/revive"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/server"
+	"valise/porter/internal/timer"
 )
 
 // version is set at release build time with -ldflags "-X main.version=…".
@@ -34,7 +36,9 @@ func main() {
 const usage = `用法：
   valise-porter version [--json]
   valise-porter rpc
-  valise-porter vault-cat <金库内的相对路径>
+  valise-porter seal-timer --instance <实例>（由定时器运行）
+  valise-porter autosync                    （由封存后自动启动，同步到期的云备份）
+  valise-porter vault-cat <周期> <金库内的相对路径>
   valise-porter stage-write --op <op_id>
   valise-porter login-run <会话> [<列数> <行数>]
   valise-porter browser-shim <链接>...
@@ -129,8 +133,33 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		return 0
+	case "seal-timer":
+		if len(args) != 3 || args[1] != "--instance" {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return 1
+		}
+		ctx := context.Background()
+		if err := timer.Seal(ctx, porterenroll.LoadEnv(ctx, home), home, args[2]); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		return 0
+	case "autosync":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return 1
+		}
+		ctx := context.Background()
+		if err := seal.AutoSync(ctx, porterenroll.LoadEnv(ctx, home), seal.Paths{Home: home}); err != nil {
+			return 1
+		}
+		return 0
 	case "vault-cat":
-		if len(args) != 2 {
+		if len(args) != 3 {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
@@ -139,7 +168,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
-		f, err := seal.OpenVaultFile(seal.Paths{Home: home}, args[1])
+		f, err := seal.OpenVaultFile(seal.Paths{Home: home}, args[1], args[2])
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1

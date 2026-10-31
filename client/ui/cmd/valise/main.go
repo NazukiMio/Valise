@@ -31,11 +31,19 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   key register <服务器> [--label 说明]            把本机公钥登记为服务器的封存收件人（说明写成注释）
   seal <服务器> <实例> [--tier soul|soul-secrets|full|raw] [--reason 原因]
                                                  封存一次
-  vault status <服务器> [--json]                   列出快照与同步状态（不需要私钥）
+  vault status <服务器> [--json]                   按周期列出逃生舱与云备份状态（不需要私钥）
   vault verify <服务器>                           在服务器上做不需要私钥的校验
-  target add <服务器> <名称> --rsync <主机:路径>     添加异地同步目标
-  sync <服务器> <目标>                            把服务器金库同步到异地
-  pull <服务器> [--to 目录]                       把金库拉取到本机
+  vault delete <服务器> <周期> [--yes]             删除服务器上一整个已结束的周期（先列出其他副本）
+  target add <服务器> <名称> --rsync <主机:路径> [--auto 1d]
+                                                 添加云备份位置（--auto：建立逃生舱后顺带同步的最短间隔）
+  target auto <服务器> <名称> <间隔|off>            开关自动同步
+  target list <服务器> <名称> [--json]              列出云备份上的周期，并与服务器对照
+  target delete <服务器> <名称> <周期> [--yes]      删除云备份上一整个已结束的周期
+  sync <服务器> <目标>                            把服务器金库同步到云备份
+  pull <服务器> [--leaf 周期] [--to 目录]          把金库拉取到本机（默认全部周期）
+  period <服务器> <实例> week|month|quarter [--tz 时区]
+                                                 设置金库周期（从下一个周期开始生效）
+  timer <服务器> <实例> <间隔|off|status>          定时建立逃生舱（systemd 用户定时器）
   verify --vault <目录> [--key]                   校验本机金库；--key 用私钥解密并逐个文件校验
   revive <服务器> --snapshot <id> [--mode rollback|migrate|clone] [--from <服务器>] [--id 新实例]
          [--root id=路径]... [--allow-draft-profile] [--allow-snapshot-profile] [--dry-run] [--yes]
@@ -53,11 +61,15 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   profiles status                                查看 harness 资料包与本地 profile
   profiles install [--tag profiles-…] [--file <文件>] [--yes]
                                                  安装 harness 资料包（在线拉取最新版，或本地文件；未签名的只能作为本地 profile）
+  server setup <别名> [--name 名字] [--release 版本 | --local 文件]
+                                                 添加服务器：检查 → 部署 porter（缺少时）→ 登记钥匙 → 起名 → 记录
+  server name <别名> <名字>                       给服务器起名（云备份文件夹名，只能设一次）
   server list | add <别名>… | remove <别名> | import [<别名>…]
                                                  已记录服务器（只存 SSH 别名；import 从 ~/.ssh/config 选择）
   login <服务器> <实例> [--method id]              登录中继：在本机浏览器中完成服务器上的登录
   open <服务器> <实例> [--entry id] [--idle 30m] [--no-browser]
-                                                 Web 入口：把管理页面经隧道转到本机并打开
+                                                 打开管理页：经隧道转到本机，需要令牌时用 harness 自己的命令取得
+  shell <服务器>                                  打开服务器终端（系统 OpenSSH 的交互式登录 shell）
   key unregister <服务器> [--recipient age1…]     移除收件人公钥（旧快照仍可被它解开）
   key init                                       生成新的密钥（口令至少 12 个字符）
   key import --file <身份文件>                    导入已有的 age 身份
@@ -140,7 +152,13 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 	case args[0] == "profiles":
 		return c.profilesCmd(ctx, args[1:])
 	case args[0] == "server":
-		return c.server(args[1:])
+		return c.server(ctx, args[1:])
+	case args[0] == "period":
+		return c.period(ctx, args[1:])
+	case args[0] == "timer":
+		return c.timer(ctx, args[1:])
+	case args[0] == "shell":
+		return c.shell(ctx, args[1:])
 	case args[0] == "kit":
 		return c.kit(ctx, args[1:])
 	case args[0] == "login":

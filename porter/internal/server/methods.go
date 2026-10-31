@@ -11,6 +11,7 @@ import (
 	"valise/core/vaultrpc"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/seal"
+	"valise/porter/internal/timer"
 )
 
 // session holds per-connection state.
@@ -118,7 +119,60 @@ func init() {
 		return seal.Verify(paths(s))
 	}
 	methods[vaultrpc.MethodFiles] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
-		return seal.Files(paths(s))
+		var p vaultrpc.FilesParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.Files(paths(s), p.Leaf)
+	}
+	methods[vaultrpc.MethodServerNameSet] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.ServerNameSetParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return struct{}{}, seal.SetServerName(paths(s), p.Name)
+	}
+	methods[vaultrpc.MethodPeriodSet] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.PeriodSetParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return struct{}{}, seal.SetPeriodSetting(paths(s), p.InstanceID, p.Setting)
+	}
+	methods[vaultrpc.MethodLeafDelete] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.LeafDeleteParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.DeleteLeaf(paths(s), p.Leaf, vaultrpc.InitiatorClient)
+	}
+	methods[vaultrpc.MethodTimerSet] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.TimerSetParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return timer.Set(ctx, s.loginEnv(ctx), s.cfg.Home, p)
+	}
+	methods[vaultrpc.MethodTimerStatus] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.TimerStatusParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return timer.Status(ctx, s.loginEnv(ctx), s.cfg.Home, p.InstanceID)
+	}
+	methods[vaultrpc.MethodTargetList] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.TargetListParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.TargetList(ctx, s.loginEnv(ctx), paths(s), p.Target)
+	}
+	methods[vaultrpc.MethodTargetLeafDel] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.TargetLeafDeleteParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return struct{}{}, seal.TargetLeafDelete(ctx, s.loginEnv(ctx), paths(s), p.Target, p.Leaf, vaultrpc.InitiatorClient)
 	}
 	methods[vaultrpc.MethodTargetSet] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.TargetSetParams

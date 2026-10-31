@@ -31,7 +31,7 @@ harness_versions_tested: []      # 例如 ["2026.10.3"]，填写核实时使用�
 docs: https://…                  # 官方文档地址，只作参考，Valise 不会抓取
 display:                         # 可选：界面上的实例卡片图标（2026-10-31 用户决定）
   color: "#E8603C"               # 主色，#RRGGBB
-  icon: |                        # 字符画，最多 5 行、每行最多 12 个显示宽度；取自 harness 官方 TUI 的启动画面并缩小，注明出处
+  icon: |                        # 字符画，原样取自 harness 官方 CLI/TUI 的启动画面（不做改动），最多 16 行、每行最多 32 个显示宽度；注明出处
     ...
   icon_source: "…"               # 出处（官方 TUI 的哪个画面、哪个版本）；未核实时写 verify: pending
 
@@ -86,6 +86,7 @@ entries:
     path: "/"
     auth:                        # 可选：管理页需要令牌时，如何由 harness 自己的命令取得（LOGIN_RELAY.md 4.1）
       url_argv: [example, dashboard, --print-url]   # 打印一个带令牌的管理页地址；与 token_argv 二选一
+      url_field: null            # 可选：url_argv 输出 JSON 时，地址所在的点分字段（例如 browserUrl）
       token_argv: null           # 只打印令牌本身；配合 url_suffix 使用
       url_suffix: null           # 例如 "#token=${TOKEN}"，只能引用 ${TOKEN}
       hint: "…"                  # 没法自动取得时给用户看的说明（例如"运行 example token --show，粘贴到页面的密钥栏"）
@@ -151,8 +152,8 @@ agent_kit:
 - "同时出现"按两种情况判定：glob 字符串完全相同；或者 `secrets` 的 glob 不含通配符，并且能被同一 root 下某条 `body`、`cache`、`ignore` 规则（包括 `body.paths`）匹配。
 - glob 语法：以 `/` 分隔路径段，`**` 匹配零个或多个路径段，其余段使用 Go `path.Match` 的语法。
 - `secret_tables` 中的表名只能包含字母、数字和下划线。
-- `display.icon` 最多 5 行，每行显示宽度不超过 12，不得包含控制字符或 ANSI 转义；`display.color` 必须是 `#RRGGBB`。
-- `entries[].auth` 中 `url_argv` 与 `token_argv` 最多出现一个；`url_suffix` 只能与 `token_argv` 一起出现，并且只能引用 `${TOKEN}`。
+- `display.icon` 最多 16 行，每行显示宽度不超过 32，不得包含控制字符或 ANSI 转义；`display.color` 必须是 `#RRGGBB`。界面按卡片大小缩放显示（盲文点阵字符画按点缩放），profile 中保存原样。
+- `entries[].auth` 中 `url_argv` 与 `token_argv` 最多出现一个；`url_suffix` 只能与 `token_argv` 一起出现，并且只能引用 `${TOKEN}`；`url_field` 只能与 `url_argv` 一起出现，必须是点分字段路径。
 - profile 使用严格解析，出现 schema 中没有的字段即报错。子 profile 只能包含元信息字段（`schema`、`id`、`display_name`、`profile_version`、`status`、`harness_versions_tested`、`docs`、`extends`、`when`）以及 `paths`、`consistency`、`checkup`；它的父 profile 必须出现在同一次 lint 的文件集合中。
 
 ## 4. 子 profile

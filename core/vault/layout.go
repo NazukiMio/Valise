@@ -46,6 +46,7 @@ var (
 	hexRe  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	relRes = []*regexp.Regexp{
 		regexp.MustCompile(`^VAULT$`),
+		regexp.MustCompile(`^PERIOD$`),
 		regexp.MustCompile(`^epochs/[1-9][0-9]*\.json$`),
 		regexp.MustCompile(`^keys/dedupe\.[1-9][0-9]*\.age$`),
 		regexp.MustCompile(`^packs/[0-9a-f]{2}/[0-9a-f]{64}\.pack$`),

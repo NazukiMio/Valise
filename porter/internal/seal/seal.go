@@ -21,7 +21,17 @@ const gitTimeout = 60 * time.Second
 
 // Seal seals one instance into the server vault. It only reads the
 // instance's files; all writes go to the vault and the temporary directory.
-func Seal(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.SealParams, initiator string) (rep *vaultrpc.SealReport, err error) {
+func Seal(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.SealParams, initiator string) (*vaultrpc.SealReport, error) {
+	rep, err := sealLocked(ctx, e, p, params, initiator)
+	if err == nil {
+		rep.AutoSync = startAutoSync(p)
+	}
+	return rep, err
+}
+
+// sealLocked does the seal under the vault lock; Seal starts the automatic
+// cloud backup after the lock is released.
+func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.SealParams, initiator string) (rep *vaultrpc.SealReport, err error) {
 	start := time.Now()
 	if _, ok := vault.TierCategories[params.Tier]; !ok {
 		return nil, valise.New("tier_invalid", "未知的封存档位："+params.Tier, "可选 soul、soul-secrets、full")
@@ -109,7 +119,12 @@ func Seal(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.Sea
 			fmt.Sprintf("在 %s 所在的分区释放至少 %d MiB 空间后重试", p.Tmp(), (dbBytes*2>>20)+64))
 	}
 
-	w, err := vault.OpenWriter(p.Vault(), recipients, p.DedupeKey, time.Now())
+	leaf, err := leafForSeal(p, params.InstanceID, now())
+	if err != nil {
+		return nil, err
+	}
+	rep.Leaf = leaf.Leaf
+	w, err := vault.OpenWriter(leaf.Dir, recipients, p.DedupeKey, time.Now())
 	if err != nil {
 		return nil, err
 	}

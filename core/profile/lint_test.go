@@ -261,8 +261,8 @@ provenance: { kind: binary, binary: { name: x } }
 `
 	cases := map[string]string{
 		"display.color": "display: { color: red }\n",
-		"display.icon":  "display: { icon: \"1\\n2\\n3\\n4\\n5\\n6\" }\n",
-		"第 1 行":         "display: { icon: \"一二三四五六七\" }\n",
+		"display.icon":  "display: { icon: \"" + strings.Repeat("x\\n", 17) + "\" }\n",
+		"第 1 行":         "display: { icon: \"" + strings.Repeat("一", 17) + "\" }\n",
 		"entries[0].auth": `entries: [ { id: m, kind: web, host: 127.0.0.1, port: 1, path: "/",
   auth: { url_argv: [x, url], token_argv: [x, tok] } } ]
 `,

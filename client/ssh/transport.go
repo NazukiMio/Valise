@@ -93,6 +93,12 @@ func (t *Transport) TTYArgs(remoteCmd string) []string {
 	return append(t.base("-tt"), "--", t.host, remoteCmd)
 }
 
+// ShellArgs opens an interactive login shell on the server (ssh -t, no
+// remote command).
+func (t *Transport) ShellArgs() []string {
+	return append(t.base("-t"), "--", t.host)
+}
+
 // ForwardArgs connects stdin/stdout to host:port as seen from the server
 // (ssh -W), one connection of a tunnel.
 func (t *Transport) ForwardArgs(host string, port int) []string {

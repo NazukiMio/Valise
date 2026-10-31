@@ -1,0 +1,245 @@
+package seal
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"sort"
+	"time"
+
+	"valise/core/enroll"
+	"valise/core/valise"
+	"valise/core/vault"
+)
+
+// Vault tree paths (docs/VAULT_FORMAT.md section 10).
+
+// now is the clock for choosing leaves; tests move it.
+var now = time.Now
+
+// Vaults is the server's vault tree.
+func (p Paths) Vaults() string { return filepath.Join(p.Home, ".local", "share", "valise", "vaults") }
+
+// LegacyVault is the vault from before the tree.
+func (p Paths) LegacyVault() string {
+	return filepath.Join(p.Home, ".local", "share", "valise", "vault")
+}
+
+// ServerFile is ~/.config/valise/server.json.
+func (p Paths) ServerFile() string { return filepath.Join(p.Home, ".config", "valise", "server.json") }
+
+// PeriodSettingFile is instances/<id>.vault.json.
+func (p Paths) PeriodSettingFile(instance string) string {
+	return filepath.Join(p.Home, ".config", "valise", "instances", instance+".vault.json")
+}
+
+// LeafDir is the directory of a leaf name (validated).
+func (p Paths) LeafDir(leaf string) (string, error) {
+	inst, period, ok := vault.SplitLeaf(leaf)
+	switch {
+	case !ok:
+		return "", valise.New("leaf_invalid", "无效的周期："+leaf, "使用 valise vault status 列出的名称")
+	case leaf == vault.LegacyLeaf:
+		return p.LegacyVault(), nil
+	}
+	return filepath.Join(p.Vaults(), inst, period), nil
+}
+
+// ServerInfo is server.json.
+type ServerInfo struct {
+	Name string `json:"name"`
+}
+
+// ReadServerName returns the server name, "" when not set yet.
+func ReadServerName(p Paths) (string, error) {
+	b, err := os.ReadFile(p.ServerFile())
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var si ServerInfo
+	if err := json.Unmarshal(b, &si); err != nil {
+		return "", valise.New("server_file_invalid", "服务器上的 server.json 无法解析", "检查 ~/.config/valise/server.json").WithDetail(err.Error())
+	}
+	return si.Name, nil
+}
+
+// SetServerName records the server name once; it never changes afterwards
+// because it names the cloud backup folder.
+func SetServerName(p Paths, name string) error {
+	if err := enroll.ValidInstanceID(name); err != nil {
+		return valise.New("server_name_invalid", "服务器名只能包含小写字母、数字和连字符（最长 64 个字符）", "例如 home-vps")
+	}
+	cur, err := ReadServerName(p)
+	if err != nil {
+		return err
+	}
+	if cur == name {
+		return nil
+	}
+	if cur != "" {
+		return valise.New("server_name_set", "这台服务器已经叫 "+cur+"，服务器名起好后不能修改", "云备份里的文件夹名依赖它；继续使用 "+cur)
+	}
+	b, _ := json.MarshalIndent(ServerInfo{Name: name}, "", "  ")
+	if err := writeAtomic(p.ServerFile(), append(b, '\n'), 0o600); err != nil {
+		return err
+	}
+	return ensureTree(p)
+}
+
+// ensureTree writes TREE once the server has a name.
+func ensureTree(p Paths) error {
+	name, err := ReadServerName(p)
+	if err != nil || name == "" {
+		return err
+	}
+	path := filepath.Join(p.Vaults(), vault.TreeFile)
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(p.Vaults(), 0o700); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(vault.TreeDesc{Format: vault.TreeFormat, ServerName: name, CreatedAt: time.Now().UTC()}, "", "  ")
+	return writeAtomic(path, append(b, '\n'), 0o600)
+}
+
+// ReadPeriodSetting returns the instance's period setting or the default.
+func ReadPeriodSetting(p Paths, instance string) (vault.PeriodSetting, error) {
+	b, err := os.ReadFile(p.PeriodSettingFile(instance))
+	if errors.Is(err, os.ErrNotExist) {
+		return vault.DefaultPeriodSetting, nil
+	}
+	if err != nil {
+		return vault.PeriodSetting{}, err
+	}
+	var s vault.PeriodSetting
+	if err := json.Unmarshal(b, &s); err != nil || s.Validate() != nil {
+		return vault.PeriodSetting{}, valise.New("period_setting_invalid", "实例 "+instance+" 的周期设置无效", "在实例设置中重新选择周期")
+	}
+	return s, nil
+}
+
+// SetPeriodSetting stores a setting; it applies from the next leaf on.
+func SetPeriodSetting(p Paths, instance string, s vault.PeriodSetting) error {
+	if err := enroll.ValidInstanceID(instance); err != nil {
+		return valise.New("instance_invalid", err.Error(), "检查实例名")
+	}
+	if err := s.Validate(); err != nil {
+		return valise.New("period_setting_invalid", err.Error(), "周期可选 week、month、quarter")
+	}
+	b, _ := json.MarshalIndent(s, "", "  ")
+	return writeAtomic(p.PeriodSettingFile(instance), append(b, '\n'), 0o600)
+}
+
+// LeafInfo is one leaf found on disk.
+type LeafInfo struct {
+	Leaf     string
+	Dir      string
+	Period   *vault.Period // nil for the legacy leaf
+	Deleting bool
+}
+
+// Leaves lists every leaf: the legacy vault first (when present), then the
+// tree's leaves sorted by instance and period.
+func Leaves(p Paths) ([]LeafInfo, error) {
+	var out []LeafInfo
+	if _, err := os.Stat(filepath.Join(p.LegacyVault(), vault.DescriptorFile)); err == nil {
+		out = append(out, leafInfo(vault.LegacyLeaf, p.LegacyVault(), nil))
+	}
+	insts, err := os.ReadDir(p.Vaults())
+	if errors.Is(err, os.ErrNotExist) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, in := range insts {
+		if !in.IsDir() || enroll.ValidInstanceID(in.Name()) != nil {
+			continue
+		}
+		periods, err := os.ReadDir(filepath.Join(p.Vaults(), in.Name()))
+		if err != nil {
+			return nil, err
+		}
+		names := []string{}
+		for _, pe := range periods {
+			if pe.IsDir() && vault.ValidPeriodName(pe.Name()) {
+				names = append(names, pe.Name())
+			}
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			dir := filepath.Join(p.Vaults(), in.Name(), n)
+			var per *vault.Period
+			if b, err := os.ReadFile(filepath.Join(dir, vault.PeriodFile)); err == nil {
+				var pp vault.Period
+				if json.Unmarshal(b, &pp) == nil && pp.Name() == n && pp.InstanceID == in.Name() {
+					per = &pp
+				}
+			}
+			if per == nil {
+				// PERIOD is written first when a leaf is created; a leaf
+				// without it is a crashed creation or a broken copy.
+				per = &vault.Period{InstanceID: in.Name(), Start: n[:10], End: n[11:]}
+			}
+			out = append(out, leafInfo(in.Name()+"/"+n, dir, per))
+		}
+	}
+	return out, nil
+}
+
+func leafInfo(leaf, dir string, per *vault.Period) LeafInfo {
+	_, err := os.Stat(filepath.Join(dir, vault.DeletingFile))
+	return LeafInfo{Leaf: leaf, Dir: dir, Period: per, Deleting: err == nil}
+}
+
+// leafForSeal picks (creating when needed) the leaf a seal at t writes to.
+func leafForSeal(p Paths, instance string, t time.Time) (LeafInfo, error) {
+	all, err := Leaves(p)
+	if err != nil {
+		return LeafInfo{}, err
+	}
+	var last *LeafInfo
+	for i := range all {
+		if all[i].Period != nil && all[i].Period.InstanceID == instance {
+			last = &all[i]
+		}
+	}
+	if last != nil {
+		day := vault.PeriodSetting{TZ: last.Period.TZ}.LocalDay(t).Format("2006-01-02")
+		if last.Period.TZ == "" {
+			day = t.UTC().Format("2006-01-02")
+		}
+		if day <= last.Period.End {
+			if last.Deleting {
+				return LeafInfo{}, valise.New("leaf_deleting", "当前周期 "+last.Leaf+" 有一次未完成的删除", "先在空间清理中完成这次删除")
+			}
+			return *last, nil
+		}
+	}
+	setting, err := ReadPeriodSetting(p, instance)
+	if err != nil {
+		return LeafInfo{}, err
+	}
+	var prev *vault.Period
+	if last != nil {
+		prev = last.Period
+	}
+	per := vault.NextPeriod(instance, prev, setting, t)
+	dir := filepath.Join(p.Vaults(), instance, per.Name())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return LeafInfo{}, err
+	}
+	if err := ensureTree(p); err != nil {
+		return LeafInfo{}, err
+	}
+	b, _ := json.MarshalIndent(per, "", "  ")
+	if err := writeAtomic(filepath.Join(dir, vault.PeriodFile), append(b, '\n'), 0o600); err != nil {
+		return LeafInfo{}, err
+	}
+	return LeafInfo{Leaf: per.Leaf(), Dir: dir, Period: &per}, nil
+}

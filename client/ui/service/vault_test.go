@@ -41,19 +41,37 @@ func TestSealPullVerifyOverFakeSSH(t *testing.T) {
 		t.Fatalf("%+v %v", rep2, err)
 	}
 	st, err := s.VaultStatus(ctx, "box")
-	if err != nil || len(st.Snapshots) != 2 {
+	if err != nil || len(st.Snapshots) != 2 || len(st.Leaves) != 1 || st.LeafOf(rep.SnapshotID) != rep.Leaf || !st.Leaves[0].Current {
 		t.Fatal(st, err)
+	}
+	// Period setting, server name and server-side deletion over RPC.
+	if err := s.PeriodSet(ctx, "box", "demo", vault.PeriodSetting{Unit: vault.UnitWeek, TZ: "Asia/Shanghai"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ServerNameSet(ctx, "box", "Bad Name"); err == nil {
+		t.Fatal("bad server name accepted")
+	}
+	if err := s.ServerNameSet(ctx, "box", "box"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LeafDelete(ctx, "box", rep.Leaf); err == nil {
+		t.Fatal("deleted the current period")
+	} else {
+		wantCode(t, err, "leaf_current")
+	}
+	if copies, _, err := s.LeafCopies(ctx, "box", rep.Leaf); err != nil || len(copies) != 1 || !copies[0].Complete {
+		t.Fatal(copies, err)
 	}
 	if res, err := s.VaultVerifyRemote(ctx, "box"); err != nil || len(res.Problems) != 0 {
 		t.Fatal(res, err)
 	}
 
 	dir := filepath.Join(t.TempDir(), "local")
-	pr, err := s.Pull(ctx, "box", dir)
+	pr, err := s.Pull(ctx, "box", rep.Leaf, dir)
 	if err != nil || pr.Downloaded == 0 || len(pr.Problems) != 0 {
 		t.Fatalf("%+v %v", pr, err)
 	}
-	if pr, err := s.Pull(ctx, "box", dir); err != nil || pr.Downloaded != 0 || pr.Present == 0 {
+	if pr, err := s.Pull(ctx, "box", rep.Leaf, dir); err != nil || pr.Downloaded != 0 || pr.Present == 0 {
 		t.Fatalf("second pull: %+v %v", pr, err)
 	}
 	p := pass

@@ -305,6 +305,10 @@ func (c *checker) checkTop(p *Profile) {
 				c.add(f+".auth", "url_argv 与 token_argv 最多出现一个")
 			case a.URLSuffix != "" && len(a.TokenArgv) == 0:
 				c.add(f+".auth.url_suffix", "只能与 token_argv 一起使用")
+			case a.URLField != "" && len(a.URLArgv) == 0:
+				c.add(f+".auth.url_field", "只能与 url_argv 一起使用")
+			case a.URLField != "" && !fieldPathRe.MatchString(a.URLField):
+				c.add(f+".auth.url_field", "必须是点分字段路径")
 			}
 			if a.URLSuffix != "" {
 				if err := checkVars(a.URLSuffix, VarToken); err != nil {
@@ -456,8 +460,8 @@ var FindingCodes = []string{"long_session", "cost_growth", "memory_bloat", "sess
 
 // Icon limits, see docs/PROFILES.md section 3.
 const (
-	MaxIconLines = 5
-	MaxIconWidth = 12
+	MaxIconLines = 16
+	MaxIconWidth = 32
 )
 
 func (c *checker) checkDisplay(d *Display) {

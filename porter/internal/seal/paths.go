@@ -17,7 +17,6 @@ import (
 // Paths are the porter's files under HOME (docs/ARCHITECTURE.md section 1).
 type Paths struct{ Home string }
 
-func (p Paths) Vault() string { return filepath.Join(p.Home, ".local", "share", "valise", "vault") }
 func (p Paths) Recipients() string {
 	return filepath.Join(p.Home, ".config", "valise", "recipients.txt")
 }

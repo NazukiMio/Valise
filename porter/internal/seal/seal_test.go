@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"math/rand"
 
@@ -100,9 +101,27 @@ func (w *world) seal(t *testing.T, tier string) *vaultrpc.SealReport {
 	return rep
 }
 
+// leaf returns the demo instance's only leaf.
+func (w *world) leaf(t *testing.T) LeafInfo {
+	t.Helper()
+	all, err := Leaves(w.p)
+	if err != nil || len(all) != 1 {
+		t.Fatalf("leaves %v %v", all, err)
+	}
+	return all[0]
+}
+
 func (w *world) restore(t *testing.T, sid string) map[string][]byte {
 	t.Helper()
-	v, err := vault.Open(w.p.Vault())
+	st, err := Status(w.p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := w.p.LeafDir(st.LeafOf(sid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := vault.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +229,7 @@ func TestSealTiers(t *testing.T) {
 	if again.AddedBytes*100 >= soul.AddedBytes || again.NewEpoch {
 		t.Fatalf("second seal added %d of %d", again.AddedBytes, soul.AddedBytes)
 	}
-	if probs, err := vault.VerifyNoKey(w.p.Vault()); err != nil || len(probs) != 0 {
+	if probs, err := vault.VerifyNoKey(w.leaf(t).Dir); err != nil || len(probs) != 0 {
 		t.Fatal(probs, err)
 	}
 	audit, _ := os.ReadFile(w.p.Audit())
@@ -297,20 +316,29 @@ func TestVaultOps(t *testing.T) {
 	if err != nil || !st.Exists || len(st.Snapshots) != 1 || st.Snapshots[0].SnapshotID != rep.SnapshotID {
 		t.Fatal(st, err)
 	}
-	files, err := Files(w.p)
-	if err != nil || len(files.Files) < 6 {
+	leaf := w.leaf(t).Leaf
+	if leaf != rep.Leaf || !strings.HasPrefix(leaf, "demo/") {
+		t.Fatal(leaf, rep.Leaf)
+	}
+	files, err := Files(w.p, leaf)
+	if err != nil || len(files.Files) < 7 {
 		t.Fatal(files, err)
 	}
 	for _, f := range files.Files {
-		fh, err := OpenVaultFile(w.p, f.Path)
+		fh, err := OpenVaultFile(w.p, leaf, f.Path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		fh.Close()
 	}
 	for _, bad := range []string{"../.config/valise/recipients.txt", "VAULT/../../x", "packs/tmp-1"} {
-		if _, err := OpenVaultFile(w.p, bad); err == nil {
+		if _, err := OpenVaultFile(w.p, leaf, bad); err == nil {
 			t.Errorf("%s served", bad)
+		}
+	}
+	for _, bad := range []string{"../x", "demo/../../.config", "demo", "-/../x"} {
+		if _, err := OpenVaultFile(w.p, bad, "VAULT"); err == nil {
+			t.Errorf("leaf %s served", bad)
 		}
 	}
 	if res, err := Verify(w.p); err != nil || len(res.Problems) != 0 {
@@ -334,5 +362,99 @@ func TestVaultOps(t *testing.T) {
 	st, _ = Status(w.p)
 	if len(st.Targets) != 1 || st.Targets[0].LastOK != nil {
 		t.Fatal(st.Targets)
+	}
+}
+
+func TestTreePeriods(t *testing.T) {
+	w := newWorld(t)
+	t.Cleanup(func() { now = time.Now })
+	base := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC) // a Wednesday
+	now = func() time.Time { return base }
+	if err := SetPeriodSetting(w.p, "demo", vault.PeriodSetting{Unit: "day", TZ: "UTC"}); err == nil {
+		t.Fatal("bad unit accepted")
+	}
+	if err := SetPeriodSetting(w.p, "demo", vault.PeriodSetting{Unit: vault.UnitWeek, TZ: "Asia/Shanghai"}); err != nil {
+		t.Fatal(err)
+	}
+	first := w.seal(t, vault.TierSoul)
+	if first.Leaf != "demo/2026-10-26_2026-11-01" {
+		t.Fatal(first.Leaf)
+	}
+	if _, err := os.Stat(filepath.Join(w.p.Vaults(), vault.TreeFile)); err == nil {
+		t.Fatal("TREE written before the server has a name")
+	}
+	if err := SetServerName(w.p, "box"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetServerName(w.p, "other"); err == nil {
+		t.Fatal("server name changed")
+	}
+	if _, err := os.Stat(filepath.Join(w.p.Vaults(), vault.TreeFile)); err != nil {
+		t.Fatal("TREE missing after naming")
+	}
+	now = func() time.Time { return base.Add(8 * 24 * time.Hour) }
+	second := w.seal(t, vault.TierSoul)
+	if second.Leaf != "demo/2026-11-02_2026-11-08" || second.NewEpoch == false {
+		t.Fatalf("%s new epoch %v", second.Leaf, second.NewEpoch)
+	}
+	st, err := Status(w.p)
+	if err != nil || len(st.Leaves) != 2 || !st.Leaves[1].Current || st.Leaves[0].Current || st.ServerName != "box" {
+		t.Fatalf("%+v %v", st.Leaves, err)
+	}
+	if st.LeafOf(first.SnapshotID) != first.Leaf || len(w.restore(t, first.SnapshotID)) == 0 {
+		t.Fatal("first snapshot not found in its leaf")
+	}
+	if _, err := DeleteLeaf(w.p, second.Leaf, "client"); err == nil {
+		t.Fatal("deleted the current leaf")
+	}
+	// An interrupted deletion: the leaf is listed as deleting, cannot be
+	// pulled, and deleting again finishes it.
+	os.WriteFile(filepath.Join(w.p.Vaults(), first.Leaf, vault.DeletingFile), []byte("{}"), 0o600)
+	os.RemoveAll(filepath.Join(w.p.Vaults(), first.Leaf, vault.SnapshotsDir))
+	st, _ = Status(w.p)
+	if !st.Leaves[0].Deleting || len(st.Snapshots) != 1 {
+		t.Fatalf("%+v", st.Leaves)
+	}
+	if _, err := Files(w.p, first.Leaf); err == nil {
+		t.Fatal("files of a deleting leaf served")
+	}
+	res, err := DeleteLeaf(w.p, first.Leaf, "client")
+	if err != nil || res.Bytes == 0 {
+		t.Fatal(res, err)
+	}
+	if st, _ = Status(w.p); len(st.Leaves) != 1 {
+		t.Fatalf("%+v", st.Leaves)
+	}
+	if res, err := Verify(w.p); err != nil || len(res.Problems) != 0 {
+		t.Fatal(res, err)
+	}
+	audit, _ := os.ReadFile(w.p.Audit())
+	if !strings.Contains(string(audit), `"op":"leaf_delete"`) {
+		t.Fatal("leaf deletion not audited")
+	}
+}
+
+func TestLegacyVaultReadable(t *testing.T) {
+	w := newWorld(t)
+	rep := w.seal(t, vault.TierSoul)
+	// Move the leaf to where the pre-tree vault lived.
+	os.MkdirAll(filepath.Dir(w.p.LegacyVault()), 0o700)
+	if err := os.Rename(filepath.Join(w.p.Vaults(), rep.Leaf), w.p.LegacyVault()); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(w.p.LegacyVault(), vault.PeriodFile))
+	st, err := Status(w.p)
+	if err != nil || len(st.Leaves) != 1 || st.Leaves[0].Leaf != vault.LegacyLeaf || st.LeafOf(rep.SnapshotID) != vault.LegacyLeaf {
+		t.Fatalf("%+v %v", st.Leaves, err)
+	}
+	if len(w.restore(t, rep.SnapshotID)) == 0 {
+		t.Fatal("legacy snapshot unreadable")
+	}
+	if _, err := Files(w.p, vault.LegacyLeaf); err != nil {
+		t.Fatal(err)
+	}
+	next := w.seal(t, vault.TierSoul)
+	if next.Leaf == vault.LegacyLeaf {
+		t.Fatal("new seals must go to the tree")
 	}
 }
