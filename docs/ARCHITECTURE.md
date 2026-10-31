@@ -7,7 +7,7 @@
               │
 [ 客户端服务层 (Go) ]
   ├─ Keystore：age X25519 身份，口令加密（age 原生 scrypt）
-  ├─ Profile 仓库：随版本发布的 profiles/*.yaml + 用户本地 profile
+  ├─ Profile 仓库：签名的资料包（单独发布，PROFILES.md 1.1）+ 用户本地 profile
   ├─ 金库读取与解密（只在客户端内存中解密）
   ├─ 隧道与登录中继
   └─ SSH 传输：系统 OpenSSH + ControlMaster 复用

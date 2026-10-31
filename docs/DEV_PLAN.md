@@ -139,13 +139,13 @@
   - 管理页令牌：profile 声明取令牌的官方命令时由 Valise 代取并直接交给浏览器；否则提供"打开服务器终端"（LOGIN_RELAY.md 4.1）。
   - 加密：添加服务器时自动登记公钥，收件人管理放进"高级"；第一次启动走引导（ARCHITECTURE.md 第 3 节）。
   - 体检给处理建议，记忆整理技能 `valise-memory` 先占位；归类提议改称"归档建议"并入体检页（AGENT_KIT.md 8.6）。
-  - 更新：客户端自身、porter、profile（随客户端）、逃生舱技能。
+  - 更新：客户端自身、porter、harness 资料包（单独下载的签名包，用户随后提议并决定）、逃生舱技能。
   - 推进方式：先改文档并做可点击的界面草图，用户确认后再写代码。
 - **第一版试用中发现的 bug**（在 M7a.2 中修复并加测试）：归类提议页按 Esc 退出时 `index out of range [-1]` 崩溃（`tui/kit.go`）；列表超过窗口高度时光标移出屏幕、渲染停止。
 
 ### M7a.1：金库分档与云备份
 
-- **状态**：`Blocked (等待用户确认文档与草图)`
+- **状态**：`In progress`（2026-10-31 用户确认文档与草图后开始）
 - **交付**：
   - 金库树（VAULT_FORMAT.md 第 10 节）：`TREE`、`PERIOD`、周期设置、按周期选择或新建叶子；分档之前的旧金库可读；`tools/standalone-restore/` 的说明更新为"指向一个叶子目录"。
   - 服务器名（`server.json`），云备份目录多一层服务器名；同步按叶子进行并跳过 `DELETING`。
@@ -155,6 +155,7 @@
   - 添加服务器流程（doctor → 部署 porter → 自动登记公钥 → 服务器名），CLI 同步提供。
   - profile schema：`display`、`entries[].auth`、`checkup.remedies`；三份 profile 补上图标（`verify: pending` 直到对照官方 TUI 核实）与 OpenClaw 的管理页令牌命令（在靶机上核实）。
   - 管理页令牌的代取与"打开服务器终端"。
+  - harness 资料包（PROFILES.md 1.1，用户 2026-10-31 提议并决定并入本步）：客户端不再内置 profile；`profilepack` 打包工具、验签安装（在线 / 本地文件）、未签名包作为本地 profile 安装、`valise profiles status|install`；演练与测试改用仓库 `profiles/` 作为本地 profile 或测试钥匙签名的包。
 - **验收**：fake-ssh 单元测试覆盖周期切换（含修改周期设置）、删除中断后续删、同步跳过 `DELETING`；在 `ubuntu-vm`、`ubuntu-vm-x86` 与 `nas-test` 上实测：跨月份的两个叶子、同步到 NAS 后的目录结构、NAS 上删除一个周期、用 `restore.py` 脱离 Valise 恢复一个叶子、随逃生舱顺带同步、定时器开关；OpenClaw 管理页经代取令牌直接进入；drill 追加对应步骤并 `ALL_PASS`。
 
 ### M7a.2：TUI 重做

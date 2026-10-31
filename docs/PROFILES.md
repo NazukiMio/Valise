@@ -4,8 +4,18 @@ Profile 是 Valise 了解某种 harness 的**唯一途径**。Go 代码里不允
 
 ## 1. 来源与信任
 
-- 官方 profile 存放在仓库的 `profiles/` 目录下，经过 PR 审核后随 Release 签名发布。
-- 用户可以在 `~/.config/valise/profiles/` 放置本地 profile。这类 profile 在 UI 中始终标记为"本地，未经审核"。
+- 官方 profile 存放在仓库的 `profiles/` 目录下，经过 PR 审核后打成**资料包**单独签名发布（1.1 节）。客户端本身不内置任何 profile。
+- 用户可以在 `~/.config/valise/profiles/` 放置本地 profile。这类 profile 在 UI 中始终标记为"本地，未经审核"。本地 profile 与资料包中的 profile 同 id 时，本地的被拒绝并报告。
+
+### 1.1 资料包（2026-10-31 用户决定）
+
+- **内容**：一个 `tar.gz`，根目录下是 `PACK.json` 与全部官方 `*.yaml`（不含子目录）。`PACK.json`：`{"format": "valise-profile-pack/1", "version": "2026.10.31", "created_at": "…", "profiles": [{"file": "openclaw.yaml", "id": "openclaw", "profile_version": 8, "sha256": "…"}]}`。一个包包含全部主流 harness，整体安装、整体替换。
+- **签名**：与 porter 使用同一把 Release minisign 钥匙，签名直接作用于压缩包本身（`valise-profiles.tar.gz.minisig`），因此离线拿到的包也能验签。
+- **发布**：每个资料包是一个 GitHub Release，tag 为 `profiles-<version>`（例如 `profiles-2026.10.31`），资产为 `valise-profiles.tar.gz` 与 `.minisig`。客户端经 GitHub API 列出 Release，取最新的 `profiles-*`；也可以指定 tag。打包工具：`go run ./cmd/profilepack`（`client/` 下），签名用 minisign 命令行在发布时完成。
+- **安装**（设置 › 更新，或 `valise profiles install`）：在线拉取，或选择本地文件。客户端用内置的 Release 公钥验签，再逐个核对 `PACK.json` 中的 sha256 并对整包运行 lint；任何一步失败都整包拒绝。通过后把压缩包与签名原样保存到 `<客户端数据目录>/profile-pack/`，**每次加载都重新验签**。
+- **没有签名或签名不对的本地文件**：不作为资料包安装；经用户同意后把其中的 profile 作为"本地 profile"写入本地目录。同意之前列出每份 profile 中会被执行的命令（服务安装、身体重建、管理页令牌等 argv），界面标"未经审核"。
+- **没有安装资料包时**：登记无法识别任何 harness，界面与 CLI 引导安装。已经登记的实例不受影响：服务器上保存着登记时的 profile，逃生舱里也带着完整的 profile（`profile_doc`），因此着陆不依赖资料包。
+- 开发构建没有 Release 公钥，只能把仓库的 `profiles/` 作为本地 profile 使用（演练脚本即如此）。
 - `status: draft` 表示至少有一个条目尚未在靶机上核实。使用 draft profile 复活时，必须显式传入 `--allow-draft-profile`。
 - 每一条无法从官方文档或真实安装中确认的规则，都必须标注 `verify: pending`。**宁可留空，不可猜测。**
 
