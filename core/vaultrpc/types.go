@@ -26,6 +26,7 @@ const (
 	MethodTargetLeafDel = "target_leaf_delete"
 	MethodTimerSet      = "timer_set"
 	MethodTimerStatus   = "timer_status"
+	MethodSealLog       = "seal_log"
 )
 
 // Initiators recorded in the audit log.
@@ -252,4 +253,23 @@ type TimerStatus struct {
 	// Linger reports whether the user's systemd instance runs without a
 	// login session; without it the timer only fires while logged in.
 	Linger bool `json:"linger"`
+}
+
+// SealLogParams names an instance.
+type SealLogParams struct {
+	InstanceID string `json:"instance_id"`
+}
+
+// SealLogEntry says who started a snapshot and why (from the audit log;
+// snapshot metadata holds neither).
+type SealLogEntry struct {
+	SnapshotID string    `json:"snapshot_id"`
+	Time       time.Time `json:"time"`
+	Initiator  string    `json:"initiator"`
+	Reason     string    `json:"reason,omitempty"`
+}
+
+// SealLogResult lists an instance's successful seals, oldest first.
+type SealLogResult struct {
+	Entries []SealLogEntry `json:"entries"`
 }

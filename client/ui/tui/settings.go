@@ -1,140 +1,291 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
+	"valise/core/agentkit"
 	"valise/ui/service"
 )
 
-// settingsScreen manages the key (trust root) and server registration.
-// Steps that read a passphrase run the CLI command with the TUI paused.
+// settingsScreen is the global settings (docs/UI.md 9.5).
 type settingsScreen struct {
-	info   *service.KeyInfo
-	err    error
-	cursor int
+	section int
+	cursor  int
+	key     *service.KeyInfo
+	hosts   []string
+	pack    *service.ProfilesStatus
+	doctors map[string]*service.DoctorReport
+	kits    map[string]*agentkit.KitStatusResult // host/instance
 }
 
-func newSettings() *settingsScreen { return &settingsScreen{} }
+var settingsSections = []string{"加密钥匙", "服务器", "云备份", "更新", "高级", "关于"}
 
-type keyLoaded struct {
-	info *service.KeyInfo
-	err  error
+const (
+	ssKey = iota
+	ssServers
+	ssCloud
+	ssUpdate
+	ssAdvanced
+	ssAbout
+)
+
+type settingsLoaded struct {
+	key   *service.KeyInfo
+	hosts []string
+	pack  *service.ProfilesStatus
+}
+type settingsDoctor struct {
+	host string
+	r    *service.DoctorReport
+}
+type settingsKit struct {
+	id string
+	k  *agentkit.KitStatusResult
 }
 
-var settingsActions = []choice{
-	{"登记本机公钥到服务器（之后的封存加密给它）", "register"},
-	{"从服务器移除一个公钥", "unregister"},
-	{"导出离线恢复套件", "export-kit"},
-	{"生成新密钥", "init"},
-	{"导入已有的 age 身份", "import"},
-	{"从离线恢复套件导入", "import-kit"},
+func newSettings() *settingsScreen {
+	return &settingsScreen{doctors: map[string]*service.DoctorReport{}, kits: map[string]*agentkit.KitStatusResult{}}
 }
 
-func (s *settingsScreen) title() string { return "设置与信任根" }
-func (s *settingsScreen) help() string  { return "↑↓ 选择  ·  enter 执行" }
-func (s *settingsScreen) init(m *Model) tea.Cmd {
-	return func() tea.Msg {
-		info, err := m.svc.KeyShow()
-		return keyLoaded{info, err}
+func (s *settingsScreen) title() string { return "设置" }
+func (s *settingsScreen) help() string {
+	items := []string{"tab", "换分栏"}
+	switch s.section {
+	case ssKey:
+		items = append(items, "b", "备份钥匙", "i", "在这台电脑上导入钥匙")
+	case ssServers:
+		items = append(items, "↑↓", "选择", "a", "添加服务器", "x", "移除")
+	case ssCloud:
+		items = append(items, "↑↓", "选择", "enter", "打开云备份")
+	case ssUpdate:
+		items = append(items, "p", "在线更新资料包", "f", "从文件安装资料包")
+	case ssAdvanced:
+		items = append(items, "↑↓", "选择服务器", "u", "从这台服务器移除我的钥匙")
 	}
+	return menu(items...)
+}
+
+func (s *settingsScreen) init(m *Model) tea.Cmd {
+	svc := m.svc
+	return func() tea.Msg {
+		key, _ := svc.KeyShow()
+		hosts, _ := svc.Servers()
+		pack, _ := svc.ProfilesStatus()
+		return settingsLoaded{key, hosts, pack}
+	}
+}
+
+func (s *settingsScreen) loadUpdates(m *Model) tea.Cmd {
+	var cmds []tea.Cmd
+	svc, ctx := m.svc, m.ctx
+	for _, h := range s.hosts {
+		h := h
+		if s.doctors[h] == nil {
+			cmds = append(cmds, func() tea.Msg { r, _ := svc.Doctor(ctx, h); return settingsDoctor{h, r} })
+		}
+		for _, in := range m.server(h).instances {
+			id, inst := h+"/"+in.InstanceID, in.InstanceID
+			if in.Superseded == nil && s.kits[id] == nil {
+				cmds = append(cmds, func() tea.Msg { k, _ := svc.KitStatus(ctx, h, inst); return settingsKit{id, k} })
+			}
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 func (s *settingsScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case keyLoaded:
-		s.info, s.err = msg.info, msg.err
-		return nil, true
-	case execDone:
-		if msg.err != nil {
-			m.flash, m.flashErr = "命令没有成功结束："+msg.err.Error(), true
+	case settingsLoaded:
+		s.key, s.hosts, s.pack = msg.key, msg.hosts, msg.pack
+		var cmds []tea.Cmd
+		for _, h := range s.hosts {
+			if d := m.server(h); !d.loaded && !d.loading {
+				cmds = append(cmds, m.loadServer(h))
+			}
 		}
-		return s.init(m), true
+		return tea.Batch(cmds...), true
+	case settingsDoctor:
+		s.doctors[msg.host] = msg.r
+		return nil, true
+	case settingsKit:
+		s.kits[msg.id] = msg.k
+		return nil, true
+	case packFetched:
+		return installPackFlow(m, msg, func(m *Model) tea.Cmd { return s.init(m) }), true
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "up", "k":
-			s.cursor = max(0, s.cursor-1)
-		case "down", "j":
-			s.cursor = min(len(settingsActions)-1, s.cursor+1)
-		case "enter":
-			return s.run(m, settingsActions[s.cursor].value), true
-		default:
-			return nil, false
+		k := msg.String()
+		switch {
+		case k == "tab" || k == "right":
+			return s.go_(m, (s.section+1)%len(settingsSections)), true
+		case k == "shift+tab" || k == "left":
+			return s.go_(m, (s.section+len(settingsSections)-1)%len(settingsSections)), true
+		case len(k) == 1 && k[0] >= '1' && int(k[0]-'1') < len(settingsSections):
+			return s.go_(m, int(k[0]-'1')), true
 		}
-		return nil, true
+		if s.section == ssServers || s.section == ssCloud || s.section == ssAdvanced {
+			if c, moved := moveList(s.cursor, len(s.hosts), k); moved {
+				s.cursor = c
+				return nil, true
+			}
+		}
+		return s.action(m, k)
 	}
 	return nil, false
 }
 
-func (s *settingsScreen) pickServer(m *Model, label string, f func(m *Model, host string) tea.Cmd) tea.Cmd {
-	hosts, err := m.svc.Servers()
-	if err != nil {
-		return func() tea.Msg { return failed(err) }
-	}
-	var cs []choice
-	for _, h := range hosts {
-		cs = append(cs, choice{label: h, value: h})
-	}
-	return m.push(pick(label, cs, f))
-}
-
-func (s *settingsScreen) run(m *Model, action string) tea.Cmd {
-	switch action {
-	case "register":
-		return s.pickServer(m, "登记到哪台服务器", func(m *Model, host string) tea.Cmd {
-			return m.push(newInput("说明（写进服务器 recipients.txt 的注释，可留空）", "my laptop", false, func(m *Model, label string) tea.Cmd {
-				return func() tea.Msg {
-					res, _, err := m.svc.KeyRegister(m.ctx, host, strings.TrimSpace(label))
-					if err != nil {
-						return failed(err)
-					}
-					if !res.Added {
-						return flashMsg("这把公钥已经是 " + host + " 的收件人")
-					}
-					return flashMsg("已登记到 " + host + "；之后的封存会加密给它")
-				}
-			}))
-		})
-	case "unregister":
-		return s.pickServer(m, "从哪台服务器移除", func(m *Model, host string) tea.Cmd {
-			return m.runCLI("key", "unregister", host)
-		})
-	case "export-kit":
-		return m.push(newInput("导出到哪个目录（会新建）", "~/valise-recovery-kit", false, func(m *Model, dir string) tea.Cmd {
-			if strings.TrimSpace(dir) == "" {
-				return nil
-			}
-			return m.runCLI("key", "export-kit", strings.TrimSpace(dir))
-		}))
-	case "init":
-		return m.runCLI("key", "init")
-	case "import":
-		return m.push(newInput("age 身份文件的路径", "identity.txt", false, func(m *Model, path string) tea.Cmd {
-			return m.runCLI("key", "import", "--file", strings.TrimSpace(path))
-		}))
-	case "import-kit":
-		return m.push(newInput("恢复套件目录", "", false, func(m *Model, dir string) tea.Cmd {
-			return m.runCLI("key", "import-kit", strings.TrimSpace(dir))
-		}))
+func (s *settingsScreen) go_(m *Model, i int) tea.Cmd {
+	s.section, s.cursor = i, 0
+	if i == ssUpdate {
+		return s.loadUpdates(m)
 	}
 	return nil
 }
 
-func (s *settingsScreen) view(m *Model) string {
-	var b strings.Builder
+func (s *settingsScreen) action(m *Model, k string) (tea.Cmd, bool) {
+	host := ""
+	if s.cursor < len(s.hosts) {
+		host = s.hosts[s.cursor]
+	}
 	switch {
-	case s.info != nil:
-		fmt.Fprintf(&b, "本机公钥：%s\n指纹：%s\n\n", s.info.Recipient, headStyle.Render(s.info.Fingerprint))
-	case s.err != nil:
-		b.WriteString(warnStyle.Render(strings.SplitN(errText(s.err), "\n", 2)[0]) + "\n\n")
-	default:
-		b.WriteString(dimStyle.Render("读取密钥…") + "\n\n")
+	case s.section == ssKey && k == "b":
+		return m.push(newInput("把恢复套件导出到哪个文件夹？（建议放进 U 盘或密码管理器的附件，文件夹必须是空的或不存在）", "~/Desktop/valise-恢复套件", false,
+			func(m *Model, dir string) tea.Cmd {
+				dir = expandHome(m, strings.TrimSpace(dir))
+				return func() tea.Msg {
+					if _, err := m.svc.ExportKit(dir); err != nil {
+						return failed(err)
+					}
+					return flashMsg("已导出恢复套件到 " + dir + "。里面的 RECOVERY.md 写着不依赖 Valise 的恢复方法。")
+				}
+			})), true
+	case s.section == ssKey && k == "i":
+		return m.push(newInput("恢复套件文件夹的路径（导入后需要输入口令）", "", false, func(m *Model, dir string) tea.Cmd {
+			return tea.Sequence(m.runCLI("key", "import-kit", expandHome(m, strings.TrimSpace(dir))), s.init(m))
+		})), true
+	case s.section == ssServers && k == "a":
+		return m.push(newAddServer(func(m *Model) tea.Cmd { return s.init(m) })), true
+	case s.section == ssServers && k == "x" && host != "":
+		return m.push(confirm("不再在这台电脑上显示 "+host+"？", []string{"只从列表中移除，服务器上的东西都不动。"}, func(m *Model) tea.Cmd {
+			m.svc.RemoveServer(host)
+			delete(m.data, host)
+			return s.init(m)
+		})), true
+	case s.section == ssCloud && k == "enter" && host != "":
+		return m.push(newCloud(host)), true
+	case s.section == ssUpdate && k == "p":
+		m.flash, m.flashErr = "正在从 GitHub Release 下载资料包…", false
+		svc, ctx := m.svc, m.ctx
+		return func() tea.Msg { f, err := svc.FetchPack(ctx, ""); return packFetched{f, err} }, true
+	case s.section == ssUpdate && k == "f":
+		return m.push(newInput("资料包文件路径（同一文件夹里的 .minisig 签名会一起读取）", "valise-profiles.tar.gz", false, func(m *Model, p string) tea.Cmd {
+			svc := m.svc
+			p = expandHome(m, strings.TrimSpace(p))
+			return func() tea.Msg { f, err := svc.ReadPackFile(p); return packFetched{f, err} }
+		})), true
+	case s.section == ssAdvanced && k == "u" && host != "":
+		return m.runCLI("key", "unregister", host), true
 	}
-	for i, a := range settingsActions {
-		b.WriteString(cursorLine(i == s.cursor, a.label) + "\n")
+	return nil, false
+}
+
+func expandHome(m *Model, p string) string {
+	if strings.HasPrefix(p, "~/") {
+		return m.svc.Home + p[1:]
 	}
-	b.WriteString("\n" + dimStyle.Render("需要输入口令的操作会暂时切换到命令行，完成后回到这里。"))
-	return b.String()
+	return p
+}
+
+func (s *settingsScreen) view(m *Model) string {
+	var side []string
+	for i, n := range settingsSections {
+		label := itoa(i+1) + " " + n
+		if i == s.section {
+			side = append(side, selStyle.Render("▸ "+label))
+		} else {
+			side = append(side, dimStyle.Render("  "+label))
+		}
+	}
+	w := min(m.width-20, 96)
+	var body string
+	switch s.section {
+	case ssKey:
+		body = s.keyView(w)
+	case ssServers:
+		body = s.serversView(m, w)
+	case ssCloud:
+		body = s.cloudView(m, w)
+	case ssUpdate:
+		body = s.updateView(m, w)
+	case ssAdvanced:
+		body = s.advancedView(m, w)
+	case ssAbout:
+		body = box("关于", kv("版本", m.svc.Version, "项目", "github.com/NazukiMio/Valise",
+			"不用 Valise 也能恢复", "金库格式公开：用 age、zstd 和仓库里的 tools/standalone-restore/ 即可，把它指向任一周期文件夹"), w)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(16).Render(strings.Join(side, "\n")), body)
+}
+
+func (s *settingsScreen) keyView(w int) string {
+	if s.key == nil {
+		return box("加密钥匙", warnStyle.Render("这台电脑上还没有钥匙。"), w)
+	}
+	return box(okStyle.Render("✓")+" 你的钥匙已创建", kv("存放在", s.key.Path, "保护方式", "你的口令（Valise 不保存口令）", "指纹", s.key.Fingerprint), w) + "\n\n" +
+		"· 所有逃生舱都用这把钥匙加密。\n" +
+		"· 服务器只拿到\"只能上锁、不能开锁\"的那一半，服务器被攻破也打不开逃生舱。\n" +
+		"· 换电脑时，在新电脑上导入同一把钥匙并输入口令，就能打开以前所有的逃生舱。\n" +
+		"· 这台电脑坏了或丢了，钥匙也就没了：" + headStyle.Render("请备份一份恢复套件") + "。\n\n" +
+		keyStyle.Render("b") + " 备份钥匙（导出恢复套件）     " + keyStyle.Render("i") + " 在这台电脑上导入钥匙"
+}
+
+func (s *settingsScreen) serversView(m *Model, w int) string {
+	if len(s.hosts) == 0 {
+		return box("服务器", "还没有添加服务器。按 "+keyStyle.Render("a")+" 添加。", w)
+	}
+	var rows []string
+	for i, h := range s.hosts {
+		d := m.server(h)
+		state := dimStyle.Render("连接中")
+		switch {
+		case d.err != nil:
+			state = errStyle.Render("连不上")
+		case d.loaded:
+			state = okStyle.Render("在线") + dimStyle.Render("　"+itoa(len(d.instances))+" 个 agent")
+		}
+		rows = append(rows, cursorLine(i == s.cursor, padRight(h, 20)+state))
+	}
+	return box("服务器", strings.Join(rows, "\n"), w) + "\n" + dimStyle.Render("添加服务器时会自动部署 porter（缺少时）并登记你的钥匙。")
+}
+
+func (s *settingsScreen) cloudView(m *Model, w int) string {
+	var rows []string
+	for i, h := range s.hosts {
+		d := m.server(h)
+		state := dimStyle.Render("读取中")
+		if d.status != nil {
+			if len(d.status.Targets) == 0 {
+				state = warnStyle.Render("还没有云备份位置")
+			} else {
+				var parts []string
+				for _, t := range d.status.Targets {
+					p := t.Name
+					if t.Auto != nil {
+						p += " · 自动每 " + t.Auto.Every
+					}
+					if t.LastOK != nil {
+						p += " · " + ago(*t.LastOK, m.now())
+					}
+					parts = append(parts, p)
+				}
+				state = strings.Join(parts, "；")
+			}
+		}
+		rows = append(rows, cursorLine(i == s.cursor, padRight(h, 20)+state))
+	}
+	if len(rows) == 0 {
+		rows = append(rows, dimStyle.Render("还没有服务器"))
+	}
+	return box("云备份", strings.Join(rows, "\n"), w) + "\n" + dimStyle.Render("云备份位置配置在每台服务器上；新 agent 的周期默认按月。")
 }

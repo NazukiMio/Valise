@@ -28,9 +28,9 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
                                                  登记 agent：展示登记报告，加 --accept 才写入实例记录
   porter deploy <服务器> --release <版本>         从 GitHub Release 下载、校验并部署 porter
   porter deploy <服务器> --local <文件>           上传本地构建的 porter
-  key register <服务器> [--label 说明]            把本机公钥登记为服务器的封存收件人（说明写成注释）
+  key register <服务器> [--label 说明]            把本机钥匙登记到服务器（之后的逃生舱都能用它打开）
   seal <服务器> <实例> [--tier soul|soul-secrets|full|raw] [--reason 原因]
-                                                 封存一次
+                                                 建立一个逃生舱（soul=轻装、soul-secrets=标准、full=完整、raw=原样）
   vault status <服务器> [--json]                   按周期列出逃生舱与云备份状态（不需要私钥）
   vault verify <服务器>                           在服务器上做不需要私钥的校验
   vault delete <服务器> <周期> [--yes]             删除服务器上一整个已结束的周期（先列出其他副本）
@@ -47,11 +47,11 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   verify --vault <目录> [--key]                   校验本机金库；--key 用私钥解密并逐个文件校验
   revive <服务器> --snapshot <id> [--mode rollback|migrate|clone] [--from <服务器>] [--id 新实例]
          [--root id=路径]... [--allow-draft-profile] [--allow-snapshot-profile] [--dry-run] [--yes]
-                                                 复活：先出计划，暂存校验后再确认交换
-  revive resume <服务器> <op> --continue|--back   处理未完成的复活操作
+                                                 逃生舱着陆（rollback=原地着陆、migrate=着陆到另一台服务器、clone=着陆成一个新的 agent）：先出计划，暂存校验后再确认交换
+  revive resume <服务器> <op> --continue|--back   处理未完成的着陆
   prev list <服务器> | prev drop <服务器> <op>    查看 / 删除交换前保留的旧状态
   old list <服务器> | old cleanup <服务器> <实例>  查看 / 清理被迁移或克隆取代的旧实例
-  tui                                            终端界面：服务器与实例总览、封存、复活、登录中继、逃生舱技能、设置
+  tui                                            终端界面：服务器、agent、逃生舱、体检、管理页、登录授权、设置
   checkup <服务器> <实例> [--json]                 体检：会话、记忆文件、记忆机制（只读）
   proposals <服务器> <实例> [--accept id,…|all] [--accept-demotion id,…] [--reject id,…|all]
                                                  查看 / 确认 agent 提出的归类提议
@@ -66,11 +66,11 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   server name <别名> <名字>                       给服务器起名（云备份文件夹名，只能设一次）
   server list | add <别名>… | remove <别名> | import [<别名>…]
                                                  已记录服务器（只存 SSH 别名；import 从 ~/.ssh/config 选择）
-  login <服务器> <实例> [--method id]              登录中继：在本机浏览器中完成服务器上的登录
+  login <服务器> <实例> [--method id]              登录授权：在本机浏览器中完成服务器上 agent 的登录
   open <服务器> <实例> [--entry id] [--idle 30m] [--no-browser]
                                                  打开管理页：经隧道转到本机，需要令牌时用 harness 自己的命令取得
   shell <服务器>                                  打开服务器终端（系统 OpenSSH 的交互式登录 shell）
-  key unregister <服务器> [--recipient age1…]     移除收件人公钥（旧快照仍可被它解开）
+  key unregister <服务器> [--recipient age1…]     从服务器移除一把钥匙（以前的逃生舱仍可被它打开）
   key init                                       生成新的密钥（口令至少 12 个字符）
   key import --file <身份文件>                    导入已有的 age 身份
   key show                                       显示公钥与指纹

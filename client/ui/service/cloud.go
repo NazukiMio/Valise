@@ -56,6 +56,13 @@ func (s *Service) TimerSet(ctx context.Context, host string, p vaultrpc.TimerSet
 	return &res, err
 }
 
+// SealLog lists who started each of an instance's snapshots and why.
+func (s *Service) SealLog(ctx context.Context, host, instance string) (*vaultrpc.SealLogResult, error) {
+	var res vaultrpc.SealLogResult
+	err := s.call(ctx, host, vaultrpc.MethodSealLog, vaultrpc.SealLogParams{InstanceID: instance}, &res)
+	return &res, err
+}
+
 // TimerStatus reads an instance's timed seal.
 func (s *Service) TimerStatus(ctx context.Context, host, instance string) (*vaultrpc.TimerStatus, error) {
 	var res vaultrpc.TimerStatus

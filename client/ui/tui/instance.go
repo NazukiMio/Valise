@@ -1,164 +1,269 @@
 package tui
 
 import (
-	"fmt"
-	"maps"
-	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
+	"valise/core/agentkit"
 	"valise/core/enroll"
-	"valise/core/vault"
 	"valise/core/vaultrpc"
+	"valise/ui/service"
 )
 
-// instanceScreen shows one instance and its actions.
-type instanceScreen struct {
-	row  *serverRow
-	inst enroll.InstanceSummary
+// tab is one section of the instance page.
+type tab interface {
+	name() string
+	help(p *instancePage) string
+	load(m *Model, p *instancePage) tea.Cmd
+	update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool)
+	view(m *Model, p *instancePage, height int) string
 }
 
-func newInstance(r *serverRow, in enroll.InstanceSummary) *instanceScreen {
-	return &instanceScreen{row: r, inst: in}
+// instancePage is one agent: a header card and five tabs (docs/UI.md 9.4).
+type instancePage struct {
+	host   string
+	inst   enroll.InstanceSummary
+	active int
+	tabs   []tab
+	scroll int // offset of tabs that do not scroll themselves
+	// Shared data, loaded once and refreshed by the tabs that change it.
+	target *service.LoginTarget
+	kit    *agentkit.KitStatusResult
+	check  *agentkit.CheckupResult
+	log    map[string]vaultrpc.SealLogEntry
 }
 
-func (s *instanceScreen) title() string { return s.row.host + "/" + s.inst.InstanceID }
-func (s *instanceScreen) help() string {
-	return "f 封存  ·  v 快照与复活  ·  c 体检  ·  p 归类提议  ·  k 逃生舱技能  ·  l 登录中继  ·  o 打开入口"
-}
-func (s *instanceScreen) init(m *Model) tea.Cmd { return nil }
-
-func (s *instanceScreen) view(m *Model) string {
-	in := s.inst
-	var b strings.Builder
-	status := okStyle.Render("已核实")
-	if in.ProfileStatus != "verified" {
-		status = warnStyle.Render("未核实")
-	}
-	fmt.Fprintf(&b, "%s  profile %s v%d（%s）\n", headStyle.Render(in.InstanceID), in.ProfileID, in.ProfileVersion, status)
-	if in.Superseded != nil {
-		fmt.Fprintf(&b, "%s\n", warnStyle.Render(fmt.Sprintf("已被实例 %s 取代（操作 %s），不能再封存；可在服务器的金库页面清理", in.Superseded.By, in.Superseded.OpID)))
-	}
-	for _, id := range slices.Sorted(maps.Keys(in.Roots)) {
-		fmt.Fprintf(&b, "  目录 %-10s %s\n", id, in.Roots[id])
-	}
-	for _, sv := range in.Service {
-		state := sv.Active
-		if !sv.Exists() {
-			state = "未安装"
-		}
-		fmt.Fprintf(&b, "  服务 %s %s %s\n", sv.Unit, mark(sv.Active == "active", sv.Exists()), state)
-	}
-	if len(in.Service) == 0 {
-		b.WriteString(dimStyle.Render("  没有服务单元（前台运行）") + "\n")
-	}
-	for _, e := range in.Entries {
-		fmt.Fprintf(&b, "  入口 %s %s:%d %s\n", e.ID, e.Host, e.Port, mark(e.Listening, true))
-	}
-	if last, synced := s.row.lastSeal(in.InstanceID); last != nil {
-		sync := warnStyle.Render("尚未同步到异地")
-		if len(synced) > 0 {
-			sync = "已同步到 " + strings.Join(synced, "、")
-		}
-		fmt.Fprintf(&b, "  最近封存 %s  %s 档  %d 个文件 %s  %s\n", last.CreatedAt.Local().Format("2006-01-02 15:04"), last.Tier, last.FileCount, size(last.PlainBytes), sync)
-	} else {
-		b.WriteString(warnStyle.Render("  还没有封存过") + "\n")
-	}
-	if ids := s.row.findings[in.InstanceID]; len(ids) > 0 {
-		fmt.Fprintf(&b, "  体检发现 %s\n", warnStyle.Render(strings.Join(ids, "、")))
-	}
-	return b.String()
+func newInstancePage(host string, in enroll.InstanceSummary) *instancePage {
+	p := &instancePage{host: host, inst: in, log: map[string]vaultrpc.SealLogEntry{}}
+	p.tabs = []tab{&overviewTab{}, newPodsTab(), &checkupTab{}, &webTab{}, &isetTab{}}
+	return p
 }
 
-type vaultRefreshed struct {
-	st  *vaultrpc.StatusResult
-	err error
+// Messages carrying the shared data.
+type (
+	targetLoaded struct{ t *service.LoginTarget }
+	kitLoaded    struct{ k *agentkit.KitStatusResult }
+	checkLoaded  struct {
+		c   *agentkit.CheckupResult
+		err error
+	}
+	logLoaded struct{ l *vaultrpc.SealLogResult }
+)
+
+func (p *instancePage) title() string { return p.inst.InstanceID }
+func (p *instancePage) help() string {
+	return p.tabs[p.active].help(p) + "   " + menu("←→", "切换")
 }
 
-type sealDone struct {
-	rep *vaultrpc.SealReport
-	err error
+func (p *instancePage) init(m *Model) tea.Cmd {
+	svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
+	cmds := []tea.Cmd{
+		func() tea.Msg { t, _ := svc.LoginMethods(ctx, host, inst); return targetLoaded{t} },
+		func() tea.Msg { k, _ := svc.KitStatus(ctx, host, inst); return kitLoaded{k} },
+		p.loadLog(m),
+		p.loadCheckup(m),
+	}
+	return tea.Batch(append(cmds, p.tabs[p.active].load(m, p))...)
 }
 
-func (s *instanceScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
+func (p *instancePage) loadLog(m *Model) tea.Cmd {
+	svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
+	return func() tea.Msg { l, _ := svc.SealLog(ctx, host, inst); return logLoaded{l} }
+}
+
+func (p *instancePage) loadCheckup(m *Model) tea.Cmd {
+	svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
+	return func() tea.Msg { c, err := svc.Checkup(ctx, host, inst); return checkLoaded{c, err} }
+}
+
+func (p *instancePage) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case sealDone:
-		if msg.err != nil {
-			return func() tea.Msg { return failed(msg.err) }, true
-		}
-		r := msg.rep
-		m.flash, m.flashErr = fmt.Sprintf("已封存 %s：%s 档，%d 个文件，%s；本次新写入金库 %s", r.SnapshotID, r.Tier, r.Files, size(r.PlainBytes), size(r.AddedBytes)), false
-		host := s.row.host
-		return func() tea.Msg {
-			st, err := m.svc.VaultStatus(m.ctx, host)
-			return vaultRefreshed{st, err}
-		}, true
-	case vaultRefreshed:
+	case targetLoaded:
+		p.target = msg.t
+	case kitLoaded:
+		p.kit = msg.k
+	case checkLoaded:
 		if msg.err == nil {
-			s.row.vault = msg.st // the overview shares the row
+			p.check = msg.c
 		}
-		return nil, true
-	case execDone:
-		if msg.err != nil {
-			m.flash, m.flashErr = "命令没有成功结束："+msg.err.Error(), true
+	case sealDone:
+		return sealResult(m, p, msg), true
+	case logLoaded:
+		if msg.l != nil {
+			for _, e := range msg.l.Entries {
+				p.log[e.SnapshotID] = e
+			}
 		}
-		return nil, true
 	case tea.KeyPressMsg:
-		host, id := s.row.host, s.inst.InstanceID
-		switch msg.String() {
-		case "f":
-			if s.inst.Superseded != nil {
+		if b, ok := p.tabs[p.active].(interface{ typing() bool }); !ok || !b.typing() {
+			k := msg.String()
+			switch {
+			case k == "right" || k == "tab":
+				return p.switchTo(m, (p.active+1)%len(p.tabs)), true
+			case k == "left" || k == "shift+tab":
+				return p.switchTo(m, (p.active+len(p.tabs)-1)%len(p.tabs)), true
+			case len(k) == 1 && k[0] >= '1' && int(k[0]-'1') < len(p.tabs):
+				return p.switchTo(m, int(k[0]-'1')), true
+			case k == "pgdown" || k == "space":
+				p.scroll += max(1, m.bodyHeight()/2)
+				return nil, true
+			case k == "pgup":
+				p.scroll = max(0, p.scroll-max(1, m.bodyHeight()/2))
 				return nil, true
 			}
-			return m.push(pick("封存档位", []choice{
-				{"soul：人格、记忆、技能、会话、状态（不含凭据）", vault.TierSoul},
-				{"soul-secrets：再加上凭据与未分类文件", vault.TierSoulSecrets},
-				{"full：再加上可重建的缓存", vault.TierFull},
-				{"raw：实例目录下的全部文件", vault.TierRaw},
-			}, func(m *Model, tier string) tea.Cmd {
-				return m.push(confirm(fmt.Sprintf("在 %s 上封存 %s 的 %s 档？", host, id, tier), nil, func(m *Model) tea.Cmd {
-					m.flash, m.flashErr = "正在封存…", false
-					return func() tea.Msg {
-						rep, err := m.svc.Seal(m.ctx, host, vaultrpc.SealParams{InstanceID: id, Tier: tier, Reason: "tui"})
-						return sealDone{rep, err}
-					}
-				}))
-			})), true
-		case "v":
-			return m.push(newVault(host, id)), true
-		case "c":
-			return m.push(newCheckup(host, id)), true
-		case "p":
-			return m.push(newProposals(host, id)), true
-		case "k":
-			return m.push(newKit(host, id)), true
-		case "l":
-			return s.login(m), true
+		}
+	}
+	return p.tabs[p.active].update(m, p, msg)
+}
+
+func (p *instancePage) switchTo(m *Model, i int) tea.Cmd {
+	p.active, p.scroll = i, 0
+	return p.tabs[i].load(m, p)
+}
+
+func (p *instancePage) view(m *Model) string {
+	icon := renderSmall(m, p)
+	name := p.inst.ProfileID
+	if m.prof != nil && m.prof.ByID[p.inst.ProfileID] != nil {
+		name = m.prof.ByID[p.inst.ProfileID].Effective.DisplayName
+	}
+	verified := warnStyle.Render("profile 未核实")
+	if p.inst.ProfileStatus == "verified" {
+		verified = okStyle.Render("profile 已核实")
+	}
+	info := headStyle.Render(p.inst.InstanceID) + "  " + dimStyle.Render(name+" · "+p.host) + "\n" + runState(p.inst) + "   " + verified
+	head := lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(icon, "\n"), "  ", info)
+	names := make([]string, len(p.tabs))
+	for i, t := range p.tabs {
+		names[i] = t.name()
+	}
+	top := head + "\n\n" + tabs(names, p.active) + "\n" + dimStyle.Render(strings.Repeat("─", min(m.width, 100))) + "\n"
+	height := m.bodyHeight() - lipgloss.Height(top)
+	content := p.tabs[p.active].view(m, p, height)
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		p.scroll = min(p.scroll, len(lines)-height+1)
+		end := min(len(lines), p.scroll+height-1)
+		content = strings.Join(lines[p.scroll:end], "\n") + "\n" + faintStyle.Render("  pgdn/空格 下翻 · pgup 上翻（"+itoa(end)+" / "+itoa(len(lines))+" 行）")
+	} else {
+		p.scroll = 0
+	}
+	return top + content
+}
+
+// renderSmall is the header icon: the profile art scaled to 4 rows.
+func renderSmall(m *Model, p *instancePage) []string {
+	d := m.display(p.inst.ProfileID)
+	if d == nil || strings.TrimSpace(d.Icon) == "" {
+		return renderIcon(nil)[:4]
+	}
+	small := fitIcon(strings.Split(strings.TrimRight(d.Icon, "\n"), "\n"), 10, 4)
+	st := lipgloss.NewStyle().Foreground(cDim)
+	if d.Color != "" {
+		st = st.Foreground(lipgloss.Color(d.Color))
+	}
+	for i := range small {
+		small[i] = st.Render(small[i])
+	}
+	return small
+}
+
+// overviewTab: the state at a glance (docs/UI.md 9.4 "概览").
+type overviewTab struct{}
+
+func (o *overviewTab) name() string { return "概览" }
+func (o *overviewTab) help(p *instancePage) string {
+	return menu("b", "建立逃生舱", "o", "打开管理页")
+}
+func (o *overviewTab) load(m *Model, p *instancePage) tea.Cmd { return nil }
+func (o *overviewTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool) {
+	if k, ok := msg.(tea.KeyPressMsg); ok {
+		switch k.String() {
+		case "b":
+			return startSeal(m, p), true
 		case "o":
-			return m.runCLI("open", host, id), true
-		default:
-			return nil, false
+			return p.switchTo(m, 3), true
 		}
 	}
 	return nil, false
 }
 
-// login picks a login method and hands the terminal to `valise login`.
-func (s *instanceScreen) login(m *Model) tea.Cmd {
-	host, id := s.row.host, s.inst.InstanceID
-	t, err := m.svc.LoginMethods(m.ctx, host, id)
-	if err != nil {
-		return func() tea.Msg { return failed(err) }
+func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
+	w := min(m.width-2, 100)
+	now := m.now()
+	d := m.server(p.host)
+	source := dimStyle.Render("读取中…")
+	if p.target != nil && p.target.Record != nil {
+		source = provenanceText(p.target.Record.Provenance)
 	}
-	var cs []choice
-	for _, l := range t.Profile.Login {
-		cs = append(cs, choice{label: fmt.Sprintf("%-22s %s（%s）", l.ID, l.DisplayName, l.Kind), value: l.ID})
+	contact := dimStyle.Render("还没有（逃生舱技能未接入或 agent 还没用过）")
+	if p.kit != nil && p.kit.LastMCP != nil {
+		contact = ago(*p.kit.LastMCP, now) + dimStyle.Render("，通过逃生舱技能")
 	}
-	if len(cs) == 0 {
-		return func() tea.Msg { return flashMsg("profile " + t.Profile.ID + " 没有声明登录方式") }
+	now1 := box("现在", kv("运行状态", runState(p.inst), "安装来源", source, "agent 上次联系", contact), w)
+	pods := "还没有逃生舱。按 " + keyStyle.Render("b") + " 建立第一个。"
+	if t, ok := d.lastSeal(p.inst.InstanceID); ok {
+		n, unsynced := 0, 0
+		for _, s := range d.status.Snapshots {
+			if s.InstanceID == p.inst.InstanceID {
+				n++
+				if !d.synced(s.SnapshotID) {
+					unsynced++
+				}
+			}
+		}
+		cloud := okStyle.Render("全部已上云")
+		switch {
+		case len(d.status.Targets) == 0:
+			cloud = warnStyle.Render("未设置云备份")
+		case unsynced > 0:
+			cloud = warnStyle.Render(itoa(unsynced) + " 个还没上云")
+		}
+		pods = kv("最近一个", ago(t, now)+" · "+whoText(p.log[lastSnapshotID(d, p.inst.InstanceID)]), "一共", itoa(n)+" 个", "云备份", cloud)
 	}
-	return m.push(pick("登录方式（终端会交给登录中继，结束后回到这里）", cs, func(m *Model, method string) tea.Cmd {
-		return m.runCLI("login", host, id, "--method", method)
-	}))
+	check := dimStyle.Render("体检中…")
+	if c := p.check; c != nil {
+		if len(c.Findings) == 0 {
+			check = okStyle.Render("✓ 健康")
+		} else {
+			check = warnStyle.Render("▲ "+itoa(len(c.Findings))+" 个提醒") + "：" + findingTitle(c.Findings[0].ID) + dimStyle.Render("（按 3 查看处理建议）")
+		}
+	}
+	return now1 + "\n" + box("逃生舱", pods, w) + "\n" + box("体检", check, w)
+}
+
+func provenanceText(pv enroll.Provenance) string {
+	switch {
+	case pv.NPM != nil:
+		return "npm 全局包 " + pv.NPM.Package + "@" + pv.NPM.Version
+	case pv.Git != nil:
+		s := "git " + pv.Git.Remote + " @ " + short(pv.Git.Commit)
+		if pv.Git.Dirty {
+			s += warnStyle.Render("（有本地修改）")
+		}
+		return s
+	case pv.Tool != nil:
+		return pv.Kind + " " + pv.Tool.Package + " " + pv.Tool.Version
+	case pv.Binary != nil:
+		return "程序 " + shortPath(pv.Binary.Path, 48)
+	}
+	return dimStyle.Render("未知")
+}
+
+// shortPath keeps the end of a long path.
+func shortPath(p string, n int) string {
+	r := []rune(p)
+	if len(r) <= n {
+		return p
+	}
+	return "…" + string(r[len(r)-n+1:])
+}
+
+func short(s string) string {
+	if len(s) > 10 {
+		return s[:10]
+	}
+	return s
 }

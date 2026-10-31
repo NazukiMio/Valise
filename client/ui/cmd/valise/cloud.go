@@ -5,12 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
-	"time"
 
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
+	"valise/ui/service"
 )
 
 // describeCopies prints where else a leaf exists and reports whether any
@@ -196,7 +195,7 @@ func (c *cli) targetAuto(ctx context.Context, args []string) error {
 // period sets an instance's period unit.
 func (c *cli) period(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("period", flag.ContinueOnError)
-	tz := fs.String("tz", localZone(), "")
+	tz := fs.String("tz", service.LocalZone(), "")
 	pos, err := parseArgs(fs, args, 3)
 	if err != nil {
 		return err
@@ -207,22 +206,6 @@ func (c *cli) period(ctx context.Context, args []string) error {
 	names := map[string]string{vault.UnitWeek: "每周", vault.UnitMonth: "每月", vault.UnitQuarter: "每季度"}
 	fmt.Fprintf(c.out, "已把 %s 的周期设为%s（时区 %s），从下一个周期开始生效。\n", pos[1], names[pos[2]], *tz)
 	return nil
-}
-
-// localZone is this machine's IANA zone, falling back to UTC.
-func localZone() string {
-	if tz := os.Getenv("TZ"); tz != "" {
-		return tz
-	}
-	if p, err := os.Readlink("/etc/localtime"); err == nil {
-		if _, z, ok := strings.Cut(p, "zoneinfo/"); ok {
-			return z
-		}
-	}
-	if n := time.Local.String(); n != "Local" {
-		return n
-	}
-	return "UTC"
 }
 
 // timer turns the timed seal on, off, or shows it.

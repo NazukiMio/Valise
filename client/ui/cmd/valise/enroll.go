@@ -119,16 +119,16 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 		fmt.Fprintf(w, "  符号链接 %d 个（只记录，不跟随）\n", r.Symlinks)
 	}
 
-	fmt.Fprintf(w, "\n凭据文件（%d 个，只列路径；仅 soul-secrets / full 档封存）：\n", len(r.Secrets))
+	fmt.Fprintf(w, "\n凭据文件（%d 个，只列路径；只装进标准、完整逃生舱）：\n", len(r.Secrets))
 	for _, s := range r.Secrets {
 		fmt.Fprintf(w, "  %s:%s\n", s.Root, s.Path)
 	}
 	if len(r.SQLite) > 0 {
-		fmt.Fprintln(w, "\nSQLite 数据库（封存时用 VACUUM INTO 取一致副本）：")
+		fmt.Fprintln(w, "\nSQLite 数据库（建立逃生舱时用 VACUUM INTO 取一致副本）：")
 		for _, s := range r.SQLite {
 			fmt.Fprintf(w, "  %s:%s  [%s]", s.Root, s.Path, categoryNames[s.Category])
 			if len(s.SecretTables) > 0 {
-				fmt.Fprintf(w, "  含凭据表 %s，soul 档封存时在副本中清空", strings.Join(s.SecretTables, "、"))
+				fmt.Fprintf(w, "  含凭据表 %s，轻装逃生舱在副本中清空", strings.Join(s.SecretTables, "、"))
 			}
 			fmt.Fprintln(w)
 		}
@@ -136,7 +136,7 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 	if len(r.UnclassGroups) > 0 {
 		groups := append([]enroll.UnclassifiedGroup(nil), r.UnclassGroups...)
 		sort.SliceStable(groups, func(i, j int) bool { return groups[i].Bytes > groups[j].Bytes })
-		fmt.Fprintln(w, "\n未分类文件（未知即敏感：按凭据层封存，不进 soul 档；按目录汇总，可用 --assign <root>:<glob>=<类别> 归类）：")
+		fmt.Fprintln(w, "\n未分类文件（未知即敏感：按凭据对待，不进轻装逃生舱；按目录汇总，可用 --assign <root>:<glob>=<类别> 归类）：")
 		for i, g := range groups {
 			if i == 15 {
 				fmt.Fprintf(w, "  …… 另有 %d 组\n", len(groups)-15)
@@ -160,7 +160,7 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 		}
 	}
 	if len(r.Entries) > 0 {
-		fmt.Fprintln(w, "\n入口（服务器上的端口）：")
+		fmt.Fprintln(w, "\n管理页（服务器上的端口）：")
 		for _, e := range r.Entries {
 			state := "未在监听"
 			if e.Listening {
@@ -181,7 +181,7 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 			fmt.Fprintf(w, "  · %s\n", s)
 		}
 		if len(r.Unreadable) > 0 {
-			fmt.Fprintf(w, "  · %d 个路径无法读取（权限不足），它们不会被封存\n", len(r.Unreadable))
+			fmt.Fprintf(w, "  · %d 个路径无法读取（权限不足），它们不会装进逃生舱\n", len(r.Unreadable))
 		}
 	}
 	for _, rej := range res.RejectedLocalProfiles {
@@ -211,7 +211,7 @@ func printProvenance(w io.Writer, p enroll.Provenance) {
 	case p.Git != nil:
 		fmt.Fprintf(w, "  git %s\n  commit %s\n", orUnknown(p.Git.Remote), orUnknown(p.Git.Commit))
 		if p.Git.Dirty {
-			fmt.Fprintf(w, "  有本地修改：%s 的补丁将作为 body_patch 随灵魂封存\n", size(p.Git.PatchBytes))
+			fmt.Fprintf(w, "  有本地修改：%s 的补丁将作为 body_patch 一起装进逃生舱\n", size(p.Git.PatchBytes))
 		} else {
 			fmt.Fprintln(w, "  工作树干净")
 		}

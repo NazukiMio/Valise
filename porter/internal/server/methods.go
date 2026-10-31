@@ -160,6 +160,13 @@ func init() {
 		}
 		return timer.Status(ctx, s.loginEnv(ctx), s.cfg.Home, p.InstanceID)
 	}
+	methods[vaultrpc.MethodSealLog] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.SealLogParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.SealLog(paths(s), p.InstanceID)
+	}
 	methods[vaultrpc.MethodTargetList] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.TargetListParams
 		if err := json.Unmarshal(raw, &p); err != nil {

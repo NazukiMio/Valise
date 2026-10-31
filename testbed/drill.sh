@@ -307,7 +307,7 @@ EOF
 
 	echo "== M4: rollback $ri on $rh"
 	read -r soul _ < <(seal_json "$rh" "$ri" soul)
-	if R "$rh" --snapshot "$soul" --mode rollback && grep -q '复活完成，服务健康' "$work/revive.out"; then
+	if R "$rh" --snapshot "$soul" --mode rollback && grep -q '着陆完成，服务健康' "$work/revive.out"; then
 		pass "$rh/$ri: rollback to a soul snapshot is healthy"
 		V prev drop "$rh" "$(opid)" --yes >/dev/null && pass "$rh/$ri: prev dropped" || fail "$rh/$ri: prev drop"
 	else
@@ -342,7 +342,7 @@ EOF
 		munit="$(ssh -T -o BatchMode=yes -- "$ms" "python3 -c 'import json,os; print(json.load(open(os.path.expanduser(\"~/.config/valise/instances/$mi.json\")))[\"service\"][0][\"unit\"])'")"
 		unit_active "$ms" "$munit" || ssh -T -o BatchMode=yes -- "$ms" "systemctl --user start '$munit'"
 		read -r full _ < <(seal_json "$ms" "$mi" full)
-		if R "$mt" --from "$ms" --snapshot "$full" --mode clone && grep -q '复活完成，服务健康' "$work/revive.out"; then
+		if R "$mt" --from "$ms" --snapshot "$full" --mode clone && grep -q '着陆完成，服务健康' "$work/revive.out"; then
 			pass "$ms->$mt: clone healthy"
 			unit_active "$ms" "$munit" && pass "$ms: source still running next to the clone" || fail "$ms: source stopped by a clone"
 			V prev drop "$mt" "$(opid)" --yes >/dev/null 2>&1
@@ -351,7 +351,7 @@ EOF
 		fi
 		echo "== M4: migrate $mi $ms -> $mt (over the clone)"
 		read -r full _ < <(seal_json "$ms" "$mi" full)
-		if R "$mt" --from "$ms" --snapshot "$full" --mode migrate && grep -q '复活完成，服务健康' "$work/revive.out"; then
+		if R "$mt" --from "$ms" --snapshot "$full" --mode migrate && grep -q '着陆完成，服务健康' "$work/revive.out"; then
 			pass "$ms->$mt: migrate healthy"
 			unit_active "$ms" "$munit" && fail "$ms: source still running after migrate" || pass "$ms: source service stopped (files untouched)"
 			prefix="$(ssh -T -o BatchMode=yes -- "$mt" "python3 -c 'import json,os; d=json.load(open(os.path.expanduser(\"~/.config/valise/instances/$mi.json\"))); print((d[\"provenance\"].get(\"npm\") or {}).get(\"prefix\",\"\"))'")"

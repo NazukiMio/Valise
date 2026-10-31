@@ -58,7 +58,7 @@ func (c *cli) revive(ctx context.Context, args []string) error {
 		return errUsage
 	}
 	o.Target = pos[0]
-	pass, err := c.passphrase("口令（用于在本机解密快照）：")
+	pass, err := c.passphrase("口令（只在这台电脑上用来打开逃生舱）：")
 	if err != nil {
 		return err
 	}
@@ -94,16 +94,16 @@ func (c *cli) revive(ctx context.Context, args []string) error {
 
 func printPlan(c *cli, rp *service.RevivePlan) {
 	w, p := c.out, rp.Plan
-	mode := map[string]string{revive.ModeRollback: "回滚", revive.ModeMigrate: "迁移", revive.ModeClone: "克隆"}[p.Mode]
-	fmt.Fprintf(w, "复活计划（%s）：op %s\n", mode, p.OpID)
-	fmt.Fprintf(w, "  快照：%s（%s 档，%s，来自 %s）\n", p.SnapshotID, p.Tier, rp.Snapshot.CreatedAt.Local().Format("2006-01-02 15:04"), rp.From)
+	mode := map[string]string{revive.ModeRollback: "原地着陆", revive.ModeMigrate: "着陆到另一台服务器", revive.ModeClone: "着陆成一个新的 agent"}[p.Mode]
+	fmt.Fprintf(w, "着陆计划（%s）：op %s\n", mode, p.OpID)
+	fmt.Fprintf(w, "  逃生舱：%s（%s，%s，来自 %s）\n", p.SnapshotID, tierLabel(p.Tier), rp.Snapshot.CreatedAt.Local().Format("2006-01-02 15:04"), rp.From)
 	fmt.Fprintf(w, "  目标：%s（%s）上的实例 %s\n", rp.Target, rp.TargetArch, p.InstanceID)
 	origin := "官方"
 	if rp.ProfileLocal {
 		origin = "本地，未经审核"
 	}
 	if rp.ProfileFromSnapshot {
-		origin = "来自快照，未经当前客户端审核"
+		origin = "来自逃生舱，未经当前客户端审核"
 	}
 	status := "已核实"
 	if p.Profile.Status != "verified" {
@@ -119,7 +119,7 @@ func printPlan(c *cli, rp *service.RevivePlan) {
 	}
 	fmt.Fprintln(w)
 	if p.Carry {
-		fmt.Fprintf(w, "  档位以外的现有内容（%s 档不包含的类别）保留不变\n", p.Tier)
+		fmt.Fprintf(w, "  逃生舱没装的类别（%s 不包含的）保留现在的内容\n", tierLabel(p.Tier))
 	}
 	for _, e := range rp.Excluded {
 		fmt.Fprintf(w, "  不恢复独占凭据：%s\n", e)
@@ -150,7 +150,7 @@ func printSwap(c *cli, r *revive.SwapResult) {
 	w := c.out
 	switch r.State {
 	case revive.StateHealthy:
-		fmt.Fprintf(w, "结果：复活完成，服务健康（op %s）\n", r.OpID)
+		fmt.Fprintf(w, "结果：着陆完成，服务健康（op %s）\n", r.OpID)
 	case revive.StateRestored:
 		fmt.Fprintf(w, "结果：%s（op %s）\n", r.Message, r.OpID)
 	case revive.StateRolledBack:
@@ -247,8 +247,8 @@ func (c *cli) keyUnregister(ctx context.Context, args []string) error {
 		}
 		*recipient = info.Recipient
 	}
-	fmt.Fprintln(c.out, "移除收件人公钥后，之后的封存不再加密给它（会开始新的 epoch）。")
-	fmt.Fprintln(c.out, "注意：已经写入金库的旧快照仍然可以被这把钥匙解开，加密无法追溯撤销；如果钥匙已泄露，应把旧快照视为已暴露。")
+	fmt.Fprintln(c.out, "移除这把钥匙后，以后的逃生舱不再给它（会开始新的 epoch）。")
+	fmt.Fprintln(c.out, "注意：以前的逃生舱仍然可以被这把钥匙打开，加密无法追溯撤销；如果钥匙已泄露，应把旧快照视为已暴露。")
 	if !*yes && !c.confirm("从 "+pos[0]+" 移除 "+*recipient+"？") {
 		return nil
 	}

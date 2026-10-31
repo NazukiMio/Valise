@@ -40,7 +40,7 @@ func (c *cli) old(ctx context.Context, args []string) error {
 			return err
 		}
 		fmt.Fprintln(c.out, "将删除旧实例 "+pos[1]+" 的记录、profile 副本，以及取代它的那次操作保留的旧目录。")
-		fmt.Fprintln(c.out, "金库中这个实例的快照不受影响，仍然可以用来复活。")
+		fmt.Fprintln(c.out, "这个实例的逃生舱不受影响，仍然可以用来着陆。")
 		if !*yes && !c.confirm("永久删除这些内容？") {
 			return nil
 		}

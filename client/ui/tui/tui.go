@@ -1,8 +1,8 @@
 // Package tui is `valise tui`: a terminal UI over the service layer
-// (docs/UI.md section 8). It holds no business logic: every action calls
-// the service layer, and steps that need the raw terminal (login relay,
-// web entry, passphrase prompts) run the matching CLI command while the
-// TUI is paused.
+// (docs/UI.md sections 8 and 9). It holds no business logic: every action
+// calls the service layer, and steps that need the raw terminal (login,
+// the management page, a server shell, passphrase prompts) run the
+// matching CLI command while the TUI is paused.
 package tui
 
 import (
@@ -12,10 +12,16 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
+	"valise/client/profiles"
+	"valise/core/enroll"
+	"valise/core/profile"
 	"valise/core/valise"
+	"valise/core/vaultrpc"
 	"valise/ui/service"
 )
 
@@ -27,7 +33,7 @@ type Options struct {
 	Command func(args ...string) *exec.Cmd
 }
 
-// screen is one view on the stack. update reports whether it consumed the
+// screen is one page on the stack. update reports whether it consumed the
 // message; unconsumed keys fall back to the global bindings (esc, q).
 type screen interface {
 	title() string
@@ -35,6 +41,45 @@ type screen interface {
 	init(m *Model) tea.Cmd
 	update(m *Model, msg tea.Msg) (tea.Cmd, bool)
 	view(m *Model) string
+}
+
+// srvData is what the TUI knows about one recorded server.
+type srvData struct {
+	host      string
+	loading   bool
+	loaded    bool
+	err       error // the server could not be reached
+	instances []enroll.InstanceSummary
+	status    *vaultrpc.StatusResult
+}
+
+// lastSeal returns the newest snapshot of an instance.
+func (d *srvData) lastSeal(inst string) (time.Time, bool) {
+	var t time.Time
+	if d.status == nil {
+		return t, false
+	}
+	for _, s := range d.status.Snapshots {
+		if s.InstanceID == inst && s.CreatedAt.After(t) {
+			t = s.CreatedAt
+		}
+	}
+	return t, !t.IsZero()
+}
+
+// synced reports whether a snapshot has reached any cloud backup.
+func (d *srvData) synced(sid string) bool {
+	if d.status == nil {
+		return false
+	}
+	for _, t := range d.status.Targets {
+		for _, s := range t.LastSynced {
+			if s == sid {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Model is the root of the TUI.
@@ -47,15 +92,25 @@ type Model struct {
 	height   int
 	flash    string
 	flashErr bool
-	// send delivers a message from a background goroutine (the revive
+	data     map[string]*srvData
+	prof     *profiles.Set
+	now      func() time.Time
+	// send delivers a message from a background goroutine (the landing
 	// confirmation); set by Run.
 	send func(tea.Msg)
 }
 
-// New returns the TUI model starting at the server overview.
+// New returns the TUI model: the first-run guide when there is no key,
+// otherwise the home page.
 func New(ctx context.Context, opt Options) *Model {
-	m := &Model{opt: opt, svc: opt.Service, ctx: ctx, width: 100, height: 30, send: func(tea.Msg) {}}
-	m.stack = []screen{newOverview()}
+	m := &Model{opt: opt, svc: opt.Service, ctx: ctx, width: 100, height: 32, send: func(tea.Msg) {},
+		data: map[string]*srvData{}, now: time.Now}
+	m.prof, _ = opt.Service.Profiles()
+	if _, err := opt.Service.KeyShow(); err != nil {
+		m.stack = []screen{newWizard()}
+	} else {
+		m.stack = []screen{newHome()}
+	}
 	return m
 }
 
@@ -77,10 +132,55 @@ func (m *Model) push(s screen) tea.Cmd {
 	return s.init(m)
 }
 
-// pop closes the top screen; the overview is never popped.
+// pop closes the top screen; the root is never popped.
 func (m *Model) pop() {
 	if len(m.stack) > 1 {
 		m.stack = m.stack[:len(m.stack)-1]
+	}
+}
+
+// replaceRoot clears the stack to one screen (after the first-run guide).
+func (m *Model) replaceRoot(s screen) tea.Cmd {
+	m.stack = []screen{s}
+	return s.init(m)
+}
+
+// display returns a profile's card look, nil when unknown.
+func (m *Model) display(profileID string) *profile.Display {
+	if m.prof == nil {
+		return nil
+	}
+	if l := m.prof.ByID[profileID]; l != nil {
+		return l.Effective.Display
+	}
+	return nil
+}
+
+// srvLoaded carries one server's data.
+type srvLoaded struct{ d *srvData }
+
+// server returns the cached data of a host (possibly not loaded yet).
+func (m *Model) server(host string) *srvData {
+	d := m.data[host]
+	if d == nil {
+		d = &srvData{host: host}
+		m.data[host] = d
+	}
+	return d
+}
+
+// loadServer refreshes one server in the background.
+func (m *Model) loadServer(host string) tea.Cmd {
+	d := m.server(host)
+	d.loading = true
+	ctx, svc := m.ctx, m.svc
+	return func() tea.Msg {
+		nd := &srvData{host: host, loaded: true}
+		nd.instances, nd.err = svc.Instances(ctx, host)
+		if nd.err == nil {
+			nd.status, _ = svc.VaultStatus(ctx, host)
+		}
+		return srvLoaded{nd}
 	}
 }
 
@@ -104,6 +204,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash, m.flashErr = errText(msg.err), true
 	case flashMsg:
 		m.flash, m.flashErr = string(msg), false
+	case srvLoaded:
+		m.data[msg.d.host] = msg.d
+	case pushMsg:
+		return m, m.push(msg.s)
+	case refreshed:
+		m.flash, m.flashErr = msg.text, false
+		return m, m.loadServer(msg.host)
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			for _, s := range m.stack {
@@ -127,31 +234,53 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.stack) == 1 {
 				return m, tea.Quit
 			}
-			m.pop()
 		}
 	}
 	return m, cmd
 }
 
+// bodyHeight is the number of lines a screen may use.
+func (m *Model) bodyHeight() int {
+	h := m.height - 5
+	if m.flash != "" {
+		h -= strings.Count(m.flash, "\n") + 2
+	}
+	return max(3, h)
+}
+
 // View implements tea.Model.
 func (m *Model) View() tea.View {
-	var b strings.Builder
 	var crumbs []string
 	for _, s := range m.stack {
 		crumbs = append(crumbs, s.title())
 	}
-	b.WriteString(titleStyle.Render("Valise") + " " + dimStyle.Render(strings.Join(crumbs, " › ")) + "\n\n")
-	b.WriteString(m.top().view(m))
-	b.WriteString("\n")
+	if len(crumbs) > 0 {
+		crumbs[len(crumbs)-1] = headStyle.Render(crumbs[len(crumbs)-1])
+	}
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("◢ Valise") + "  " + dimStyle.Render(strings.Join(crumbs, " › ")) + "\n\n")
+	b.WriteString(clip(m.top().view(m), m.bodyHeight()))
+	body := b.String()
+	if pad := m.height - 3 - lipgloss.Height(body); pad > 0 && m.flash == "" {
+		body += strings.Repeat("\n", pad)
+	}
+	var f strings.Builder
+	f.WriteString(body + "\n")
 	if m.flash != "" {
 		st := okStyle
 		if m.flashErr {
 			st = errStyle
 		}
-		b.WriteString("\n" + st.Render(m.flash))
+		f.WriteString("\n" + st.Render(m.flash) + "\n")
 	}
-	b.WriteString("\n" + dimStyle.Render(m.top().help()+"  ·  esc 返回  ·  ctrl+c 退出"))
-	v := tea.NewView(b.String())
+	foot := m.top().help()
+	if len(m.stack) > 1 {
+		foot += "   " + menu("esc", "返回")
+	} else {
+		foot += "   " + menu("q", "退出")
+	}
+	f.WriteString(dimStyle.Render(strings.Repeat("─", max(10, min(m.width, 120)))) + "\n" + foot)
+	v := tea.NewView(f.String())
 	v.AltScreen = true
 	return v
 }

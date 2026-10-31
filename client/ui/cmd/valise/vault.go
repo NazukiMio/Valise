@@ -25,7 +25,7 @@ func (c *cli) keyRegister(ctx context.Context, args []string) error {
 		return err
 	}
 	if res.Added {
-		fmt.Fprintf(c.out, "已把公钥（指纹 %s）登记到 %s。之后的封存会加密给它。\n", info.Fingerprint, pos[0])
+		fmt.Fprintf(c.out, "已把公钥（指纹 %s）登记到 %s。之后的逃生舱都能用它打开。\n", info.Fingerprint, pos[0])
 	} else {
 		fmt.Fprintf(c.out, "公钥（指纹 %s）已经登记在 %s 上。\n", info.Fingerprint, pos[0])
 	}
@@ -55,7 +55,7 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 		return c.printJSON(rep)
 	}
 	w := c.out
-	fmt.Fprintf(w, "已封存 %s 上的实例 %s（%s 档）\n快照：%s（epoch %d", pos[0], rep.InstanceID, rep.Tier, rep.SnapshotID, rep.Epoch)
+	fmt.Fprintf(w, "已为 %s 上的 %s 建立逃生舱（%s）\n逃生舱：%s（epoch %d", pos[0], rep.InstanceID, tierLabel(rep.Tier), rep.SnapshotID, rep.Epoch)
 	if rep.NewEpoch {
 		fmt.Fprint(w, "，新 epoch")
 	}
@@ -72,16 +72,16 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 		}
 	}
 	if rep.BodyPatch {
-		fmt.Fprintln(w, "  身体有本地修改，已封存 body_patch")
+		fmt.Fprintln(w, "  身体有本地修改，已把 body_patch 装进逃生舱")
 	}
 	if rep.UnclassifiedCount > 0 && rep.Tier == vault.TierSoul {
-		fmt.Fprintf(w, "未分类文件 %d 个，按\"未知即敏感\"不进 soul 档（soul-secrets / full / raw 档会封存；可在登记时用 --assign 归类）\n", rep.UnclassifiedCount)
+		fmt.Fprintf(w, "未分类文件 %d 个，按\"未知即敏感\"不进轻装逃生舱（标准、完整、原样会装；可在登记时用 --assign 归类）\n", rep.UnclassifiedCount)
 	}
 	if rep.Tier == vault.TierRaw {
 		fmt.Fprintln(w, "raw 档：实例目录下的全部文件，整体按凭据层对待；其中的身体只能在同架构、同路径下原样使用")
 	}
 	if len(rep.Unstable) > 0 {
-		fmt.Fprintf(w, "封存期间仍在变化的文件（unstable，已封存第二次读到的内容）：\n")
+		fmt.Fprintf(w, "建立期间仍在变化的文件（unstable，装的是第二次读到的内容）：\n")
 		for _, u := range rep.Unstable {
 			fmt.Fprintf(w, "  %s\n", u)
 		}
@@ -162,7 +162,7 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 				} else {
 					where += "（尚未上云）"
 				}
-				fmt.Fprintf(c.out, "  %s  %-10s %-13s %s  %5d 个文件 %10s  %s\n", id, m.InstanceID, m.Tier,
+				fmt.Fprintf(c.out, "  %s  %-10s %-13s %s  %5d 个文件 %10s  %s\n", id, m.InstanceID, tierLabel(m.Tier),
 					m.CreatedAt.Local().Format("2006-01-02 15:04"), m.FileCount, size(m.PlainBytes), where)
 			}
 		}
@@ -308,7 +308,16 @@ func (c *cli) verify(args []string) error {
 	}
 	what := "本机金库（不需要私钥的校验）"
 	if res.WithKey {
-		what = fmt.Sprintf("本机金库（用私钥解密并校验了 %d 个快照中的 %d 个文件）", res.Snapshots, res.Files)
+		what = fmt.Sprintf("本机金库（用钥匙打开并校验了 %d 个逃生舱中的 %d 个文件）", res.Snapshots, res.Files)
 	}
 	return c.printProblems(what, res.Problems)
+}
+
+// tierLabel is the UI name of a tier with its flag value (docs/PRODUCT.md 8.1).
+func tierLabel(t string) string {
+	names := map[string]string{vault.TierSoul: "轻装", vault.TierSoulSecrets: "标准", vault.TierFull: "完整", vault.TierRaw: "原样"}
+	if n, ok := names[t]; ok {
+		return n + "（" + t + "）"
+	}
+	return t
 }

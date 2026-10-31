@@ -17,7 +17,7 @@ import (
 )
 
 var loginKinds = map[string]string{
-	"loopback_oauth": "回环 OAuth（经登录中继在本机浏览器完成）",
+	"loopback_oauth": "在本机浏览器里登录授权",
 	"device_code":    "设备码",
 	"paste_code":     "粘贴授权码",
 	"remote_browser": "远端浏览器（尚未实现）",
@@ -61,7 +61,7 @@ func (c *cli) login(ctx context.Context, args []string) error {
 			case service.LoginWaitingLink:
 				term.say("状态：等待登录链接")
 			case service.LoginRelayReady:
-				term.say("登录中继已就绪：本机 %v 转发到服务器 %s 端口 %d（与回调地址同一端口）", s.Local, s.Remote, s.Port)
+				term.say("登录授权已就绪：本机 %v 转发到服务器 %s 端口 %d（与回调地址同一端口）", s.Local, s.Remote, s.Port)
 			case service.LoginBrowserOpened:
 				term.say("状态：已在本机浏览器中打开 %s", s.Domain)
 			case service.LoginLinkSkipped:

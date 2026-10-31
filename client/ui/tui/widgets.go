@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -16,7 +15,7 @@ type confirmScreen struct {
 }
 
 func (c *confirmScreen) title() string         { return "确认" }
-func (c *confirmScreen) help() string          { return "y 确认  ·  n 取消" }
+func (c *confirmScreen) help() string          { return menu("y", "确认", "n", "取消") }
 func (c *confirmScreen) init(m *Model) tea.Cmd { return nil }
 func (c *confirmScreen) view(m *Model) string {
 	var b strings.Builder
@@ -26,7 +25,7 @@ func (c *confirmScreen) view(m *Model) string {
 	if len(c.detail) > 0 {
 		b.WriteString("\n")
 	}
-	b.WriteString(warnStyle.Render(c.question) + " [y/N]")
+	b.WriteString(warnStyle.Render(c.question) + dimStyle.Render("  [y/N]"))
 	return b.String()
 }
 func (c *confirmScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
@@ -69,7 +68,7 @@ func newInput(label, placeholder string, secret bool, submit func(m *Model, valu
 }
 
 func (s *inputScreen) title() string { return s.label }
-func (s *inputScreen) help() string  { return "enter 提交" }
+func (s *inputScreen) help() string  { return menu("enter", "确定") }
 func (s *inputScreen) init(m *Model) tea.Cmd {
 	s.input.Focus() // a steady cursor: no blink ticks
 	return nil
@@ -99,6 +98,7 @@ func (s *inputScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 type choice struct {
 	label string
 	value string
+	desc  string
 }
 
 // pickScreen chooses one option from a list.
@@ -114,14 +114,20 @@ func pick(label string, choices []choice, f func(m *Model, value string) tea.Cmd
 }
 
 func (p *pickScreen) title() string         { return p.label }
-func (p *pickScreen) help() string          { return "↑↓ 选择  ·  enter 确定" }
+func (p *pickScreen) help() string          { return menu("↑↓", "选择", "enter", "确定") }
 func (p *pickScreen) init(m *Model) tea.Cmd { return nil }
 func (p *pickScreen) view(m *Model) string {
 	var b strings.Builder
 	b.WriteString(p.label + "\n\n")
+	var rows []string
 	for i, c := range p.choices {
-		b.WriteString(cursorLine(i == p.cursor, c.label) + "\n")
+		row := cursorLine(i == p.cursor, c.label)
+		if c.desc != "" {
+			row += "  " + dimStyle.Render(c.desc)
+		}
+		rows = append(rows, row)
 	}
+	b.WriteString(scrollLines(rows, p.cursor, m.bodyHeight()-3) + "\n")
 	if len(p.choices) == 0 {
 		b.WriteString(dimStyle.Render("（没有可选项）"))
 	}
@@ -133,10 +139,8 @@ func (p *pickScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, false
 	}
 	switch k.String() {
-	case "up", "k":
-		p.cursor = max(0, p.cursor-1)
-	case "down", "j":
-		p.cursor = min(len(p.choices)-1, p.cursor+1)
+	case "up", "k", "down", "j", "pgup", "pgdown", "home", "end":
+		p.cursor, _ = moveList(p.cursor, len(p.choices), k.String())
 	case "enter":
 		if len(p.choices) == 0 {
 			return nil, true
@@ -147,17 +151,4 @@ func (p *pickScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, false
 	}
 	return nil, true
-}
-
-// size renders a byte count.
-func size(n int64) string {
-	switch {
-	case n >= 1<<30:
-		return fmt.Sprintf("%.1f GiB", float64(n)/(1<<30))
-	case n >= 1<<20:
-		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.1f KiB", float64(n)/(1<<10))
-	}
-	return fmt.Sprintf("%d B", n)
 }

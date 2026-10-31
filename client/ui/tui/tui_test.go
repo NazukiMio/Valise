@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -109,6 +111,14 @@ func key(t *testing.T, m *Model, k string) {
 		msg = tea.KeyPressMsg{Code: tea.KeyEscape}
 	case "down":
 		msg = tea.KeyPressMsg{Code: tea.KeyDown}
+	case "up":
+		msg = tea.KeyPressMsg{Code: tea.KeyUp}
+	case "right":
+		msg = tea.KeyPressMsg{Code: tea.KeyRight}
+	case "tab":
+		msg = tea.KeyPressMsg{Code: tea.KeyTab}
+	case "end":
+		msg = tea.KeyPressMsg{Code: tea.KeyEnd}
 	default:
 		msg = tea.KeyPressMsg{Code: rune(k[0]), Text: k}
 	}
@@ -124,104 +134,211 @@ func typeText(t *testing.T, m *Model, s string) {
 	}
 }
 
-func screenText(m *Model) string { return m.View().Content }
+var ansiRe = regexp.MustCompile("\x1b\\[[0-9;:]*m")
 
-func TestOverviewInstanceAndSeal(t *testing.T) {
-	m, _ := world(t)
-	drive(t, m, m.Init())
+func screenText(m *Model) string { return ansiRe.ReplaceAllString(m.View().Content, "") }
+
+func wantText(t *testing.T, m *Model, wants ...string) string {
+	t.Helper()
 	v := screenText(m)
-	for _, want := range []string{"box", "demo", "未核实", "封存", "soul"} {
-		if !strings.Contains(v, want) {
-			t.Fatalf("overview lacks %q:\n%s", want, v)
+	for _, w := range wants {
+		if !strings.Contains(v, w) {
+			t.Fatalf("screen lacks %q:\n%s", w, v)
 		}
 	}
-	key(t, m, "down") // the instance line
-	key(t, m, "enter")
-	if !strings.Contains(screenText(m), "profile demo v1") {
-		t.Fatalf("instance screen:\n%s", screenText(m))
-	}
-	// Seal the soul tier: pick, confirm.
-	key(t, m, "f")
-	key(t, m, "enter")
-	if !strings.Contains(screenText(m), "[y/N]") {
-		t.Fatalf("no confirmation:\n%s", screenText(m))
-	}
-	key(t, m, "y")
-	if !strings.Contains(m.flash, "已封存") || m.flashErr {
-		t.Fatalf("flash %q", m.flash)
-	}
-	// Checkup, then back to the instance.
-	key(t, m, "c")
-	if !strings.Contains(screenText(m), "没有发现问题") {
-		t.Fatalf("checkup:\n%s", screenText(m))
-	}
-	key(t, m, "esc")
-	key(t, m, "k")
-	if !strings.Contains(screenText(m), "技能目录") && !strings.Contains(screenText(m), "没有声明技能目录") {
-		t.Fatalf("kit:\n%s", screenText(m))
-	}
+	return v
 }
 
-func TestReviveWizardRollback(t *testing.T) {
-	m, home := world(t)
+// openInstance goes home → box → demo.
+func openInstance(t *testing.T, m *Model) {
+	t.Helper()
 	drive(t, m, m.Init())
-	os.WriteFile(filepath.Join(home, ".demo/memory/a.md"), []byte("changed after the seal"), 0o644)
-	key(t, m, "enter") // server header → vault
-	if !strings.Contains(screenText(m), "s_") {
-		t.Fatalf("vault:\n%s", screenText(m))
+	wantText(t, m, "box", "1 个 agent", "在线")
+	key(t, m, "enter")
+	wantText(t, m, "demo", "Demo", "profile 未核实")
+	key(t, m, "enter")
+	wantText(t, m, "1 概览", "2 逃生舱", "3 体检", "4 管理页与登录", "5 设置")
+}
+
+func TestHomeServerInstanceAndSeal(t *testing.T) {
+	m, _ := world(t)
+	openInstance(t, m)
+	wantText(t, m, "最近一个", "体检")
+	// Build an escape pod: what to pack, then why.
+	key(t, m, "b")
+	wantText(t, m, "轻装", "标准", "完整", "原样")
+	key(t, m, "enter")
+	typeText(t, m, "升级前")
+	key(t, m, "enter")
+	if !strings.Contains(m.flash, "逃生舱已建立") || m.flashErr {
+		t.Fatalf("flash %q", m.flash)
 	}
-	key(t, m, "enter") // the snapshot → wizard
+	key(t, m, "2")
+	wantText(t, m, "你手动建立", "升级前", "轻装", "共 2 个逃生舱")
+	// Search narrows the list.
+	key(t, m, "/")
+	typeText(t, m, "升级")
+	wantText(t, m, "1 / 2")
+	key(t, m, "enter")
+	key(t, m, "enter")
+	wantText(t, m, "的逃生舱", "谁建立的", "你手动建立", "原因", "升级前")
+	if strings.Contains(screenText(m), "s_") {
+		t.Fatal("snapshot id shown before the technical details are opened")
+	}
+	key(t, m, "t")
+	wantText(t, m, "s_", "技术信息")
+}
+
+func TestLandingRollback(t *testing.T) {
+	m, home := world(t)
+	openInstance(t, m)
+	os.WriteFile(filepath.Join(home, ".demo/memory/a.md"), []byte("changed after the seal"), 0o644)
+	key(t, m, "2")
+	key(t, m, "enter")
+	key(t, m, "l")
+	wantText(t, m, "逃生舱着陆", "原地着陆")
 	key(t, m, "d")     // allow the draft profile
 	key(t, m, "enter") // passphrase prompt
-	if !strings.Contains(screenText(m), "口令") {
-		t.Fatalf("no passphrase prompt:\n%s", screenText(m))
-	}
+	wantText(t, m, "口令")
 	typeText(t, m, pass)
 	if strings.Contains(screenText(m), pass) {
 		t.Fatal("passphrase echoed")
 	}
 	key(t, m, "enter")
-	v := screenText(m)
-	if !strings.Contains(v, "将恢复") || strings.Contains(v, "无法执行") {
-		t.Fatalf("plan:\n%s", v)
+	v := wantText(t, m, "将放回")
+	if strings.Contains(v, "无法执行") {
+		t.Fatalf("plan blocked:\n%s", v)
 	}
 	key(t, m, "enter") // asks to stage
-	// The revive runs in the background and waits for the swap answer, as
-	// under the real runtime: deliver its messages through a channel.
 	msgs := make(chan tea.Msg, 4)
 	m.send = func(msg tea.Msg) { msgs <- msg }
 	_, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	go func() { msgs <- cmd() }()
 	m.Update(<-msgs) // stageVerified
-	if !strings.Contains(screenText(m), "暂存校验通过") {
-		t.Fatalf("no swap question:\n%s", screenText(m))
-	}
-	// Quitting is refused while the revive runs.
+	wantText(t, m, "暂存校验通过")
 	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd != nil || !strings.Contains(m.flash, "不能退出") {
-		t.Fatalf("ctrl+c during a revive: flash %q", m.flash)
+		t.Fatalf("ctrl+c during a landing: flash %q", m.flash)
 	}
 	m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.Update(<-msgs) // reviveFinished
-	if v := screenText(m); !strings.Contains(v, "已恢复") && !strings.Contains(v, "复活完成") {
-		t.Fatalf("result:\n%s", v)
-	}
+	wantText(t, m, "着陆完成")
 	if b, _ := os.ReadFile(filepath.Join(home, ".demo/memory/a.md")); string(b) != "m" {
 		t.Fatalf("memory not rolled back: %q", b)
 	}
 }
 
-func TestProposalsEmptyAndSettings(t *testing.T) {
+// Regression: Esc on the archive suggestions with none pending panicked
+// (index out of range [-1]).
+func TestCheckupEscWithoutProposals(t *testing.T) {
+	m, _ := world(t)
+	openInstance(t, m)
+	key(t, m, "3")
+	wantText(t, m, "体检只读", "归档建议", "没有待处理的建议")
+	for _, k := range []string{"a", "x", "down", "up", "esc"} {
+		key(t, m, k)
+	}
+	wantText(t, m, "登记新 agent") // back on the server page
+}
+
+// Regression: a list longer than the window kept rendering past it and the
+// cursor left the screen.
+func TestLongListsScroll(t *testing.T) {
+	m, _ := world(t)
+	openInstance(t, m)
+	d := m.server("box")
+	base := d.status.Snapshots[0]
+	for i := 0; i < 80; i++ {
+		s := base
+		s.SnapshotID = fmt.Sprintf("s_01M6%022d", i)
+		s.CreatedAt = base.CreatedAt.Add(-time.Duration(i) * 7 * time.Hour)
+		d.status.Snapshots = append(d.status.Snapshots, s)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	key(t, m, "2")
+	for i := 0; i < 60; i++ {
+		key(t, m, "down")
+	}
+	v := screenText(m)
+	if n := strings.Count(v, "\n") + 1; n > 24 {
+		t.Fatalf("view has %d lines for a 24-line window", n)
+	}
+	if !strings.Contains(v, "▸") || !strings.Contains(v, "第 61 / 81 个") {
+		t.Fatalf("cursor not visible:\n%s", v)
+	}
+	key(t, m, "end")
+	wantText(t, m, "第 81 / 81 个")
+}
+
+func TestCloudCleanupServerSettings(t *testing.T) {
+	m, _ := world(t)
+	drive(t, m, m.Init())
+	key(t, m, "enter")
+	key(t, m, "c")
+	wantText(t, m, "还没有云备份位置")
+	key(t, m, "esc")
+	key(t, m, "k")
+	wantText(t, m, "没有可以清理的东西") // the only period is current
+	key(t, m, "esc")
+	key(t, m, "t")
+	wantText(t, m, "服务器设置", "porter", "已登记到这台服务器")
+}
+
+func TestSettingsSections(t *testing.T) {
 	m, _ := world(t)
 	drive(t, m, m.Init())
 	key(t, m, "s")
-	if !strings.Contains(screenText(m), "指纹") {
-		t.Fatalf("settings:\n%s", screenText(m))
+	wantText(t, m, "你的钥匙已创建", "备份钥匙", "只能上锁")
+	for _, want := range []string{"box", "还没有云备份位置", "harness 资料包", "能打开逃生舱的钥匙", "不用 Valise 也能恢复"} {
+		key(t, m, "tab")
+		wantText(t, m, want)
 	}
-	key(t, m, "esc")
-	key(t, m, "down")
+}
+
+func TestFirstRunGuide(t *testing.T) {
+	m, _ := world(t)
+	svc := m.svc
+	os.Remove(filepath.Join(svc.Dirs.Data, "keystore.age"))
+	os.Remove(filepath.Join(svc.Dirs.Data, "recipient.txt"))
+	m = New(context.Background(), Options{Service: svc})
+	wantText(t, m, "欢迎使用 Valise")
 	key(t, m, "enter")
-	key(t, m, "p")
-	if !strings.Contains(screenText(m), "没有待确认的归类提议") {
-		t.Fatalf("proposals:\n%s", screenText(m))
+	key(t, m, "enter")
+	typeText(t, m, "short")
+	key(t, m, "enter")
+	wantText(t, m, "至少 12 个字符")
+	key(t, m, "enter")
+	typeText(t, m, pass)
+	key(t, m, "enter")
+	typeText(t, m, pass)
+	key(t, m, "enter")
+	wantText(t, m, "钥匙已生成", "强烈建议现在备份")
+	key(t, m, "enter") // later
+	wantText(t, m, "harness 资料包")
+	key(t, m, "enter") // skip
+	wantText(t, m, "添加第一台服务器")
+	key(t, m, "s")
+	wantText(t, m, "box") // home
+}
+
+func TestIconFitting(t *testing.T) {
+	braille := strings.Repeat("⣿", 30)
+	var art []string
+	for i := 0; i < 15; i++ {
+		art = append(art, braille)
+	}
+	out := fitIcon(art, iconMaxW, iconMaxH)
+	if len(out) > iconMaxH || len([]rune(out[0])) > iconMaxW || out[0][0] == ' ' {
+		t.Fatalf("braille not scaled into the box: %d×%d", len(out), len([]rune(out[0])))
+	}
+	dots := []string{" •●●:.        .:●●•", ":●●●●:        :●●●●:"}
+	for len(dots) < 10 {
+		dots = append(dots, "   ●●●●●●●●●●●●")
+	}
+	out = fitIcon(dots, iconMaxW, iconMaxH)
+	if len(out) > iconMaxH {
+		t.Fatalf("art not sampled: %d rows", len(out))
+	}
+	if r := renderIcon(nil); len(r) != len(robotIcon) {
+		t.Fatal("no placeholder for profiles without art")
 	}
 }

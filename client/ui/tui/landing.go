@@ -56,22 +56,28 @@ type reviveFinished struct {
 	err error
 }
 
-var modeNames = map[string]string{revive.ModeRollback: "回滚", revive.ModeMigrate: "迁移", revive.ModeClone: "克隆"}
+var modeNames = map[string]string{revive.ModeRollback: "原地着陆", revive.ModeMigrate: "着陆到另一台服务器", revive.ModeClone: "着陆成一个新的 agent"}
 
-func (r *reviveScreen) title() string { return "复活 " + r.snap.SnapshotID }
+var modeChoices = []choice{
+	{label: "原地着陆", value: revive.ModeRollback, desc: "让这个 agent 回到逃生舱建立的时刻；现在的样子会先保留下来"},
+	{label: "着陆到另一台服务器", value: revive.ModeMigrate, desc: "把 agent 搬过去，原来的标记为\"已被取代\""},
+	{label: "着陆成一个新的 agent", value: revive.ModeClone, desc: "在另一台服务器上复制一个新的，原来的不动"},
+}
+
+func (r *reviveScreen) title() string { return "逃生舱着陆" }
 func (r *reviveScreen) help() string {
 	switch r.step {
 	case rvOptions:
-		return "m 切换模式  ·  t 选择目标服务器  ·  d 允许未核实 profile  ·  s 允许快照内 profile  ·  enter 输入口令并出计划"
+		return menu("m", "着陆方式", "t", "目标服务器", "d", "允许未核实 profile", "s", "允许快照里的 profile", "enter", "输入口令并出计划")
 	case rvPlan:
 		if len(r.plan.Blockers) > 0 {
-			return "计划无法执行  ·  b 返回修改选项"
+			return errStyle.Render("计划无法执行") + "   " + menu("b", "返回修改选项")
 		}
-		return "enter 暂存（活动目录不会被改动）  ·  b 返回修改选项"
+		return menu("enter", "暂存并校验（agent 现在的文件不会被改动）", "b", "返回修改选项")
 	case rvAskSwap:
-		return "y 开始交换  ·  n 放弃（暂存目录保留）"
+		return menu("y", "开始交换", "n", "放弃（暂存保留）")
 	case rvSwapping:
-		return "交换进行中，不能中断"
+		return warnStyle.Render("交换进行中，不能中断")
 	}
 	return ""
 }
@@ -82,7 +88,7 @@ func (r *reviveScreen) init(m *Model) tea.Cmd { return nil }
 func (r *reviveScreen) busy() string {
 	switch r.step {
 	case rvStaging, rvAskSwap, rvSwapping:
-		return "复活正在进行，不能退出；请等它结束（交换失败会自动退回）"
+		return "着陆正在进行，不能退出；请等它结束（交换失败会自动退回原样）"
 	}
 	return ""
 }
@@ -116,16 +122,13 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 	case rvOptions:
 		switch k {
 		case "m":
-			order := []string{revive.ModeRollback, revive.ModeMigrate, revive.ModeClone}
-			for i, mo := range order {
-				if mo == r.opts.Mode {
-					r.opts.Mode = order[(i+1)%len(order)]
-					break
+			return m.push(pick("着陆到哪里？", modeChoices, func(m *Model, mode string) tea.Cmd {
+				r.opts.Mode = mode
+				if mode == revive.ModeRollback {
+					r.opts.Target = r.from
 				}
-			}
-			if r.opts.Mode == revive.ModeRollback {
-				r.opts.Target = r.from
-			}
+				return nil
+			})), true
 		case "t":
 			hosts, err := m.svc.Servers()
 			if err != nil {
@@ -135,14 +138,14 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 			for _, h := range hosts {
 				cs = append(cs, choice{label: h, value: h})
 			}
-			return m.push(pick("复活到哪台服务器", cs, func(m *Model, h string) tea.Cmd { r.opts.Target = h; return nil })), true
+			return m.push(pick("着陆到哪台服务器", cs, func(m *Model, h string) tea.Cmd { r.opts.Target = h; return nil })), true
 		case "d":
 			r.opts.AllowDraft = !r.opts.AllowDraft
 		case "s":
 			r.opts.AllowSnapshotProfile = !r.opts.AllowSnapshotProfile
 		case "enter":
 			opts := r.opts
-			return m.push(newInput("口令（只用于在本机解密这个快照，用完即弃）", "", true, func(m *Model, pass string) tea.Cmd {
+			return m.push(newInput("口令（只在这台电脑上用来打开逃生舱，用完即弃）", "", true, func(m *Model, pass string) tea.Cmd {
 				r.step = rvPlanning
 				return func() tea.Msg {
 					rp, err := m.svc.PlanRevive(m.ctx, opts, pass)
@@ -162,7 +165,7 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 				return nil, true
 			}
 			rp := r.plan
-			return m.push(confirm("按上述计划暂存？（活动目录在下一次确认前不会被改动）", nil, func(m *Model) tea.Cmd {
+			return m.push(confirm("按上面的计划暂存并校验？在你下一次确认之前，agent 现在的文件不会被改动。", nil, func(m *Model) tea.Cmd {
 				r.step = rvStaging
 				send := m.send
 				// The revive keeps the root context: closing the screen must
@@ -198,25 +201,25 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 
 func (r *reviveScreen) view(m *Model) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "快照 %s（%s 档，%s，实例 %s，来自 %s）\n", r.snap.SnapshotID, r.snap.Tier,
-		r.snap.CreatedAt.Local().Format("2006-01-02 15:04"), r.snap.InstanceID, r.from)
-	fmt.Fprintf(&b, "模式：%s  ·  目标服务器：%s", modeNames[r.opts.Mode], r.opts.Target)
+	fmt.Fprintf(&b, "逃生舱：%s 的 %s · %s · 来自 %s\n", r.snap.InstanceID,
+		r.snap.CreatedAt.Local().Format("2006-01-02 15:04"), tierNames[r.snap.Tier], r.from)
+	fmt.Fprintf(&b, "着陆方式：%s  ·  目标服务器：%s", accStyle.Render(modeNames[r.opts.Mode]), r.opts.Target)
 	if r.opts.AllowDraft {
 		b.WriteString("  ·  " + warnStyle.Render("允许未核实 profile"))
 	}
 	if r.opts.AllowSnapshotProfile {
-		b.WriteString("  ·  " + warnStyle.Render("允许快照内 profile"))
+		b.WriteString("  ·  " + warnStyle.Render("允许快照里的 profile"))
 	}
 	b.WriteString("\n\n")
 	switch r.step {
 	case rvOptions:
-		b.WriteString(dimStyle.Render("回滚：同一个实例退回这个快照。迁移、克隆：先按 t 选择另一台服务器。"))
+		b.WriteString(dimStyle.Render("接下来：输入口令 → 看计划 → 暂存并校验 → 你确认 → 交换 → 健康检查。\n着陆到另一台服务器或着陆成新的 agent 时，先按 t 选择目标服务器。"))
 	case rvPlanning:
-		b.WriteString(dimStyle.Render("正在拉取金库、解密快照并检查目标服务器…"))
+		b.WriteString(dimStyle.Render("正在取回这个逃生舱、在本机打开它，并检查目标服务器…"))
 	case rvPlan:
 		b.WriteString(planText(r.plan))
 	case rvStaging:
-		b.WriteString(dimStyle.Render("正在暂存并校验（活动目录还没有被改动）…"))
+		b.WriteString(dimStyle.Render("正在暂存并校验（agent 现在的文件还没有被改动）…"))
 	case rvAskSwap:
 		fmt.Fprintf(&b, "%s\n\n%s", okStyle.Render(fmt.Sprintf("暂存校验通过：%d 个文件，%s，SHA-256 与 SQLite 完整性检查全部通过。", r.verify.Files, size(r.verify.Bytes))),
 			warnStyle.Render("开始交换？会停止服务；失败会自动退回。"))
@@ -247,7 +250,7 @@ func planText(rp *service.RevivePlan) string {
 	if rp.RestoreSecret {
 		secret = "（含凭据）"
 	}
-	fmt.Fprintf(&b, "将恢复 %d 个文件，%s%s\n", rp.Files, size(rp.Bytes), secret)
+	fmt.Fprintf(&b, "将放回 %d 个文件，%s%s\n", rp.Files, size(rp.Bytes), secret)
 	for _, e := range rp.Excluded {
 		fmt.Fprintf(&b, "  不恢复独占凭据：%s\n", e)
 	}
@@ -271,7 +274,7 @@ func planText(rp *service.RevivePlan) string {
 		b.WriteString(warnStyle.Render("· "+w) + "\n")
 	}
 	tuiHint := map[string]string{"profile_draft": "按 b 返回，按 d 允许未核实 profile 后重新出计划",
-		"profile_from_snapshot": "按 b 返回，按 s 允许使用快照内的 profile 后重新出计划"}
+		"profile_from_snapshot": "按 b 返回，按 s 允许使用逃生舱里保存的 profile 后重新出计划"}
 	for _, bl := range rp.Blockers {
 		hint := bl.Suggestion
 		if h, ok := tuiHint[bl.Code]; ok {
@@ -289,17 +292,17 @@ func resultText(res *revive.SwapResult, err error) string {
 	var b strings.Builder
 	switch res.State {
 	case revive.StateHealthy:
-		b.WriteString(okStyle.Render("复活完成，服务健康") + "\n")
+		b.WriteString(okStyle.Render("着陆完成，服务健康") + "\n")
 	case revive.StateRolledBack:
-		b.WriteString(errStyle.Render("rolled_back —— "+res.Message) + "\n")
+		b.WriteString(errStyle.Render("着陆没有成功，已自动退回原样："+res.Message) + "\n")
 		if res.Logs != "" {
 			b.WriteString(dimStyle.Render(res.Logs) + "\n")
 		}
 	default:
-		b.WriteString(res.Message + "\n")
+		b.WriteString(okStyle.Render("着陆完成") + "：" + res.Message + "\n")
 	}
 	for _, p := range res.Prev {
-		fmt.Fprintf(&b, "保留交换前状态：%s（可在金库页面按 P 删除）\n", p)
+		fmt.Fprintf(&b, "着陆前的样子保留在 %s（不需要时在 服务器 › 空间清理 中删除）\n", p)
 	}
 	for _, p := range res.Intruders {
 		fmt.Fprintf(&b, "%s\n", warnStyle.Render("注意：交换期间有其他进程重新创建了活动目录，已挪到 "+p))

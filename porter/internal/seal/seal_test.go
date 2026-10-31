@@ -428,6 +428,10 @@ func TestTreePeriods(t *testing.T) {
 	if res, err := Verify(w.p); err != nil || len(res.Problems) != 0 {
 		t.Fatal(res, err)
 	}
+	log, err := SealLog(w.p, "demo")
+	if err != nil || len(log.Entries) != 2 || log.Entries[1].SnapshotID != second.SnapshotID || log.Entries[0].Reason != "test" || log.Entries[0].Initiator != "client" {
+		t.Fatalf("%+v %v", log, err)
+	}
 	audit, _ := os.ReadFile(w.p.Audit())
 	if !strings.Contains(string(audit), `"op":"leaf_delete"`) {
 		t.Fatal("leaf deletion not audited")
