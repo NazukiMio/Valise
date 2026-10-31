@@ -196,6 +196,10 @@ func TestReviveWizardRollback(t *testing.T) {
 	if !strings.Contains(screenText(m), "暂存校验通过") {
 		t.Fatalf("no swap question:\n%s", screenText(m))
 	}
+	// Quitting is refused while the revive runs.
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd != nil || !strings.Contains(m.flash, "不能退出") {
+		t.Fatalf("ctrl+c during a revive: flash %q", m.flash)
+	}
 	m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.Update(<-msgs) // reviveFinished
 	if v := screenText(m); !strings.Contains(v, "已恢复") && !strings.Contains(v, "复活完成") {

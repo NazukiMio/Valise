@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -38,8 +40,8 @@ func (s *instanceScreen) view(m *Model) string {
 	if in.Superseded != nil {
 		fmt.Fprintf(&b, "%s\n", warnStyle.Render(fmt.Sprintf("已被实例 %s 取代（操作 %s），不能再封存；可在服务器的金库页面清理", in.Superseded.By, in.Superseded.OpID)))
 	}
-	for id, p := range in.Roots {
-		fmt.Fprintf(&b, "  目录 %-10s %s\n", id, p)
+	for _, id := range slices.Sorted(maps.Keys(in.Roots)) {
+		fmt.Fprintf(&b, "  目录 %-10s %s\n", id, in.Roots[id])
 	}
 	for _, sv := range in.Service {
 		state := sv.Active
@@ -69,6 +71,11 @@ func (s *instanceScreen) view(m *Model) string {
 	return b.String()
 }
 
+type vaultRefreshed struct {
+	st  *vaultrpc.StatusResult
+	err error
+}
+
 type sealDone struct {
 	rep *vaultrpc.SealReport
 	err error
@@ -81,9 +88,17 @@ func (s *instanceScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			return func() tea.Msg { return failed(msg.err) }, true
 		}
 		r := msg.rep
+		m.flash, m.flashErr = fmt.Sprintf("已封存 %s：%s 档，%d 个文件，%s；本次新写入金库 %s", r.SnapshotID, r.Tier, r.Files, size(r.PlainBytes), size(r.AddedBytes)), false
+		host := s.row.host
 		return func() tea.Msg {
-			return flashMsg(fmt.Sprintf("已封存 %s：%s 档，%d 个文件，%s；本次新写入金库 %s", r.SnapshotID, r.Tier, r.Files, size(r.PlainBytes), size(r.AddedBytes)))
+			st, err := m.svc.VaultStatus(m.ctx, host)
+			return vaultRefreshed{st, err}
 		}, true
+	case vaultRefreshed:
+		if msg.err == nil {
+			s.row.vault = msg.st // the overview shares the row
+		}
+		return nil, true
 	case execDone:
 		if msg.err != nil {
 			m.flash, m.flashErr = "命令没有成功结束："+msg.err.Error(), true

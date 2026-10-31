@@ -77,6 +77,16 @@ func (r *reviveScreen) help() string {
 }
 func (r *reviveScreen) init(m *Model) tea.Cmd { return nil }
 
+// busy keeps the TUI open while a revive runs: quitting would cut the
+// connection the staging or swap is using.
+func (r *reviveScreen) busy() string {
+	switch r.step {
+	case rvStaging, rvAskSwap, rvSwapping:
+		return "复活正在进行，不能退出；请等它结束（交换失败会自动退回）"
+	}
+	return ""
+}
+
 func (r *reviveScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case planned:
@@ -260,8 +270,14 @@ func planText(rp *service.RevivePlan) string {
 	for _, w := range rp.Warnings {
 		b.WriteString(warnStyle.Render("· "+w) + "\n")
 	}
+	tuiHint := map[string]string{"profile_draft": "按 b 返回，按 d 允许未核实 profile 后重新出计划",
+		"profile_from_snapshot": "按 b 返回，按 s 允许使用快照内的 profile 后重新出计划"}
 	for _, bl := range rp.Blockers {
-		fmt.Fprintf(&b, "%s\n  建议：%s\n", errStyle.Render("无法执行："+bl.Reason), bl.Suggestion)
+		hint := bl.Suggestion
+		if h, ok := tuiHint[bl.Code]; ok {
+			hint = h
+		}
+		fmt.Fprintf(&b, "%s\n  建议：%s\n", errStyle.Render("无法执行："+bl.Reason), hint)
 	}
 	return b.String()
 }

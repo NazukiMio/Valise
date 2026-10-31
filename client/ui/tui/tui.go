@@ -6,7 +6,10 @@
 package tui
 
 import (
+	"bufio"
 	"context"
+	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 
@@ -103,6 +106,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash, m.flashErr = string(msg), false
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
+			for _, s := range m.stack {
+				if b, ok := s.(interface{ busy() string }); ok && b.busy() != "" {
+					m.flash, m.flashErr = b.busy(), true
+					return m, nil
+				}
+			}
 			return m, tea.Quit
 		}
 	}
@@ -163,12 +172,34 @@ func errText(err error) string {
 // execDone is sent when a CLI step run while paused has finished.
 type execDone struct{ err error }
 
-// runCLI pauses the TUI and runs `valise <args>` in the terminal.
+// runCLI pauses the TUI and runs `valise <args>` in the terminal, then
+// waits for Enter so its output can be read before the TUI redraws.
 func (m *Model) runCLI(args ...string) tea.Cmd {
 	if m.opt.Command == nil {
 		return func() tea.Msg {
 			return flashMsg("这个操作需要在终端中运行：valise " + strings.Join(args, " "))
 		}
 	}
-	return tea.ExecProcess(m.opt.Command(args...), func(err error) tea.Msg { return execDone{err} })
+	return tea.Exec(&pausedStep{cmd: m.opt.Command(args...)}, func(err error) tea.Msg { return execDone{err} })
+}
+
+// pausedStep runs a CLI command on the real terminal and holds its output
+// on screen until Enter.
+type pausedStep struct {
+	cmd    *exec.Cmd
+	stdin  io.Reader
+	stdout io.Writer
+}
+
+func (p *pausedStep) SetStdin(r io.Reader)  { p.stdin = r; p.cmd.Stdin = r }
+func (p *pausedStep) SetStdout(w io.Writer) { p.stdout = w; p.cmd.Stdout = w }
+func (p *pausedStep) SetStderr(w io.Writer) { p.cmd.Stderr = w }
+
+func (p *pausedStep) Run() error {
+	err := p.cmd.Run()
+	if p.stdout != nil && p.stdin != nil {
+		fmt.Fprint(p.stdout, "\n[按回车返回 Valise] ")
+		bufio.NewReader(p.stdin).ReadString('\n')
+	}
+	return err
 }

@@ -74,6 +74,9 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 	if !confirm(&ver) {
 		return back(valise.New("cancelled", "已取消，活动目录未改动", "暂存目录保留，可用 valise prev drop 清理"))
 	}
+	// From here on nothing may interrupt the swap (docs/UI.md section 6):
+	// a cancelled caller (Ctrl-C, a closed window) no longer cancels it.
+	ctx = context.WithoutCancel(ctx)
 	stopped := false
 	if rp.StopSource != "" {
 		src, err := porter.Probe(ctx, rp.source)
