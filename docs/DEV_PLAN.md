@@ -110,7 +110,7 @@
 
 ## M6：agent-kit
 
-- **状态**：`In progress`（2026-10-31 开始）
+- **状态**：`Done`（2026-10-31）
 - **用户决定**（2026-10-31）：三种 harness 都做 agent 验收，模型凭据由用户自己登录或填写（Hermes 用现有 Nous 凭据；OpenClaw 验收期间保留登录，结束后登出；DSH 的 DeepSeek Key 由用户填写），验收期间不做带凭据档的封存；MCP 服务端自己写最小实现；技能正文用英文、要求 agent 用用户的语言交流；MCP 接入走用户路径（`valise kit install` 打印 harness 自己的命令，由人照抄执行）。实现约定见 AGENT_KIT.md 第 8 节。
 - **用户决定**（2026-10-31，Hermes 首轮实测后）：模型不可靠地主动封存，增加代码兜底——同一 MCP 连接中第一次调用 Valise 工具时，距上次封存超过 10 分钟就先自动封存（AGENT_KIT.md 8.1）；验收数据结束后用回滚恢复到验收前，并拒绝测试中产生的提议。
 - **交付**：`valise-porter mcp` 的六个工具、四个技能、体检的计算、"安装逃生舱技能"操作；基于变动统计的 agent 归类提议与"降级"单独确认（AGENT_KIT.md 第 3.1 节）。
@@ -118,10 +118,19 @@
   - 在每种 harness 上，agent 都能完成"学习逃生舱 → 风险操作前自动封存 → 交接后新会话能读到交接内容"。
   - 对人工构造的超长会话和膨胀的记忆文件，能产生正确的 finding。
   - MCP 无法读取凭据，也无法写入交接目标以外的文件。
+- **进度**（2026-10-31）：
+  - 已完成全部交付。三种 harness 都用 `valise kit install` 安装技能，并按打印出的方式接入 MCP（Hermes、OpenClaw 用各自的 `mcp add` 命令，DSH 在 profile 补丁层插入 `dsh-mcp-client` 条目）。
+  - Hermes（`ubuntu-vm-x86`，用户的 Nous 账号与 DeepSeek V4.1 flash）：学习逃生舱时先封存再往 `SOUL.md` 加一行提醒，提交归类提议（代码拒绝了把 `shared/nous_auth.json` 改归类）；交接写入 `memories/MEMORY.md`，新会话读出已定与未定事项；用 DeepSeek 模型时 agent 先查看 `valise-upkeep`、主动 `valise_seal` 再写记忆。免费模型（stepfun、beam）不会主动封存，由此增加代码兜底。
+  - OpenClaw（`ubuntu-vm`，用户的 OpenAI 账号，经登录中继登录，验收后登出）：学习时在 `AGENTS.md` 加提醒；交接写入工作区 `MEMORY.md`，新会话读出；写偏好前主动封存。
+  - DSH（`ubuntu-vm`，用户提供的接口与 Key，`headless` profile）：学习时在 `~/.dsh/AGENTS.md` 加提醒；交接追加到 `~/.dsh/AGENTS.md`（DSH 每个会话都加载），新会话读出；写偏好前主动封存。
+  - 实测中发现并修复：Hermes 失败请求转储带 `Authorization` 字段（改归凭据）；Hermes token 在 `session_model_usage`、OpenClaw token 在事件 JSON 中（新增 `usage` 表与 `tokens_json`）；DSH 会话为 zstd 压缩 JSONL；OpenClaw 记忆机制标记漏了 `MEMORY.md`；DSH 补丁层新增条目须用 `insert`；未分类文件经提议进入 soul 档时客户端提示；被频率限制挡回的封存也写审计；DSH agent 因没有记忆文件而写进了同机 OpenClaw 的 `USER.md`（`valise_status` 现在返回实例自己的记忆位置，upkeep 技能禁止写其他 agent 的文件；复测时 agent 改为询问用户）。
+  - 收尾：两把付费 Key 由用户同意后删除；三个实例回滚到验收前的 soul 快照并拒绝全部提议。回滚按设计保留档位外内容（Hermes `config.yaml`、OpenClaw `openclaw.json` 归为凭据，旧版 DSH profile 中技能目录未分类），因此技能与 MCP 配置另用 harness 自己的命令和精确路径撤除。
+  - `testbed/drill.sh` M1–M6（`VALISE_DRILL_REVIVE=1`）输出 `ALL_PASS (failures=0)`，共 117 项。
+  - 第 2、3 项验收以合成实例自动化，写进 `testbed/drill.sh` M6：超长会话与膨胀记忆文件得到 `long_session`、`memory_bloat`；MCP 只有六个工具，任何输出中都没有 `.env` 的内容，把 `.env` 改归类与 root 外路径的提议被拒绝，改动交接区段以上内容的交接被拒绝。
 
 ## M7：桌面 UI（mygo）
 
-- **状态**：`Blocked (depends on M6)`
+- **状态**：`Ready`
 - **交付**（遵守 `docs/UI.md`）：
   - 开工第一步：锁定 mygo 当时最新的 tag，把版本号写入 `docs/UI.md` 第 3 节，并对照该 tag 的文档复核 UI.md 中的全部约定。
   - 实例总览：实例卡片，展示 profile 的核实状态、服务的三个状态、最近一次封存与同步状态、finding 和入口。
