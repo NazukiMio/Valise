@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -154,6 +155,8 @@ type statusResult struct {
 	Unclassified    []enroll.UnclassifiedGroup `json:"unclassified"`
 	ChangingStable  []string                   `json:"changing_stable_files"`
 	PendingProposal int                        `json:"pending_proposals"`
+	MemoryFiles     []string                   `json:"memory_files"` // where this instance keeps its memory (absolute paths)
+	HandoffTargets  []string                   `json:"handoff_targets"`
 	HandoffOpen     string                     `json:"handoff_open_snapshot,omitempty"`
 	Notes           []string                   `json:"notes,omitempty"`
 }
@@ -205,6 +208,21 @@ func (t *Tools) status(ctx context.Context) (any, error) {
 		}
 	}
 	slices.Sort(res.ChangingStable)
+	res.MemoryFiles, res.HandoffTargets = []string{}, []string{}
+	abs := func(root, glob string) string { return filepath.Join(rec.Roots[root], filepath.FromSlash(glob)) }
+	if ck := p.Checkup; ck != nil {
+		for _, m := range ck.MemoryFiles {
+			res.MemoryFiles = append(res.MemoryFiles, abs(m.Root, m.Glob))
+		}
+	}
+	if h := p.Handoff; h != nil {
+		for _, t := range h.Targets {
+			res.HandoffTargets = append(res.HandoffTargets, abs(t.Root, t.Glob))
+		}
+	}
+	if len(res.MemoryFiles) == 0 {
+		res.Notes = append(res.Notes, "profile 没有声明记忆文件：这个实例可能没有长期记忆机制，不要把记忆写到其他 agent 的文件里")
+	}
 	if ps, err := kit.LoadProposals(t.Home, t.Instance); err == nil {
 		res.PendingProposal = len(ps)
 	}

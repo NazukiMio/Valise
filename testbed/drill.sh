@@ -399,6 +399,99 @@ if in_hosts "$lh"; then
 	[ "$(echo $left | tr -d ' ')" = "00" ] && pass "$lh: no login session or process left" || fail "$lh: leftovers after the login relay ($left)"
 fi
 
+# ---------------------------------------------------------------- M6 -----
+# Checkup findings on a constructed instance, and the MCP boundary. The
+# instance is described by a local (unreviewed) drill profile; nothing of a
+# real harness is touched. Real agent runs need model credentials and are
+# recorded in DEV_PLAN.md.
+#   VALISE_DRILL_KIT   host for the synthetic instance (default ubuntu-vm)
+kh="${VALISE_DRILL_KIT:-ubuntu-vm}"
+if in_hosts "$kh"; then
+	echo "== M6: checkup and MCP boundary on $kh"
+	mkdir -p "$keydir/config/profiles"
+	cat > "$keydir/config/profiles/drill-synthetic.yaml" <<'EOF'
+schema: valise-profile/1
+id: drill-synthetic
+display_name: Valise drill synthetic instance
+profile_version: 1
+status: draft
+harness_versions_tested: []
+detect: { binaries: [sh], state_dir_candidates: ["${HOME}/valise-drill-synthetic"], markers_any: [SOUL.md] }
+roots: []
+paths:
+  - { root: state, glob: ".env", category: secrets }
+  - { root: state, glob: "SOUL.md", category: identity }
+  - { root: state, glob: "MEMORY.md", category: memory }
+  - { root: state, glob: "sessions/**", category: sessions }
+provenance: { kind: binary, binary: { name: sh } }
+checkup:
+  sessions: { root: state, glob: "sessions/*.jsonl", format: jsonl, usage_fields: [usage.input, usage.output], time_field: ts }
+  memory_files: [ { root: state, glob: "MEMORY.md", warn_lines: 500 } ]
+  memory_mechanism_markers: [ { root: state, glob: "MEMORY.md" } ]
+handoff:
+  targets: [ { root: state, glob: "MEMORY.md", mode: append_section, max_lines: 50 } ]
+  new_session_hint: "start a new session"
+EOF
+	secret="drill-secret-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 16)"
+	ssh -T -o BatchMode=yes -- "$kh" "mkdir -p ~/valise-drill-synthetic/sessions && cd ~/valise-drill-synthetic &&
+		echo 'You are a drill.' > SOUL.md && printf 'DRILL_SECRET=%s\n' '$secret' > .env && chmod 600 .env &&
+		for i in \$(seq 1 900); do echo \"- memory line \$i\"; done > MEMORY.md &&
+		python3 -c 'import json,time
+now=int(time.time())
+with open(\"sessions/long.jsonl\",\"w\") as f:
+    for d in range(21):
+        f.write(json.dumps({\"ts\":now-(20-d)*86400,\"usage\":{\"input\":30000,\"output\":1000}})+\"\n\")'" \
+		&& pass "$kh: synthetic instance with a 20-day session and a 900-line memory file" || fail "$kh: synthetic instance"
+	V enroll "$kh" --profile drill-synthetic --id drill-synthetic --accept >/dev/null 2>&1 && pass "$kh: synthetic instance enrolled (local profile)" || fail "$kh: enroll synthetic"
+	V checkup "$kh" drill-synthetic --json > "$work/checkup.json" 2>&1
+	findings="$(json_field "$work/checkup.json" '",".join(sorted(f["id"] for f in d["findings"]))')"
+	[ "$findings" = "long_session,memory_bloat" ] && pass "$kh: checkup finds long_session and memory_bloat" || { fail "$kh: findings '$findings'"; cat "$work/checkup.json"; }
+
+	porter_path="$(ssh -T -o BatchMode=yes -- "$kh" 'echo ~/.local/bin/valise-porter')"
+	python3 - "$work/mcp-in.jsonl" <<'EOF'
+import json, sys
+msgs = [
+    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "drill", "version": "1"}}},
+    {"jsonrpc": "2.0", "method": "notifications/initialized"},
+    {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+    {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "valise_status", "arguments": {}}},
+    {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "valise_propose_enrollment", "arguments": {"items": [
+        {"root": "state", "path": ".env", "category": "memory", "reason": "drill: must be refused"},
+        {"root": "state", "path": "../.ssh", "category": "memory", "reason": "drill: must be refused"}]}}},
+    {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "valise_handoff_begin", "arguments": {}}},
+]
+with open(sys.argv[1], "w") as f:
+    for m in msgs:
+        f.write(json.dumps(m) + "\n")
+EOF
+	ssh -T -o BatchMode=yes -- "$kh" "$porter_path mcp --instance drill-synthetic" < "$work/mcp-in.jsonl" > "$work/mcp-out.jsonl" 2>&1
+	python3 - "$work/mcp-out.jsonl" "$secret" > "$work/mcp-check.txt" <<'EOF'
+import json, sys
+out, secret = open(sys.argv[1]).read(), sys.argv[2]
+resp = {r["id"]: r for r in (json.loads(l) for l in out.splitlines() if l.strip())}
+tools = sorted(t["name"] for t in resp[2]["result"]["tools"])
+assert tools == ["valise_checkup", "valise_handoff_begin", "valise_handoff_finish", "valise_propose_enrollment", "valise_seal", "valise_status"], tools
+assert secret not in out, "secret value appeared in MCP output"
+results = resp[4]["result"]["structuredContent"]["results"]
+assert all("拒绝" in r for r in results), results
+sid = resp[5]["result"]["structuredContent"]["snapshot_id"]
+print(sid)
+EOF
+	if [ $? -eq 0 ]; then
+		pass "$kh: MCP offers only the six tools; no credential content in any output; reclassifying .env and paths outside the root refused"
+	else
+		fail "$kh: MCP boundary"; cat "$work/mcp-check.txt" "$work/mcp-out.jsonl" | head -30
+	fi
+	sid="$(tail -1 "$work/mcp-check.txt")"
+	# A handoff that edits anything above its own section is refused.
+	ssh -T -o BatchMode=yes -- "$kh" "cd ~/valise-drill-synthetic && sed -i '1s/.*/- rewritten/' MEMORY.md && printf '\n## Handoff %s\n- next: x\n' \$(date -u +%F) >> MEMORY.md"
+	printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"drill","version":"1"}}}' \
+		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"valise_handoff_finish\",\"arguments\":{\"snapshot_id\":\"$sid\"}}}" \
+		| ssh -T -o BatchMode=yes -- "$kh" "$porter_path mcp --instance drill-synthetic" > "$work/mcp-finish.jsonl" 2>&1
+	grep -q '"isError":true' "$work/mcp-finish.jsonl" && grep -q '原有内容被修改' "$work/mcp-finish.jsonl" \
+		&& pass "$kh: handoff that changed earlier content is refused" || { fail "$kh: handoff check"; cat "$work/mcp-finish.jsonl"; }
+fi
+
 # ------------------------------------------------------------- result -----
 if [ "$failures" -eq 0 ]; then
 	echo "ALL_PASS (failures=0)"
