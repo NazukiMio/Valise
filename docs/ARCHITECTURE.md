@@ -19,8 +19,11 @@
   ├─ ~/.config/valise/instances/<instance_id>.profile.json  登记时生效的 profile（离线封存用）
   ├─ ~/.config/valise/recipients.txt                 age 收件人公钥
   ├─ ~/.config/valise/dedupe/<vault_id>.key          去重密钥（0600）
-  ├─ ~/.config/valise/targets.json                   异地同步目标
-  ├─ ~/.local/share/valise/vault/                    服务器本地金库
+  ├─ ~/.config/valise/instances/<instance_id>.vault.json    金库周期设置（VAULT_FORMAT.md 10.2）
+  ├─ ~/.config/valise/server.json                    服务器名（云备份目录名，添加时确定）
+  ├─ ~/.config/valise/targets.json                   云备份目标与自动同步设置
+  ├─ ~/.local/share/valise/vaults/                   服务器本地金库树（按实例 / 周期分档）
+  ├─ ~/.local/share/valise/vault/                    分档之前的旧金库（只读，可整体删除）
   ├─ <状态目录的同级>/.valise-stage-<op_id>/           复活暂存目录
   ├─ <状态目录的同级>/.valise-prev-<op_id>/            交换后保留的旧状态
   └─ ~/.local/state/valise/{audit.jsonl, journal/, tmp/}
@@ -47,6 +50,8 @@
 - **口令长度**：按 Unicode 字符计数，至少 12 个字符。
 - **客户端数据目录**：`os.UserConfigDir()/valise/`（macOS 为 `~/Library/Application Support/valise/`，Linux 为 `~/.config/valise/`），其中包括 `keystore.age`、`config.json` 与 `servers.json`。ControlMaster 套接字放在 `os.UserCacheDir()/valise/` 下。
 - **已记录服务器**（M7a）：`servers.json` 只保存 SSH 别名列表（`{"servers": ["ubuntu-vm", …]}`），不保存地址、用户名或任何凭据，这些一律交给 `~/.ssh/config`。用 `valise server add|remove|list` 或 TUI 的"导入 SSH 配置"（从 `~/.ssh/config` 中具体的 `Host` 别名里勾选，跳过含通配符的模式）维护。CLI 仍然接受任意别名，不要求先记录；TUI 的总览只列已记录的服务器。服务器上的实例由 RPC `instance_list` 列出（实例 id、profile、是否被取代）。
+- **添加服务器**（2026-10-31 用户决定）：界面上的添加流程依次为：选择 SSH 别名（手动输入或从 `~/.ssh/config` 导入）→ 体检服务器（`doctor`）→ 没有 porter 时引导部署（GitHub Release 下载并验签，或用户显式选择本地构建）→ **自动把本机公钥登记到服务器**（`key register`，注释写本机名与日期）→ 确定服务器名（写入 `server.json`，默认等于别名，用作云备份目录名，之后不可修改）。每一步失败都停在该步并给出原因与建议。多把钥匙、移除公钥等收件人管理放在设置的"高级"中，并用大白话说明后果。
+- **第一次启动**：没有钥匙时进入引导：设口令（两次输入）→ 告诉用户钥匙保存在哪里、口令丢失意味着什么 → 强烈建议立即导出恢复套件（可以稍后）→ 添加第一台服务器。
 - **离线恢复套件**：导出内容包括 `keystore.age`、收件人公钥、指纹，以及一页恢复说明（指向 `tools/standalone-restore/`）。导出为一个目录，内含 `keystore.age`、`recipient.txt`、`FINGERPRINT`、`RECOVERY.md`。导入时核对指纹：先确认 `FINGERPRINT` 与 `recipient.txt` 一致，解锁后再确认身份对应的公钥与 `recipient.txt` 一致，并把指纹展示给用户，与纸质记录比对。
 - **内存处理**：解锁后的身份封装在 `UnlockedKey` 中，`Lock()` 时尽力清零。文档和 UI 中要如实说明：Go 的垃圾回收可能产生副本，无法保证彻底清除。UI 空闲 15 分钟后自动锁定（时长可配置）。
 
@@ -102,7 +107,7 @@
   - 整个快照按凭据层对待：恢复时必须显式同意包含凭据（`restore.py --include-secrets`）；声明了 `secret_tables` 的数据库不剥离。
   - SQLite 仍然使用 `VACUUM INTO` 一致性副本；符号链接全部记录、不跟随。
   - 复活时优先按来源重建身体；只有重建失败、并且目标服务器与封存时是同一架构、同一路径时，才允许用 raw 中的身体兜底，并且必须由用户确认。界面必须如实说明：身体中的运行时常含绝对路径，换路径或换架构后不可用。
-  - raw 首次封存体积大（身体常达数 GB），之后依靠去重增量很小。默认不启用；低频周期执行与保留策略见 DEV_PLAN 的 M8。
+  - raw 首次封存体积大（身体常达数 GB），之后依靠去重增量很小。默认不启用；低频周期执行见 DEV_PLAN 的 M8。
 
 ## 6. 封存流水线
 
@@ -129,7 +134,7 @@
 
 - CLI 或 UI；
 - agent 通过 MCP 触发，但只能封存 `soul` 档，并且有频率限制；
-- 用户开启的定时任务（`systemd --user` timer；推迟到 M3 之后实现）；
+- 用户开启的定时任务（`systemd --user` timer，见第 7 节"自动云备份"）；
 - 复活之前自动封存。
 
 封存由 porter 在服务器上使用收件人公钥加密完成，**不需要客户端在线**。
@@ -138,13 +143,18 @@
 
 - **收件人登记**：`valise key register <服务器>` 把本机密钥的公钥追加到服务器的 `recipients.txt`（每行一个 `age1…`，`#` 开头为注释）。收件人集合变化后，下一次封存新建 epoch。服务器上没有任何收件人时拒绝封存。`--label <说明>` 会在公钥上方写一行注释 `# <说明> (added <日期>)`，用来标明这把钥匙属于谁、用途是什么（例如测试钥匙）；注释不影响收件人集合和指纹。
 - **移除收件人**（`valise key unregister`，M4 实现）：从 `recipients.txt` 删除一把公钥，下一次封存会新建 epoch，此后的快照不再加密给它。**必须向用户如实说明**：已经写入金库的旧快照仍然可以被这把钥匙解开，加密无法追溯撤销；如果钥匙已经泄露，应当把旧快照视为已暴露。拒绝移除最后一把公钥。
-- 每台服务器有一个本地金库。异地同步由 `porter sync --target <name>` 完成，支持 rsync、rclone 和 sftp。目标配置写在 `targets.json` 中；rclone 使用用户自己的 remote 配置，Valise 不保存其中的凭据。
-- 同步顺序固定为：pack → index → 快照 → 元数据。由于金库只追加，任何中断都可以安全续传。
-- **targets.json**：`{"targets": [{"name": "nas", "kind": "rsync", "dest": "nas-test:/mnt/test/nas/valise-vault/"}]}`。`kind` 取值 `rsync`、`rclone`、`sftp`；M3 只实现 `rsync`（经服务器自己的 SSH 配置，加 `--ignore-existing`，按 pack → index → 快照 → 元数据 → epochs/keys → VAULT 的顺序逐个目录同步）。同步结果写入审计记录，`porter status` 据此报告每个目标的最后同步时间。服务器登录目标所需的凭据由用户自己配置，Valise 不保存。
+- **金库树**：每台服务器的本地金库按"实例 / 周期"分档，每个周期是一个独立的 `valise-vault/1` 金库（VAULT_FORMAT.md 第 10 节）。云备份时目标上多一层服务器名：`<dest>/<server_name>/<instance_id>/<周期>/`。
+- **云备份**由 `porter sync --target <name>` 完成，支持 rsync、rclone 和 sftp。目标配置写在 `targets.json` 中；rclone 使用用户自己的 remote 配置，Valise 不保存其中的凭据。
+- 同步按叶子逐个进行，叶子内的顺序固定为：pack → index → 快照 → 元数据 → epochs/keys → PERIOD → VAULT；带 `DELETING` 的叶子跳过。由于叶子内只追加，任何中断都可以安全续传。
+- **targets.json**：`{"targets": [{"name": "nas", "kind": "rsync", "dest": "nas-test:/mnt/test/nas/valise-vault/", "auto": {"every": "24h"}}]}`。`kind` 取值 `rsync`、`rclone`、`sftp`；目前只实现 `rsync`（经服务器自己的 SSH 配置，加 `--ignore-existing`）。界面上未实现的种类不渲染。同步结果写入审计记录，`porter status` 据此报告每个目标的最后同步时间。服务器登录目标所需的凭据由用户自己配置，Valise 不保存。
+- **云端列表**：客户端经 porter 列出目标上的金库树（rsync：`--list-only`，只读目录与文件名、大小），与服务器本地对照，展示每个周期"服务器有 / 云端有 / 两处都有"、逃生舱数量与大小。目标上的元数据文件（`*.meta.json`）可以按需拉取用于展示，不需要私钥。
+- **删除周期**：见 VAULT_FORMAT.md 10.4。RPC 只接受"实例 + 周期 + 位置（服务器或某个目标）"，不接受任意路径。
+- **自动云备份**（2026-10-31 用户决定，两种方式并存）：
+  - **随建立逃生舱顺带同步**（默认方式，不常驻）：每次成功建立逃生舱后（无论由用户、agent 经 MCP、安全网还是定时器触发），porter 检查每个开启了 `auto` 的目标，距上次成功同步超过 `auto.every` 时，启动一个脱离会话的 `valise-porter autosync` 子进程完成同步后退出。它与封存共用 `vault.lock`，拿不到锁就放弃本次，等下一次逃生舱再试。结果写入审计记录。
+  - **定时器**（可选，由用户在实例设置中显式开启）：生成 `valise-seal@<instance>.timer` 与对应的 service（`--user`，遵守 AGENT.md 的 systemd 铁律），按用户设定的频率建立一个 `soul` 档逃生舱，随后按上一条规则顺带同步。界面写明它会在服务器上留下哪两个单元文件；关闭时删除它们。
 - 客户端可以执行 `valise pull`，把金库拉取到本机保存。拉取只复制本机没有的文件（金库只追加），然后做不需要私钥的校验。
 - **带私钥的校验**只在客户端进行：`valise verify --vault <本机目录> --key` 解锁本机密钥，在内存中解密快照清单与 blob，按文件校验 sha256。
 - UI 中"已写入服务器金库"和"已同步到 <目标>"分开展示。
-- v0.1 不提供删除功能。之后的 `prune` 必须由用户显式执行。
 
 ## 8. 复活
 
@@ -196,7 +206,7 @@
 - **健康检查**：按 profile 的 `health.checks` 执行（`systemd_active`、`tcp`、`http`、`argv`）。没有服务单元的实例（前台运行）不由 Valise 启动：计划中说明，交换完成后结果为"已恢复、未启动"，不做健康检查。
 - **新实例的记录**：迁移与克隆成功后，在目标服务器写入实例记录和 profile 副本。`roots` 取目标路径；`provenance`、`service`、`entries` 在目标上重新探测（快照里的记录描述的是原服务器，例如 npm 前缀、二进制路径）；目标上的身体与快照的来源种类不同时，保留快照的来源记录。`local_overrides` 沿用快照头中记录的封存时规则（迁移和克隆都沿用；规则使用相对 root 的路径，跨服务器仍然成立；不依赖原服务器还活着）。
 - **被取代的实例**：迁移或克隆的目标路径与目标服务器上另一个已登记实例的 root 重叠（相同或互相包含）时，计划中列出该实例并说明后果（警告，不阻断）。交换成功后不删除它的记录，而是标记为"已被取代"（`superseded`：取代它的实例、op_id、时间）；它原来的目录按流程保留为 prev。被取代的实例不能再封存，也不能作为回滚目标；用同一 id 重新登记会清除标记。实例 id 不改名，因为金库中的快照按 id 关联。
-- **旧实例清理**：`valise old list <服务器>` 列出被取代的实例、取代它的操作，以及那次操作保留的旧目录和大小。`valise old cleanup <服务器> <实例>` 在用户再次确认后删除这个实例的记录、profile 副本，以及取代它的那次操作保留的旧目录（与 `prev drop` 相同）。只能由用户显式执行，porter 在 Go 代码中删除。金库中该实例的快照不受影响（金库只追加，prune 见 M8）。
+- **旧实例清理**：`valise old list <服务器>` 列出被取代的实例、取代它的操作，以及那次操作保留的旧目录和大小。`valise old cleanup <服务器> <实例>` 在用户再次确认后删除这个实例的记录、profile 副本，以及取代它的那次操作保留的旧目录（与 `prev drop` 相同）。只能由用户显式执行，porter 在 Go 代码中删除。金库中该实例的逃生舱不受影响（按周期删除见 VAULT_FORMAT.md 10.4）。
 - **交换日志**：`~/.local/state/valise/journal/<op_id>.json`，每次状态变化原子写入并 fsync，内容包括模式、实例、各 root 的 live / stage / prev 路径、已搬动的身体目录、npm 身体的原版本、当前状态与时间。结束（`HEALTHY` 或 `ROLLED_BACK`）后移到 `journal/done/`，`hello` 只报告未完成的日志。
 - **故障注入**（仅用于演练与测试）：客户端隐藏参数 `--inject-fault health|crash-at=<状态>` 通过环境变量传给本次 porter：`health` 让健康检查一律失败；`crash-at` 在写入该状态后立即退出进程。
 - **prev**：`valise prev list <服务器>` 列出保留的旧状态及其天数；`valise prev drop <服务器> <op_id>` 由用户显式执行，porter 在 Go 代码中调用 `os.RemoveAll` 删除。

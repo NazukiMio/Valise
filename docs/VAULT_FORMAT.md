@@ -4,7 +4,7 @@
 
 ## 1. 设计目标
 
-1. **只追加**：已经写入的文件永不修改。任何能够同步文件的工具（rsync、rclone、网盘）都可以直接作为异地存储。
+1. **只追加**：已经写入的文件永不修改。任何能够同步文件的工具（rsync、rclone、网盘）都可以直接作为异地存储。唯一的删除方式是由用户显式删除一整个周期的金库（第 10 节）。
 2. **内容寻址去重**：未发生变化的数据（例如已经冷存档的旧会话）只需存储一次。
 3. **服务器只持有公钥也能写入**：加密使用 age 收件人公钥完成。
 4. **可脱离 Valise 恢复**：只需要 `age`、`zstd` 和几十行脚本，就能恢复全部数据。
@@ -167,3 +167,61 @@ age -d -i identity.txt snapshots/<id>.age > snapshot.json       # 快照头
 ```
 
 `tools/standalone-restore/restore.py` 只使用 Python 3 标准库，通过子进程调用 `age` 和 `zstd`。参数为 `--vault --identity --snapshot --out [--include-secrets]`，恢复完成后逐个文件校验 sha256。文件写到 `<out>/<root>/<path>`（`body_patch` 写到 `<out>/valise/body.patch`），并恢复权限位与 mtime；符号链接按记录重建。未加 `--include-secrets` 时跳过 `secrets` 和 `unclassified` 类文件；`raw` 档快照整体按凭据层对待，必须加 `--include-secrets` 才能恢复。
+
+## 10. 金库树 `valise-vault-tree/1`（按实例与周期分档）
+
+> 用户于 2026-10-31 决定：服务器与异地都按"服务器 / 实例 / 周期"分档，每个周期是一个独立的 `valise-vault/1` 金库。第 1–9 节的格式不变，本节只规定金库之上的目录层级。
+
+### 10.1 目录布局
+
+服务器本地（`~/.local/share/valise/vaults/`）：
+
+```text
+vaults/
+├── TREE                                   # 明文 JSON，写入后永不修改
+└── <instance_id>/
+    ├── 2026-10-01_2026-10-31/             # 一个完整的 valise-vault/1 金库（叶子）
+    │   ├── PERIOD                         # 明文 JSON，写入后永不修改
+    │   ├── VAULT  epochs/  keys/  packs/  index/  snapshots/
+    │   └── DELETING                       # 只在删除进行中存在（10.4）
+    └── 2026-11-01_2026-11-30/
+```
+
+异地（同步目标的 `dest` 之下多一层服务器名）：
+
+```text
+<dest>/<server_name>/TREE
+<dest>/<server_name>/<instance_id>/<周期>/…
+```
+
+`TREE` 的内容：`{"format": "valise-vault-tree/1", "server_name": "ubuntu-vm", "created_at": "…"}`。`server_name` 由用户在添加服务器时确定（默认是 SSH 别名，规则同实例 id），保存在服务器的 `~/.config/valise/server.json`，之后不可修改。
+
+`PERIOD` 的内容：
+
+```json
+{ "format": "valise-period/1", "instance_id": "openclaw", "unit": "month", "tz": "Asia/Shanghai",
+  "start": "2026-10-01", "end": "2026-10-31" }
+```
+
+### 10.2 周期
+
+- `unit` 取 `week`（周一开始）、`month`（自然月，默认）、`quarter`（自然季度）。`tz` 是设置周期时客户端所在的 IANA 时区。设置保存在服务器的 `~/.config/valise/instances/<id>.vault.json`（`{"unit": "month", "tz": "…"}`），没有这个文件时按 `month` 与 UTC 处理。
+- 叶子目录名为 `<start>_<end>`（`tz` 下的日期，首尾都包含）。封存时按封存时刻在 `tz` 下的日期选择叶子：落在现有叶子范围内就写入它，否则新建叶子。
+- 新叶子的 `start` 是上一个叶子 `end` 的次日（没有上一个叶子时，是该日期所在周期的第一天），`end` 是 `start` 所在周期的最后一天。因此修改周期设置只影响下一个叶子，已有叶子永不改名。
+- 每个叶子有自己的 `vault_id`、epoch 与去重参数，去重只在叶子内进行；新叶子的第一份逃生舱是全量。
+
+### 10.3 读取与兼容
+
+- 叶子就是 `valise-vault/1` 金库：第 9 节的脱离恢复方法与 `restore.py` 直接作用于某个叶子目录，不需要了解金库树。
+- 快照 id 全局唯一（ULID），客户端遍历全部叶子的 `snapshots/*.meta.json` 定位快照。
+- **分档之前的金库**（`~/.local/share/valise/vault/`，整台服务器一个金库）保持可读，界面上显示为"分档之前的旧金库"，可以像一个叶子那样整体删除（10.4）；新的逃生舱一律写入金库树。异地已有的旧金库同样处理。
+
+### 10.4 删除周期
+
+金库只追加的含义调整为：**叶子内部只追加；只能由用户显式操作，整个叶子一起删除。**
+
+- 不能删除实例当前正在写入的叶子；不能只删除叶子中的部分逃生舱。
+- 删除前，客户端列出这个叶子在另一处（服务器 / 每个同步目标）是否有完整副本（快照数量与 pack 集合一致）；没有任何其他副本时，必须再确认一次，文案写明"删除后这些逃生舱将无法恢复"。服务器与每个同步目标上的删除分别确认，互不连带。
+- 删除过程：先写入 `DELETING`（内容为删除开始时间与发起者），再删除 `snapshots/`、`index/`、`packs/`、`keys/`、`epochs/`，最后删除 `VAULT`、`PERIOD`、`DELETING` 和目录本身。中途中断时，带 `DELETING` 的叶子在列表中显示为"删除未完成"，只提供继续删除；同步跳过带 `DELETING` 的叶子。
+- 服务器上的删除由 porter 在 Go 代码中执行（`os.RemoveAll`）；同步目标上的删除用同步工具自身完成（rsync：用空目录加只匹配该叶子的过滤规则执行 `--delete`），不在目标主机上执行任何命令。
+- 不提供自动保留策略（用户 2026-10-31 决定）。
