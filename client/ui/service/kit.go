@@ -63,6 +63,7 @@ type KitPlan struct {
 	NoSkills   string                     `json:"no_skills,omitempty"`   // why skills cannot be installed
 	MCPCommand []string                   `json:"mcp_command,omitempty"` // the harness's own command, never run by Valise
 	MCPDoc     string                     `json:"mcp_doc,omitempty"`
+	MCPSnippet string                     `json:"mcp_snippet,omitempty"` // configuration to paste, never applied by Valise
 	AgentLine  string                     `json:"agent_line"`
 }
 
@@ -103,6 +104,7 @@ func (s *Service) KitInstall(ctx context.Context, host, instance string, dryRun 
 		" — then use the valise-enroll skill: 我给你装了一个逃生舱，你学习一下。"
 	if ak := target.Profile.AgentKit; ak != nil {
 		plan.MCPDoc = ak.MCPConfigDoc
+		plan.MCPSnippet = strings.NewReplacer("${PORTER}", found.Path, "${INSTANCE}", instance).Replace(ak.MCPConfigSnippet)
 		for _, a := range ak.MCPAddArgv {
 			a = strings.ReplaceAll(a, "${PORTER}", found.Path)
 			a = strings.ReplaceAll(a, "${INSTANCE}", instance)

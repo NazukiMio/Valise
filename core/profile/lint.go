@@ -352,6 +352,11 @@ func (c *checker) checkTop(p *Profile) {
 	if a := p.AgentKit; a != nil && a.MCPAddArgv != nil {
 		c.argvVars("agent_kit.mcp_add_argv", a.MCPAddArgv, true, VarPorter, VarInstance)
 	}
+	if a := p.AgentKit; a != nil && a.MCPConfigSnippet != "" {
+		if err := checkVars(a.MCPConfigSnippet, VarPorter, VarInstance); err != nil {
+			c.add("agent_kit.mcp_config_snippet", "%v", err)
+		}
+	}
 }
 
 func (c *checker) checkProvenance(pv *Provenance) {

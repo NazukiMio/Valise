@@ -4,11 +4,14 @@
 # Sources: the package READMEs shipped with that exact version — dsh (README),
 # dsh-credentials-local (CRED) — the composed web profile from
 # `dsh web --dump-config` (DUMP), and observation of the install (OBS).
+# M6 (2026-10-31): first real sessions with a user-supplied provider in the
+# shipped `headless` profile; package READMEs dsh-skill-filesystem (SKILL),
+# dsh-agent-instructions (INSTR) and dsh-mcp-client (MCP).
 # DSH is a developer preview: re-verify on every version bump.
 schema: valise-profile/1
 id: dsh
 display_name: DeepSeek Harness
-profile_version: 2
+profile_version: 3
 status: draft
 harness_versions_tested: ["0.2.1-rc.5"]
 docs: https://github.com/deepseek-ai/deepseek-harness
@@ -25,6 +28,8 @@ paths:
   - { root: state, glob: ".credentials.yaml", category: secrets }   # CRED: default credential store
   - { root: state, glob: ".env", category: secrets }                # CRED: harness-home .env fallback
   - { root: state, glob: "cordis.patch.yml", category: config }     # README: home-level patch layer
+  - { root: state, glob: "AGENTS.md", category: identity }          # INSTR: user-global instructions, loaded into every session
+  - { root: state, glob: "skills/**", category: skills }            # SKILL: user-dsh skill root <dshHome>/skills
   - { root: state, glob: "profiles/*/node_modules/**", category: cache, note: "pnpm 按 package.json 安装的插件，可重建" }   # README
   - { root: state, glob: "profiles/*/package.json", category: config }       # README
   - { root: state, glob: "profiles/*/cordis.patch.yml", category: config }   # README
@@ -61,15 +66,31 @@ exclusive_secrets: []              # verify: pending
 native: { export_argv: null }
 
 checkup:
-  sessions: { root: state, glob: "sessions/**", format: jsonl, usage_fields: null }   # DUMP: jsonl persistence; file layout verify: pending (no session yet)
+  # OBS (M6): sessions/<project>/session-<uuid>/session.v4.jsonl.zstd (zstd JSONL, event "time" in ms) next to
+  # session.lock; headless runs record no token usage, so tokens are estimated.
+  sessions: { root: state, glob: "sessions/*/*/session.v*.jsonl.zstd", format: jsonl, time_field: time }
   memory_files: []
   memory_mechanism_markers: []     # 由各记忆插件的子 profile 追加
   native_options_doc: null
 
+# Without a memory plugin the user-global AGENTS.md is the only native file
+# every new session loads (INSTR); handoff appends a dated section there.
 handoff:
-  targets: []                      # 没有记忆插件时，交接写入的目标 verify: pending
-  new_session_hint: null
+  targets: [ { root: state, glob: "AGENTS.md", mode: append_section, max_lines: 120 } ]
+  new_session_hint: "Start a new dsh session (run dsh again without --resume); it loads ~/.dsh/AGENTS.md."
 
 agent_kit:
-  skills_dir: null                 # DUMP: dsh-skill-filesystem is disabled in the web profile; verify: pending for other profiles
+  skills_dir: { root: state, path: "skills/" }   # SKILL: user-dsh root; enabled in the shipped headless profile, disabled in web (DUMP)
   mcp_config_doc: null             # verify: pending
+  # MCP: no CLI command; append this entry to the patch layer of the profile you run, e.g. ~/.dsh/profiles/headless/cordis.patch.yml
+  # (dsh-app-boot: new entries go in an insert list; an id-only patch must name an existing entry)
+  mcp_config_snippet: |
+    # append to ~/.dsh/profiles/<profile>/cordis.patch.yml
+    - insert:
+        - id: mcp-valise
+          name: '@deepseek-ai/dsh-mcp-client'
+          config:
+            serverName: valise
+            transport: stdio
+            command: ${PORTER}
+            args: [mcp, --instance, ${INSTANCE}]

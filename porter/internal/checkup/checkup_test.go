@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
+
 	"valise/core/agentkit"
 	"valise/core/enroll"
 	"valise/core/profile"
@@ -161,5 +163,23 @@ func TestTokensFromJSON(t *testing.T) {
 	r := Run(rec, p, now)
 	if r.Current == nil || r.Current.Tokens != 1500 || r.Current.Estimated || r.Current.Days > 0.001 {
 		t.Fatalf("%+v %v", r.Current, r.Notes)
+	}
+}
+
+func TestCompressedJSONL(t *testing.T) {
+	root := t.TempDir()
+	var plain strings.Builder
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&plain, `{"type":"user/message","time":%d,"data":"%s"}`+"\n", now.UnixMilli()-int64(100-i)*1000, strings.Repeat("x", 400))
+	}
+	enc, _ := zstd.NewWriter(nil)
+	write(t, filepath.Join(root, "sessions/p/session-1/session.v4.jsonl.zstd"), string(enc.EncodeAll([]byte(plain.String()), nil)))
+	write(t, filepath.Join(root, "sessions/p/session-1/session.lock"), "")
+	rec := &enroll.Record{InstanceID: "demo", Roots: map[string]string{"state": root}}
+	p := &profile.Profile{Checkup: &profile.Checkup{Sessions: &profile.SessionsSpec{Root: "state", Glob: "sessions/*/*/session.v*.jsonl.zstd", Format: "jsonl", TimeField: "time"}}}
+	r := Run(rec, p, now)
+	if r.SessionCount != 1 || r.Current == nil || r.Current.Events != 100 || !r.Current.Estimated ||
+		r.Current.Tokens != int64(plain.Len())/4 || r.Current.Days <= 0 {
+		t.Fatalf("%+v", r.Current)
 	}
 }

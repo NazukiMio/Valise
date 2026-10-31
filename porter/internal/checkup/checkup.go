@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	_ "modernc.org/sqlite"
 
 	"valise/core/agentkit"
@@ -220,11 +222,22 @@ func jsonlSessions(rec *enroll.Record, s *profile.SessionsSpec, daily map[string
 		if err != nil {
 			continue
 		}
-		sc := bufio.NewScanner(f)
+		var r io.Reader = f
+		var zr *zstd.Decoder
+		if strings.HasSuffix(path, ".zst") || strings.HasSuffix(path, ".zstd") {
+			if zr, err = zstd.NewReader(f, zstd.WithDecoderConcurrency(1)); err != nil {
+				f.Close()
+				continue
+			}
+			r = zr
+		}
+		var plain int64
+		sc := bufio.NewScanner(r)
 		sc.Buffer(make([]byte, 64<<10), 64<<20)
 		usage := false
 		for sc.Scan() {
 			line := sc.Bytes()
+			plain += int64(len(line)) + 1
 			ss.Events++
 			var ev map[string]any
 			if json.Unmarshal(line, &ev) != nil {
@@ -251,9 +264,12 @@ func jsonlSessions(rec *enroll.Record, s *profile.SessionsSpec, daily map[string
 				daily[dayOf(t)] += tok
 			}
 		}
+		if zr != nil {
+			zr.Close()
+		}
 		f.Close()
 		if !usage {
-			ss.Tokens, ss.Estimated = ss.Bytes/4, true
+			ss.Tokens, ss.Estimated = plain/4, true
 		}
 		if ss.Last.IsZero() {
 			ss.Last = st.ModTime().UTC()

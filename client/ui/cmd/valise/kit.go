@@ -187,6 +187,12 @@ func (c *cli) kit(ctx context.Context, args []string) error {
 		}
 		fmt.Fprintf(c.out, "  在服务器 %s 上运行：\n    %s\n", host, strings.Join(quoted, " "))
 	}
+	if plan.MCPSnippet != "" {
+		fmt.Fprintf(c.out, "  在服务器 %s 上把下面的配置加入 harness 的配置文件：\n", host)
+		for _, l := range strings.Split(strings.TrimRight(plan.MCPSnippet, "\n"), "\n") {
+			fmt.Fprintf(c.out, "    %s\n", l)
+		}
+	}
 	if plan.MCPDoc != "" {
 		fmt.Fprintf(c.out, "  配置说明：%s\n", plan.MCPDoc)
 	}

@@ -163,5 +163,6 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 ### 8.5 安装逃生舱技能
 
 - `valise kit install <服务器> <实例>`：先列出将要写入的文件，用户确认后由 porter 把 `agent-kit/skills/` 下的四个技能写到 profile 的 `agent_kit.skills_dir`（每个技能一个子目录，已存在且内容不同时先备份为 `SKILL.md.valise-bak-<时间>`）。技能文件随客户端分发。
-- 然后打印 MCP 的接入方法：profile 有 `agent_kit.mcp_add_argv` 时，展开 `${PORTER}`、`${INSTANCE}` 后打印 harness 自己的命令供用户执行；同时打印一句可以转告 agent 的话。Valise 不执行这条命令，也不修改 harness 配置。
+- 然后打印 MCP 的接入方法：profile 有 `agent_kit.mcp_add_argv` 时，展开 `${PORTER}`、`${INSTANCE}` 后打印 harness 自己的命令供用户执行；没有命令、只有 `agent_kit.mcp_config_snippet` 时打印展开后的配置片段；同时打印一句可以转告 agent 的话。
+- `format: jsonl` 的会话文件以 `.zst` 或 `.zstd` 结尾时先解压；大小按磁盘上的字节计，token 估算按解压后的字节计。Valise 不执行这条命令，也不修改 harness 配置。
 - 技能正文用英文书写，并要求 agent 用用户的语言与用户交流；触发说明同时列出中英文说法。
