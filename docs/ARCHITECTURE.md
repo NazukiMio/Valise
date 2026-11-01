@@ -3,25 +3,28 @@
 ## 1. 拓扑
 
 ```text
-[ valise CLI / mygo 桌面 UI ]
+[ valise CLI / TUI / mygo 桌面 UI ]
               │
 [ 客户端服务层 (Go) ]
   ├─ Keystore：age X25519 身份，口令加密（age 原生 scrypt）
+  ├─ 服务器访问：Valise 自己的 ssh_config、每台服务器的日常钥匙与管理钥匙、Valise 自己的 ssh-agent（第 2.1 节）
   ├─ Profile 仓库：签名的资料包（单独发布，PROFILES.md 1.1）+ 用户本地 profile
   ├─ 金库读取与解密（只在客户端内存中解密）
-  ├─ 隧道与登录中继
-  └─ SSH 传输：系统 OpenSSH + ControlMaster 复用
+  ├─ 隧道：管理页、本地页面转发、登录中继
+  ├─ 安装与原生界面（INSTALL.md）
+  └─ SSH 传输：系统 OpenSSH；日常钥匙可用 ControlMaster 复用，管理钥匙每次新开连接
               │
               │  SSH stdio：JSONL JSON-RPC 2.0（控制面）/ 原始字节流（数据面）
               ▼
 [ 服务器：valise-porter（按需唤起，不监听任何端口）]
+  ├─ ~/.ssh/authorized_keys                          日常钥匙（带强制命令）与管理钥匙各一行，注释 valise-daily / valise-admin
   ├─ ~/.config/valise/instances/<instance_id>.json   实例记录
   ├─ ~/.config/valise/instances/<instance_id>.profile.json  登记时生效的 profile（离线封存用）
   ├─ ~/.config/valise/recipients.txt                 age 收件人公钥
   ├─ ~/.config/valise/dedupe/<vault_id>.key          去重密钥（0600）
   ├─ ~/.config/valise/instances/<instance_id>.vault.json    金库周期设置（VAULT_FORMAT.md 10.2）
-  ├─ ~/.config/valise/server.json                    服务器名（云备份目录名，添加时确定）
-  ├─ ~/.config/valise/targets.json                   云备份目标与自动同步设置
+  ├─ ~/.config/valise/server.json                    服务器名（空间站目录名，添加时确定）
+  ├─ ~/.config/valise/targets.json                   空间站（同步目标）与自动同步设置
   ├─ ~/.local/share/valise/vaults/                   服务器本地金库树（按实例 / 周期分档）
   ├─ ~/.local/share/valise/vault/                    分档之前的旧金库（只读，可整体删除）
   ├─ <状态目录的同级>/.valise-stage-<op_id>/           复活暂存目录
@@ -34,12 +37,37 @@
 - **控制面**：`ssh -T <host> "<porter_path> rpc"` 启动一个会话级子进程，通过 stdin/stdout 交换单行 JSON-RPC 2.0 消息。首个请求必须是 `hello`，返回 porter 版本、协议版本、架构、HOME 路径、可用工具（`systemctl --user`、`git`、`npm`、`uv`、`rsync`、`rclone`；按登录环境的 PATH 查找，与登记、复活一致），以及**未完成的交换日志**。协议主版本不一致时，客户端拒绝继续。交换日志的内容格式在 M4 定义；在此之前，`hello` 只按 `journal/` 目录中的 `<op_id>.json` 文件名列出 op_id。
 - **数据面**：大数据流使用独立的一次性 SSH 调用，例如 `porter blob-read`（加密 blob 从服务器流向客户端）和 `porter stage-write --op <id>`（复活时，明文 tar 流从客户端流向服务器）。明文只会出现在客户端内存中，以及目标服务器的暂存目录里。
 - **连接复用**：优先复用用户已有的 ControlMaster；没有时，使用 `-o ControlMaster=auto -o ControlPath=<客户端缓存目录>/cm-%C -o ControlPersist=60`。Unix 套接字路径有长度上限（macOS 为 104 字节，OpenSSH 建立 master 时还会追加约 17 字节的临时后缀），缓存目录过长时改用 `/tmp/valise-<uid>`（必须是本人所有、权限 0700 的真实目录）；仍不满足时不使用连接复用。
+- **只有日常钥匙使用连接复用**：管理钥匙的连接一律 `-o ControlPath=none -o IdentitiesOnly=yes`，每次操作新开，用完即关（第 2.1 节）。
 - **协议版本**：格式为 `<主>.<次>`，当前为 `1.0`。主版本号不一致时客户端拒绝继续；次版本号只表示向后兼容的新增。
 - **porter 部署**：客户端从 GitHub Release 下载目标架构的二进制，用随客户端发布的公钥校验 `SHA256SUMS` 的 minisign 签名，再核对哈希；或者由用户显式选择本地构建产物。上传时先执行 `cat > ~/.local/bin/valise-porter.tmp`，再 `chmod 0755`，最后 `mv` 原子替换。
   - Release 资产命名：`valise-porter_linux_amd64`、`valise-porter_linux_arm64`、`SHA256SUMS`（`sha256sum` 输出格式）、`SHA256SUMS.minisig`。远端架构由 `uname -s -m` 判定，只支持 Linux 的 `x86_64` / `aarch64`。
   - minisign 校验：同时接受预哈希（`ED`，BLAKE2b-512）与旧版（`Ed`）签名，并且必须校验 trusted comment 的全局签名。签名公钥随客户端发布；客户端尚未配置发布公钥时，拒绝从 Release 部署，只允许上传本地构建产物。
   - 在 `chmod` 与 `mv` 之间，执行 `valise-porter.tmp version --json`：确认它能在目标架构上运行，并且它自报的 SHA-256 与本地文件一致，才执行 `mv`。任何一步失败都不替换已有的 porter。
-  - 部署目标固定为 `~/.local/bin/valise-porter`，全程不使用 sudo。
+  - 部署目标固定为 `~/.local/bin/valise-porter`，全程不使用 sudo。部署与更新都走管理钥匙。
+  - **检查更新**：客户端经 GitHub API 列出 Release，发现比服务器上更新的 porter 时提示，用户确认后按上述流程更新；不自动更新。发布签名公钥尚未配置的开发构建，界面不显示"一键部署"，只提供"上传本地构建"，不把尚未建立的发布链描述为可用。
+
+### 2.1 两把钥匙与操作分级（2026-11-01 用户决定）
+
+目的：打开 Valise 不等于拿到服务器的完整权限；敏感操作必须重新输入 Valise 口令，并且这一限制由 OpenSSH 与 porter 的代码执行，而不是只靠界面。
+
+| | 日常钥匙 | 管理钥匙 |
+| :--- | :--- | :--- |
+| 生成 | `ssh-keygen -t ed25519 -N ''`，存于 `<客户端数据目录>/keys/<服务器>/daily`（0600） | `ssh-keygen -t ed25519 -N <Valise 口令>`，存于 `keys/<服务器>/admin`（0600）。私钥加密由 OpenSSH 完成，Valise 不自研 |
+| 服务器端 | `authorized_keys` 中：`restrict,port-forwarding,permitopen="127.0.0.1:*",permitopen="[::1]:*",command="$HOME/.local/bin/valise-porter serve --tier daily" <公钥> valise-daily`（`verify: pending`：各靶机 OpenSSH 对端口通配与强制命令的支持） | 普通一行 `<公钥> valise-admin`，即完整 shell |
+| 能做什么 | 第 2.2 节的日常操作，以及转发到服务器本机回环端口 | 全部操作 |
+| 使用方式 | 可用 ControlMaster | 输入 Valise 口令后由 `ssh-add -t <窗口>` 载入 **Valise 自己启动的 ssh-agent**（默认 15 分钟，设置中可改为 1–120 分钟）；窗口到期由 ssh-agent 清除；退出 Valise 时结束这个 ssh-agent（它是 Valise 自己的子进程，不涉及用户的进程）。连接不复用 |
+
+- **Valise 口令**：加密钥匙（`keystore.age`）与所有管理钥匙使用同一个口令，用户只记一个；两者各自用标准工具加密（age scrypt、OpenSSH 私钥格式）。修改口令时两者一起重新加密。Valise 不另设登录密码。
+- **porter 的日常模式**：`serve --tier daily` 读取 `SSH_ORIGINAL_COMMAND`，只允许 `rpc`、`blob-read`、`vault-cat`、`version`；`rpc` 中凡属第 2.2 节"管理操作"的方法一律返回"需要管理权限"。即使日常钥匙被盗，也拿不到 shell，也不能着陆、删除、改收件人或改同步目标。
+- **原生界面、harness 安装与工具安装**：每次都要求管理钥匙已解锁，并新开一条独立的 SSH 连接；绝不复用日常通道或任何已有连接。
+- **自带钥匙的服务器**：用户经自己的 `~/.ssh/config` 别名接入、未迁移到 Valise 双钥匙的服务器，Valise 无法在服务器端设限。界面标明"软限制"：敏感操作前仍要求输入 Valise 口令（以解开 `keystore.age` 验证），并提供"迁移到 Valise 双钥匙"。
+- **如实说明的局限**：管理钥匙解锁期间，本机若已有恶意程序，它可以使用 ssh-agent 中的钥匙；双钥匙防的是"别人打开你开着的 Valise"和"agent 借客户端越权"。Windows 上 ssh-agent 是系统服务，Valise 自启 agent 的方式 `verify: pending`，未核实前 Windows 版每次敏感操作都直接要求口令、不提供时间窗口。
+
+### 2.2 操作分级
+
+- **日常操作**（日常钥匙）：`hello`/doctor、状态与实例列表、登记报告（只读）、建立逃生舱、同步到空间站、空间站列表、体检、`seal_log`、拉取与校验、技能状态、定时器状态、管理页隧道（不含令牌）、本地页面转发、只读管理动作。
+- **管理操作**（管理钥匙）：接受登记与归档建议、安装或卸载技能、登记或移除收件人、添加或修改同步目标与自动同步、删除周期、设置定时器与周期、服务器名、`prev drop` 与旧实例清理、逃生舱着陆（含 resume）、登录授权、代取管理页令牌、部署与更新 porter、原生界面、harness 安装、工具安装、非只读管理动作、迁移到双钥匙。
+- 新增 RPC 方法时必须在 `core/vaultrpc` 中显式归入一级；未归类的方法按管理操作处理。
 
 ## 3. Keystore
 
@@ -48,10 +76,24 @@
 - **收件人**：对应的 `age1…` 公钥登记到服务器的 `recipients.txt`。支持多个收件人，例如再加一把离线纸质备份钥匙。
 - **指纹**：收件人公钥字符串（`age1…`）的 SHA-256 十六进制值的前 16 位。`VAULT` 中的 `recipient_fingerprints` 使用同一定义。
 - **口令长度**：按 Unicode 字符计数，至少 12 个字符。
-- **客户端数据目录**：`os.UserConfigDir()/valise/`（macOS 为 `~/Library/Application Support/valise/`，Linux 为 `~/.config/valise/`），其中包括 `keystore.age`、`config.json` 与 `servers.json`。ControlMaster 套接字放在 `os.UserCacheDir()/valise/` 下。
-- **已记录服务器**（M7a）：`servers.json` 只保存 SSH 别名列表（`{"servers": ["ubuntu-vm", …]}`），不保存地址、用户名或任何凭据，这些一律交给 `~/.ssh/config`。用 `valise server add|remove|list` 或 TUI 的"导入 SSH 配置"（从 `~/.ssh/config` 中具体的 `Host` 别名里勾选，跳过含通配符的模式）维护。CLI 仍然接受任意别名，不要求先记录；TUI 的总览只列已记录的服务器。服务器上的实例由 RPC `instance_list` 列出（实例 id、profile、是否被取代）。
-- **添加服务器**（2026-10-31 用户决定）：界面上的添加流程依次为：选择 SSH 别名（手动输入或从 `~/.ssh/config` 导入）→ 体检服务器（`doctor`）→ 没有 porter 时引导部署（GitHub Release 下载并验签，或用户显式选择本地构建）→ **自动把本机公钥登记到服务器**（`key register`，注释写本机名与日期）→ 确定服务器名（写入 `server.json`，默认等于别名，用作云备份目录名，之后不可修改）。每一步失败都停在该步并给出原因与建议。多把钥匙、移除公钥等收件人管理放在设置的"高级"中，并用大白话说明后果。
-- **第一次启动**：没有钥匙时进入引导：设口令（两次输入）→ 告诉用户钥匙保存在哪里、口令丢失意味着什么 → 强烈建议立即导出恢复套件（可以稍后）→ 添加第一台服务器。
+- **客户端数据目录**：`os.UserConfigDir()/valise/`（macOS 为 `~/Library/Application Support/valise/`，Linux 为 `~/.config/valise/`），其中包括 `keystore.age`、`config.json`、`servers.json`、`ssh_config`、`known_hosts` 与 `keys/`。ControlMaster 套接字与 Valise 的 ssh-agent 套接字放在 `os.UserCacheDir()/valise/` 下。
+- **已记录服务器**：`servers.json` 保存服务器列表，每项为 `{"name": "<别名>", "source": "valise" | "ssh_config"}`。
+  - `valise`：手动添加的服务器。地址、端口、用户名写在 Valise 自己的 `ssh_config`（`Host <别名>`、`HostName`、`Port`、`User`、`IdentityFile keys/<别名>/daily`、`IdentitiesOnly yes`、`UserKnownHostsFile <客户端数据目录>/known_hosts`），每次调用 OpenSSH 时用 `-F` 传入；用户的 `~/.ssh/config` 不被修改。不保存任何密码。
+  - `ssh_config`：从用户 `~/.ssh/config` 导入的别名（只列具体的 `Host`，跳过通配符），连接参数与密钥交给用户自己的配置。
+  - CLI 仍然接受任意别名，不要求先记录；界面只列已记录的服务器。旧版只含别名字符串的 `servers.json` 读作 `ssh_config` 来源。服务器上的实例由 RPC `instance_list` 列出。
+- **添加服务器**（2026-11-01 改版）：每一步失败都停在该步并给出原因与建议。
+  1. **连接方式**：手动填写（地址、端口，默认 22、用户名、登录方式：密码或已有私钥文件、用户自选的别名），或从 SSH 配置导入。
+  2. **确认服务器身份**：首次连接时展示主机密钥指纹（SHA256），说明"第一次连接无法自动验证，请与服务商控制台显示的指纹比对，或确认网络可信"，用户确认后写入 Valise 的 `known_hosts`。之后指纹变化一律停止，说明可能的原因（重装系统、中间人），由用户决定。
+  3. **安装两把钥匙**（`valise` 来源）：用密码或用户私钥登录**一次**，经标准输入发送 Valise 自带的固定脚本，把日常钥匙与管理钥匙的公钥追加到 `~/.ssh/authorized_keys`（目录与文件权限按 OpenSSH 要求设为 0700 / 0600，已存在同注释的旧行先替换）。密码只在 OpenSSH 自己的提示中输入（TUI 把终端交给 ssh；GUI 用 Valise 的 askpass 程序转交，只在内存中经过），不保存。此后一律用钥匙登录。`ssh_config` 来源的服务器可选"迁移到 Valise 双钥匙"，同样步骤。
+  4. **体检服务器**（`doctor`）。
+  5. **部署 Valise 服务端**：没有 porter 时提供"一键部署"（第 2 节，走管理钥匙）。日常钥匙的强制命令固定指向部署目标 `$HOME/.local/bin/valise-porter`，所以在部署之前就能写好。
+  6. **登记加密公钥**（`key register`，注释写本机名与日期）：需要加密钥匙已存在；用户在第一次启动时跳过了钥匙时，在这里或第一次建立逃生舱前补上（见下一条）。
+  7. **确定服务器名**（写入 `server.json`，默认等于别名，用作空间站目录名，之后不可修改）。
+  8. **发现 harness**：已有实例可直接纳入管理（登记）；没有时引导安装第一个 harness（INSTALL.md）。两条路都可达，不强迫已有用户重装。
+  多把钥匙、移除公钥等收件人管理放在设置的"高级"中，并用大白话说明后果。
+- **第一次启动**：建议设置 Valise 口令与加密钥匙并备份，但允许暂时跳过，直接去添加服务器。
+  - 添加第一台 `valise` 来源的服务器时必须设置 Valise 口令（管理钥匙需要），加密钥匙同时生成。
+  - 第一次建立逃生舱前，必须走完"备份钥匙"引导：导出恢复套件，或明确选择"我知道风险，稍后备份"（界面写明：口令或钥匙丢失后，所有逃生舱都无法打开）。
 - **离线恢复套件**：导出内容包括 `keystore.age`、收件人公钥、指纹，以及一页恢复说明（指向 `tools/standalone-restore/`）。导出为一个目录，内含 `keystore.age`、`recipient.txt`、`FINGERPRINT`、`RECOVERY.md`。导入时核对指纹：先确认 `FINGERPRINT` 与 `recipient.txt` 一致，解锁后再确认身份对应的公钥与 `recipient.txt` 一致，并把指纹展示给用户，与纸质记录比对。
 - **内存处理**：解锁后的身份封装在 `UnlockedKey` 中，`Lock()` 时尽力清零。文档和 UI 中要如实说明：Go 的垃圾回收可能产生副本，无法保证彻底清除。UI 空闲 15 分钟后自动锁定（时长可配置）。
 
@@ -68,7 +110,7 @@
 
 实现细节（M2 确定）：
 
-- **profile 来源**：客户端内置仓库 `profiles/*.yaml`，另外读取客户端本机的 `os.UserConfigDir()/valise/profiles/*.yaml`（标记为"本地，未经审核"）。porter 自身不携带任何 profile。
+- **profile 来源**：已安装的签名资料包（PROFILES.md 1.1），另外读取客户端本机的 `os.UserConfigDir()/valise/profiles/*.yaml`（标记为"本地，未经审核"）。porter 自身不携带任何 profile。
 - **PATH**：非交互 SSH 的 PATH 通常不包含用户级安装前缀。porter 执行 `detect.binaries`、`version_argv`、`discover_argv` 和来源查询时，使用用户登录 shell 的 PATH（`$SHELL -lc` 读取一次），并补上 `~/.local/bin`。这些命令都设有超时。
 - **实例范围**：M2 每种 harness 在每台服务器上只探测默认状态目录（`state_dir_candidates` 中第一个存在且有标记文件的）。harness 自身的多 profile（例如 `~/.hermes/profiles/<name>`、`~/.openclaw-<name>`）推迟处理。
 - **instance_id**：默认等于 profile id，可用 `--id` 指定，命名规则与 profile id 相同。
@@ -132,29 +174,33 @@
 
 触发封存的方式有四种：
 
-- CLI 或 UI；
+- CLI 或 UI（包括首次备份教程）；
 - agent 通过 MCP 触发，但只能封存 `soul` 档，并且有频率限制；
-- 用户开启的定时任务（`systemd --user` timer，见第 7 节"自动云备份"）；
+- 用户开启的定时任务（`systemd --user` timer，见第 7 节"自动同步到空间站"）；
 - 复活之前自动封存。
 
 封存由 porter 在服务器上使用收件人公钥加密完成，**不需要客户端在线**。
+
+**教学逃生舱**（2026-11-01 用户决定）：首次备份教程中建立的逃生舱带教学标记。标记不写入金库格式（VAULT_FORMAT.md 不变），而是由客户端在封存请求中带 `purpose: "tutorial"`，porter 把它写入该次封存的审计记录，经 `seal_log` 返回给界面。界面在逃生舱列表与详情中标"教学"，并说明它只证明当时的流程与内容，不证明之后新增的配置、渠道凭据或工作区已被覆盖；用户完成重要配置后，界面适时建议建立一次实际的逃生舱。金库只追加，教学逃生舱与其他逃生舱一样保留，随所在周期一起删除。服务器丢失、只剩空间站副本时教学标记随审计记录丢失，界面按普通逃生舱显示。
 
 ## 7. 金库与同步
 
 - **收件人登记**：`valise key register <服务器>` 把本机密钥的公钥追加到服务器的 `recipients.txt`（每行一个 `age1…`，`#` 开头为注释）。收件人集合变化后，下一次封存新建 epoch。服务器上没有任何收件人时拒绝封存。`--label <说明>` 会在公钥上方写一行注释 `# <说明> (added <日期>)`，用来标明这把钥匙属于谁、用途是什么（例如测试钥匙）；注释不影响收件人集合和指纹。
 - **移除收件人**（`valise key unregister`，M4 实现）：从 `recipients.txt` 删除一把公钥，下一次封存会新建 epoch，此后的快照不再加密给它。**必须向用户如实说明**：已经写入金库的旧快照仍然可以被这把钥匙解开，加密无法追溯撤销；如果钥匙已经泄露，应当把旧快照视为已暴露。拒绝移除最后一把公钥。
-- **金库树**：每台服务器的本地金库按"实例 / 周期"分档，每个周期是一个独立的 `valise-vault/1` 金库（VAULT_FORMAT.md 第 10 节）。云备份时目标上多一层服务器名：`<dest>/<server_name>/<instance_id>/<周期>/`。
-- **云备份**由 `porter sync --target <name>` 完成，支持 rsync、rclone 和 sftp。目标配置写在 `targets.json` 中；rclone 使用用户自己的 remote 配置，Valise 不保存其中的凭据。
+- **金库树**：每台服务器的本地金库按"实例 / 周期"分档，每个周期是一个独立的 `valise-vault/1` 金库（VAULT_FORMAT.md 第 10 节）。同步到空间站时目标上多一层服务器名：`<dest>/<server_name>/<instance_id>/<周期>/`。
+- **空间站**（界面原称云备份）由 `porter sync --target <name>` 完成，支持 rsync、rclone 和 sftp。目标配置写在 `targets.json` 中；rclone 使用用户自己的 remote 配置，Valise 不保存其中的凭据。
 - 同步按叶子逐个进行，叶子内的顺序固定为：pack → index → 快照 → 元数据 → epochs/keys → PERIOD → VAULT；带 `DELETING` 的叶子跳过。由于叶子内只追加，任何中断都可以安全续传。
 - **targets.json**：`{"targets": [{"name": "nas", "kind": "rsync", "dest": "nas-test:/mnt/test/nas/valise-vault/", "auto": {"every": "24h"}}]}`。`kind` 取值 `rsync`、`rclone`、`sftp`；目前只实现 `rsync`（经服务器自己的 SSH 配置，加 `--ignore-existing`）。界面上未实现的种类不渲染。同步结果写入审计记录，`porter status` 据此报告每个目标的最后同步时间。服务器登录目标所需的凭据由用户自己配置，Valise 不保存。
 - **云端列表**：客户端经 porter 列出目标上的金库树（rsync：`--list-only`，只读目录与文件名、大小），与服务器本地对照，展示每个周期"服务器有 / 云端有 / 两处都有"、逃生舱数量与大小。目标上的元数据文件（`*.meta.json`）可以按需拉取用于展示，不需要私钥。
 - **删除周期**：见 VAULT_FORMAT.md 10.4。RPC 只接受"实例 + 周期 + 位置（服务器或某个目标）"，不接受任意路径。
-- **自动云备份**（2026-10-31 用户决定，两种方式并存）：
+- **自动同步到空间站**（2026-10-31 用户决定，两种方式并存）：
   - **随建立逃生舱顺带同步**（默认方式，不常驻）：每次成功建立逃生舱后（无论由用户、agent 经 MCP、安全网还是定时器触发），porter 检查每个开启了 `auto` 的目标，距上次成功同步超过 `auto.every` 时，启动一个脱离会话的 `valise-porter autosync` 子进程完成同步后退出。它与封存共用 `vault.lock`，拿不到锁就放弃本次，等下一次逃生舱再试。结果写入审计记录。
   - **定时器**（可选，由用户在实例设置中显式开启）：生成 `valise-seal@<instance>.timer` 与对应的 service（`--user`，遵守 AGENT.md 的 systemd 铁律），按用户设定的频率建立一个 `soul` 档逃生舱，随后按上一条规则顺带同步。界面写明它会在服务器上留下哪两个单元文件；关闭时删除它们。
-- 客户端可以执行 `valise pull`，把金库拉取到本机保存。拉取只复制本机没有的文件（金库只追加），然后做不需要私钥的校验。
+- **取回本地**分两种，界面分别说明目的地、是否包含凭据、文件的保护状态：
+  - **保存加密备份**：`valise pull`，把金库（或一个周期）拉取到本机目录。拉取只复制本机没有的文件（金库只追加），然后做不需要私钥的校验。文件仍是加密的，打开需要加密钥匙与口令。
+  - **导出可查看的文件**（M13 实现）：解锁加密钥匙，在内存中解密一个逃生舱，写到用户选择的本机目录。默认不含凭据层，包含时必须单独确认；导出的目录与文件权限设为 0700 / 0600，界面写明"这些文件不再加密，请自行妥善保管或用完删除"。
 - **带私钥的校验**只在客户端进行：`valise verify --vault <本机目录> --key` 解锁本机密钥，在内存中解密快照清单与 blob，按文件校验 sha256。
-- UI 中"已写入服务器金库"和"已同步到 <目标>"分开展示。
+- UI 中"已写入服务器金库"、"已同步到 <空间站>"与"已取回本地"分开展示；建立成功时写明目前是否只存在于原服务器。
 
 ## 8. 复活
 
@@ -191,12 +237,12 @@
 
 ### 8.2.1 实现细节（M4 确定）
 
-- **快照来源**：客户端先从快照所在服务器 `valise pull` 到本机，在内存中解密快照与 blob；明文以 tar 流经 `porter stage-write --op <id>` 写入目标服务器的暂存目录。profile 优先取客户端内置（或本地）的同 id、同 `profile_version` 的 profile；没有时，改用快照头中的 `profile_doc`（封存时使用的完整 profile），计划中标明"来自快照，未经当前客户端审核"，并且必须显式传入 `--allow-snapshot-profile`（其中的服务安装命令等仍逐字展示）。两者都没有时停止。`status: draft` 的 profile 必须显式传入 `--allow-draft-profile`。
+- **快照来源**：客户端先从快照所在服务器 `valise pull` 到本机，在内存中解密快照与 blob；明文以 tar 流经 `porter stage-write --op <id>` 写入目标服务器的暂存目录。profile 优先取已安装资料包（或本地）的同 id、同 `profile_version` 的 profile；没有时，改用快照头中的 `profile_doc`（封存时使用的完整 profile），计划中标明"来自快照，未经当前客户端审核"，并且必须显式传入 `--allow-snapshot-profile`（其中的服务安装命令等仍逐字展示）。两者都没有时停止。着陆能力未核实（`capabilities.restore` 不是 `tested`，或 `status: draft`）的 profile 必须显式传入 `--allow-draft-profile`（PROFILES.md 1.2）。
 - **目标路径**：目标的状态目录由目标服务器按 profile 的 `detect.state_dir_candidates` 解析（使用目标用户的 HOME）。其余 root：原路径在原状态目录下的，映射到新状态目录下的同一相对路径；在原 HOME 下的，映射到新 HOME 下；都不是时停止，由用户用 `--root <id>=<路径>` 指定。
 - **符号链接**：目标的 root 本身是符号链接时，v0.1 拒绝复活并说明原因（链接常由其他工具管理；交换时被改名的会是链接而不是数据）；封存不受影响。root 的上级路径中有符号链接（例如 macOS 的 `/var`、把 `/home` 软链到数据盘）不影响原子交换，允许。
 - **交换单位**：只交换没有嵌套在其他 root 内的 root（例如工作区在状态目录内时，只交换状态目录，工作区随之移动）。暂存目录为 `<root 的父目录>/.valise-stage-<op>-<root>`，必须与 root 在同一文件系统。
 - **回滚的携带语义**：回滚只替换快照档位内的类别；当前活目录中档位以外的内容（例如用 `soul` 档回滚时的凭据、未分类文件、工作区、缓存）在服务停止后**复制**进暂存目录；位于 `body.paths` 的身体目录（形如 `<目录>/**`）在交换窗口内整体改名搬入新活目录，并记入交换日志。迁移与克隆不携带任何内容：目标目录整体替换（已有目录按流程保留为 prev）。
-- **运行时前提**：按来源重建身体所需的工具（npm、git、uv、pipx）必须已在目标服务器的登录 PATH 中；计划阶段检查，缺少时停止，并给出 profile 中的 `fresh_install_doc`。Valise 不安装任何运行时。
+- **运行时前提**：按来源重建身体所需的工具（npm、git、uv、pipx）必须已在目标服务器的登录 PATH 中；计划阶段检查，缺少时停止，并给出 profile 中的 `fresh_install_doc`。着陆流程不安装运行时；需要时由用户经 INSTALL.md 的安装流程（官方方案或原生界面）先行准备。
 - **来源校验**：npm 身体在计划阶段向记录中的 registry 查询该精确版本的 integrity，与登记时记录的值不一致就停止。git 身体检查 remote 一致、commit 可取得。v0.1 中 git 身体只支持"目标已有同一 commit 的身体，保持不变"；需要重建而 `bootstrap_argv` 尚未核实时，计划停止并说明（raw 档兜底见第 5 节）。
 - **服务单元**：目标服务器上没有 profile 声明的服务单元时，执行 profile 的 `service.install_argv`（harness 自带的安装命令）。计划中逐字展示这条命令，用户确认后才执行。Valise 不自己写单元文件。
 - **克隆范围**：v0.1 的克隆只支持到另一台服务器（或另一个用户），同一服务器内的克隆推迟（通常需要改端口、服务名等 harness 配置）。
@@ -240,7 +286,7 @@ profile 可以把某些凭据声明为 `exclusive_secrets`，例如社交平台�
 
 ## 10. 审计
 
-`audit.jsonl` 每行记录：时间、操作、实例、发起者（`client` / `agent-mcp` / `timer`）、结果、快照 id、字节数。审计记录绝不包含文件内容或凭据内容。
+`audit.jsonl` 每行记录：时间、操作、实例、发起者（`client` / `agent-mcp` / `timer`）、结果、快照 id、字节数、可选的原因与用途（如 `tutorial`），以及访问级别（`daily` / `admin`）。审计记录绝不包含文件内容或凭据内容。
 
 ## 11. 错误与文案
 

@@ -138,6 +138,8 @@
 
 `<snapshot_id>.meta.json` 的作用是让用户在没有私钥的情况下也能列出快照。**元数据中不包含任何路径或文件名。**
 
+教学标记、建立者与原因等界面信息不写入元数据，也不写入任何金库文件，而是由 porter 的审计记录提供（ARCHITECTURE.md 第 6 节）；因此改版不改变本格式。
+
 ```json
 { "format": "valise-meta/1", "snapshot_id": "s_…", "instance_id": "openclaw", "tier": "soul", "created_at": "…",
   "file_count": 42, "plain_bytes": 1234567, "added_bytes": 34567, "epoch": 1, "profile_id": "openclaw" }

@@ -1,6 +1,6 @@
 # Harness Profile 规范 `valise-profile/1`
 
-Profile 是 Valise 了解某种 harness 的**唯一途径**。Go 代码里不允许出现任何 harness 的具体知识。新增一种 harness，只需要提交一份 profile。
+Profile 是 Valise 了解某种 harness 的**唯一途径**：发现、路径与分类、来源、安装、服务、管理页、登录、健康检查、备份、体检、逃生舱技能与管理动作。Go 代码里不允许出现任何 harness 的具体知识；通用引擎负责安全执行，profile 的准确性决定具体 harness 的体验和保护范围。新增一种 harness，只需要提交一份 profile。
 
 ## 1. 来源与信任
 
@@ -16,8 +16,25 @@ Profile 是 Valise 了解某种 harness 的**唯一途径**。Go 代码里不允
 - **没有签名或签名不对的本地文件**：不作为资料包安装；经用户同意后把其中的 profile 作为"本地 profile"写入本地目录。同意之前列出每份 profile 中会被执行的命令（服务安装、身体重建、管理页令牌等 argv），界面标"未经审核"。
 - **没有安装资料包时**：登记无法识别任何 harness，界面与 CLI 引导安装。已经登记的实例不受影响：服务器上保存着登记时的 profile，逃生舱里也带着完整的 profile（`profile_doc`），因此着陆不依赖资料包。
 - 开发构建没有 Release 公钥，只能把仓库的 `profiles/` 作为本地 profile 使用（演练脚本即如此）。
-- `status: draft` 表示至少有一个条目尚未在靶机上核实。使用 draft profile 复活时，必须显式传入 `--allow-draft-profile`。
-- 每一条无法从官方文档或真实安装中确认的规则，都必须标注 `verify: pending`。**宁可留空，不可猜测。**
+- `status: draft` 表示至少有一个条目尚未在靶机上核实。每一条无法从官方文档或真实安装中确认的规则，都必须标注 `verify: pending`。**宁可留空，不可猜测。**
+
+### 1.2 按能力展示支持程度（2026-11-01 用户决定）
+
+整体的 draft / verified 标签不足以说明"能做什么"。profile 新增 `capabilities`，逐项记录核实状态，界面按能力展示，并注明适用版本与环境：
+
+```yaml
+capabilities:
+  install:  { status: tested, versions: ["2026.10.9"], env: "Ubuntu 26.04 arm64, npm 用户级前缀", date: 2026-11-xx }
+  manage:   { status: tested, versions: [...], env: "...", note: "管理页连接测试通过" }
+  backup:   { status: tested, ... }
+  restore:  { status: untested, note: "着陆尚未在此版本演练" }
+  login:    { status: partial, note: "OpenAI 回环登录已测；其他供应商未测" }
+```
+
+- 能力项：`install`（官方方案）、`manage`（发现、状态、管理页、动作）、`backup`（登记与建立逃生舱）、`restore`（着陆）、`login`（登录授权）、`checkup`（体检）、`kit`（逃生舱技能）。状态：`tested` / `partial` / `untested` / `failed`；`tested` 必须写 `versions` 与 `env`。
+- 官方列表区分"可安装"与"可管理"；列表用概览等级，详情按能力展示，例如"管理页连接测试通过""备份已测试""着陆尚未演练"。不因存在 YAML 就宣称全面支持。
+- 用户本地 profile 不用笼统的"未验证"制造压力：展示来源（本地、未经审核）、已测试与未测试的能力、失败项及具体影响。
+- **着陆保护保留**：`restore` 不是 `tested`（或 profile 为 `status: draft`）时，复活仍必须显式传入 `--allow-draft-profile`；界面写明"着陆尚未在此版本测试"与可能的影响，而不是只写"未核实"。旧 profile 没有 `capabilities` 时，按 `status` 推断：`verified` 视为全部 `tested`，`draft` 视为全部 `untested`。
 
 ## 2. Schema
 
@@ -29,11 +46,15 @@ profile_version: 1               # profile 内容每次变更都要加 1
 status: draft                    # draft | verified
 harness_versions_tested: []      # 例如 ["2026.10.3"]，填写核实时使用的版本
 docs: https://…                  # 官方文档地址，只作参考，Valise 不会抓取
-display:                         # 可选：界面上的实例卡片图标（2026-10-31 用户决定）
-  color: "#E8603C"               # 主色，#RRGGBB
-  icon: |                        # 字符画，原样取自 harness 官方 CLI/TUI 的启动画面（不做改动），最多 16 行、每行最多 32 个显示宽度；注明出处
+display:                         # 可选：界面上的实例卡片图标（2026-11-01 用户决定新标准）
+  color: "#E8603C"               # 主色，#RRGGBB；图标只用这一种颜色
+  icon: |                        # 标准图标：最多 12 行 × 24 列（显示宽度），按 UI.md 8.1 原样显示，不缩放
     ...
-  icon_source: "…"               # 出处（官方 TUI 的哪个画面、哪个版本）；未核实时写 verify: pending
+  icon_compact: |                # 可选，紧凑图标：最多 6 行 × 12 列；用于窄终端与实例页标题
+    ...
+  icon_source: "…"               # 出处：据哪个官方图案改画、其许可证；未核实时写 verify: pending
+
+capabilities: {}                 # 按能力的核实状态，见 1.2 节
 
 extends: null                    # 子 profile 填写父 profile 的 id，见第 4 节
 when: null                       # 子 profile 的生效条件，例如 { exists: { root: state, glob: "x/y.json" } }
@@ -71,6 +92,19 @@ body:
   paths: [ { root: state, glob: "example-agent/**" } ]   # 状态目录中属于身体的部分
   bootstrap_argv: []             # 按 git 来源重建后执行的命令，以 argv 数组形式书写，在身体目录中运行
   fresh_install_doc: https://…   # 全新安装时的官方文档链接，只展示给用户，Valise 不执行
+
+install:                         # 可选：官方方案（INSTALL.md 第 3 节），只写已核实的版本
+  id: npm-user-prefix
+  summary: "安装 Example 1.2.3，约 300 MB，不需要管理员权限"
+  requires: [ { binary: node, version: ">=22" } ]
+  steps:
+    - { kind: npm_global, package: example, version: "1.2.3", integrity: "sha512-…" }
+    - { kind: script, url: "https://example.com/install.sh", sha256: "…", interpreter: [bash], args: ["--user"], runtime_downloads: "会从 example.com 下载 Node 运行时" }
+    - { kind: argv, argv: [example, setup, --baseline] }
+
+native_cli: [example, onboard]   # 可选：原生界面的命令（INSTALL.md 第 2 节）
+
+actions: []                      # 可选：管理动作（INSTALL.md 第 5 节，schema 在 M12 定稿；之前 lint 只接受空列表）
 
 relocation: { env: EXAMPLE_HOME }   # 状态目录可以通过此变量改到别处；不支持时写 null（此时克隆只能到另一个用户或另一台服务器）
 
@@ -152,7 +186,9 @@ agent_kit:
 - "同时出现"按两种情况判定：glob 字符串完全相同；或者 `secrets` 的 glob 不含通配符，并且能被同一 root 下某条 `body`、`cache`、`ignore` 规则（包括 `body.paths`）匹配。
 - glob 语法：以 `/` 分隔路径段，`**` 匹配零个或多个路径段，其余段使用 Go `path.Match` 的语法。
 - `secret_tables` 中的表名只能包含字母、数字和下划线。
-- `display.icon` 最多 16 行，每行显示宽度不超过 32，不得包含控制字符或 ANSI 转义；`display.color` 必须是 `#RRGGBB`。界面按卡片大小缩放显示（盲文点阵字符画按点缩放），profile 中保存原样。
+- `display.icon` 最多 12 行、每行显示宽度不超过 24；`display.icon_compact` 最多 6 行、每行不超过 12。只允许单宽字符（推荐盲文 U+2800–U+28FF，空白用 `⠀`；也可用框线与 ASCII），不得包含全角字符、emoji、制表符、控制字符或 ANSI 转义；`display.color` 必须是 `#RRGGBB`。图标原样显示、不在运行时缩放；只有标准图标时，紧凑场景按点缩放兜底（UI.md 8.1）。
+- `install.steps` 中 `script` 必须有 `sha256` 与 `runtime_downloads`（没有时写空字符串表示已确认没有）；`url` 必须是 `https`；所有命令都是 argv 数组。
+- `capabilities` 中状态为 `tested` 的项必须有 `versions` 与 `env`。
 - `entries[].auth` 中 `url_argv` 与 `token_argv` 最多出现一个；`url_suffix` 只能与 `token_argv` 一起出现，并且只能引用 `${TOKEN}`；`url_field` 只能与 `url_argv` 一起出现，必须是点分字段路径。
 - profile 使用严格解析，出现 schema 中没有的字段即报错。子 profile 只能包含元信息字段（`schema`、`id`、`display_name`、`profile_version`、`status`、`harness_versions_tested`、`docs`、`extends`、`when`）以及 `paths`、`consistency`、`checkup`；它的父 profile 必须出现在同一次 lint 的文件集合中。
 

@@ -4,6 +4,8 @@
 
 ## 一、目标 Harness
 
+> 2026-11-01 改版后，官方方案与"可安装"结论必须按具体版本与安装方式重新核实（官方安装方式、认证流程、管理页），结果记入 profile 的 `capabilities` 与本表；下表为 2026-10-30 的核实结果。
+
 | 项目 | 已核实的事实 | 对 Valise 的意义 |
 | :--- | :--- | :--- |
 | DeepSeek Harness（dsh）<br>https://github.com/deepseek-ai/deepseek-harness | 2026-08-13 开源，MIT 许可证，基于 Node.js 和 Cordis 插件架构；通过 `npx @deepseek-ai/dsh web` 启动，Web UI 位于 `127.0.0.1:3080`；会话日志采用只追加设计；处于开发者预览阶段，可能出现破坏性变更 | 首批 profile 之一；需要锁定精确版本 |

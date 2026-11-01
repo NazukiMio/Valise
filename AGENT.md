@@ -2,7 +2,7 @@
 
 ## 一句话产品定义
 
-Valise 是开源的活体 Agent 逃生舱。它通过系统 OpenSSH 接入服务器，依据经过审核的 Harness Profile 登记 agent，把 agent 的灵魂（人格、记忆、技能、会话、状态）与凭据分层加密，封存进内容寻址金库。之后由代码在同机、异机、跨架构的环境中完成回滚、迁移、克隆和自动回退。此外，Valise 还提供记忆健康体检，以及无头服务器上的登录中继。
+Valise 是开源的自托管 Agent 安装与管理入口。它通过系统 OpenSSH 接入服务器（新手手动填地址即可），部署按需唤起的服务端 porter，依据经过审核的 Harness Profile 安装或接入 harness、打开管理页、完成登录授权与日常管理。保障方面，它把 agent 的灵魂（人格、记忆、技能、会话、状态）与凭据分层加密，封存进内容寻址金库，由代码在同机、异机、跨架构的环境中完成回滚、迁移、克隆和自动回退。此外还提供记忆健康体检。
 
 ## 仓库目录结构
 
@@ -15,11 +15,13 @@ valise/
 │   ├── ARCHITECTURE.md       # 传输、密钥、登记、封存、复活
 │   ├── VAULT_FORMAT.md       # 金库公开格式
 │   ├── PROFILES.md           # Harness Profile 规范与初稿
-│   ├── LOGIN_RELAY.md        # 登录中继与 Web 入口
+│   ├── LOGIN_RELAY.md        # 登录中继、管理页与本地页面转发
+│   ├── INSTALL.md            # Harness 安装、原生界面、管理动作、第三方工具
 │   ├── AGENT_KIT.md          # MCP 工具与技能
-│   ├── UI.md                 # mygo 桌面 UI 规范
+│   ├── UI.md                 # TUI 与 mygo 桌面 UI 规范
 │   ├── DEV_PLAN.md           # 里程碑
-│   └── REFERENCES.md         # 已核实的参考
+│   ├── REFERENCES.md         # 已核实的参考
+│   └── REDESIGN_PROPOSAL.md  # 2026-11-01 改版意见稿（历史输入，已并入各规范）
 ├── profiles/                 # Harness Profile 数据：openclaw.yaml、hermes.yaml、dsh.yaml …
 ├── core/                     # 共享纯逻辑 (module valise/core)：profile 模型与校验、金库格式、RPC 类型、profilelint
 ├── porter/                   # 远端搬运工 valise-porter (module valise/porter)：静态二进制，按需唤起
@@ -43,8 +45,10 @@ fake-ssh 只能验证本地协议连通性。凡是涉及真实 Linux 用户态�
 | 别名 | 架构 | 系统 | 用户 / sudo | 地址 | 用途 | 部署的 Harness |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `ubuntu-vm` | ARM64 | Ubuntu 26.04.1 LTS / Linux 7.0.0-38 | `parallels` / 免密 sudo | `10.211.55.5`（Parallels 网桥） | 主力开发与基准靶机，预装 Go 1.26.8、Python 3.14.4、age、zstd、git | OpenClaw、DSH（npm 用户级前缀安装，不使用 sudo） |
-| `ubuntu-vm-x86` | x86_64 | Ubuntu 26.10 / Linux 7.3.0-9 | `nazukimio` / 无 sudo | `192.168.101.109` | 跨架构迁移目标；验证纯用户态部署 | Hermes（官方方式，用户级安装） |
-| `nas-test` | x86_64 | TrueNAS 27.0.0-RC.1 / Linux 6.18.52（ZFS 2.4.4） | `nas` / 无 sudo | `192.168.101.101` | 异地金库同步目标，预装 rsync、rclone、restic | 不安装 harness |
+| `ubuntu-vm-x86` | x86_64 | Ubuntu 26.10 / Linux 7.3.0-9 | `nazukimio` / 无 sudo | `192.168.101.108`（DHCP，可能变化） | 跨架构迁移目标；验证纯用户态部署 | Hermes（官方方式，用户级安装） |
+| `nas-test` | x86_64 | TrueNAS 27.0.0-RC.1 / Linux 6.18.52（ZFS 2.4.4） | `nas` / 无 sudo | `192.168.101.109`（DHCP，可能变化） | 异地金库同步目标，预装 rsync、rclone、restic | 不安装 harness |
+
+> 改版后的 OpenClaw 端到端验收（空服务器 → 部署 → 安装 → 管理页）需要一台没有装过 harness 的干净靶机；开工前与用户确认用哪台、是否允许重置。
 
 ### 操控铁律
 
@@ -68,6 +72,8 @@ fake-ssh 只能验证本地协议连通性。凡是涉及真实 Linux 用户态�
 3. `/usr/local/bin/valise-porter`
 4. 裸命令 `valise-porter`（兼容 `authorized_keys` 中 `command="..."` 的强制命令模式）
 
+使用 Valise 双钥匙的服务器，porter 固定在 `~/.local/bin/valise-porter`（日常钥匙的强制命令指向它，ARCHITECTURE.md 第 2.1 节）；探测链只用于自带钥匙的服务器。
+
 ## fake-ssh 测试替身规范
 
 ### 它是什么
@@ -90,6 +96,7 @@ fake-ssh 是一个**冒充 `ssh` 命令的本地小程序**。客户端平时调
 ### 它测不了的东西（必须上靶机）
 
 - 端口转发（`-L`、`-N`）、ControlMaster、ProxyJump、真实的认证流程；
+- `authorized_keys` 的强制命令与 `permitopen` 限制、ssh-agent 的时间窗口、首次密码登录与主机密钥确认；
 - `systemd --user`、真实的文件权限与属主、跨架构二进制；
 - 真实 harness 的登记、封存与复活。
 
@@ -98,16 +105,18 @@ fake-ssh 是一个**冒充 `ssh` 命令的本地小程序**。客户端平时调
 
 ## 安全与文案红线
 
-1. **零登录凭据留存**：Valise 绝不保存登录服务器用的 SSH 密码或私钥，这些全部交给系统 OpenSSH 和 SSH Agent。
-2. **凭据分层**：凭据只按 profile 的声明分类。只有 `soul-secrets` 和 `full` 两个档位会把凭据封存进金库，并且做独立标记。凭据内容和任何文件内容都不得出现在日志、审计记录、错误信息或 MCP 返回值中。
-3. **文案去黑话**：界面用语以 `docs/PRODUCT.md` 8.1 的对照表为准（逃生舱、建立逃生舱、逃生舱着陆、管理页、登录授权、云备份、体检……）。错误信息必须包含"失败原因 + 下一步建议"，原始技术细节默认折叠。
-4. **诚实状态**：以下每一组都是彼此独立的状态，严禁合并成一个笼统的绿色徽标：
+1. **登录凭据**：Valise 绝不保存 SSH 密码；首次手动添加服务器时，密码只在 OpenSSH 自己的提示中输入一次（GUI 经 Valise 的 askpass 转交，只在内存中经过）。Valise 为每台服务器生成两把专用密钥：日常钥匙（无口令、0600，服务器端用强制命令限制为 porter 日常模式）与管理钥匙（`ssh-keygen` 以 Valise 口令加密，解锁后进入 Valise 自己的 ssh-agent，带时间窗口）。用户自己的 SSH 密钥仍交给系统 OpenSSH 和用户的 SSH Agent，Valise 不读取。详见 ARCHITECTURE.md 第 2.1 节。
+2. **模型凭据**：Valise 不提供 API Key 输入辅助。用户在 harness 原生界面或管理页里自己填写；Valise 不解析、不读取、不保存、不记录原生界面中的输入与回显，也不声称这些字节"完全不经过 Valise"（GUI 的终端经 Valise 中转，INSTALL.md 第 2 节）。
+3. **凭据分层**：凭据只按 profile 的声明分类。只有 `soul-secrets` 和 `full` 两个档位会把凭据封存进金库，并且做独立标记。凭据内容和任何文件内容都不得出现在日志、审计记录、错误信息或 MCP 返回值中。
+4. **文案去黑话**：界面用语以 `docs/PRODUCT.md` 8.1 的对照表为准（逃生舱、建立逃生舱、逃生舱着陆、管理页、登录授权、空间站、原生界面、体检……）。错误信息必须包含"失败原因 + 下一步建议"，原始技术细节默认折叠。
+5. **诚实状态**：以下每一组都是彼此独立的状态，严禁合并成一个笼统的绿色徽标：
    - 隧道已建立、端口在监听、健康检查通过；
    - 封存已写入服务器金库、已同步到异地；
-   - profile 已核实、未核实。
+   - profile 的每项能力已核实、未核实（PROFILES.md 1.2）；
+   - 命令已退出（退出码）、服务或功能真正健康。
 
    未实现的能力不渲染按钮，也不用灰色禁用按钮画饼。
-5. **不背书**：任何界面、技能、文档都不点名推荐第三方插件。只给出选择标准，以及该 harness 官方文档中的原生选项。
+6. **不背书**：任何界面、技能、文档都不点名推荐第三方插件或工具。只给出选择标准，以及该 harness 官方文档中的原生选项。安装检查写"未发现基础疑点"，绝不写"安全"。
 
 ## Git 提交约定
 
