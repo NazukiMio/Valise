@@ -124,15 +124,7 @@ func (c *cloudScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		case "r":
 			return tea.Batch(m.loadServer(c.host), c.list(m, t.Name)), true
 		case "s":
-			svc, ctx, host, name := m.svc, m.ctx, c.host, t.Name
-			m.flash, m.flashErr = "正在同步到 "+name+"…", false
-			return func() tea.Msg {
-				res, err := svc.Sync(ctx, host, name)
-				if err != nil {
-					return failed(err)
-				}
-				return flashMsg("已同步到 " + name + "：" + itoa(len(res.Leaves)) + " 个周期、" + itoa(len(res.Snapshots)) + " 个逃生舱")
-			}, true
+			return m.push(newSync(c.host, t.Name)), true
 		case "a":
 			return c.chooseAuto(m, t.Target), true
 		case "d":

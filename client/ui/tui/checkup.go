@@ -147,7 +147,12 @@ func (c *checkupTab) view(m *Model, p *instancePage, height int) string {
 	if ck != nil {
 		b.WriteString(box("", okNotes(ck), w) + "\n")
 	}
-	b.WriteString(c.proposalsView(w))
+	at := strings.Count(b.String(), "\n")
+	pv, from, to := c.proposalsView(w)
+	if from >= 0 {
+		p.setFocus(at+from, at+to)
+	}
+	b.WriteString(pv)
 	return b.String()
 }
 
@@ -279,7 +284,7 @@ func okNotes(ck *agentkit.CheckupResult) string {
 }
 
 var categoryNames = map[string]string{"identity": "人格", "memory": "记忆", "skills": "技能", "config": "配置", "sessions": "会话",
-	"state": "状态库", "secrets": "凭据", "workspace": "工作区", "cache": "缓存", "ignore": "不备份", "body": "身体"}
+	"state": "状态库", "body_patch": "身体补丁", "secrets": "凭据", "workspace": "工作区", "cache": "缓存", "ignore": "不备份", "body": "身体"}
 
 func categoryName(c string) string {
 	if n, ok := categoryNames[c]; ok {
@@ -288,16 +293,22 @@ func categoryName(c string) string {
 	return c
 }
 
-func (c *checkupTab) proposalsView(w int) string {
+// proposalsView also returns the selected proposal's lines within it
+// (-1 when there is none).
+func (c *checkupTab) proposalsView(w int) (string, int, int) {
 	if !c.loadedP {
-		return ""
+		return "", -1, -1
 	}
 	if len(c.proposals) == 0 {
-		return box("归档建议", dimStyle.Render("没有待处理的建议。agent 认为有文件应该装进逃生舱（或换一类）时，会出现在这里。"), w)
+		return box("归档建议", dimStyle.Render("没有待处理的建议。agent 认为有文件应该装进逃生舱（或换一类）时，会出现在这里。"), w), -1, -1
 	}
 	var b strings.Builder
+	from, to := -1, -1
 	b.WriteString(dimStyle.Render("agent 认为这些文件也该装进逃生舱，或应该换一类：") + "\n")
 	for i, pr := range c.proposals {
+		if i == c.cursor {
+			from = 1 + lipgloss.Height(lipgloss.NewStyle().Width(w-4).Render(b.String())) - 1
+		}
 		line := pr.Rule.Root + ":" + pr.Rule.Glob + " → " + categoryName(pr.Rule.Category)
 		if pr.Demotion {
 			line += warnStyle.Render("  降级：不再进轻装逃生舱，需要单独确认")
@@ -307,6 +318,9 @@ func (c *checkupTab) proposalsView(w int) string {
 		if pr.Unclassified > 0 {
 			b.WriteString(warnStyle.Render(fmt.Sprintf("    其中 %d 个文件现在没有归类（按凭据对待），接受后会进入轻装逃生舱；请确认里面没有密钥", pr.Unclassified)) + "\n")
 		}
+		if i == c.cursor {
+			to = lipgloss.Height(lipgloss.NewStyle().Width(w - 4).Render(b.String()))
+		}
 	}
-	return box("归档建议", strings.TrimRight(b.String(), "\n"), w)
+	return box("归档建议", strings.TrimRight(b.String(), "\n"), w), from, to
 }

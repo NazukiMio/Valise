@@ -21,7 +21,7 @@ func (s *podScreen) title() string {
 	return s.snap.CreatedAt.Local().Format("01-02 15:04") + " 的逃生舱"
 }
 func (s *podScreen) help() string {
-	return menu("l", "逃生舱着陆", "t", "技术信息")
+	return menu("l", "逃生舱着陆", "u", "上云", "t", "技术信息")
 }
 func (s *podScreen) init(m *Model) tea.Cmd { return nil }
 
@@ -33,6 +33,8 @@ func (s *podScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch k.String() {
 	case "l":
 		return m.push(newRevive(s.page.host, s.snap)), true
+	case "u":
+		return startSync(m, s.page.host), true
 	case "t":
 		s.tech = !s.tech
 		return nil, true

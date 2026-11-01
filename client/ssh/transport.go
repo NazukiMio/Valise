@@ -266,7 +266,7 @@ func (t *Transport) ConnError(stderr string) *valise.UserError {
 	case t.opts.ConfigFile != "" && strings.Contains(stderr, "Permission denied"):
 		return valise.New("ssh_auth_failed",
 			fmt.Sprintf("服务器 %s 拒绝了登录", t.host),
-			"日常钥匙可能已从服务器上移除，或密码不对。可以在服务器设置里重新安装日常钥匙（需要服务器密码）").WithDetail(lastLines(stderr, 5))
+			"日常钥匙可能已从服务器上移除，或这台电脑还没有它（换电脑、导入配置后），也可能是密码不对。重新装日常钥匙：valise server rekey "+t.host+"（终端界面：服务器设置里按 K），需要用服务器密码登录一次").WithDetail(lastLines(stderr, 5))
 	}
 	return valise.New("ssh_connect_failed",
 		fmt.Sprintf("无法连接到服务器 %s", t.host),

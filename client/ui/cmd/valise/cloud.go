@@ -261,5 +261,5 @@ func (c *cli) shell(ctx context.Context, args []string) error {
 	} else {
 		fmt.Fprintf(c.out, "正在打开 %s 的终端，输入 exit 返回。Valise 不读取这个终端里的任何内容。\n", pos[0])
 	}
-	return cmd.Run()
+	return c.interactiveEnd(cmd.Run(), "终端")
 }

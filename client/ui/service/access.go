@@ -62,6 +62,13 @@ func (s *Service) HasAdminKey(host string) bool {
 	return err == nil
 }
 
+// HasDailyKey reports whether this computer has its own daily key for host
+// (missing after importing the configuration on a new computer).
+func (s *Service) HasDailyKey(host string) bool {
+	_, err := os.Stat(s.keyPath(host, dailyKeyName))
+	return err == nil
+}
+
 // Tiered reports whether host separates daily and admin access (a server
 // added by hand with Valise's daily key).
 func (s *Service) Tiered(host string) bool { return s.server(host).Valise() }
@@ -93,7 +100,7 @@ func (s *Service) userTransport(host string) (*ssh.Transport, ssh.HostConfig, er
 		return nil, ssh.HostConfig{}, err
 	}
 	hc := c.Lookup(host)
-	t, err := ssh.New(host, ssh.Options{Binary: s.Config.SSHBinary, ControlDir: s.Dirs.Cache, HostConfig: &hc})
+	t, err := ssh.New(host, ssh.Options{Binary: s.Config.SSHBinary, ControlDir: s.Dirs.Cache, HostConfig: &hc, BatchMode: s.NoTerminalLogin})
 	if err != nil {
 		return nil, hc, valise.New("bad_host", "服务器别名无效："+host, "使用 ~/.ssh/config 中的 Host 别名，或 user@host")
 	}
@@ -116,7 +123,10 @@ func (s *Service) adminTransport(ctx context.Context, host string) (t *ssh.Trans
 			if err != nil {
 				return nil, nil, err
 			}
-			o.Identity, o.IdentityAgent = s.keyPath(host, adminKeyName), sock
+			// The key comes from the agent only: OpenSSH must never ask
+			// for its passphrase or fall back to a password on the
+			// terminal (an expired window is re-unlocked by ensureAdmin).
+			o.Identity, o.IdentityAgent, o.BatchMode = s.keyPath(host, adminKeyName), sock, true
 		case srv.Login == config.LoginKey:
 			o.Identity, o.IdentityAgent, o.BatchMode = srv.LoginKey, "none", s.NoTerminalLogin
 		case s.NoTerminalLogin:
@@ -131,7 +141,7 @@ func (s *Service) adminTransport(ctx context.Context, host string) (t *ssh.Trans
 			return nil, nil, err
 		}
 		hc := c.Lookup(host)
-		o = ssh.Options{Binary: s.Config.SSHBinary, HostConfig: &hc}
+		o = ssh.Options{Binary: s.Config.SSHBinary, HostConfig: &hc, BatchMode: s.NoTerminalLogin}
 	}
 	if o.ControlPath = ssh.SocketPath(s.Dirs.Cache, "op-"); o.ControlPath == "" {
 		o.NoControl = true
@@ -140,6 +150,28 @@ func (s *Service) adminTransport(ctx context.Context, host string) (t *ssh.Trans
 		return nil, nil, valise.New("bad_host", "服务器别名无效："+host, "检查服务器列表")
 	}
 	return t, t.CloseMaster, nil
+}
+
+// ensureAdmin re-unlocks host's admin key when its window has run out, so
+// a long operation holding an admin transport (a revive waiting for the
+// user) asks through the frontend, never on the terminal.
+func (s *Service) ensureAdmin(ctx context.Context, host string) error {
+	if !s.server(host).Valise() || !s.HasAdminKey(host) {
+		return nil
+	}
+	_, err := s.unlockAdmin(ctx, host)
+	return err
+}
+
+// UnlockAdmin unlocks host's admin key for the admin window, asking for
+// the admin passphrase (docs/ARCHITECTURE.md 2.1). Servers without an
+// admin key have nothing to unlock.
+func (s *Service) UnlockAdmin(ctx context.Context, host string) error {
+	if !s.HasAdminKey(host) {
+		return valise.New("admin_key_none", host+" 没有管理钥匙，管理操作每次用服务器密码临时登录",
+			"需要持续一段时间的管理权限时，先创建管理钥匙：valise server admin-key "+host)
+	}
+	return s.ensureAdmin(ctx, host)
 }
 
 // porterOn locates the porter reachable through t: the fixed path on the

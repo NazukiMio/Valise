@@ -47,6 +47,11 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 		return nil, &rp.Blockers[0]
 	}
 	plan := rp.Plan
+	// The user may have read the plan longer than the admin window: unlock
+	// again through the frontend before the plan's connection is reused.
+	if err := s.ensureAdmin(ctx, rp.Target); err != nil {
+		return nil, err
+	}
 	if err := s.callOn(ctx, rp.target, rp.porterP, nil, revive.MethodStageBegin, revive.StageBeginParams{Plan: plan}, nil); err != nil {
 		return nil, err
 	}
@@ -63,6 +68,7 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 		man = append(man, revive.ManifestEntry{Path: tarName(plan, f.Root, f.Path), Size: f.Size, SHA256: f.SHA256,
 			Category: f.Category, SQLite: rp.sqlite[f.Root+":"+f.Path]})
 	}
+	report(ctx, StageVerify, 0, 0)
 	var ver revive.StageVerifyResult
 	if err := s.callOn(ctx, rp.target, rp.porterP, nil, revive.MethodStageVerify, revive.StageVerifyParams{OpID: plan.OpID, Manifest: man}, &ver); err != nil {
 		return back(err)
@@ -73,6 +79,9 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 	}
 	if !confirm(&ver) {
 		return back(valise.New("cancelled", "已取消，活动目录未改动", "暂存目录保留，可用 valise prev drop 清理"))
+	}
+	if err := s.ensureAdmin(ctx, rp.Target); err != nil {
+		return back(err)
 	}
 	// From here on nothing may interrupt the swap (docs/UI.md section 6):
 	// a cancelled caller (Ctrl-C, a closed window) no longer cancels it.
@@ -96,6 +105,7 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 		}
 		stopped = true
 	}
+	report(ctx, StageSwap, 0, 0)
 	var res revive.SwapResult
 	err := s.callOn(ctx, rp.target, rp.porterP, faultEnv(fault), revive.MethodSwap, revive.OpParams{OpID: plan.OpID}, &res)
 	if stopped && (err != nil || res.State == revive.StateRolledBack) {
@@ -123,7 +133,9 @@ func (s *Service) streamStage(ctx context.Context, rp *RevivePlan) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	tw := tar.NewWriter(in)
+	var done int64
+	report(ctx, StageStage, 0, rp.Bytes)
+	tw := tar.NewWriter(&countingWriter{ctx: ctx, stage: StageStage, done: &done, total: rp.Bytes, w: in})
 	werr := func() error {
 		for _, f := range rp.files {
 			h := &tar.Header{Name: tarName(rp.Plan, f.Root, f.Path), Mode: int64(f.Mode & 0o7777), Size: f.Size, ModTime: f.MTime, Typeflag: tar.TypeReg, Format: tar.FormatPAX}

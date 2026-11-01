@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
 
+	"valise/client/ssh"
 	"valise/core/valise"
 	"valise/ui/service"
 )
@@ -164,7 +167,26 @@ func (c *cli) native(ctx context.Context, args []string) error {
 		}
 		fmt.Fprintf(c.out, "  · 需要另开终端运行 %s 自己的命令时：valise shell %s --profile %s\n", *prof, pos[0], *prof)
 	}
-	return cmd.Run()
+	return c.interactiveEnd(cmd.Run(), "原生界面")
+}
+
+// interactiveEnd reports how a terminal session on the server ended. The
+// program's own exit status (Ctrl+C included) is the user's business, not
+// a Valise failure; only a lost connection is an error.
+func (c *cli) interactiveEnd(err error, what string) error {
+	var ee *exec.ExitError
+	if err == nil || !errors.As(err, &ee) {
+		return err
+	}
+	switch code := ee.ExitCode(); code {
+	case ssh.ExitConnFailed:
+		return valise.New("terminal_conn_failed", "和服务器的连接断开了，"+what+"没有正常结束", "检查网络后重新打开；服务器上已保存的内容不受影响")
+	case 130, -1:
+		fmt.Fprintf(c.out, "已离开%s（用 Ctrl+C 结束）。已经保存的配置不受影响。\n", what)
+	default:
+		fmt.Fprintf(c.out, "%s已结束（退出码 %d）。\n", what, code)
+	}
+	return nil
 }
 
 // chooseOptional selects optional steps: --with <id>, or a y/N question per

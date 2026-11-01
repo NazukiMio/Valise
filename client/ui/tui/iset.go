@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"valise/core/agentkit"
 	"valise/core/vault"
@@ -49,7 +50,7 @@ func (t *isetTab) help(p *instancePage) string {
 	case isKit:
 		return menu("↑↓", "选择", "i", "安装或更新技能", "u", "卸载", "F", "连同被改过的一起卸载")
 	case isRules:
-		return menu("↑↓", "选择")
+		return menu("↑↓", "选择", "enter", "查看全部规则")
 	}
 	return menu("↑↓", "选择", "enter", "修改")
 }
@@ -98,6 +99,8 @@ func (t *isetTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool)
 			return t.choosePeriod(m, p), true
 		case k == "enter" && t.cursor == isTimer:
 			return t.chooseTimer(m, p), true
+		case k == "enter" && t.cursor == isRules:
+			return m.push(&rulesScreen{page: p}), true
 		case k == "enter" && t.cursor == isReenroll:
 			return m.push(confirm("重新接入 "+inst+"？", []string{"harness 升级、目录变化或换了 profile 版本后使用。会先在终端显示接入报告，你确认后才写入。"},
 				func(m *Model) tea.Cmd {
@@ -194,7 +197,12 @@ func (t *isetTab) view(m *Model, p *instancePage, height int) string {
 			title = selStyle.Render("▸ " + title)
 		}
 		st := cardStyle(i == t.cursor, false, w)
-		b.WriteString(st.Render(title+"\n"+s.body) + "\n")
+		card := st.Render(title + "\n" + s.body)
+		if i == t.cursor {
+			n := strings.Count(b.String(), "\n")
+			p.setFocus(n, n+lipgloss.Height(card)-1)
+		}
+		b.WriteString(card + "\n")
 	}
 	return b.String()
 }
@@ -274,5 +282,5 @@ func (t *isetTab) rulesText(p *instancePage) string {
 			s += "\n  " + o.Root + ":" + o.Glob + " → " + categoryName(o.Category)
 		}
 	}
-	return s
+	return s + "\n" + dimStyle.Render("按 enter 查看每一类文件进哪些逃生舱，以及怎么修改。")
 }

@@ -116,6 +116,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if len(pull.Problems) > 0 {
 		return nil, valise.New("vault_problems", "本机金库副本没有通过校验", "先运行 valise verify --vault "+pull.Dir)
 	}
+	report(ctx, StageOpen, 0, 0)
 	k, err := s.Unlock(passphrase)
 	if err != nil {
 		return nil, err
@@ -175,6 +176,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 
 	// Target facts, first to resolve the state dir on the target. Landing
 	// is an admin operation: one admin connection for the whole plan.
+	report(ctx, StageInspect, 0, 0)
 	if rp.target, rp.done, err = s.adminTransport(ctx, o.Target); err != nil {
 		return nil, err
 	}

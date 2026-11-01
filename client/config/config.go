@@ -62,3 +62,27 @@ func Load(dir string) (Config, error) {
 	}
 	return c, nil
 }
+
+// SetAdminWindow records admin_window_minutes in config.json, keeping the
+// file's other settings.
+func SetAdminWindow(dir string, minutes int) error {
+	doc := map[string]any{}
+	b, err := os.ReadFile(filepath.Join(dir, ConfigFile))
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(b, &doc); err != nil {
+			return err
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		return err
+	}
+	doc["admin_window_minutes"] = minutes
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return writeAtomic(dir, ConfigFile, append(out, '\n'))
+}

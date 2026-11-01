@@ -4,7 +4,10 @@ import (
 	"slices"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+
 	"valise/core/agentkit"
+	"valise/ui/service"
 )
 
 func (s *settingsScreen) updateView(m *Model, w int) string {
@@ -99,10 +102,74 @@ func (s *settingsScreen) advancedView(m *Model, w int) string {
 			}
 			state = strings.Join(fps, "  ")
 		}
-		rows = append(rows, cursorLine(i == s.cursor, padRight(h, 20)+state))
+		rows = append(rows, cursorLine(s.inBody && i == s.cursor, padRight(h, 20)+state))
 	}
 	b.WriteString(box("每台服务器上能打开逃生舱的钥匙（指纹）", strings.Join(rows, "\n"), w) + "\n")
 	b.WriteString(dimStyle.Render("从服务器移除一把钥匙后，以后的逃生舱不再给它；以前的逃生舱它仍然能打开，加密没法追溯撤销。最后一把钥匙不能移除。") + "\n\n")
 	b.WriteString(box("生成一把新钥匙", dimStyle.Render("只在钥匙泄露时使用。旧钥匙仍然是打开以前逃生舱的唯一方式，请先备份。需要时在终端运行 valise key init（会先要求处理现有钥匙）。"), w))
 	return b.String()
+}
+
+func configView(w int) string {
+	return box("Valise 配置", "把这台电脑上的服务器列表、服务器的主机指纹和设置导出成一个文件，换电脑时导入。\n\n"+
+		okStyle.Render("包含")+"　服务器（别名、地址、端口、用户、登录方式）· 主机指纹 · 管理窗口时长\n"+
+		warnStyle.Render("不包含")+"　任何钥匙：加密钥匙用「加密钥匙 › 备份钥匙」导出恢复套件；日常钥匙和管理钥匙不离开这台电脑\n\n"+
+		dimStyle.Render("导入只添加这台电脑上没有的服务器，同名的跳过并列出，不覆盖。导入后在每台服务器的「服务器设置」里按 K，用服务器密码登录一次，装上这台电脑自己的日常钥匙。\n文件是明文 JSON，里面有服务器地址和用户名，请不要公开分享。")+"\n\n"+
+		keyStyle.Render("e")+" 导出 Valise 配置     "+keyStyle.Render("i")+" 导入 Valise 配置", w)
+}
+
+func exportConfig(m *Model) tea.Cmd {
+	return m.push(newInput("导出到哪个文件？（新文件，不会覆盖已有的）", "~/Desktop/valise-config.json", false, func(m *Model, p string) tea.Cmd {
+		p = expandHome(m, strings.TrimSpace(p))
+		if p == "" {
+			p = expandHome(m, "~/Desktop/valise-config.json")
+		}
+		svc := m.svc
+		return func() tea.Msg {
+			r, err := svc.ExportConfig(p)
+			if err != nil {
+				return failed(err)
+			}
+			return flashMsg("已导出 " + itoa(r.Servers) + " 台服务器到 " + r.Path + "（不含任何钥匙；有服务器地址和用户名，请不要公开分享）")
+		}
+	}))
+}
+
+func importConfig(m *Model, after func(m *Model) tea.Cmd) tea.Cmd {
+	return m.push(newInput("要导入的配置文件路径", "~/Desktop/valise-config.json", false, func(m *Model, p string) tea.Cmd {
+		p = expandHome(m, strings.TrimSpace(p))
+		r, err := m.svc.ImportConfig(p)
+		if err != nil {
+			return func() tea.Msg { return failed(err) }
+		}
+		var cmds []tea.Cmd
+		for _, h := range r.Added {
+			cmds = append(cmds, m.loadServer(h))
+		}
+		m.flash, m.flashErr = strings.Join(importLines(r), "\n"), false
+		return tea.Batch(append(cmds, after(m))...)
+	}))
+}
+
+// importLines is the import report on the status line.
+func importLines(r *service.ConfigImportResult) []string {
+	var out []string
+	if len(r.Added) == 0 {
+		out = append(out, "没有新的服务器需要导入。")
+	} else {
+		out = append(out, "已导入："+strings.Join(r.Added, "、"))
+	}
+	if len(r.Skipped) > 0 {
+		out = append(out, "跳过（这台电脑上已有同名服务器，没有覆盖）："+strings.Join(r.Skipped, "、"))
+	}
+	if r.Settings != "" {
+		out = append(out, "设置："+r.Settings)
+	}
+	if len(r.NeedKeys) > 0 {
+		out = append(out, "还需要装这台电脑的日常钥匙："+strings.Join(r.NeedKeys, "、")+"（服务器 › 服务器设置 › K）")
+	}
+	if len(r.NeedSSHConfig) > 0 {
+		out = append(out, "这些用你自己的 SSH 设置，请确认 ~/.ssh/config 里有同名 Host："+strings.Join(r.NeedSSHConfig, "、"))
+	}
+	return out
 }

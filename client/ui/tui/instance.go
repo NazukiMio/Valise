@@ -28,6 +28,9 @@ type instancePage struct {
 	active int
 	tabs   []tab
 	scroll int // offset of tabs that do not scroll themselves
+	// focus..focusEnd: the lines of the selected item in the tab's
+	// content, set by the tab's view (-1: none); scrolling follows it.
+	focus, focusEnd int
 	// Shared data, loaded once and refreshed by the tabs that change it.
 	target *service.LoginTarget
 	kit    *agentkit.KitStatusResult
@@ -52,7 +55,11 @@ type (
 	logLoaded struct{ l *vaultrpc.SealLogResult }
 )
 
-func (p *instancePage) title() string    { return p.inst.InstanceID }
+func (p *instancePage) title() string { return p.inst.InstanceID }
+func (p *instancePage) typing() bool {
+	t, ok := p.tabs[p.active].(interface{ typing() bool })
+	return ok && t.typing()
+}
 func (p *instancePage) hostName() string { return p.host }
 
 // flourish follows the tab; the overview has none while something needs
@@ -132,8 +139,23 @@ func (p *instancePage) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			}
 		}
 	}
-	return p.tabs[p.active].update(m, p, msg)
+	cmd, handled := p.tabs[p.active].update(m, p, msg)
+	if k, ok := msg.(tea.KeyPressMsg); ok && !handled {
+		// A tab without a cursor here: the arrows scroll its content.
+		switch k.String() {
+		case "down", "j":
+			p.scroll++
+			return cmd, true
+		case "up", "k":
+			p.scroll = max(0, p.scroll-1)
+			return cmd, true
+		}
+	}
+	return cmd, handled
 }
+
+// setFocus records the selected item's lines (tabs call it from view).
+func (p *instancePage) setFocus(from, to int) { p.focus, p.focusEnd = from, max(from, to) }
 
 func (p *instancePage) switchTo(m *Model, i int) tea.Cmd {
 	p.active, p.scroll = i, 0
@@ -161,12 +183,23 @@ func (p *instancePage) view(m *Model) string {
 	}
 	top := head + "\n" + tabs(names, p.active) + "\n" + dimStyle.Render(strings.Repeat("─", min(m.width, 100))) + "\n"
 	height := m.bodyHeight() - lipgloss.Height(top)
+	p.focus, p.focusEnd = -1, -1
 	content := p.tabs[p.active].view(m, p, height)
 	lines := strings.Split(content, "\n")
 	if len(lines) > height {
-		p.scroll = min(p.scroll, len(lines)-height+1)
-		end := min(len(lines), p.scroll+height-1)
-		content = strings.Join(lines[p.scroll:end], "\n") + "\n" + faintStyle.Render("  pgdn/空格 下翻 · pgup 上翻（"+itoa(end)+" / "+itoa(len(lines))+" 行）")
+		room := height - 1
+		if p.focus >= 0 {
+			// Keep the selected item on screen, its top first.
+			if p.focusEnd >= p.scroll+room {
+				p.scroll = p.focusEnd - room + 1
+			}
+			if p.focus < p.scroll {
+				p.scroll = p.focus
+			}
+		}
+		p.scroll = max(0, min(p.scroll, len(lines)-room))
+		end := min(len(lines), p.scroll+room)
+		content = strings.Join(lines[p.scroll:end], "\n") + "\n" + faintStyle.Render("  ↑↓ 移动 · pgdn/pgup 翻页（"+itoa(end)+" / "+itoa(len(lines))+" 行）")
 	} else {
 		p.scroll = 0
 	}
@@ -271,6 +304,10 @@ func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 	qs := o.quicks(p)
 	o.cursor = min(o.cursor, len(qs)-1)
 	for i, q := range qs {
+		if i == o.cursor {
+			n := strings.Count(b.String(), "\n")
+			p.setFocus(n, n)
+		}
 		b.WriteString("  " + cursorLine(i == o.cursor, q.label) + "\n")
 	}
 	b.WriteString("\n")

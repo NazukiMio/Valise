@@ -14,6 +14,7 @@ import (
 type settingsScreen struct {
 	section int
 	cursor  int
+	inBody  bool // focus in the section's list instead of the sidebar
 	key     *service.KeyInfo
 	hosts   []string
 	pack    *service.ProfilesStatus
@@ -21,12 +22,13 @@ type settingsScreen struct {
 	kits    map[string]*agentkit.KitStatusResult // host/instance
 }
 
-var settingsSections = []string{"加密钥匙", "服务器", "云备份", "更新", "高级", "关于"}
+var settingsSections = []string{"加密钥匙", "服务器", "云备份", "导入导出", "更新", "高级", "关于"}
 
 const (
 	ssKey = iota
 	ssServers
 	ssCloud
+	ssConfig
 	ssUpdate
 	ssAdvanced
 	ssAbout
@@ -52,20 +54,32 @@ func newSettings() *settingsScreen {
 
 func (s *settingsScreen) title() string { return "设置" }
 func (s *settingsScreen) help() string {
-	items := []string{"tab", "换分栏"}
+	items := []string{"↑↓", "选分栏"}
+	if s.inBody {
+		items = []string{"↑↓", "选择服务器", "←", "回到分栏"}
+	} else if s.hasList() {
+		items = append(items, "→", "进入列表")
+	}
 	switch s.section {
 	case ssKey:
 		items = append(items, "b", "备份钥匙", "i", "在这台电脑上导入钥匙")
 	case ssServers:
-		items = append(items, "↑↓", "选择", "a", "添加服务器", "x", "移除")
+		items = append(items, "a", "添加服务器", "x", "移除")
 	case ssCloud:
-		items = append(items, "↑↓", "选择", "enter", "打开云备份")
+		items = append(items, "enter", "打开云备份")
+	case ssConfig:
+		items = append(items, "e", "导出 Valise 配置", "i", "导入 Valise 配置")
 	case ssUpdate:
 		items = append(items, "p", "在线更新资料包", "f", "从文件安装资料包")
 	case ssAdvanced:
-		items = append(items, "↑↓", "选择服务器", "u", "从这台服务器移除我的钥匙")
+		items = append(items, "u", "从这台服务器移除我的钥匙")
 	}
 	return menu(items...)
+}
+
+// hasList: the section has a server list to move in.
+func (s *settingsScreen) hasList() bool {
+	return (s.section == ssServers || s.section == ssCloud || s.section == ssAdvanced) && len(s.hosts) > 0
 }
 
 func (s *settingsScreen) init(m *Model) tea.Cmd {
@@ -116,19 +130,30 @@ func (s *settingsScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	case packFetched:
 		return installPackFlow(m, msg, func(m *Model) tea.Cmd { return s.init(m) }), true
 	case tea.KeyPressMsg:
+		// The sidebar is a vertical list: ↑↓ choose the section, → (or
+		// enter) moves into the section's list, ← or esc back out.
 		k := msg.String()
 		switch {
-		case k == "tab" || k == "right":
-			return s.go_(m, (s.section+1)%len(settingsSections)), true
-		case k == "shift+tab" || k == "left":
-			return s.go_(m, (s.section+len(settingsSections)-1)%len(settingsSections)), true
 		case len(k) == 1 && k[0] >= '1' && int(k[0]-'1') < len(settingsSections):
 			return s.go_(m, int(k[0]-'1')), true
-		}
-		if s.section == ssServers || s.section == ssCloud || s.section == ssAdvanced {
+		case k == "tab":
+			return s.go_(m, (s.section+1)%len(settingsSections)), true
+		case k == "shift+tab":
+			return s.go_(m, (s.section+len(settingsSections)-1)%len(settingsSections)), true
+		case s.inBody && (k == "left" || k == "esc"):
+			s.inBody = false
+			return nil, true
+		case s.inBody:
 			if c, moved := moveList(s.cursor, len(s.hosts), k); moved {
 				s.cursor = c
 				return nil, true
+			}
+		case (k == "right" || k == "enter") && s.hasList():
+			s.inBody = true
+			return nil, true
+		default:
+			if c, moved := moveList(s.section, len(settingsSections), k); moved {
+				return s.go_(m, c), true
 			}
 		}
 		return s.action(m, k)
@@ -137,7 +162,7 @@ func (s *settingsScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (s *settingsScreen) go_(m *Model, i int) tea.Cmd {
-	s.section, s.cursor = i, 0
+	s.section, s.cursor, s.inBody = i, 0, false
 	if i == ssUpdate {
 		return s.loadUpdates(m)
 	}
@@ -187,6 +212,10 @@ func (s *settingsScreen) action(m *Model, k string) (tea.Cmd, bool) {
 		})), true
 	case s.section == ssAdvanced && k == "u" && host != "":
 		return m.runCLI("key", "unregister", host), true
+	case s.section == ssConfig && k == "e":
+		return exportConfig(m), true
+	case s.section == ssConfig && k == "i":
+		return importConfig(m, func(m *Model) tea.Cmd { return s.init(m) }), true
 	}
 	return nil, false
 }
@@ -202,9 +231,12 @@ func (s *settingsScreen) view(m *Model) string {
 	var side []string
 	for i, n := range settingsSections {
 		label := itoa(i+1) + " " + n
-		if i == s.section {
+		switch {
+		case i == s.section && s.inBody:
+			side = append(side, accStyle.Render("  "+label))
+		case i == s.section:
 			side = append(side, selStyle.Render("▸ "+label))
-		} else {
+		default:
 			side = append(side, dimStyle.Render("  "+label))
 		}
 	}
@@ -217,6 +249,8 @@ func (s *settingsScreen) view(m *Model) string {
 		body = s.serversView(m, w)
 	case ssCloud:
 		body = s.cloudView(m, w)
+	case ssConfig:
+		body = configView(w)
 	case ssUpdate:
 		body = s.updateView(m, w)
 	case ssAdvanced:
@@ -254,7 +288,7 @@ func (s *settingsScreen) serversView(m *Model, w int) string {
 		case d.loaded:
 			state = okStyle.Render("在线") + dimStyle.Render("　"+itoa(len(d.instances))+" 个 agent")
 		}
-		rows = append(rows, cursorLine(i == s.cursor, padRight(h, 20)+state))
+		rows = append(rows, cursorLine(s.inBody && i == s.cursor, padRight(h, 20)+state))
 	}
 	return box("服务器", strings.Join(rows, "\n"), w) + "\n" + dimStyle.Render("添加服务器时会自动部署 porter（缺少时）并登记你的钥匙。")
 }
@@ -282,7 +316,7 @@ func (s *settingsScreen) cloudView(m *Model, w int) string {
 				state = strings.Join(parts, "；")
 			}
 		}
-		rows = append(rows, cursorLine(i == s.cursor, padRight(h, 20)+state))
+		rows = append(rows, cursorLine(s.inBody && i == s.cursor, padRight(h, 20)+state))
 	}
 	if len(rows) == 0 {
 		rows = append(rows, dimStyle.Render("还没有服务器"))

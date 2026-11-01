@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -33,6 +34,10 @@ type reviveScreen struct {
 	reply  chan bool // answers the swap confirmation of the running revive
 	result *revive.SwapResult
 	err    error
+	// Progress of the running step and the landing scene (docs/UI.md 9.6).
+	prog   progressBox
+	began  time.Time
+	rocket *rocketPlayer
 }
 
 func newRevive(host string, snap vault.Meta) *reviveScreen {
@@ -97,6 +102,7 @@ func (r *reviveScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case planned:
 		r.plan, r.err, r.step = msg.rp, msg.err, rvPlan
+		r.rocket = nil
 		if msg.err != nil {
 			r.step = rvOptions
 			return func() tea.Msg { return failed(msg.err) }, true
@@ -108,7 +114,13 @@ func (r *reviveScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	case reviveFinished:
 		r.result, r.err, r.step = msg.res, msg.err, rvDone
 		if msg.err != nil && (msg.res == nil || msg.res.State == "") {
+			r.rocket = nil
 			return func() tea.Msg { return failed(msg.err) }, true
+		}
+		if msg.res.State == revive.StateRolledBack {
+			r.rocket = nil
+		} else if r.rocket != nil {
+			r.rocket.go_(m.now()) // landed: the rocket comes into sight and touches down
 		}
 		return nil, true
 	case tea.KeyPressMsg:
@@ -147,8 +159,10 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 			opts := r.opts
 			return m.push(newInput("口令（只在这台电脑上用来打开逃生舱，用完即弃）", "", true, func(m *Model, pass string) tea.Cmd {
 				r.step = rvPlanning
+				r.startScene(m)
+				ctx := service.WithProgress(m.ctx, r.prog.set)
 				return func() tea.Msg {
-					rp, err := m.svc.PlanRevive(m.ctx, opts, pass)
+					rp, err := m.svc.PlanRevive(ctx, opts, pass)
 					return planned{rp, err}
 				}
 			})), true
@@ -168,11 +182,13 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 			rp := r.plan
 			return m.push(confirm("按上面的计划暂存并校验？在你下一次确认之前，agent 现在的文件不会被改动。", nil, func(m *Model) tea.Cmd {
 				r.step = rvStaging
+				r.startScene(m)
 				send := m.send
 				// The revive keeps the root context: closing the screen must
 				// not interrupt a swap.
+				ctx := service.WithProgress(m.ctx, r.prog.set)
 				return func() tea.Msg {
-					res, err := m.svc.ExecuteRevive(m.ctx, rp, "", func(v *revive.StageVerifyResult) bool {
+					res, err := m.svc.ExecuteRevive(ctx, rp, "", func(v *revive.StageVerifyResult) bool {
 						reply := make(chan bool, 1)
 						send(stageVerified{v, reply})
 						return <-reply
@@ -189,6 +205,7 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 		switch k {
 		case "y":
 			r.step = rvSwapping
+			r.began = m.now()
 			r.reply <- true
 		case "n", "esc":
 			r.step = rvStaging
@@ -217,20 +234,48 @@ func (r *reviveScreen) view(m *Model) string {
 	case rvOptions:
 		b.WriteString(dimStyle.Render("接下来：输入口令 → 看计划 → 暂存并校验 → 你确认 → 交换 → 健康检查。\n着陆到另一台服务器或着陆成新的 agent 时，先按 t 选择目标服务器。"))
 	case rvPlanning:
-		b.WriteString(dimStyle.Render("正在取回这个逃生舱、在本机打开它，并检查目标服务器…"))
+		b.WriteString(dimStyle.Render("出计划：只读，什么都不会改动。") + "\n\n" + stepsView(planSteps, r.prog.get(), m.now(), r.began))
 	case rvPlan:
 		b.WriteString(planText(r.plan))
 	case rvStaging:
-		b.WriteString(dimStyle.Render("正在暂存并校验（agent 现在的文件还没有被改动）…"))
+		b.WriteString(dimStyle.Render("agent 现在的文件还没有被改动。") + "\n\n" + stepsView(stageSteps, r.prog.get(), m.now(), r.began))
 	case rvAskSwap:
 		fmt.Fprintf(&b, "%s\n\n%s", okStyle.Render(fmt.Sprintf("暂存校验通过：%d 个文件，%s，SHA-256 与 SQLite 完整性检查全部通过。", r.verify.Files, size(r.verify.Bytes))),
 			warnStyle.Render("开始交换？会停止服务；失败会自动退回。"))
 	case rvSwapping:
-		b.WriteString(warnStyle.Render("交换进行中（停止服务 → 交换 → 启动 → 健康检查），请勿关闭终端…"))
+		b.WriteString(warnStyle.Render("交换进行中，请勿关闭终端。") + "\n\n" + stepsView(swapSteps, r.prog.get(), m.now(), r.began))
 	case rvDone:
 		b.WriteString(resultText(r.result, r.err))
 	}
-	return b.String()
+	return animBelow(m, b.String(), r.rocket)
+}
+
+// Steps shown while the revive runs.
+var (
+	planSteps = []step{{service.StagePull, "取回逃生舱到这台电脑"}, {service.StageOpen, "在这台电脑上打开（解密）"},
+		{service.StageInspect, "检查目标服务器"}}
+	stageSteps = []step{{service.StageStage, "写入目标服务器的暂存目录"}, {service.StageVerify, "校验暂存的文件（SHA-256、SQLite）"}}
+	swapSteps  = []step{{service.StageSwap, "停止服务 → 交换 → 启动 → 健康检查"}}
+)
+
+// startScene resets the progress and starts the landing scene: stars and
+// the moon while the work runs, the rocket only once it has landed.
+func (r *reviveScreen) startScene(m *Model) {
+	r.prog.set(service.Progress{})
+	r.began = m.now()
+	if r.rocket == nil {
+		r.rocket = newRocket(sceneLanding, m.now())
+	}
+}
+
+func (r *reviveScreen) animating(m *Model) bool {
+	switch r.step {
+	case rvPlanning, rvStaging, rvAskSwap, rvSwapping:
+		return true
+	case rvDone:
+		return r.rocket != nil && !r.rocket.done(m.now())
+	}
+	return false
 }
 
 func planText(rp *service.RevivePlan) string {

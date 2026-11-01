@@ -69,7 +69,7 @@ func (t *podsTab) help(p *instancePage) string {
 	if t.searching {
 		return menu("enter", "完成", "esc", "清空")
 	}
-	return menu("/", "搜索", "enter", "查看", "b", "建立逃生舱")
+	return menu("/", "搜索", "enter", "查看", "b", "建立逃生舱", "u", "上云")
 }
 func (t *podsTab) load(m *Model, p *instancePage) tea.Cmd { return nil }
 
@@ -139,6 +139,8 @@ func (t *podsTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool)
 		return nil, true
 	case "b":
 		return startSeal(m, p), true
+	case "u":
+		return startSync(m, p.host), true
 	case "esc":
 		if t.search.Value() != "" {
 			t.search.SetValue("")

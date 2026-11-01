@@ -51,6 +51,8 @@ func (c *cli) server(ctx context.Context, args []string) error {
 		return c.serverList()
 	case "admin-key":
 		return c.serverAdminKey(ctx, args[1:])
+	case "rekey":
+		return c.serverRekey(ctx, args[1:])
 	case "migrate":
 		return c.serverMigrate(ctx, args[1:])
 	case "add":

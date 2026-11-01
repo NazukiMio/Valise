@@ -113,6 +113,16 @@
 - **离线恢复套件**：导出内容包括 `keystore.age`、收件人公钥、指纹，以及一页恢复说明（指向 `tools/standalone-restore/`）。导出为一个目录，内含 `keystore.age`、`recipient.txt`、`FINGERPRINT`、`RECOVERY.md`。导入时核对指纹：先确认 `FINGERPRINT` 与 `recipient.txt` 一致，解锁后再确认身份对应的公钥与 `recipient.txt` 一致，并把指纹展示给用户，与纸质记录比对。
 - **内存处理**：解锁后的身份封装在 `UnlockedKey` 中，`Lock()` 时尽力清零。文档和 UI 中要如实说明：Go 的垃圾回收可能产生副本，无法保证彻底清除。UI 空闲 15 分钟后自动锁定（时长可配置）。
 
+
+### 3.1 导出与导入配置（2026-11-01 用户决定）
+
+换电脑时带走"记录"，不带走任何钥匙。
+
+- **内容**：已记录服务器（`servers.json` 的全部字段：别名、来源、地址、端口、用户名、登录方式、私钥文件路径）、这些手动服务器在 Valise `known_hosts` 中的主机密钥（公开信息，导入后仍能识别冒充者）、设置（目前只有管理窗口时长；`ssh_binary` 等与机器有关的设置不导出）。不包含 `keystore.age`、日常钥匙、管理钥匙、密码或任何秘密；加密钥匙只通过恢复套件（第 3 节）迁移。
+- **格式**：一个明文 JSON 文件（默认名 `valise-config.json`，权限 0600），`{"format": "valise-config", "version": 1, "exported_at", "servers": [...], "known_hosts": ["<field> <type> <base64>", ...], "settings": {"admin_window_minutes"}}`。不加密：里面没有秘钥，但有服务器地址和用户名，导出时提醒不要公开分享。导出不覆盖已有文件。
+- **导入**：只添加这台电脑上没有的服务器；同名服务器无论内容是否相同都不覆盖，内容不同的跳过并在结束时列出。手动服务器的主机密钥只在这台电脑还没有该地址的密钥时写入。管理窗口时长只在这台电脑未设置时采用。导入的手动服务器没有这台电脑的日常钥匙，需要逐台执行 `valise server rekey <服务器>`（用服务器密码或私钥登录一次，等同于重新走一遍添加服务器的钥匙安装与检查）；来自 `~/.ssh/config` 的服务器要求新电脑的 SSH 配置里有同名 `Host`。
+- **CLI**：`valise config export <文件>`、`valise config import <文件>`、`valise server rekey <服务器> [--admin-key]`。
+
 ## 4. 登记（全部由代码完成）
 
 1. **探测**：客户端把 profile 集合发给 porter，porter 按每个 profile 的 `detect` 规则（可执行文件、状态目录候选、标记文件）找出候选实例。

@@ -100,6 +100,8 @@ type Model struct {
 	send func(tea.Msg)
 	// tick is how often the top bar redraws for the admin window; 0 off.
 	tick time.Duration
+	// animOn: an animation frame tick is pending (anim.go).
+	animOn bool
 }
 
 // New returns the TUI model: the first-run guide when there is no key,
@@ -215,6 +217,14 @@ func failed(err error) tea.Msg { return errMsg{err} }
 
 // Update implements tea.Model.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(animTick); ok {
+		m.animOn = false
+	}
+	_, cmd := m.update(msg)
+	return m, tea.Batch(cmd, m.ensureAnim())
+}
+
+func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -232,12 +242,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case adminTick:
 		return m, m.tickAdmin()
 	case tea.KeyPressMsg:
-		if msg.String() == "L" && m.accessState() != "" && m.svc.FullAccessHost() == "" {
+		if msg.String() == "L" && !m.typing() && m.accessState() != "" && m.svc.FullAccessHost() == "" {
 			if _, ok := m.svc.AdminRemaining(m.currentHost()); ok {
 				m.svc.LockAdmin()
 				m.flash, m.flashErr = "管理权限已锁定；下一次管理操作会再询问管理口令", false
 				return m, nil
 			}
+		}
+		if msg.String() == "U" && !m.typing() {
+			return m, m.unlockAdmin()
 		}
 		if msg.String() == "ctrl+c" {
 			for _, s := range m.stack {
@@ -264,30 +277,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, cmd
-}
-
-// wrapMenu adds esc/q and wraps the footer's key pairs onto as many lines
-// as the width needs (docs/UI.md section 8: two lines at 80 columns).
-func wrapMenu(help string, width int, back bool) string {
-	if back {
-		help += "   " + menu("esc", "返回")
-	} else {
-		help += "   " + menu("q", "退出")
-	}
-	width = min(width, 120)
-	var lines []string
-	cur := ""
-	for _, item := range strings.Split(help, "   ") {
-		if cur != "" && lipgloss.Width(cur)+3+lipgloss.Width(item) > width {
-			lines, cur = append(lines, cur), item
-			continue
-		}
-		if cur != "" {
-			cur += "   "
-		}
-		cur += item
-	}
-	return strings.Join(append(lines, cur), "\n")
 }
 
 // bodyHeight is the number of lines a screen may use.

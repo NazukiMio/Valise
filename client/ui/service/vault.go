@@ -163,6 +163,13 @@ func (s *Service) Pull(ctx context.Context, host, leaf, dir string) (*PullResult
 	}
 	res := &PullResult{Leaf: leaf, Dir: dir, VaultID: list.VaultID}
 	sort.SliceStable(list.Files, func(i, j int) bool { return pullRank(list.Files[i].Path) < pullRank(list.Files[j].Path) })
+	var total, done int64
+	for _, f := range list.Files {
+		if st, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f.Path))); err != nil || st.Size() != f.Size {
+			total += f.Size
+		}
+	}
+	report(ctx, StagePull, 0, total)
 	for _, f := range list.Files {
 		if !vault.ValidRel(f.Path) {
 			continue
@@ -175,7 +182,7 @@ func (s *Service) Pull(ctx context.Context, host, leaf, dir string) (*PullResult
 			res.Present++
 			continue
 		}
-		if err := s.fetch(ctx, t, found.Path, leaf, f, local); err != nil {
+		if err := s.fetch(ctx, t, found.Path, leaf, f, local, &countingWriter{ctx: ctx, stage: StagePull, done: &done, total: total, w: io.Discard}); err != nil {
 			return res, err
 		}
 		res.Downloaded++
@@ -192,7 +199,7 @@ func (s *Service) Pull(ctx context.Context, host, leaf, dir string) (*PullResult
 	return res, nil
 }
 
-func (s *Service) fetch(ctx context.Context, t *ssh.Transport, porterPath, leaf string, f vaultrpc.VaultFile, local string) error {
+func (s *Service) fetch(ctx context.Context, t *ssh.Transport, porterPath, leaf string, f vaultrpc.VaultFile, local string, meter io.Writer) error {
 	if err := os.MkdirAll(filepath.Dir(local), 0o700); err != nil {
 		return err
 	}
@@ -216,7 +223,7 @@ func (s *Service) fetch(ctx context.Context, t *ssh.Transport, porterPath, leaf 
 		return err
 	}
 	h := sha256.New()
-	n, copyErr := io.Copy(io.MultiWriter(tmp, h), out)
+	n, copyErr := io.Copy(io.MultiWriter(tmp, h, meter), out)
 	waitErr := cmd.Wait()
 	tmp.Chmod(0o600)
 	if err := tmp.Sync(); err != nil {

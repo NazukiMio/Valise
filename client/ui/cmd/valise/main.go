@@ -68,6 +68,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   server add <别名> --host <地址> [--port 22] [--user 用户] [--login password|key:<私钥路径>] [--admin-key]
          [--trust-fingerprint SHA256:…] [--name 名字] [--release 版本 | --local 文件]
                                                  手动添加服务器：确认身份 → 用密码登录一次装好日常钥匙 → 检查 → 部署 porter → 起名
+  server rekey <服务器> [--admin-key]              在这台电脑上重新安装日常钥匙（导入配置后、换电脑后；需要用服务器密码登录一次）
+  config export <文件> | config import <文件>       导出 / 导入 Valise 配置：服务器列表、主机指纹、设置（不含任何钥匙）
   server admin-key <服务器>                        创建管理钥匙（单独的管理口令；需要用服务器密码登录一次）
   server migrate <别名> [--admin-key]              把 ~/.ssh/config 中的服务器改用 Valise 日常钥匙
   admin passphrase                               修改管理口令（重新加密所有管理钥匙）
@@ -172,6 +174,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.profilesCmd(ctx, args[1:])
 	case args[0] == "server":
 		return c.server(ctx, args[1:])
+	case args[0] == "config" && len(args) == 3:
+		return c.configCmd(args[1], args[2])
 	case args[0] == "admin":
 		return c.admin(ctx, args[1:])
 	case args[0] == "install":

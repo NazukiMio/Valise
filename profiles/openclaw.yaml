@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 13
+profile_version: 14
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -197,6 +197,9 @@ native_cli: [openclaw, onboard]
 native_hints:
   - "引导最后会等待控制台（Control UI）登录：不要退出引导，另开一个本机终端运行 valise open <服务器> <实例>，浏览器会带着一次性令牌打开控制台并自动登录"
   - "要手动取令牌：在 Valise 打开的终端里运行 openclaw gateway auth-token --show"
+  # OBS (2026-11-01, 2026.10.9, debian-vm, user): after the Control UI
+  # login the onboarding keeps waiting; Ctrl+C ends it with the config kept.
+  - "控制台登录成功后，引导可能仍停在等待界面：按 Ctrl+C 结束即可，配置已经保存"
 
 # Managed actions (docs/INSTALL.md section 5). OBS (2026-11-01, 2026.10.9,
 # debian-vm): status and health need no terminal and print no token;

@@ -97,7 +97,7 @@ func drive(t *testing.T, m *Model, cmd tea.Cmd) {
 		return // cursor blinking: a timer loop that the runtime handles
 	}
 	switch msg := msg.(type) {
-	case nil, adminTick:
+	case nil, adminTick, animTick:
 		// adminTick: the top bar's 30 s redraw loop, handled by the runtime
 	case tea.BatchMsg:
 		for _, c := range msg {
@@ -298,10 +298,18 @@ func TestSettingsSections(t *testing.T) {
 	drive(t, m, m.Init())
 	key(t, m, "s")
 	wantText(t, m, "你的钥匙已创建", "备份钥匙", "只能上锁")
-	for _, want := range []string{"box", "还没有云备份位置", "harness 资料包", "能打开逃生舱的钥匙", "不用 Valise 也能恢复"} {
-		key(t, m, "tab")
+	// The sidebar is vertical: ↓ moves through the sections.
+	for _, want := range []string{"box", "还没有云备份位置", "不包含", "harness 资料包", "能打开逃生舱的钥匙", "不用 Valise 也能恢复"} {
+		key(t, m, "down")
 		wantText(t, m, want)
 	}
+	// → enters the server list of 服务器; ↑↓ then move in it, ← leaves.
+	key(t, m, "2")
+	key(t, m, "right")
+	wantText(t, m, "回到分栏")
+	key(t, m, "left")
+	key(t, m, "down")
+	wantText(t, m, "还没有云备份位置")
 }
 
 func TestFirstRunGuide(t *testing.T) {

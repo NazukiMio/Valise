@@ -25,7 +25,7 @@ func newServerSettings(host string) *serverSettings { return &serverSettings{hos
 
 func (s *serverSettings) title() string { return "服务器设置" }
 func (s *serverSettings) help() string {
-	return menu("u", "更新 porter", "k", "登记我的钥匙", "x", "从列表中移除", "r", "刷新")
+	return menu("u", "更新 porter", "k", "登记我的钥匙", "K", "装这台电脑的日常钥匙", "x", "从列表中移除", "r", "刷新")
 }
 
 func (s *serverSettings) init(m *Model) tea.Cmd {
@@ -76,6 +76,16 @@ func (s *serverSettings) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 				}
 				return refreshed{host, "已把你的钥匙登记到 " + host}
 			}, true
+		case "K":
+			if !svc.Tiered(host) {
+				return func() tea.Msg {
+					return flashMsg(host + " 用你自己的 SSH 设置连接，没有 Valise 的日常钥匙")
+				}, true
+			}
+			return m.push(confirm("在 "+host+" 上装这台电脑自己的日常钥匙？", []string{
+				"会在终端里用服务器密码（或你的私钥）登录一次，把日常钥匙写进服务器的 ~/.ssh/authorized_keys；Valise 不保存密码。",
+				"换电脑、导入配置后，或日常钥匙被从服务器上移除时使用。"},
+				func(m *Model) tea.Cmd { return tea.Sequence(m.runCLI("server", "rekey", host), s.init(m)) })), true
 		case "x":
 			return m.push(confirm("不再在这台电脑上显示 "+host+"？", []string{"只从列表中移除，服务器上的 agent、逃生舱和 porter 都不动。随时可以重新添加。"},
 				func(m *Model) tea.Cmd {
@@ -122,7 +132,14 @@ func (s *serverSettings) view(m *Model) string {
 	for _, t := range s.doc.Tools {
 		tools = append(tools, t.Name+" "+mark(t.Available, true))
 	}
+	daily := okStyle.Render("已装好") + dimStyle.Render("（只能唤起 porter 的日常模式）")
+	switch {
+	case !m.svc.Tiered(s.host):
+		daily = dimStyle.Render("用你自己的 SSH 设置连接")
+	case !m.svc.HasDailyKey(s.host):
+		daily = warnStyle.Render("这台电脑还没有日常钥匙；按 K 装上（需要服务器密码登录一次）")
+	}
 	body := kv("服务器名", name, "SSH 别名", s.host, "系统", s.doc.Platform.String(), "porter", porter,
-		"可用工具", strings.Join(tools, "  "), "你的钥匙", keyState)
+		"可用工具", strings.Join(tools, "  "), "日常钥匙", daily, "你的钥匙", keyState)
 	return box(s.host, body, w) + "\n" + dimStyle.Render("porter 是 Valise 放在服务器上的小程序，只在你连接时由 SSH 唤起，不常驻、不开端口。")
 }
