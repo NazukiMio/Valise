@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"valise/core/profile"
 )
 
 // Env is the environment harness commands run in: the user's login-shell
@@ -59,6 +61,25 @@ func LoadEnv(ctx context.Context, home string) *Env {
 		e.Set("PATH", local+string(os.PathListSeparator)+path)
 	}
 	return e
+}
+
+// For returns the environment for running p's commands: p's own bin
+// directories (detect.bin_dirs) in front of the login PATH.
+func (e *Env) For(p *profile.Profile) *Env {
+	if e == nil || p == nil || p.Detect == nil || len(p.Detect.BinDirs) == 0 {
+		return e
+	}
+	c := &Env{Home: e.Home, Vars: append([]string{}, e.Vars...), Warnings: e.Warnings}
+	var dirs []string
+	for _, d := range p.Detect.BinDirs {
+		if x, ok := e.Expand(d, map[string]string{"HOME": e.Home}); ok && filepath.IsAbs(x) {
+			dirs = append(dirs, x)
+		}
+	}
+	if len(dirs) > 0 {
+		c.Set("PATH", strings.Join(append(dirs, e.Get("PATH")), string(os.PathListSeparator)))
+	}
+	return c
 }
 
 func containsPath(list, dir string) bool {

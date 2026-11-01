@@ -40,6 +40,7 @@ func (e *Env) ExpandArgv(argv []string, vars map[string]string) ([]string, bool)
 // services and entries. It only reads; nothing on the server is modified.
 func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enroll.Record) (*enroll.Report, error) {
 	p := &params.Profile
+	e = e.For(p)
 	if err := enroll.ValidInstanceID(params.InstanceID); err != nil {
 		return nil, valise.New("instance_id_invalid", err.Error(), "用 --id 指定一个由小写字母、数字和连字符组成的 id")
 	}

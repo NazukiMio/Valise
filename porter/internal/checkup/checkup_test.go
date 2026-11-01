@@ -49,6 +49,9 @@ func TestJSONLSessionsAndMemory(t *testing.T) {
 	}
 	write(t, filepath.Join(root, "sessions/long.jsonl"), b.String())
 	write(t, filepath.Join(root, "sessions/plain.jsonl"), `{"text":"hi"}`+"\n")
+	// The file's mtime stands in for its time: keep it before the fixed now.
+	old := now.AddDate(0, 0, -2)
+	os.Chtimes(filepath.Join(root, "sessions/plain.jsonl"), old, old)
 	write(t, filepath.Join(root, "MEMORY.md"), strings.Repeat("line\n", 801))
 	rec := &enroll.Record{InstanceID: "demo", Roots: map[string]string{"state": root}}
 	p := &profile.Profile{Checkup: &profile.Checkup{

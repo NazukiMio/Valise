@@ -92,6 +92,7 @@ const (
 	VarPorter   = "PORTER"
 	VarInstance = "INSTANCE"
 	VarToken    = "TOKEN"
+	VarPort     = "PORT"
 )
 
 // checkVars validates every ${...} in s against the allowed names. env:NAME

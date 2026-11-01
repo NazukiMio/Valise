@@ -30,6 +30,7 @@ import (
 
 // Inspect reports facts about the target for planning. It only reads.
 func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.InspectParams) (*revive.InspectResult, error) {
+	e = e.For(&p.Profile)
 	res := &revive.InspectResult{Home: e.Home, OS: runtime.GOOS, Arch: runtime.GOARCH, Tools: map[string]bool{}, PendingOps: []string{}}
 	if p.Profile.Detect != nil {
 		for _, c := range p.Profile.Detect.StateDirCandidates {

@@ -3,13 +3,18 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
 
 	"valise/core/enroll"
+	"valise/core/install"
 	"valise/core/rpc"
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 	porterenroll "valise/porter/internal/enroll"
+	porterinstall "valise/porter/internal/install"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/timer"
 )
@@ -208,6 +213,30 @@ func init() {
 			return nil, errInvalidParams
 		}
 		return seal.Sync(ctx, s.loginEnv(ctx), paths(s), p.Target, vaultrpc.InitiatorClient)
+	}
+}
+
+func init() {
+	methods[install.MethodCheck] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p install.CheckParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return porterinstall.Check(ctx, s.loginEnv(ctx), p), nil
+	}
+	methods[install.MethodAudit] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p install.AuditParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		var steps []string
+		for _, st := range p.Steps {
+			steps = append(steps, fmt.Sprintf("%s %q exit %d", st.Kind, st.Command, st.Exit))
+		}
+		seal.Paths{Home: s.cfg.Home}.AppendAudit(seal.AuditEntry{Time: time.Now().UTC(), Op: "install", Instance: p.Instance,
+			Initiator: vaultrpc.InitiatorClient, Result: p.Result,
+			Reason: fmt.Sprintf("%s (%s v%d): %s", p.PlanID, p.ProfileID, p.ProfileVersion, strings.Join(steps, "; "))})
+		return struct{}{}, nil
 	}
 }
 

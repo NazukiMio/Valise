@@ -234,6 +234,11 @@ func (c *checker) checkTop(p *Profile) {
 			}
 		}
 		c.argv("detect.version_argv", p.Detect.VersionArgv, false)
+		for i, d := range p.Detect.BinDirs {
+			if err := validateBaseTemplate(d, VarHome); err != nil {
+				c.add(fmt.Sprintf("detect.bin_dirs[%d]", i), "%v", err)
+			}
+		}
 	}
 	seen := map[string]bool{StateRoot: true}
 	for i, r := range p.Roots {
@@ -383,6 +388,12 @@ func (c *checker) checkTop(p *Profile) {
 			c.add("agent_kit.mcp_config_snippet", "%v", err)
 		}
 	}
+	c.argvVars("native_cli", p.NativeCLI, false, VarHome)
+	if len(p.Actions) > 0 {
+		c.add("actions", "管理动作的 schema 在 M12 定稿，之前只能是空列表")
+	}
+	c.checkInstall(p.Install)
+	c.checkCapabilities(p)
 }
 
 func (c *checker) checkProvenance(pv *Provenance) {
@@ -654,6 +665,109 @@ func (c *checker) argvVars(f string, a Argv, required bool, vars ...string) {
 	for i, s := range a {
 		if err := checkVars(s, vars...); err != nil {
 			c.add(fmt.Sprintf("%s[%d]", f, i), "%v", err)
+		}
+	}
+}
+
+var (
+	sha256Re     = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	versionReqRe = regexp.MustCompile(`^>=[0-9]+\.[0-9]+\.[0-9]+$`)
+	exactVerRe   = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$`)
+	binaryRe     = regexp.MustCompile(`^[A-Za-z0-9._+-]+$`)
+	osIDRe       = regexp.MustCompile(`^[a-z0-9._-]+$`)
+)
+
+// checkInstall applies docs/PROFILES.md section 3 to the official plan
+// (docs/INSTALL.md section 3).
+func (c *checker) checkInstall(in *Install) {
+	if in == nil {
+		return
+	}
+	if !idRe.MatchString(in.ID) {
+		c.add("install.id", "只能用小写字母、数字和连字符")
+	}
+	if strings.TrimSpace(in.Summary) == "" {
+		c.add("install.summary", "不能为空：用一句白话说明装什么、多大、要不要管理员权限")
+	}
+	for i, r := range in.Requires {
+		f := fmt.Sprintf("install.requires[%d]", i)
+		if !binaryRe.MatchString(r.Binary) {
+			c.add(f+".binary", "程序名无效")
+		}
+		if r.Version != "" && !versionReqRe.MatchString(r.Version) {
+			c.add(f+".version", "只能写成 >=主.次.修订")
+		}
+		for j, ri := range r.Install {
+			g := fmt.Sprintf("%s.install[%d]", f, j)
+			if len(ri.OSID) == 0 {
+				c.add(g+".os_id", "不能为空")
+			}
+			for _, id := range ri.OSID {
+				if !osIDRe.MatchString(id) {
+					c.add(g+".os_id", "发行版 id 无效：%q", id)
+				}
+			}
+			c.argvVars(g+".argv", ri.Argv, true)
+		}
+	}
+	if len(in.Steps) == 0 {
+		c.add("install.steps", "不能为空")
+	}
+	for i, st := range in.Steps {
+		f := fmt.Sprintf("install.steps[%d]", i)
+		switch st.Kind {
+		case StepNPMGlobal:
+			if !binaryRe.MatchString(st.Package) || !exactVerRe.MatchString(st.Version) {
+				c.add(f, "npm_global 需要 package 与精确版本号")
+			}
+			if !strings.HasPrefix(st.Integrity, "sha512-") {
+				c.add(f+".integrity", "需要 registry 上该版本的 sha512 integrity")
+			}
+		case StepScript:
+			if !strings.HasPrefix(st.URL, "https://") {
+				c.add(f+".url", "必须是 https 地址")
+			}
+			if !sha256Re.MatchString(st.SHA256) {
+				c.add(f+".sha256", "需要脚本的 SHA-256（64 位小写十六进制）")
+			}
+			c.argvVars(f+".interpreter", st.Interpreter, true)
+			for j, a := range st.Args {
+				if err := checkVars(a); err != nil {
+					c.add(fmt.Sprintf("%s.args[%d]", f, j), "%v", err)
+				}
+			}
+			if st.RuntimeDownloads == nil {
+				c.add(f+".runtime_downloads", "必须写明脚本运行时还会下载什么（确认没有时写空字符串）")
+			}
+		case StepArgv:
+			c.argvVars(f+".argv", st.Argv, true, VarHome)
+		default:
+			c.add(f+".kind", "只能是 npm_global、script 或 argv")
+		}
+	}
+}
+
+func (c *checker) checkCapabilities(p *Profile) {
+	for name, cp := range p.Capabilities {
+		f := "capabilities." + name
+		if !slices.Contains(CapabilityNames, name) {
+			c.add(f, "未知能力（可用：%s）", strings.Join(CapabilityNames, "、"))
+		}
+		if !slices.Contains(CapabilityStatuses, cp.Status) {
+			c.add(f+".status", "只能是 %s", strings.Join(CapabilityStatuses, "、"))
+		}
+		if cp.Status == "tested" && (len(cp.Versions) == 0 || cp.Env == "") {
+			c.add(f, "tested 必须写 versions 与 env")
+		}
+	}
+	for i, e := range p.Entries {
+		if e.PortChange == nil {
+			continue
+		}
+		f := fmt.Sprintf("entries[%d].port_change.argv", i)
+		c.argvVars(f, e.PortChange.Argv, true, VarPort)
+		if !slices.ContainsFunc(e.PortChange.Argv, func(a string) bool { return strings.Contains(a, "${"+VarPort+"}") }) {
+			c.add(f, "必须用 ${PORT} 表示新端口")
 		}
 	}
 }

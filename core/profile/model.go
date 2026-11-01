@@ -42,6 +42,17 @@ type Profile struct {
 	Checkup               *Checkup     `yaml:"checkup" json:"checkup,omitempty"`
 	Handoff               *Handoff     `yaml:"handoff" json:"handoff,omitempty"`
 	AgentKit              *AgentKit    `yaml:"agent_kit" json:"agent_kit,omitempty"`
+	// Install is the official install plan (docs/INSTALL.md section 3).
+	Install *Install `yaml:"install" json:"install,omitempty"`
+	// NativeCLI is the harness's own interactive CLI (docs/INSTALL.md
+	// section 2).
+	NativeCLI Argv `yaml:"native_cli" json:"native_cli,omitempty"`
+	// Actions are managed actions; the schema is settled in M12, until then
+	// only an empty list is accepted.
+	Actions []any `yaml:"actions" json:"actions,omitempty"`
+	// Capabilities record what was verified, per capability
+	// (docs/PROFILES.md 1.2).
+	Capabilities map[string]Capability `yaml:"capabilities" json:"capabilities,omitempty"`
 }
 
 // Display is how the instance card looks in the UI (docs/PROFILES.md).
@@ -63,6 +74,10 @@ type Detect struct {
 	VersionArgv        Argv     `yaml:"version_argv" json:"version_argv,omitempty"`
 	StateDirCandidates []string `yaml:"state_dir_candidates" json:"state_dir_candidates,omitempty"`
 	MarkersAny         []string `yaml:"markers_any" json:"markers_any,omitempty"`
+	// BinDirs are the harness's own executable directories (for example a
+	// private prefix its installer uses), put in front of the login PATH
+	// whenever Valise runs this harness's commands.
+	BinDirs []string `yaml:"bin_dirs" json:"bin_dirs,omitempty"`
 }
 
 // Root is an additional root besides state.
@@ -180,7 +195,85 @@ type Entry struct {
 	// Auth says how the harness's own command yields the entry's token
 	// (docs/LOGIN_RELAY.md 4.1).
 	Auth *EntryAuth `yaml:"auth" json:"auth,omitempty"`
+	// PortChange moves the entry to another port (docs/LOGIN_RELAY.md 4.2).
+	PortChange *PortChange `yaml:"port_change" json:"port_change,omitempty"`
 }
+
+// PortChange is the harness's own command that moves an entry to another
+// port (docs/LOGIN_RELAY.md 4.2); Argv may only use ${PORT}.
+type PortChange struct {
+	Argv           Argv `yaml:"argv" json:"argv"`
+	RestartService bool `yaml:"restart_service" json:"restart_service,omitempty"`
+}
+
+// Install is an official install plan: what must already be there, and the
+// steps. Only verified versions and methods belong here.
+type Install struct {
+	ID       string        `yaml:"id" json:"id"`
+	Summary  string        `yaml:"summary" json:"summary"`
+	Requires []Require     `yaml:"requires" json:"requires,omitempty"`
+	Steps    []InstallStep `yaml:"steps" json:"steps"`
+}
+
+// Require is a program the plan needs, with an optional minimum version and
+// how to install it (run only in full access mode, docs/INSTALL.md 4.1).
+type Require struct {
+	Binary  string           `yaml:"binary" json:"binary"`
+	Version string           `yaml:"version" json:"version,omitempty"` // ">=x.y.z"
+	Why     string           `yaml:"why" json:"why,omitempty"`
+	Install []RequireInstall `yaml:"install" json:"install,omitempty"`
+}
+
+// RequireInstall installs a requirement on the listed distributions
+// (os-release ID).
+type RequireInstall struct {
+	OSID []string `yaml:"os_id" json:"os_id"`
+	Argv Argv     `yaml:"argv" json:"argv"`
+}
+
+// Install step kinds.
+const (
+	StepNPMGlobal = "npm_global"
+	StepScript    = "script"
+	StepArgv      = "argv"
+)
+
+// InstallStep is one step; which fields apply depends on Kind.
+type InstallStep struct {
+	Kind string `yaml:"kind" json:"kind"`
+	// npm_global
+	Package   string `yaml:"package" json:"package,omitempty"`
+	Version   string `yaml:"version" json:"version,omitempty"`
+	Integrity string `yaml:"integrity" json:"integrity,omitempty"`
+	// script: downloaded by the client, checked against SHA256, shown,
+	// then run as Interpreter + file + Args.
+	URL         string   `yaml:"url" json:"url,omitempty"`
+	SHA256      string   `yaml:"sha256" json:"sha256,omitempty"`
+	Interpreter Argv     `yaml:"interpreter" json:"interpreter,omitempty"`
+	Args        []string `yaml:"args" json:"args,omitempty"`
+	// RuntimeDownloads says what the script itself downloads; "" means
+	// verified to download nothing.
+	RuntimeDownloads *string `yaml:"runtime_downloads" json:"runtime_downloads,omitempty"`
+	// argv
+	Argv Argv `yaml:"argv" json:"argv,omitempty"`
+	// Note explains the step to the user.
+	Note string `yaml:"note" json:"note,omitempty"`
+}
+
+// Capability is the verification status of one capability.
+type Capability struct {
+	Status   string   `yaml:"status" json:"status"`
+	Versions []string `yaml:"versions" json:"versions,omitempty"`
+	Env      string   `yaml:"env" json:"env,omitempty"`
+	Date     string   `yaml:"date" json:"date,omitempty"`
+	Note     string   `yaml:"note" json:"note,omitempty"`
+}
+
+// Capability names and statuses (docs/PROFILES.md 1.2).
+var (
+	CapabilityNames    = []string{"install", "manage", "backup", "restore", "login", "checkup", "kit"}
+	CapabilityStatuses = []string{"tested", "partial", "untested", "failed"}
+)
 
 // EntryAuth obtains an entry's token with a harness command. At most one of
 // URLArgv and TokenArgv is set; URLSuffix goes with TokenArgv.
@@ -363,4 +456,17 @@ func IsCategory(c string) bool {
 		}
 	}
 	return false
+}
+
+// CapabilityStatus is the verification status of a capability. Profiles
+// without capabilities fall back to their status: verified means tested,
+// draft means untested (docs/PROFILES.md 1.2).
+func (p *Profile) CapabilityStatus(name string) string {
+	if c, ok := p.Capabilities[name]; ok {
+		return c.Status
+	}
+	if p.Status == "verified" {
+		return "tested"
+	}
+	return "untested"
 }

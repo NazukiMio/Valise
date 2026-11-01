@@ -24,6 +24,7 @@ const (
 // Provenance reads where the body was installed from. Failures become
 // warnings; nothing is guessed.
 func Provenance(ctx context.Context, e *Env, p *profile.Profile, roots []enroll.Root) enroll.Provenance {
+	e = e.For(p)
 	pv := p.Provenance
 	if pv == nil {
 		return enroll.Provenance{Warnings: []string{"profile 没有声明来源"}}
@@ -90,6 +91,23 @@ func npmProvenance(ctx context.Context, e *Env, p *profile.Profile, pkg string, 
 			break
 		}
 		dir = filepath.Dir(dir)
+	}
+	if rec.Version == "" {
+		// The command may be a wrapper (a private prefix's launcher):
+		// look in the global root of the npm on this harness's PATH.
+		if out, err := e.Run(ctx, toolTimeout, "", "npm", "root", "-g"); err == nil && out.Code == 0 {
+			root := firstLine(out.Stdout)
+			var meta struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			}
+			if b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(pkg), "package.json")); err == nil && json.Unmarshal(b, &meta) == nil && meta.Name == pkg {
+				rec.Version = meta.Version
+				if filepath.Base(root) == "node_modules" && filepath.Base(filepath.Dir(root)) == "lib" {
+					rec.Prefix = filepath.Dir(filepath.Dir(root))
+				}
+			}
+		}
 	}
 	if rec.Version == "" {
 		warn("可执行文件不属于 npm 包 " + pkg + "，无法记录来源")

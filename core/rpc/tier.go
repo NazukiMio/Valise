@@ -71,6 +71,8 @@ var adminMethods = map[string]bool{
 	"prev_drop":          true,
 	"old_cleanup":        true,
 	"service_control":    true,
+	"install_check":      true,
+	"install_audit":      true,
 }
 
 // TierOf returns the tier a method needs. Conditional methods report

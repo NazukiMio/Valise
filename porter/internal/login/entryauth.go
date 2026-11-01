@@ -31,6 +31,9 @@ func EntryAuth(ctx context.Context, e *porterenroll.Env, home string, p login.En
 	if rec == nil {
 		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+p.InstanceID, "先登记这个实例")
 	}
+	if prof, err := porterenroll.ReadProfile(home, p.InstanceID); err == nil {
+		e = e.For(prof)
+	}
 	a := p.Entry.Auth
 	if a == nil || (len(a.URLArgv) == 0 && len(a.TokenArgv) == 0) {
 		return nil, valise.New("entry_auth_none", "profile 没有声明如何取得管理页令牌", "按页面提示，在服务器终端中运行 harness 自己的命令获取")

@@ -25,7 +25,7 @@ func Detect(ctx context.Context, e *Env, profiles []profile.Profile) enroll.Dete
 		if p.Extends != "" || p.Detect == nil {
 			continue
 		}
-		if c, ok := detectOne(ctx, e, p); ok {
+		if c, ok := detectOne(ctx, e.For(p), p); ok {
 			for j := range profiles {
 				ch := &profiles[j]
 				if ch.Extends == p.ID && ch.When != nil && ch.When.Exists != nil {

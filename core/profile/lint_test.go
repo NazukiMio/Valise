@@ -298,3 +298,53 @@ checkup: { remedies: { long_session: ["send /new"] } }
 		t.Fatal(res[0].Issues)
 	}
 }
+
+func TestLintInstallCapabilities(t *testing.T) {
+	ok := baseYAML + `install:
+  id: user-prefix
+  summary: "安装 Example，不需要管理员权限"
+  requires:
+    - binary: git
+    - binary: node
+      version: ">=24.16.0"
+      install: [ { os_id: [debian, ubuntu], argv: [sudo, apt-get, install, -y, nodejs] } ]
+  steps:
+    - { kind: script, url: "https://example.invalid/i.sh", sha256: "` + strings.Repeat("a", 64) + `", interpreter: [bash], args: [--version, "1.2.3"], runtime_downloads: "Node" }
+    - { kind: npm_global, package: example, version: "1.2.3", integrity: "sha512-x" }
+    - { kind: argv, argv: [example, setup] }
+native_cli: [example, onboard]
+actions: []
+capabilities:
+  install: { status: tested, versions: ["1.2.3"], env: "Debian 13 x86_64" }
+  restore: { status: untested }
+`
+	if issues := lintOne(t, strings.Replace(ok, `  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/" }`,
+		`  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/", port_change: { argv: [example, port, "${PORT}"], restart_service: true } }`, 1)); len(issues) > 0 {
+		t.Fatal(issues)
+	}
+	bad := map[string]string{
+		"install.steps[0].sha256":            strings.Replace(ok, strings.Repeat("a", 64), "abc", 1),
+		"install.steps[0].url":               strings.Replace(ok, "https://example.invalid/i.sh", "http://x/i.sh", 1),
+		"install.steps[0].runtime_downloads": strings.Replace(ok, `, runtime_downloads: "Node"`, "", 1),
+		"install.steps[1].integrity":         strings.Replace(ok, `"sha512-x"`, `"sha1-x"`, 1),
+		"install.requires[1].version":        strings.Replace(ok, `">=24.16.0"`, `"24"`, 1),
+		"install.steps[2].kind":              strings.Replace(ok, "{ kind: argv, argv: [example, setup] }", "{ kind: shell, argv: [example, setup] }", 1),
+		"actions":                            strings.Replace(ok, "actions: []", "actions: [ { id: x } ]", 1),
+		"capabilities.install":               strings.Replace(ok, `, versions: ["1.2.3"], env: "Debian 13 x86_64"`, "", 1),
+		"capabilities.fly":                   strings.Replace(ok, "restore: { status: untested }", "fly: { status: untested }", 1),
+		"entries[0].port_change.argv": strings.Replace(ok, `  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/" }`,
+			`  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/", port_change: { argv: [example, port, "9"] } }`, 1),
+	}
+	for field, src := range bad {
+		issues := lintOne(t, src)
+		found := false
+		for _, i := range issues {
+			if strings.HasPrefix(i.Field, field) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: no issue in %v", field, issues)
+		}
+	}
+}

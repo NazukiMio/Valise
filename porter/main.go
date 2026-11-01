@@ -16,9 +16,11 @@ import (
 	_ "time/tzdata" // period time zones (docs/VAULT_FORMAT.md 10.2) on servers without zoneinfo
 
 	"valise/core/login"
+	"valise/core/profile"
 	"valise/core/rpc"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/forced"
+	porterinstall "valise/porter/internal/install"
 	porterlogin "valise/porter/internal/login"
 	"valise/porter/internal/mcp"
 	porterrevive "valise/porter/internal/revive"
@@ -37,6 +39,7 @@ func main() {
 const usage = `用法：
   valise-porter version [--json]
   valise-porter rpc
+  valise-porter exec [--path <目录>]... -- <命令>...（用登录环境执行原生界面、安装步骤）
   valise-porter serve --tier daily           （日常钥匙的强制命令）
   valise-porter seal-timer --instance <实例>（由定时器运行）
   valise-porter autosync                    （由封存后自动启动，同步到期的云备份）
@@ -58,6 +61,25 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return serveRPC(stdin, stdout, stderr, "")
 	case "serve":
 		return serveForced(args[1:], stdin, stdout, stderr)
+	case "exec":
+		// Admin connections only: the daily key's forced command refuses it.
+		argv := args[1:]
+		var dirs []string
+		for len(argv) >= 2 && argv[0] == "--path" {
+			dirs, argv = append(dirs, argv[1]), argv[2:]
+		}
+		if len(argv) > 0 && argv[0] == "--" {
+			argv = argv[1:]
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		ctx := context.Background()
+		env := porterenroll.LoadEnv(ctx, home).For(&profile.Profile{Detect: &profile.Detect{BinDirs: dirs}})
+		fmt.Fprintln(stderr, "exec:", porterinstall.Exec(ctx, env, argv))
+		return 127
 	case "stage-write":
 		if len(args) != 3 || args[1] != "--op" {
 			fmt.Fprintln(stderr, usage)

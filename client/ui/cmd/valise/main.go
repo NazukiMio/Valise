@@ -24,6 +24,9 @@ var version = "0.0.0-dev"
 const usage = `用法：valise [--config-dir 目录] [-v] <命令>
 
   doctor <服务器> [--json]                       检查服务器：架构、porter 版本、可用工具
+  install <服务器> --profile <id> [--show-script] [--yes]
+                                                 按官方方案安装 harness：先检测依赖、核对脚本哈希并展示，确认后在交互终端里执行
+  native <服务器> --profile <id>                   打开 harness 自己的原生界面（独立的管理连接）
   enroll <服务器> [--profile id] [--id 实例] [--assign root:glob=类别]... [--report-json] [--accept]
                                                  登记 agent：展示登记报告，加 --accept 才写入实例记录
   porter deploy <服务器> --release <版本>         从 GitHub Release 下载、校验并部署 porter
@@ -166,6 +169,10 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.server(ctx, args[1:])
 	case args[0] == "admin":
 		return c.admin(ctx, args[1:])
+	case args[0] == "install":
+		return c.install(ctx, args[1:])
+	case args[0] == "native":
+		return c.native(ctx, args[1:])
 	case args[0] == "period":
 		return c.period(ctx, args[1:])
 	case args[0] == "timer":
@@ -220,7 +227,10 @@ func (c *cli) printProblem(err error) {
 	if !ok {
 		ue = valise.New("unexpected", "发生了未预期的错误", "加上 -v 查看细节，并向项目报告").WithDetail(err.Error())
 	}
-	fmt.Fprintf(c.errOut, "失败：%s\n建议：%s\n", ue.Reason, ue.Suggestion)
+	fmt.Fprintf(c.errOut, "失败：%s\n", ue.Reason)
+	if ue.Suggestion != "" {
+		fmt.Fprintf(c.errOut, "建议：%s\n", ue.Suggestion)
+	}
 	if c.verbose && ue.Detail != "" {
 		fmt.Fprintf(c.errOut, "细节：\n%s\n", ue.Detail)
 	} else if ue.Detail != "" {

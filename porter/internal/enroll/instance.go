@@ -69,6 +69,7 @@ func ReadProfile(home, id string) (*profile.Profile, error) {
 // describes the source server (its npm prefix, its paths). Provenance is
 // replaced only when this server shows the same kind of body.
 func Refresh(ctx context.Context, e *Env, p *profile.Profile, rec *enroll.Record) {
+	e = e.For(p)
 	roots := make([]enroll.Root, 0, len(rec.Roots))
 	for id, path := range rec.Roots {
 		roots = append(roots, enroll.Root{ID: id, Path: path, Exists: true})
@@ -84,6 +85,7 @@ func Refresh(ctx context.Context, e *Env, p *profile.Profile, rec *enroll.Record
 // Live reads the current service and entry state of a profile on this
 // server (read-only).
 func Live(ctx context.Context, e *Env, p *profile.Profile) ([]enroll.ServiceState, []enroll.EntryState) {
+	e = e.For(p)
 	var warns []string
 	return services(ctx, e, p, &warns), entries(p)
 }

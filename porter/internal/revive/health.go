@@ -32,6 +32,7 @@ func dialOK(host string, port int) bool {
 // consecutive rounds pass or the timeout expires. It returns a log of the
 // rounds (shown to the user).
 func Health(ctx context.Context, e *porterenroll.Env, p profile.Profile, unit string, t HealthTiming) ([]string, bool) {
+	e = e.For(&p)
 	if t.Grace == 0 {
 		t.Grace = 20 * time.Second
 		if p.Health != nil && p.Health.GraceSeconds > 0 {
