@@ -99,10 +99,10 @@ func (t *isetTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool)
 		case k == "enter" && t.cursor == isTimer:
 			return t.chooseTimer(m, p), true
 		case k == "enter" && t.cursor == isReenroll:
-			return m.push(confirm("重新登记 "+inst+"？", []string{"harness 升级、目录变化或换了 profile 版本后使用。会先在终端显示登记报告，你确认后才写入。"},
+			return m.push(confirm("重新接入 "+inst+"？", []string{"harness 升级、目录变化或换了 profile 版本后使用。会先在终端显示接入报告，你确认后才写入。"},
 				func(m *Model) tea.Cmd {
 					return tea.Sequence(m.runCLI("enroll", host, "--profile", p.inst.ProfileID, "--id", inst), func() tea.Msg {
-						return pushMsg{confirm("接受上面的登记报告？", nil, func(m *Model) tea.Cmd {
+						return pushMsg{confirm("接受上面的接入报告？", nil, func(m *Model) tea.Cmd {
 							return m.runCLI("enroll", host, "--profile", p.inst.ProfileID, "--id", inst, "--accept")
 						})}
 					})
@@ -185,7 +185,7 @@ func (t *isetTab) view(m *Model, p *instancePage, height int) string {
 		{"云备份周期", t.periodText(m, p)},
 		{"定时建立逃生舱", t.timerText()},
 		{"归类规则", t.rulesText(p)},
-		{"重新登记", dimStyle.Render("harness 升级、目录变化后使用；会先显示登记报告。")},
+		{"重新接入", dimStyle.Render("harness 升级、目录变化后使用；会先显示接入报告。")},
 	}
 	var b strings.Builder
 	for i, s := range sections {

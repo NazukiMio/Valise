@@ -196,7 +196,7 @@ func (a *addServerScreen) view(m *Model) string {
 		b.WriteString("\n" + errStyle.Render(errText(a.err)))
 	}
 	if a.done {
-		b.WriteString("\n" + okStyle.Render("已添加。进入服务器后按 n 登记上面的 agent。"))
+		b.WriteString("\n" + okStyle.Render("已添加。进入服务器后按 n 把上面的 agent 接入 Valise。"))
 	}
 	return b.String()
 }

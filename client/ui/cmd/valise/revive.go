@@ -131,7 +131,7 @@ func printPlan(c *cli, rp *service.RevivePlan) {
 	case revive.BodyMoveDirs:
 		fmt.Fprintf(w, "  身体：保持不变（交换时搬动 %v）\n", p.Body.Dirs)
 	case revive.BodyNPMInstall:
-		fmt.Fprintf(w, "  身体：按来源记录安装 %s@%s（registry %s，integrity 已与登记记录核对）\n", p.Body.Package, p.Body.Version, p.Body.Registry)
+		fmt.Fprintf(w, "  身体：按来源记录安装 %s@%s（registry %s，integrity 已与接入时的记录核对）\n", p.Body.Package, p.Body.Version, p.Body.Registry)
 	}
 	if p.Unit != "" {
 		fmt.Fprintf(w, "  服务：%s", p.Unit)

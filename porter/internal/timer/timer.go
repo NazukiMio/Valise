@@ -78,7 +78,7 @@ func Set(ctx context.Context, e *porterenroll.Env, home string, p vaultrpc.Timer
 		return nil, valise.New("instance_invalid", err.Error(), "检查实例名")
 	}
 	if rec, err := porterenroll.ReadRecord(home, p.InstanceID); err != nil || rec == nil {
-		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+p.InstanceID, "先登记这个实例")
+		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+p.InstanceID, "先把这个 agent 接入 Valise")
 	}
 	svc, tmr := UnitNames(p.InstanceID)
 	dir := unitDir(home)

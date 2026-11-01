@@ -19,7 +19,7 @@ func newServerPage(host string) *serverPage { return &serverPage{host: host} }
 
 func (s *serverPage) title() string { return s.host }
 func (s *serverPage) help() string {
-	return menu("enter", "进入", "n", "登记新 agent", "c", "云备份", "k", "空间清理", "t", "服务器设置", "r", "刷新")
+	return menu("enter", "进入", "n", "接入 Valise", "c", "云备份", "k", "空间清理", "t", "服务器设置", "r", "刷新")
 }
 
 func (s *serverPage) init(m *Model) tea.Cmd {
@@ -70,8 +70,8 @@ func (s *serverPage) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 func (s *serverPage) enroll(m *Model) tea.Cmd {
 	host := s.host
 	return tea.Sequence(m.runCLI("enroll", host), func() tea.Msg {
-		return pushMsg{confirm("接受上面的登记报告，把这个 agent 登记到 "+host+"？", []string{
-			"登记只在服务器上写一份实例记录，不改动 agent 的任何文件。",
+		return pushMsg{confirm("接受上面的接入报告，把这个 agent 接入 Valise？", []string{
+			"接入只读取和记录：在服务器上写一份实例记录，不改动 agent 的任何文件。",
 			"如果报告里有多个候选或需要补充归类，请在终端用 valise enroll 的参数处理。",
 		}, func(m *Model) tea.Cmd {
 			return tea.Sequence(m.runCLI("enroll", host, "--accept"), m.loadServer(host))
@@ -90,7 +90,7 @@ func (s *serverPage) view(m *Model) string {
 	case !d.loaded:
 		return dimStyle.Render("正在连接 " + s.host + " …")
 	case len(d.instances) == 0:
-		return box("", "这台服务器上还没有登记的 agent。按 "+keyStyle.Render("n")+" 登记。", min(m.width-2, 70))
+		return box("", "这台服务器上的 agent 还没塞进 Valise。按 "+keyStyle.Render("n")+" 接入。", min(m.width-2, 70))
 	}
 	var cards []string
 	for i, in := range d.instances {

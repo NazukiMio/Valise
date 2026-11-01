@@ -70,7 +70,7 @@ func (s *Service) LoginMethods(ctx context.Context, host, instance string) (*Log
 		return nil, err
 	}
 	if res.Record == nil {
-		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+instance, "先运行 valise enroll <服务器> --accept")
+		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+instance, "先运行 valise enroll <服务器> --accept")
 	}
 	set, err := s.Profiles()
 	if err != nil {

@@ -97,7 +97,7 @@ func (s *Service) PlanInstall(ctx context.Context, host, profileID string) (*Ins
 	prof := lp.Effective
 	if prof.Install == nil {
 		return nil, valise.New("install_no_plan", prof.DisplayName+" 还没有经过核实的官方安装方案",
-			"按 "+prof.DisplayName+" 官方文档在服务器上自己安装，装好后用 valise enroll 纳入管理")
+			"按 "+prof.DisplayName+" 官方文档在服务器上自己安装，装好后用 valise enroll 接入 Valise")
 	}
 	var id [6]byte
 	_, _ = rand.Read(id[:])

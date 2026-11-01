@@ -27,8 +27,8 @@ func init() {
 		}
 		a := prof.FindAction(p.ActionID)
 		if a == nil {
-			return nil, valise.New("action_unknown", "服务器上登记的 profile 里没有动作 "+p.ActionID,
-				"profile 更新后需要重新登记一次才能使用新动作：valise enroll <服务器> --accept")
+			return nil, valise.New("action_unknown", "服务器上接入时保存的 profile 里没有动作 "+p.ActionID,
+				"profile 更新后需要重新接入一次才能使用新动作：valise enroll <服务器> --accept")
 		}
 		if s.daily() && a.NeedsAdmin() {
 			return nil, rpc.AdminRequired(action.MethodRun + " " + a.ID)

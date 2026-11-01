@@ -41,7 +41,7 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		return nil, err
 	}
 	if rec == nil {
-		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+params.InstanceID, "先运行 valise enroll <服务器> --accept")
+		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+params.InstanceID, "先运行 valise enroll <服务器> --accept")
 	}
 	if rec.Superseded != nil {
 		return nil, valise.New("instance_superseded", "实例 "+params.InstanceID+" 的目录已被实例 "+rec.Superseded.By+" 取代（操作 "+rec.Superseded.OpID+"）",
@@ -52,7 +52,7 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		return nil, err
 	}
 	if prof.ProfileVersion != rec.ProfileVersion || prof.ID != rec.ProfileID {
-		return nil, valise.New("instance_profile_mismatch", "实例记录与登记时的 profile 不一致", "重新登记：valise enroll <服务器> --accept")
+		return nil, valise.New("instance_profile_mismatch", "实例记录与接入时的 profile 不一致", "重新接入：valise enroll <服务器> --accept")
 	}
 	recipients, err := ReadRecipients(p)
 	if err != nil {

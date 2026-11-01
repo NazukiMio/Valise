@@ -32,7 +32,7 @@ func ReadRecord(home, id string) (*enroll.Record, error) {
 	}
 	var r enroll.Record
 	if err := json.Unmarshal(b, &r); err != nil {
-		return nil, valise.New("instance_record_corrupt", "服务器上的实例记录无法解析："+id, "重新登记以覆盖它").WithDetail(err.Error())
+		return nil, valise.New("instance_record_corrupt", "服务器上的实例记录无法解析："+id, "重新接入以覆盖它").WithDetail(err.Error())
 	}
 	return &r, nil
 }
@@ -51,14 +51,14 @@ func ProfilePath(home, id string) string {
 func ReadProfile(home, id string) (*profile.Profile, error) {
 	b, err := os.ReadFile(ProfilePath(home, id))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, valise.New("instance_profile_missing", "服务器上没有实例 "+id+" 登记时的 profile", "重新登记：valise enroll <服务器> --accept")
+		return nil, valise.New("instance_profile_missing", "服务器上没有实例 "+id+" 接入时的 profile", "重新接入：valise enroll <服务器> --accept")
 	}
 	if err != nil {
 		return nil, err
 	}
 	var p profile.Profile
 	if err := json.Unmarshal(b, &p); err != nil {
-		return nil, valise.New("instance_profile_corrupt", "服务器上的 profile 副本无法解析："+id, "重新登记以覆盖它")
+		return nil, valise.New("instance_profile_corrupt", "服务器上的 profile 副本无法解析："+id, "重新接入以覆盖它")
 	}
 	if rec, err := ReadRecord(home, id); err == nil {
 		rec.ApplyEntryPorts(&p)
@@ -78,15 +78,15 @@ func SetEntryPort(home, id, entry string, port int) (map[string]int, error) {
 		return nil, err
 	}
 	if rec == nil {
-		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+id, "先运行 valise enroll <服务器> --accept")
+		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+id, "先运行 valise enroll <服务器> --accept")
 	}
 	b, err := os.ReadFile(ProfilePath(home, id))
 	if err != nil {
-		return nil, valise.New("instance_profile_missing", "服务器上没有实例 "+id+" 登记时的 profile", "重新登记：valise enroll <服务器> --accept")
+		return nil, valise.New("instance_profile_missing", "服务器上没有实例 "+id+" 接入时的 profile", "重新接入：valise enroll <服务器> --accept")
 	}
 	var p profile.Profile
 	if err := json.Unmarshal(b, &p); err != nil {
-		return nil, valise.New("instance_profile_corrupt", "服务器上的 profile 副本无法解析："+id, "重新登记以覆盖它")
+		return nil, valise.New("instance_profile_corrupt", "服务器上的 profile 副本无法解析："+id, "重新接入以覆盖它")
 	}
 	def := 0
 	for _, e := range p.Entries {
@@ -154,7 +154,7 @@ func WriteRecord(home string, r enroll.Record, p profile.Profile) (string, error
 		return "", err
 	}
 	if p.ID == "" || p.ProfileVersion != r.ProfileVersion {
-		return "", valise.New("instance_profile_mismatch", "实例记录与 profile 版本不一致", "重新运行登记")
+		return "", valise.New("instance_profile_mismatch", "实例记录与 profile 版本不一致", "重新接入")
 	}
 	pb, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {

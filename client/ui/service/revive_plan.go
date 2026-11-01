@@ -156,7 +156,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		}
 	} else {
 		return nil, valise.New("profile_version", fmt.Sprintf("快照使用 profile %s v%d，客户端中没有同一版本，快照里也没有保存副本", head.Profile.ID, head.Profile.Version),
-			"升级客户端，或用当前 profile 重新登记并封存后再复活")
+			"升级客户端，或用当前 profile 重新接入并建立逃生舱后再着陆")
 	}
 	if prof.Status != profile.StatusVerified && !o.AllowDraft {
 		rp.block("profile_draft", "profile "+prof.ID+" 仍是 draft（未核实），复活需要显式同意", "确认风险后加上 --allow-draft-profile")
@@ -218,7 +218,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	}
 	if o.Mode == revive.ModeRollback {
 		if facts.Record == nil {
-			rp.block("not_enrolled", "目标服务器上没有登记实例 "+instance, "回滚针对已登记的实例；跨服务器请用 migrate")
+			rp.block("not_enrolled", "目标服务器上没有接入 Valise 的实例 "+instance, "原地着陆针对已接入的实例；跨服务器请用 migrate")
 		} else if sup := facts.Record.Superseded; sup != nil {
 			rp.block("superseded", "实例 "+instance+" 的目录已被实例 "+sup.By+" 取代（操作 "+sup.OpID+"）",
 				"回滚 "+sup.By+"；不再需要旧实例时用 valise old cleanup 清理")
@@ -227,7 +227,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		}
 	} else if len(facts.Overlapping) > 0 {
 		plan.Supersedes = facts.Overlapping
-		rp.Warnings = append(rp.Warnings, "目标上已登记的实例 "+strings.Join(facts.Overlapping, "、")+
+		rp.Warnings = append(rp.Warnings, "目标上已接入的实例 "+strings.Join(facts.Overlapping, "、")+
 			" 使用同一目录：交换成功后它的旧目录保留为 prev，记录标记为\"已被取代\"，不再能封存；用 valise old list 查看，valise old cleanup 清理")
 	}
 	for _, f := range facts.Roots {
@@ -399,7 +399,7 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 			return
 		}
 		if pv.NPM.Integrity == "" || facts.RegistryCheck != pv.NPM.Integrity {
-			rp.block("provenance_changed", fmt.Sprintf("registry 上 %s@%s 的 integrity 与登记时记录的不一致（或无法查询）", pv.NPM.Package, pv.NPM.Version),
+			rp.block("provenance_changed", fmt.Sprintf("registry 上 %s@%s 的 integrity 与接入时记录的不一致（或无法查询）", pv.NPM.Package, pv.NPM.Version),
 				"来源已变化，Valise 不会自动安装。核实后可按官方文档全新安装："+freshDoc(prof))
 			return
 		}

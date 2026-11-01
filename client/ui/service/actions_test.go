@@ -70,7 +70,7 @@ func TestActions(t *testing.T) {
 		t.Fatal("not stale")
 	}
 	_, err = s.RunAction(ctx, "box", "demo", "newer", ActionOptions{})
-	if ue, ok := valise.As(err); !ok || ue.Code != "action_unknown" || !strings.Contains(ue.Suggestion, "重新登记") {
+	if ue, ok := valise.As(err); !ok || ue.Code != "action_unknown" || !strings.Contains(ue.Suggestion, "重新接入") {
 		t.Fatalf("%v", err)
 	}
 }

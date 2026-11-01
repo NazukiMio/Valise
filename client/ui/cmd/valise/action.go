@@ -92,7 +92,7 @@ func (c *cli) printActions(host string, list *service.ActionList) error {
 		}
 	}
 	if list.Stale {
-		fmt.Fprintf(c.out, "\n注意：服务器上登记的 profile 与本机的版本不同，新增的动作要重新登记后才能用（valise enroll %s --profile %s --accept）。\n", host, list.ProfileID)
+		fmt.Fprintf(c.out, "\n注意：服务器上保存的 profile 与本机的版本不同，新增的动作要重新接入后才能用（valise enroll %s --profile %s --accept）。\n", host, list.ProfileID)
 	}
 	fmt.Fprintf(c.out, "\n执行：valise action %s %s <动作>\n", host, list.Instance)
 	return nil

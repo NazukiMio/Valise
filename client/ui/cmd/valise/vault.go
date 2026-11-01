@@ -75,7 +75,7 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 		fmt.Fprintln(w, "  身体有本地修改，已把 body_patch 装进逃生舱")
 	}
 	if rep.UnclassifiedCount > 0 && rep.Tier == vault.TierSoul {
-		fmt.Fprintf(w, "未分类文件 %d 个，按\"未知即敏感\"不进轻装逃生舱（标准、完整、原样会装；可在登记时用 --assign 归类）\n", rep.UnclassifiedCount)
+		fmt.Fprintf(w, "未分类文件 %d 个，按\"未知即敏感\"不进轻装逃生舱（标准、完整、原样会装；可在接入时用 --assign 归类）\n", rep.UnclassifiedCount)
 	}
 	if rep.Tier == vault.TierRaw {
 		fmt.Fprintln(w, "raw 档：实例目录下的全部文件，整体按凭据层对待；其中的身体只能在同架构、同路径下原样使用")

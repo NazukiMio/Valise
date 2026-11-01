@@ -93,7 +93,7 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 	if res.ProfileLocal {
 		origin = "本地，未经审核"
 	}
-	fmt.Fprintf(w, "登记报告：%s 上的实例 %s\n", res.Host, r.InstanceID)
+	fmt.Fprintf(w, "接入报告：%s 上的实例 %s\n", res.Host, r.InstanceID)
 	fmt.Fprintf(w, "profile：%s v%d（%s，%s）\n\n", r.ProfileID, r.ProfileVersion, origin, verified)
 
 	fmt.Fprintln(w, "目录：")
@@ -170,7 +170,7 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 		}
 	}
 	if len(r.Changes) > 0 {
-		fmt.Fprintln(w, "\n与上次登记相比的变化：")
+		fmt.Fprintln(w, "\n与上次接入相比的变化：")
 		for _, ch := range r.Changes {
 			fmt.Fprintf(w, "  %s：%s → %s\n", ch.Field, ch.From, ch.To)
 		}

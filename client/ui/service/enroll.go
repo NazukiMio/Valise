@@ -123,7 +123,7 @@ func choose(set *profiles.Set, cands []enroll.Candidate, want, host string) (enr
 		if len(pick) == 0 {
 			reason = fmt.Sprintf("服务器 %s 上没有 profile %q 的实例（发现的有：%s）", host, want, strings.Join(ids, "、"))
 		}
-		return enroll.Candidate{}, "", valise.New("choose_instance", reason, "用 --profile <id> 指定要登记的那一个")
+		return enroll.Candidate{}, "", valise.New("choose_instance", reason, "用 --profile <id> 指定要接入的那一个")
 	}
 	c := pick[0]
 	switch {

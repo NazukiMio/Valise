@@ -90,7 +90,7 @@ func OldCleanup(s Store, id string) ([]string, error) {
 		return nil, err
 	}
 	if rec == nil {
-		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+id, "用 valise old list 查看可清理的旧实例")
+		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+id, "用 valise old list 查看可清理的旧实例")
 	}
 	if rec.Superseded == nil {
 		return nil, valise.New("instance_not_superseded", "实例 "+id+" 没有被取代，不能当作旧实例清理", "用 valise old list 查看可清理的旧实例")

@@ -27,7 +27,7 @@ func Install(home string, p agentkit.KitInstallParams, now time.Time) (*agentkit
 		return nil, err
 	}
 	if rec == nil {
-		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+p.InstanceID, "先运行 valise enroll <服务器> --accept")
+		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+p.InstanceID, "先运行 valise enroll <服务器> --accept")
 	}
 	prof, err := porterenroll.ReadProfile(home, p.InstanceID)
 	if err != nil {
@@ -38,7 +38,7 @@ func Install(home string, p agentkit.KitInstallParams, now time.Time) (*agentkit
 	}
 	root := rec.Roots[prof.AgentKit.SkillsDir.Root]
 	if root == "" {
-		return nil, valise.New("kit_no_root", "实例没有 root "+prof.AgentKit.SkillsDir.Root, "重新登记实例")
+		return nil, valise.New("kit_no_root", "实例没有 root "+prof.AgentKit.SkillsDir.Root, "重新接入")
 	}
 	dir := filepath.Join(root, filepath.FromSlash(prof.AgentKit.SkillsDir.Path))
 	res := &agentkit.KitInstallResult{Dir: dir, Written: []string{}}
@@ -89,7 +89,7 @@ func skillsDir(home, instance string) (string, error) {
 		return "", err
 	}
 	if rec == nil {
-		return "", valise.New("instance_not_enrolled", "服务器上没有登记实例 "+instance, "先运行 valise enroll <服务器> --accept")
+		return "", valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+instance, "先运行 valise enroll <服务器> --accept")
 	}
 	prof, err := porterenroll.ReadProfile(home, instance)
 	if err != nil {

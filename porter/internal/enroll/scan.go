@@ -46,7 +46,7 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 		return nil, valise.New("instance_id_invalid", err.Error(), "用 --id 指定一个由小写字母、数字和连字符组成的 id")
 	}
 	if st, err := os.Stat(params.StateDir); err != nil || !st.IsDir() || !filepath.IsAbs(params.StateDir) {
-		return nil, valise.New("state_dir_missing", "状态目录不存在："+params.StateDir, "重新运行登记，让 Valise 重新探测")
+		return nil, valise.New("state_dir_missing", "状态目录不存在："+params.StateDir, "重新接入，让 Valise 重新探测")
 	}
 	for _, o := range params.Overrides {
 		if err := o.Validate(p); err != nil {

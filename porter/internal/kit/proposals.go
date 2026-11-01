@@ -158,7 +158,7 @@ func Decide(home string, d agentkit.DecideParams) (*agentkit.DecideResult, error
 		return nil, err
 	}
 	if rec == nil {
-		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+d.InstanceID, "先运行 valise enroll <服务器> --accept")
+		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+d.InstanceID, "先运行 valise enroll <服务器> --accept")
 	}
 	prof, err := porterenroll.ReadProfile(home, d.InstanceID)
 	if err != nil {

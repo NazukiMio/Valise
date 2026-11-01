@@ -237,7 +237,7 @@ func TestCheckupEscWithoutProposals(t *testing.T) {
 	for _, k := range []string{"a", "x", "down", "up", "esc"} {
 		key(t, m, k)
 	}
-	wantText(t, m, "登记新 agent") // back on the server page
+	wantText(t, m, "接入 Valise") // back on the server page
 }
 
 // Regression: a list longer than the window kept rendering past it and the

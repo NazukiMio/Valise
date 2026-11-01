@@ -44,7 +44,7 @@ func (c *cli) server(ctx context.Context, args []string) error {
 				fmt.Fprintln(c.out)
 			}})
 		if err == nil {
-			fmt.Fprintf(c.out, "已添加 %s。登记 agent：valise enroll %s\n", pos[0], pos[0])
+			fmt.Fprintf(c.out, "已添加 %s。接入 agent：valise enroll %s\n", pos[0], pos[0])
 		}
 		return err
 	case "list":

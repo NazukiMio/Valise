@@ -83,7 +83,7 @@ func (t *Tools) load() (*enroll.Record, *profile.Profile, error) {
 		return nil, nil, err
 	}
 	if rec == nil {
-		return nil, nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+t.Instance, "请用户先运行 valise enroll")
+		return nil, nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+t.Instance, "请用户先运行 valise enroll")
 	}
 	if rec.Superseded != nil {
 		return nil, nil, valise.New("instance_superseded", "实例 "+t.Instance+" 已被实例 "+rec.Superseded.By+" 取代", "请用户检查 MCP 配置中的实例 id")

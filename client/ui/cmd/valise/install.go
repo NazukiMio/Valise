@@ -77,7 +77,7 @@ func (c *cli) install(ctx context.Context, args []string) error {
 		v = "版本未知"
 	}
 	fmt.Fprintf(c.out, "安装完成：在 %s 找到 %s（%s）。\n", res.Found.StateDir, plan.ProfileID, v)
-	fmt.Fprintf(c.out, "下一步：\n  纳入管理：valise enroll %s --profile %s --accept\n  打开管理页：valise open %s %s\n", host, plan.ProfileID, host, plan.ProfileID)
+	fmt.Fprintf(c.out, "下一步：\n  接入 Valise：valise enroll %s --profile %s --accept\n  打开管理页：valise open %s %s\n", host, plan.ProfileID, host, plan.ProfileID)
 	if len(plan.NativeCLI) > 0 {
 		fmt.Fprintf(c.out, "  模型和渠道等设置在管理页里填写，或用原生界面：valise native %s --profile %s\n", host, plan.ProfileID)
 	}
