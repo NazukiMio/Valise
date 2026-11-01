@@ -72,7 +72,7 @@ fake-ssh 只能验证本地协议连通性。凡是涉及真实 Linux 用户态�
 3. `/usr/local/bin/valise-porter`
 4. 裸命令 `valise-porter`（兼容 `authorized_keys` 中 `command="..."` 的强制命令模式）
 
-使用 Valise 双钥匙的服务器，porter 固定在 `~/.local/bin/valise-porter`（日常钥匙的强制命令指向它，ARCHITECTURE.md 第 2.1 节）；探测链只用于自带钥匙的服务器。
+使用 Valise 日常钥匙的服务器，porter 固定在 `~/.local/bin/valise-porter`（日常钥匙的强制命令指向它，ARCHITECTURE.md 第 2.1 节）；探测链只用于自带钥匙的服务器。
 
 ## fake-ssh 测试替身规范
 
@@ -105,7 +105,7 @@ fake-ssh 是一个**冒充 `ssh` 命令的本地小程序**。客户端平时调
 
 ## 安全与文案红线
 
-1. **登录凭据**：Valise 绝不保存 SSH 密码；首次手动添加服务器时，密码只在 OpenSSH 自己的提示中输入一次（GUI 经 Valise 的 askpass 转交，只在内存中经过）。Valise 为每台服务器生成两把专用密钥：日常钥匙（无口令、0600，服务器端用强制命令限制为 porter 日常模式）与管理钥匙（`ssh-keygen` 以 Valise 口令加密，解锁后进入 Valise 自己的 ssh-agent，带时间窗口）。用户自己的 SSH 密钥仍交给系统 OpenSSH 和用户的 SSH Agent，Valise 不读取。详见 ARCHITECTURE.md 第 2.1 节。
+1. **登录凭据**：Valise 绝不保存 SSH 密码；首次手动添加服务器时，密码只在 OpenSSH 自己的提示中输入一次（GUI 经 Valise 的 askpass 转交，只在内存中经过）。Valise 为每台服务器生成日常钥匙（无口令、0600，服务器端用强制命令限制为 porter 日常模式）；管理钥匙可选、默认不创建（`ssh-keygen` 以单独的管理口令加密，解锁后进入 Valise 自己的 ssh-agent，带时间窗口），没有管理钥匙时管理操作每次用服务器密码临时登录。用户自己的 SSH 密钥仍交给系统 OpenSSH 和用户的 SSH Agent，Valise 不读取。详见 ARCHITECTURE.md 第 2.1 节。
 2. **模型凭据**：Valise 不提供 API Key 输入辅助。用户在 harness 原生界面或管理页里自己填写；Valise 不解析、不读取、不保存、不记录原生界面中的输入与回显，也不声称这些字节"完全不经过 Valise"（GUI 的终端经 Valise 中转，INSTALL.md 第 2 节）。
 3. **凭据分层**：凭据只按 profile 的声明分类。只有 `soul-secrets` 和 `full` 两个档位会把凭据封存进金库，并且做独立标记。凭据内容和任何文件内容都不得出现在日志、审计记录、错误信息或 MCP 返回值中。
 4. **文案去黑话**：界面用语以 `docs/PRODUCT.md` 8.1 的对照表为准（逃生舱、建立逃生舱、逃生舱着陆、管理页、登录授权、空间站、原生界面、体检……）。错误信息必须包含"失败原因 + 下一步建议"，原始技术细节默认折叠。

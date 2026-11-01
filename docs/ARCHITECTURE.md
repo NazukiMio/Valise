@@ -7,17 +7,17 @@
               │
 [ 客户端服务层 (Go) ]
   ├─ Keystore：age X25519 身份，口令加密（age 原生 scrypt）
-  ├─ 服务器访问：Valise 自己的 ssh_config、每台服务器的日常钥匙与管理钥匙、Valise 自己的 ssh-agent（第 2.1 节）
+  ├─ 服务器访问：Valise 自己的 ssh_config、每台服务器的日常钥匙、可选的管理钥匙、Valise 自己的 ssh-agent（第 2.1 节）
   ├─ Profile 仓库：签名的资料包（单独发布，PROFILES.md 1.1）+ 用户本地 profile
   ├─ 金库读取与解密（只在客户端内存中解密）
   ├─ 隧道：管理页、本地页面转发、登录中继
   ├─ 安装与原生界面（INSTALL.md）
-  └─ SSH 传输：系统 OpenSSH；日常钥匙可用 ControlMaster 复用，管理钥匙每次新开连接
+  └─ SSH 传输：系统 OpenSSH；日常钥匙可用 ControlMaster 复用，管理操作每次新开连接
               │
               │  SSH stdio：JSONL JSON-RPC 2.0（控制面）/ 原始字节流（数据面）
               ▼
 [ 服务器：valise-porter（按需唤起，不监听任何端口）]
-  ├─ ~/.ssh/authorized_keys                          日常钥匙（带强制命令）与管理钥匙各一行，注释 valise-daily / valise-admin
+  ├─ ~/.ssh/authorized_keys                          日常钥匙（带强制命令）一行、可选的管理钥匙一行，注释 valise-daily / valise-admin
   ├─ ~/.config/valise/instances/<instance_id>.json   实例记录
   ├─ ~/.config/valise/instances/<instance_id>.profile.json  登记时生效的 profile（离线封存用）
   ├─ ~/.config/valise/recipients.txt                 age 收件人公钥
@@ -37,37 +37,43 @@
 - **控制面**：`ssh -T <host> "<porter_path> rpc"` 启动一个会话级子进程，通过 stdin/stdout 交换单行 JSON-RPC 2.0 消息。首个请求必须是 `hello`，返回 porter 版本、协议版本、架构、HOME 路径、可用工具（`systemctl --user`、`git`、`npm`、`uv`、`rsync`、`rclone`；按登录环境的 PATH 查找，与登记、复活一致），以及**未完成的交换日志**。协议主版本不一致时，客户端拒绝继续。交换日志的内容格式在 M4 定义；在此之前，`hello` 只按 `journal/` 目录中的 `<op_id>.json` 文件名列出 op_id。
 - **数据面**：大数据流使用独立的一次性 SSH 调用，例如 `porter blob-read`（加密 blob 从服务器流向客户端）和 `porter stage-write --op <id>`（复活时，明文 tar 流从客户端流向服务器）。明文只会出现在客户端内存中，以及目标服务器的暂存目录里。
 - **连接复用**：优先复用用户已有的 ControlMaster；没有时，使用 `-o ControlMaster=auto -o ControlPath=<客户端缓存目录>/cm-%C -o ControlPersist=60`。Unix 套接字路径有长度上限（macOS 为 104 字节，OpenSSH 建立 master 时还会追加约 17 字节的临时后缀），缓存目录过长时改用 `/tmp/valise-<uid>`（必须是本人所有、权限 0700 的真实目录）；仍不满足时不使用连接复用。
-- **只有日常钥匙使用连接复用**：管理钥匙的连接一律 `-o ControlPath=none -o IdentitiesOnly=yes`，每次操作新开，用完即关（第 2.1 节）。
+- **只有日常钥匙使用持续的连接复用**：管理操作每次新开自己的连接（`-o IdentitiesOnly=yes`，不连到日常钥匙的 ControlMaster），需要时只为这一次操作开临时 ControlMaster，结束即关（第 2.1 节）。
 - **协议版本**：格式为 `<主>.<次>`，当前为 `1.0`。主版本号不一致时客户端拒绝继续；次版本号只表示向后兼容的新增。
 - **porter 部署**：客户端从 GitHub Release 下载目标架构的二进制，用随客户端发布的公钥校验 `SHA256SUMS` 的 minisign 签名，再核对哈希；或者由用户显式选择本地构建产物。上传时先执行 `cat > ~/.local/bin/valise-porter.tmp`，再 `chmod 0755`，最后 `mv` 原子替换。
   - Release 资产命名：`valise-porter_linux_amd64`、`valise-porter_linux_arm64`、`SHA256SUMS`（`sha256sum` 输出格式）、`SHA256SUMS.minisig`。远端架构由 `uname -s -m` 判定，只支持 Linux 的 `x86_64` / `aarch64`。
   - minisign 校验：同时接受预哈希（`ED`，BLAKE2b-512）与旧版（`Ed`）签名，并且必须校验 trusted comment 的全局签名。签名公钥随客户端发布；客户端尚未配置发布公钥时，拒绝从 Release 部署，只允许上传本地构建产物。
   - 在 `chmod` 与 `mv` 之间，执行 `valise-porter.tmp version --json`：确认它能在目标架构上运行，并且它自报的 SHA-256 与本地文件一致，才执行 `mv`。任何一步失败都不替换已有的 porter。
-  - 部署目标固定为 `~/.local/bin/valise-porter`，全程不使用 sudo。部署与更新都走管理钥匙。
+  - 部署目标固定为 `~/.local/bin/valise-porter`，全程不使用 sudo。首次部署在添加服务器的引导登录中完成（第 3 节），之后的更新是管理操作。
   - **检查更新**：客户端经 GitHub API 列出 Release，发现比服务器上更新的 porter 时提示，用户确认后按上述流程更新；不自动更新。发布签名公钥尚未配置的开发构建，界面不显示"一键部署"，只提供"上传本地构建"，不把尚未建立的发布链描述为可用。
 
-### 2.1 两把钥匙与操作分级（2026-11-01 用户决定）
+### 2.1 日常钥匙、管理登录与操作分级（2026-11-01 用户决定）
 
-目的：打开 Valise 不等于拿到服务器的完整权限；敏感操作必须重新输入 Valise 口令，并且这一限制由 OpenSSH 与 porter 的代码执行，而不是只靠界面。
+目的：打开 Valise 不等于拿到服务器的完整权限。敏感操作必须另外出示一个秘密（管理口令，或服务器密码），并且这一限制由 OpenSSH 与 porter 的代码执行，而不是只靠界面。
 
-| | 日常钥匙 | 管理钥匙 |
-| :--- | :--- | :--- |
-| 生成 | `ssh-keygen -t ed25519 -N ''`，存于 `<客户端数据目录>/keys/<服务器>/daily`（0600） | `ssh-keygen -t ed25519 -N <Valise 口令>`，存于 `keys/<服务器>/admin`（0600）。私钥加密由 OpenSSH 完成，Valise 不自研 |
-| 服务器端 | `authorized_keys` 中：`restrict,port-forwarding,permitopen="127.0.0.1:*",permitopen="[::1]:*",command="$HOME/.local/bin/valise-porter serve --tier daily" <公钥> valise-daily`（`verify: pending`：各靶机 OpenSSH 对端口通配与强制命令的支持） | 普通一行 `<公钥> valise-admin`，即完整 shell |
-| 能做什么 | 第 2.2 节的日常操作，以及转发到服务器本机回环端口 | 全部操作 |
-| 使用方式 | 可用 ControlMaster | 输入 Valise 口令后由 `ssh-add -t <窗口>` 载入 **Valise 自己启动的 ssh-agent**（默认 15 分钟，设置中可改为 1–120 分钟）；窗口到期由 ssh-agent 清除；退出 Valise 时结束这个 ssh-agent（它是 Valise 自己的子进程，不涉及用户的进程）。连接不复用 |
+**日常钥匙**（每台 Valise 管理的服务器都有）：
+- 生成：`ssh-keygen -t ed25519 -N ''`，存于 `<客户端数据目录>/keys/<服务器>/daily`（0600）。
+- 服务器端：`authorized_keys` 中一行 `restrict,port-forwarding,permitopen="127.0.0.1:*",permitopen="[::1]:*",command="$HOME/.local/bin/valise-porter serve --tier daily" <公钥> valise-daily`（`verify: pending`：各靶机 OpenSSH 对端口通配与强制命令的支持）。
+- 能做什么：第 2.2 节的日常操作，以及转发到服务器本机回环端口；拿不到 shell。可以使用 ControlMaster 复用连接。
+- porter 的日常模式：`serve --tier daily` 读取 `SSH_ORIGINAL_COMMAND`，只允许 `rpc`、`blob-read`、`vault-cat`、`version`；`rpc` 中凡属"管理操作"的方法一律返回"需要管理权限"。即使日常钥匙被盗，也不能着陆、删除、改收件人或改同步目标。
 
-- **Valise 口令**：加密钥匙（`keystore.age`）与所有管理钥匙使用同一个口令，用户只记一个；两者各自用标准工具加密（age scrypt、OpenSSH 私钥格式）。修改口令时两者一起重新加密。Valise 不另设登录密码。
-- **porter 的日常模式**：`serve --tier daily` 读取 `SSH_ORIGINAL_COMMAND`，只允许 `rpc`、`blob-read`、`vault-cat`、`version`；`rpc` 中凡属第 2.2 节"管理操作"的方法一律返回"需要管理权限"。即使日常钥匙被盗，也拿不到 shell，也不能着陆、删除、改收件人或改同步目标。
-- **原生界面、harness 安装与工具安装**：每次都要求管理钥匙已解锁，并新开一条独立的 SSH 连接；绝不复用日常通道或任何已有连接。
-- **自带钥匙的服务器**：用户经自己的 `~/.ssh/config` 别名接入、未迁移到 Valise 双钥匙的服务器，Valise 无法在服务器端设限。界面标明"软限制"：敏感操作前仍要求输入 Valise 口令（以解开 `keystore.age` 验证），并提供"迁移到 Valise 双钥匙"。
-- **如实说明的局限**：管理钥匙解锁期间，本机若已有恶意程序，它可以使用 ssh-agent 中的钥匙；双钥匙防的是"别人打开你开着的 Valise"和"agent 借客户端越权"。Windows 上 ssh-agent 是系统服务，Valise 自启 agent 的方式 `verify: pending`，未核实前 Windows 版每次敏感操作都直接要求口令、不提供时间窗口。
+**管理登录**（执行管理操作时出示，两种方式任选）：
+- **管理钥匙（可选，默认不创建）**：入门用法用不到管理功能，所以添加服务器时默认不创建；用户可以在添加服务器时勾选，或之后在服务器设置里创建（需要用服务器密码或自己的私钥登录一次来安装公钥）。
+  - 生成：`ssh-keygen -t ed25519 -N <管理口令>`，存于 `keys/<服务器>/admin`（0600）；服务器端是普通一行 `<公钥> valise-admin`。私钥加密由 OpenSSH 完成，Valise 不自研。
+  - **管理口令**：单独的口令，**与保护加密钥匙的 Valise 口令不同**（至少 12 个字符，界面检查两者不相同）。所有服务器的管理钥匙共用这一个管理口令；修改时全部重新加密。
+  - 时间窗口：输入管理口令后由 `ssh-add -t <窗口>` 载入 **Valise 自己启动的 ssh-agent**（默认 15 分钟，设置中可改为 1–120 分钟）；到期由 ssh-agent 清除；退出 Valise 时结束这个 ssh-agent（它是 Valise 自己的子进程）。
+- **临时登录**（没有管理钥匙时）：每次管理操作都用服务器密码（或用户自己的私钥）新登录一次，密码只在 OpenSSH 自己的提示中输入（GUI 经 Valise 的 askpass 转交，只在内存中经过），不保存，没有时间窗口。
+- **连接隔离**：每次管理操作新开自己的连接，绝不复用日常钥匙的连接或任何已有连接；一次操作需要多次调用（例如着陆）时，可以为这一次操作开一个临时 ControlMaster，操作结束立即关闭。原生界面、harness 安装与工具安装都是一次操作一条独立连接。
+
+**其他规则**：
+- **Valise 口令**只保护加密钥匙（`keystore.age`），与服务器管理无关；Valise 不另设登录密码。
+- **自带钥匙的服务器**：经用户自己的 `~/.ssh/config` 别名接入、未迁移到 Valise 日常钥匙的服务器，Valise 无法在服务器端设限。界面标明"软限制"：管理操作前要求输入管理口令（已创建时）或 Valise 口令（已设置时）确认，两者都没有时只做文字确认；并提供"迁移到 Valise 日常钥匙"。
+- **如实说明的局限**：管理钥匙解锁期间，本机若已有恶意程序，它可以使用 ssh-agent 中的钥匙；这套分级防的是"别人打开你开着的 Valise"和"agent 借客户端越权"。Windows 上 ssh-agent 是系统服务，Valise 自启 agent 的方式 `verify: pending`，未核实前 Windows 版每次管理操作都直接要求管理口令、不提供时间窗口。
 
 ### 2.2 操作分级
 
-- **日常操作**（日常钥匙）：`hello`/doctor、状态与实例列表、登记报告（只读）、建立逃生舱、同步到空间站、空间站列表、体检、`seal_log`、拉取与校验、技能状态、定时器状态、管理页隧道（不含令牌）、本地页面转发、只读管理动作。
-- **管理操作**（管理钥匙）：接受登记与归档建议、安装或卸载技能、登记或移除收件人、添加或修改同步目标与自动同步、删除周期、设置定时器与周期、服务器名、`prev drop` 与旧实例清理、逃生舱着陆（含 resume）、登录授权、代取管理页令牌、两边一起改端口、部署与更新 porter、原生界面、harness 安装、工具安装、非只读管理动作、迁移到双钥匙。
-- **完全访问模式**（INSTALL.md 4.1）：在管理操作之上，允许 Valise 代为执行运行时与依赖的安装（含 sudo）。开启需要通过两把钥匙的口令挑战（同一个 Valise 口令须分别解开 `keystore.age` 与该服务器的管理钥匙）并确认免责；管理钥匙窗口到期后暂停，重新输入口令才继续。明显有害的命令在任何模式下都不执行。
+- **日常操作**（日常钥匙）：`hello`/doctor、状态与实例列表、登记报告（只读）、建立逃生舱、同步到空间站、空间站列表、体检、`seal_log`、拉取与校验、技能状态、定时器状态、管理页隧道（不含令牌）、本地页面转发、只读管理动作；以及**服务器上还没有任何收件人时登记第一把加密公钥**（此前没有任何逃生舱可被泄露；之后增加或移除收件人都是管理操作）。
+- **管理操作**（管理登录）：接受登记与归档建议、安装或卸载技能、增加或移除收件人、添加或修改同步目标与自动同步、删除周期、设置定时器与周期、`prev drop` 与旧实例清理、逃生舱着陆（含 resume）、登录授权、代取管理页令牌、两边一起改端口、更新 porter、原生界面、harness 安装、工具安装、非只读管理动作、创建管理钥匙、迁移到日常钥匙。
+- **完全访问模式**（INSTALL.md 4.1）：在管理操作之上，允许 Valise 代为执行运行时与依赖的安装（含 sudo）。前提是已创建管理钥匙；开启需要两个口令的挑战（Valise 口令解开 `keystore.age`，管理口令解开该服务器的管理钥匙，两个都对）并确认免责；管理钥匙窗口到期后暂停，重新输入管理口令才继续。明显有害的命令在任何模式下都不执行。
 - 新增 RPC 方法时必须在 `core/vaultrpc` 中显式归入一级；未归类的方法按管理操作处理。
 
 ## 3. Keystore
@@ -85,15 +91,17 @@
 - **添加服务器**（2026-11-01 改版）：每一步失败都停在该步并给出原因与建议。
   1. **连接方式**：手动填写（地址、端口，默认 22、用户名、登录方式：密码或已有私钥文件、用户自选的别名），或从 SSH 配置导入。
   2. **确认服务器身份**：首次连接时展示主机密钥指纹（SHA256），说明"第一次连接无法自动验证，请与服务商控制台显示的指纹比对，或确认网络可信"，用户确认后写入 Valise 的 `known_hosts`。之后指纹变化一律停止，说明可能的原因（重装系统、中间人），由用户决定。
-  3. **安装两把钥匙**（`valise` 来源）：用密码或用户私钥登录**一次**，经标准输入发送 Valise 自带的固定脚本，把日常钥匙与管理钥匙的公钥追加到 `~/.ssh/authorized_keys`（目录与文件权限按 OpenSSH 要求设为 0700 / 0600，已存在同注释的旧行先替换）。密码只在 OpenSSH 自己的提示中输入（TUI 把终端交给 ssh；GUI 用 Valise 的 askpass 程序转交，只在内存中经过），不保存。此后一律用钥匙登录。`ssh_config` 来源的服务器可选"迁移到 Valise 双钥匙"，同样步骤。
+  3. **引导登录**（`valise` 来源）：用密码或用户私钥登录**一次**，为这次引导开一个临时 ControlMaster，以下 3–6 步共用，引导结束立即关闭。密码只在 OpenSSH 自己的提示中输入（TUI 把终端交给 ssh；GUI 用 Valise 的 askpass 程序转交，只在内存中经过），不保存。
+     - 经标准输入发送 Valise 自带的固定脚本，把日常钥匙的公钥追加到 `~/.ssh/authorized_keys`（目录与文件权限按 OpenSSH 要求设为 0700 / 0600，已存在同注释的旧行先替换）；用户勾选了"创建管理钥匙"时（先设管理口令），一并安装管理钥匙的公钥。
+     - `ssh_config` 来源的服务器可选"迁移到 Valise 日常钥匙"，同样步骤。
   4. **体检服务器**（`doctor`）。
-  5. **部署 Valise 服务端**：没有 porter 时提供"一键部署"（第 2 节，走管理钥匙）。日常钥匙的强制命令固定指向部署目标 `$HOME/.local/bin/valise-porter`，所以在部署之前就能写好。
-  6. **登记加密公钥**（`key register`，注释写本机名与日期）：需要加密钥匙已存在；用户在第一次启动时跳过了钥匙时，在这里或第一次建立逃生舱前补上（见下一条）。
+  5. **部署 Valise 服务端**：没有 porter 时提供"一键部署"（第 2 节），在引导登录中完成。日常钥匙的强制命令固定指向部署目标 `$HOME/.local/bin/valise-porter`，所以在部署之前就能写好。
+  6. **登记加密公钥**（`key register`，注释写本机名与日期）：加密钥匙已存在时在引导登录中完成；用户在第一次启动时跳过了钥匙时，第一次建立逃生舱前补上（此时服务器上还没有收件人，日常钥匙即可登记第一把，见 2.2 节）。
+  引导结束后日常操作一律用日常钥匙；管理操作用管理钥匙或临时登录（2.1 节）。
   7. **确定服务器名**（写入 `server.json`，默认等于别名，用作空间站目录名，之后不可修改）。
   8. **发现 harness**：已有实例可直接纳入管理（登记）；没有时引导安装第一个 harness（INSTALL.md）。两条路都可达，不强迫已有用户重装。
   多把钥匙、移除公钥等收件人管理放在设置的"高级"中，并用大白话说明后果。
-- **第一次启动**：建议设置 Valise 口令与加密钥匙并备份，但允许暂时跳过，直接去添加服务器。
-  - 添加第一台 `valise` 来源的服务器时必须设置 Valise 口令（管理钥匙需要），加密钥匙同时生成。
+- **第一次启动**：建议设置 Valise 口令与加密钥匙并备份，但允许暂时跳过，直接去添加服务器。添加服务器不需要任何口令；管理口令只在用户选择创建管理钥匙时设置。
   - 第一次建立逃生舱前，必须走完"备份钥匙"引导：导出恢复套件，或明确选择"我知道风险，稍后备份"（界面写明：口令或钥匙丢失后，所有逃生舱都无法打开）。
 - **离线恢复套件**：导出内容包括 `keystore.age`、收件人公钥、指纹，以及一页恢复说明（指向 `tools/standalone-restore/`）。导出为一个目录，内含 `keystore.age`、`recipient.txt`、`FINGERPRINT`、`RECOVERY.md`。导入时核对指纹：先确认 `FINGERPRINT` 与 `recipient.txt` 一致，解锁后再确认身份对应的公钥与 `recipient.txt` 一致，并把指纹展示给用户，与纸质记录比对。
 - **内存处理**：解锁后的身份封装在 `UnlockedKey` 中，`Lock()` 时尽力清零。文档和 UI 中要如实说明：Go 的垃圾回收可能产生副本，无法保证彻底清除。UI 空闲 15 分钟后自动锁定（时长可配置）。
