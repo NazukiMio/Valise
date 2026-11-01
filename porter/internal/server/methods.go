@@ -20,6 +20,9 @@ type session struct {
 	env *porterenroll.Env
 }
 
+// daily reports whether this connection came in on the daily key.
+func (s *session) daily() bool { return s.cfg.Tier == rpc.TierDaily }
+
 // loginEnv reads the login environment once per session.
 func (s *session) loginEnv(ctx context.Context) *porterenroll.Env {
 	if s.env == nil {
@@ -94,6 +97,17 @@ func init() {
 		var p vaultrpc.RecipientAddParams
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
+		}
+		if s.daily() {
+			// The daily key may only register the first recipient: before
+			// that no snapshot exists that a planted key could open.
+			have, err := seal.ReadRecipients(paths(s))
+			if err != nil {
+				return nil, err
+			}
+			if len(have) > 0 {
+				return nil, rpc.AdminRequired(vaultrpc.MethodRecipientAdd)
+			}
 		}
 		added, all, err := seal.AddRecipient(paths(s), p.Recipient, p.Label)
 		if err != nil {
@@ -203,6 +217,10 @@ func (s *session) call(ctx context.Context, req rpc.Request) rpc.Response {
 	h, ok := methods[req.Method]
 	if !ok {
 		return errorResponse(req.ID, rpc.CodeMethodNotFound, "method not found: "+req.Method, nil)
+	}
+	if s.daily() && rpc.TierOf(req.Method) != rpc.TierDaily {
+		ue := rpc.AdminRequired(req.Method)
+		return errorResponse(req.ID, rpc.CodeUserError, ue.Code, ue)
 	}
 	res, err := h(s, ctx, req.Params)
 	if err != nil {

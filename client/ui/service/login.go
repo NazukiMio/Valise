@@ -64,7 +64,7 @@ type LoginIO struct {
 // LoginMethods reads the instance record and the client's profile for it.
 func (s *Service) LoginMethods(ctx context.Context, host, instance string) (*LoginTarget, error) {
 	var res enroll.InstanceGetResult
-	if err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	if err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, enroll.MethodInstanceGet, enroll.InstanceGetParams{InstanceID: instance}, &res)
 	}); err != nil {
 		return nil, err
@@ -120,10 +120,12 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	t, _, err := s.transport(host)
+	// Login relay changes the harness's credentials: an admin operation.
+	t, done, err := s.adminTransport(ctx, host)
 	if err != nil {
 		return nil, err
 	}
+	defer done()
 	found, err := porter.Probe(ctx, t)
 	if err != nil {
 		return nil, err

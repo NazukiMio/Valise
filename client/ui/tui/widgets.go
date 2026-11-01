@@ -55,6 +55,7 @@ type inputScreen struct {
 	label  string
 	input  textinput.Model
 	submit func(m *Model, value string) tea.Cmd
+	cancel func()
 }
 
 func newInput(label, placeholder string, secret bool, submit func(m *Model, value string) tea.Cmd) *inputScreen {
@@ -85,6 +86,9 @@ func (s *inputScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		case "esc":
 			s.input.Reset()
 			m.pop()
+			if s.cancel != nil {
+				s.cancel()
+			}
 			return nil, true
 		}
 	}

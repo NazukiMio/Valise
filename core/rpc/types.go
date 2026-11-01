@@ -13,7 +13,7 @@ import (
 
 // ProtocolVersion is "<major>.<minor>". Peers with a different major refuse
 // to talk; minor bumps are backwards-compatible additions.
-const ProtocolVersion = "1.0"
+const ProtocolVersion = "1.1"
 
 // JSONRPCVersion is the JSON-RPC version string.
 const JSONRPCVersion = "2.0"

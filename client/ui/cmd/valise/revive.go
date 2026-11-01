@@ -66,6 +66,7 @@ func (c *cli) revive(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer rp.Close()
 	printPlan(c, rp)
 	if len(rp.Blockers) > 0 {
 		fmt.Fprintln(c.out, "\n计划无法执行：")

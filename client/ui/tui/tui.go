@@ -119,6 +119,12 @@ func Run(ctx context.Context, opt Options) error {
 	m := New(ctx, opt)
 	p := tea.NewProgram(m, tea.WithContext(ctx))
 	m.send = p.Send
+	// Admin logins (docs/ARCHITECTURE.md 2.1): the admin passphrase is
+	// asked in the TUI; OpenSSH cannot ask for a server password while the
+	// TUI owns the terminal.
+	opt.Service.NoTerminalLogin = true
+	opt.Service.AdminAuth.Passphrase = func(host string) (string, error) { return askAdminPassphrase(m.send, host) }
+	defer opt.Service.Close()
 	_, err := p.Run()
 	return err
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -14,7 +16,7 @@ func TestParseArgs(t *testing.T) {
 		{[]string{"-tt", "-p", "2222", "-l", "bob", "h", "x"}, invocation{alias: "h", command: "x", tty: 2, port: "2222", user: "bob"}},
 		{[]string{"-o", "ControlMaster=auto", "-oControlPersist=60", "-F", "/cfg", "--", "h", "cmd"},
 			invocation{alias: "h", command: "cmd", options: []string{"ControlMaster=auto", "ControlPersist=60"}, config: "/cfg"}},
-		{[]string{"-v", "-i", "/k", "-J", "jump", "alice@h"}, invocation{alias: "h", user: "alice", ignored: []string{"-v", "-i /k", "-J jump"}}},
+		{[]string{"-v", "-i", "/k", "-J", "jump", "alice@h"}, invocation{alias: "h", user: "alice", identity: "/k", ignored: []string{"-v", "-J jump"}}},
 		{[]string{"-Tq", "h", "a b"}, invocation{alias: "h", command: "a b", tty: -1, ignored: []string{"-q"}}},
 		{[]string{"ssh://u@h:2200", "c"}, invocation{alias: "h", user: "u", port: "2200", command: "c"}},
 	}
@@ -31,5 +33,26 @@ func TestParseArgs(t *testing.T) {
 		if _, err := parseArgs(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+func TestAuthorizedKeys(t *testing.T) {
+	home := t.TempDir()
+	keys := t.TempDir()
+	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
+	os.WriteFile(filepath.Join(keys, "daily.pub"), []byte("ssh-ed25519 AAAAdaily valise-daily\n"), 0o600)
+	os.WriteFile(filepath.Join(keys, "admin.pub"), []byte("ssh-ed25519 AAAAadmin valise-admin\n"), 0o600)
+	os.WriteFile(filepath.Join(keys, "other.pub"), []byte("ssh-ed25519 AAAAother x\n"), 0o600)
+	os.WriteFile(filepath.Join(home, ".ssh", "authorized_keys"), []byte(
+		`restrict,port-forwarding,permitopen="127.0.0.1:*",command="$HOME/.local/bin/valise-porter serve --tier daily" ssh-ed25519 AAAAdaily valise-daily`+"\n"+
+			"ssh-ed25519 AAAAadmin valise-admin\n"), 0o600)
+	if f, ok := authorize(home, filepath.Join(keys, "daily")); !ok || f != "$HOME/.local/bin/valise-porter serve --tier daily" {
+		t.Fatalf("daily: %q %v", f, ok)
+	}
+	if f, ok := authorize(home, filepath.Join(keys, "admin")); !ok || f != "" {
+		t.Fatalf("admin: %q %v", f, ok)
+	}
+	if _, ok := authorize(home, filepath.Join(keys, "other")); ok {
+		t.Fatal("unlisted key accepted")
 	}
 }

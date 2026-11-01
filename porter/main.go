@@ -18,6 +18,7 @@ import (
 	"valise/core/login"
 	"valise/core/rpc"
 	porterenroll "valise/porter/internal/enroll"
+	"valise/porter/internal/forced"
 	porterlogin "valise/porter/internal/login"
 	"valise/porter/internal/mcp"
 	porterrevive "valise/porter/internal/revive"
@@ -36,6 +37,7 @@ func main() {
 const usage = `用法：
   valise-porter version [--json]
   valise-porter rpc
+  valise-porter serve --tier daily           （日常钥匙的强制命令）
   valise-porter seal-timer --instance <实例>（由定时器运行）
   valise-porter autosync                    （由封存后自动启动，同步到期的云备份）
   valise-porter vault-cat <周期> <金库内的相对路径>
@@ -53,17 +55,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "version":
 		return runVersion(args[1:], stdout, stderr)
 	case "rpc":
-		home, err := os.UserHomeDir()
-		if err != nil {
-			fmt.Fprintln(stderr, "无法确定 HOME：", err)
-			return 1
-		}
-		cfg := server.Config{Version: version, Home: home}
-		if err := server.Serve(context.Background(), stdin, stdout, cfg); err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
-		}
-		return 0
+		return serveRPC(stdin, stdout, stderr, "")
+	case "serve":
+		return serveForced(args[1:], stdin, stdout, stderr)
 	case "stage-write":
 		if len(args) != 3 || args[1] != "--op" {
 			fmt.Fprintln(stderr, usage)
@@ -182,6 +176,44 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
+}
+
+// serveRPC answers JSON-RPC on stdio at the given tier ("" is a full login).
+func serveRPC(stdin io.Reader, stdout, stderr io.Writer, tier rpc.Tier) int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintln(stderr, "无法确定 HOME：", err)
+		return 1
+	}
+	cfg := server.Config{Version: version, Home: home, Tier: tier}
+	if err := server.Serve(context.Background(), stdin, stdout, cfg); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+// serveForced is the daily key's forced command (docs/ARCHITECTURE.md 2.1):
+// it runs only daily subcommands named in SSH_ORIGINAL_COMMAND, and rpc at
+// the daily tier.
+func serveForced(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) != 2 || args[0] != "--tier" || args[1] != string(rpc.TierDaily) {
+		fmt.Fprintln(stderr, usage)
+		return 2
+	}
+	words, err := forced.Daily(os.Getenv("SSH_ORIGINAL_COMMAND"))
+	if err != nil {
+		fmt.Fprintln(stderr, err.Error()+"；需要管理权限的操作请用管理钥匙或服务器密码登录。")
+		return 126
+	}
+	if words[0] == "rpc" {
+		if len(words) != 1 {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		return serveRPC(stdin, stdout, stderr, rpc.TierDaily)
+	}
+	return run(words, stdin, stdout, stderr)
 }
 
 func runVersion(args []string, stdout, stderr io.Writer) int {

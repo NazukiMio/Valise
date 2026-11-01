@@ -48,20 +48,19 @@ func (c *cli) server(ctx context.Context, args []string) error {
 		}
 		return err
 	case "list":
-		list, err := c.svc.Servers()
-		if err != nil {
-			return err
-		}
-		if len(list) == 0 {
-			fmt.Fprintln(c.out, "还没有已记录的服务器。用 valise server add <别名> 或 valise server import 添加。")
-		}
-		for _, s := range list {
-			fmt.Fprintf(c.out, "  %s\n", s)
-		}
-		return nil
+		return c.serverList()
+	case "admin-key":
+		return c.serverAdminKey(ctx, args[1:])
+	case "migrate":
+		return c.serverMigrate(ctx, args[1:])
 	case "add":
 		if len(args) < 2 {
 			return errUsage
+		}
+		for _, a := range args[1:] {
+			if a == "--host" || strings.HasPrefix(a, "--host=") || a == "-host" {
+				return c.serverAddByHand(ctx, args[1:])
+			}
 		}
 		added, err := c.svc.AddServers(args[1:]...)
 		if err != nil {

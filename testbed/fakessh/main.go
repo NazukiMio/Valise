@@ -64,14 +64,29 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, "ssh: Could not resolve hostname %s: Name or service not known\n", inv.alias)
 		return 255
 	}
-	if inv.command == "" {
+	if inv.ctl != "" {
+		return 0 // master control (-O exit): there is no master to stop
+	}
+	command, env := inv.command, remoteEnv(home)
+	if inv.identity != "" && !inv.noPubkey() {
+		forced, ok := authorize(home, inv.identity)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "%s@%s: Permission denied (publickey).\n", inv.user, inv.alias)
+			return 255
+		}
+		if forced != "" {
+			env = append(env, "SSH_ORIGINAL_COMMAND="+command)
+			command = forced
+		}
+	}
+	if command == "" {
 		fmt.Fprintln(os.Stderr, "fakessh: interactive sessions are not supported")
 		return 255
 	}
 
-	cmd := exec.Command("sh", "-c", inv.command)
+	cmd := exec.Command("sh", "-c", command)
 	cmd.Dir = home
-	cmd.Env = remoteEnv(home)
+	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

@@ -61,8 +61,8 @@ type RevivePlan struct {
 	sqlite  map[string]bool
 	vault   *vault.Vault
 	ident   age.Identity
-	source  *ssh.Transport
 	target  *ssh.Transport
+	done    func()
 	porterP string
 }
 
@@ -73,6 +73,19 @@ func (p *RevivePlan) block(code, reason, suggestion string) {
 // PlanRevive pulls the snapshot's vault, decrypts the snapshot in memory
 // and asks the target for the facts the plan needs. Nothing is changed.
 func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase string) (*RevivePlan, error) {
+	return s.planRevive(ctx, o, passphrase)
+}
+
+// Close ends the plan's admin connection to the target. Call it once the
+// plan is executed or abandoned.
+func (p *RevivePlan) Close() {
+	if p.done != nil {
+		p.done()
+		p.done = nil
+	}
+}
+
+func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase string) (rp *RevivePlan, err error) {
 	if o.From == "" {
 		o.From = o.Target
 	}
@@ -120,7 +133,7 @@ func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if err != nil {
 		return nil, valise.New("snapshot_unreadable", "无法解密快照 "+o.SnapshotID, "确认快照 id 正确，且本机密钥是该快照的收件人").WithDetail(err.Error())
 	}
-	rp := &RevivePlan{Target: o.Target, From: o.From, vault: v, ident: id, sqlite: map[string]bool{}}
+	rp = &RevivePlan{Target: o.Target, From: o.From, vault: v, ident: id, sqlite: map[string]bool{}}
 	for _, m := range v.Metas {
 		if m.SnapshotID == o.SnapshotID {
 			rp.Snapshot = m
@@ -160,18 +173,22 @@ func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase st
 		return nil, valise.New("instance_id_invalid", "实例 id 无效："+instance, "用 --id 指定")
 	}
 
-	// Target facts, first to resolve the state dir on the target.
-	if rp.target, _, err = s.transport(o.Target); err != nil {
+	// Target facts, first to resolve the state dir on the target. Landing
+	// is an admin operation: one admin connection for the whole plan.
+	if rp.target, rp.done, err = s.adminTransport(ctx, o.Target); err != nil {
 		return nil, err
 	}
+	opened := rp
+	defer func() {
+		if err != nil {
+			opened.Close()
+		}
+	}()
 	found, err := porter.Probe(ctx, rp.target)
 	if err != nil {
 		return nil, err
 	}
 	rp.porterP = found.Path
-	if rp.source, _, err = s.transport(o.From); err != nil {
-		return nil, err
-	}
 	var first revive.InspectResult
 	if err := s.callOn(ctx, rp.target, rp.porterP, nil, revive.MethodInspect, revive.InspectParams{Profile: prof, InstanceID: instance}, &first); err != nil {
 		return nil, err

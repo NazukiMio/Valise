@@ -5,7 +5,6 @@ import (
 	"os/exec"
 	"sort"
 
-	"valise/client/ssh"
 	"valise/core/login"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
@@ -15,7 +14,7 @@ import (
 // docs/ARCHITECTURE.md section 7).
 
 func (s *Service) call(ctx context.Context, host, method string, params, result any) error {
-	return s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	return s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, method, params, result)
 	})
 }
@@ -135,17 +134,19 @@ func (s *Service) LeafCopies(ctx context.Context, host, leaf string) (copies []C
 	return copies, errs, nil
 }
 
-// ShellCommand returns an unstarted interactive ssh session to host.
-func (s *Service) ShellCommand(ctx context.Context, host string) (*exec.Cmd, error) {
-	t, _, err := s.transport(host)
+// ShellCommand returns an unstarted interactive login shell on host over
+// a fresh admin connection (docs/INSTALL.md section 2); call done after it
+// exits.
+func (s *Service) ShellCommand(ctx context.Context, host string) (cmd *exec.Cmd, done func(), err error) {
+	t, done, err := s.adminTransport(ctx, host)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return exec.CommandContext(ctx, t.Binary(), t.ShellArgs()...), nil
+	return exec.CommandContext(ctx, t.Binary(), t.ShellArgs()...), done, nil
 }
 
 // entryAuth asks porter for the URL suffix holding an entry's token.
-func entryAuth(ctx context.Context, c *ssh.RPCClient, p login.EntryAuthParams) (string, error) {
+func entryAuth(ctx context.Context, c caller, p login.EntryAuthParams) (string, error) {
 	var res login.EntryAuthResult
 	if err := c.Call(ctx, login.MethodEntryAuth, p, &res); err != nil {
 		return "", err

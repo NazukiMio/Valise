@@ -73,7 +73,7 @@ func Upload(ctx context.Context, t *ssh.Transport, binary []byte, want Platform)
 		).WithDetail(strings.TrimSpace(string(res.Stderr)))
 	}
 
-	f, err := versionAt(ctx, t, "~/.local/bin/valise-porter.tmp", `"`+tmpPath+`"`)
+	f, err := VersionAt(ctx, t, "~/.local/bin/valise-porter.tmp", `"`+tmpPath+`"`)
 	if err != nil {
 		return nil, valise.New("porter_wrong_binary",
 			fmt.Sprintf("上传的 porter 无法在服务器 %s（%s）上运行", t.Host(), want),

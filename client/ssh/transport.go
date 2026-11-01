@@ -3,6 +3,8 @@ package ssh
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -26,10 +28,34 @@ type Options struct {
 	// HostConfig is the user's resolved ssh_config for the host. When it
 	// sets a ControlPath, the user's connection sharing is reused.
 	HostConfig *HostConfig
+
+	// ConfigFile replaces the user's ssh_config (-F): Valise's own file for
+	// servers added by hand.
+	ConfigFile string
+	// Identity is the only key offered (-i with IdentitiesOnly=yes).
+	Identity string
+	// IdentityAgent is the agent socket, or "none".
+	IdentityAgent string
+	// NoPubkey disables public-key authentication (temporary password
+	// login, so no key on disk or in an agent is tried).
+	NoPubkey bool
+	// BatchMode forbids interactive prompts (the daily key must never fall
+	// back to asking for a password).
+	BatchMode bool
+	// ControlPath is a master socket owned by one operation (closed by
+	// CloseMaster, or after OperationPersistSeconds idle); it overrides
+	// ControlDir.
+	ControlPath string
+	// NoControl disables connection sharing entirely.
+	NoControl bool
 }
 
 // ControlPersistSeconds keeps Valise's master connection alive between calls.
 const ControlPersistSeconds = 60
+
+// OperationPersistSeconds bounds an operation's own master connection when
+// it is idle, in case CloseMaster is never reached.
+const OperationPersistSeconds = 120
 
 // Transport runs commands on one host through the system OpenSSH.
 type Transport struct {
@@ -70,7 +96,7 @@ const maxControlDirLen = 104 - len("/cm-") - 40 - 17 - 1
 // private directory owned by us, else "" (no connection sharing).
 func (t *Transport) controlDir() string {
 	dir := t.opts.ControlDir
-	if dir == "" || t.ReusesUserControlMaster() {
+	if dir == "" || t.opts.NoControl || t.opts.ControlPath != "" || t.ReusesUserControlMaster() {
 		return ""
 	}
 	if len(dir) <= maxControlDirLen {
@@ -105,11 +131,45 @@ func (t *Transport) ForwardArgs(host string, port int) []string {
 	return append(t.base("-W", net.JoinHostPort(host, strconv.Itoa(port))), "--", t.host)
 }
 
+// CloseMaster ends the operation's own master connection (ControlPath),
+// if any.
+func (t *Transport) CloseMaster() {
+	if t.opts.ControlPath == "" {
+		return
+	}
+	_ = exec.Command(t.opts.Binary, append(t.base("-O", "exit"), "--", t.host)...).Run()
+}
+
 // Binary is the ssh executable.
 func (t *Transport) Binary() string { return t.opts.Binary }
 
 func (t *Transport) base(first ...string) []string {
 	args := append([]string{}, first...)
+	if t.opts.ConfigFile != "" {
+		args = append(args, "-F", t.opts.ConfigFile)
+	}
+	if t.opts.Identity != "" {
+		args = append(args, "-i", t.opts.Identity, "-o", "IdentitiesOnly=yes")
+	}
+	if t.opts.IdentityAgent != "" {
+		args = append(args, "-o", "IdentityAgent="+t.opts.IdentityAgent)
+	}
+	if t.opts.NoPubkey {
+		args = append(args, "-o", "PubkeyAuthentication=no", "-o", "IdentitiesOnly=yes")
+	}
+	if t.opts.BatchMode {
+		args = append(args, "-o", "BatchMode=yes")
+	}
+	switch {
+	case t.opts.NoControl:
+		args = append(args, "-o", "ControlPath=none")
+	case t.opts.ControlPath != "":
+		args = append(args,
+			"-o", "ControlMaster=auto",
+			"-o", "ControlPath="+t.opts.ControlPath,
+			"-o", fmt.Sprintf("ControlPersist=%d", OperationPersistSeconds),
+		)
+	}
 	if dir := t.controlDir(); dir != "" {
 		args = append(args,
 			"-o", "ControlMaster=auto",
@@ -180,6 +240,16 @@ func runContext(ctx context.Context, cmd *exec.Cmd) error {
 
 // ConnError is the user-facing error for a failed SSH connection.
 func (t *Transport) ConnError(stderr string) *valise.UserError {
+	switch {
+	case strings.Contains(stderr, "REMOTE HOST IDENTIFICATION HAS CHANGED") || strings.Contains(stderr, "Host key verification failed"):
+		return valise.New("host_key_mismatch",
+			fmt.Sprintf("服务器 %s 的身份与第一次连接时不一致，已停止连接", t.host),
+			"可能是服务器重装了系统，也可能是有人冒充服务器。先在服务商控制台核对主机密钥指纹；确认是重装后，在服务器设置里重新确认服务器身份").WithDetail(lastLines(stderr, 5))
+	case t.opts.ConfigFile != "" && strings.Contains(stderr, "Permission denied"):
+		return valise.New("ssh_auth_failed",
+			fmt.Sprintf("服务器 %s 拒绝了登录", t.host),
+			"日常钥匙可能已从服务器上移除，或密码不对。可以在服务器设置里重新安装日常钥匙（需要服务器密码）").WithDetail(lastLines(stderr, 5))
+	}
 	return valise.New("ssh_connect_failed",
 		fmt.Sprintf("无法连接到服务器 %s", t.host),
 		fmt.Sprintf("先在终端中确认 `ssh %s` 可以登录，再检查网络、主机名和 SSH 密钥（Valise 不保存登录凭据，全部交给系统 OpenSSH）", t.host),
@@ -210,4 +280,22 @@ func Quote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// SocketPath returns a fresh path for a socket of one Valise process (an
+// operation's master connection, the admin agent) in dir, or in
+// /tmp/valise-<uid> when dir is too long for a Unix socket. It returns ""
+// when neither is usable.
+func SocketPath(dir, prefix string) string {
+	if dir == "" || len(dir) > maxControlDirLen {
+		dir = privateTmpDir()
+	} else if os.MkdirAll(dir, 0o700) != nil {
+		dir = privateTmpDir()
+	}
+	if dir == "" {
+		return ""
+	}
+	var b [6]byte
+	_, _ = rand.Read(b[:])
+	return filepath.Join(dir, prefix+hex.EncodeToString(b[:]))
 }

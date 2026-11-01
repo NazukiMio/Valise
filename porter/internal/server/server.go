@@ -24,6 +24,9 @@ type Config struct {
 	DetectTools func(context.Context) []rpc.Tool
 	// LoadEnv defaults to enroll.LoadEnv; tests replace it.
 	LoadEnv func(context.Context, string) *porterenroll.Env
+	// Tier is the connection's access level; TierDaily refuses admin
+	// methods (docs/ARCHITECTURE.md 2.1). Empty means a full login.
+	Tier rpc.Tier
 }
 
 // JournalDir is the swap journal directory under HOME.

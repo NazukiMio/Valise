@@ -7,9 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"valise/client/porter"
 	"valise/client/profiles"
-	"valise/client/ssh"
 	"valise/core/enroll"
 	"valise/core/profile"
 	"valise/core/valise"
@@ -38,20 +36,6 @@ type EnrollResult struct {
 	Written string `json:"written,omitempty"`
 	// RejectedLocalProfiles failed lint and were ignored.
 	RejectedLocalProfiles []string `json:"rejected_local_profiles,omitempty"`
-}
-
-// session dials the porter on host.
-func (s *Service) session(ctx context.Context, host string) (*ssh.RPCClient, error) {
-	t, _, err := s.transport(host)
-	if err != nil {
-		return nil, err
-	}
-	found, err := porter.Probe(ctx, t)
-	if err != nil {
-		return nil, err
-	}
-	c, _, err := ssh.Dial(ctx, t, found.Path, s.Version)
-	return c, err
 }
 
 // Enroll detects, scans and (with Accept) records one instance.

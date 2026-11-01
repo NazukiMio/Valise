@@ -1,0 +1,357 @@
+package service
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+
+	"valise/client/config"
+	"valise/client/ssh"
+	"valise/core/valise"
+)
+
+// Adding a server by hand (docs/ARCHITECTURE.md section 3): confirm the
+// host key, log in once with the password (or the user's own key file),
+// install the daily key (and the admin key if asked), then check, deploy,
+// register and name over that same bootstrap login.
+
+// HostKey is one host key offered by a server.
+type HostKey struct {
+	Type        string `json:"type"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// Keyscan fetches a server's host keys in known_hosts format; tests replace
+// it. The default runs ssh-keyscan.
+type Keyscan func(ctx context.Context, host string, port int) ([]byte, error)
+
+func (s *Service) keyscan(ctx context.Context, host string, port int) ([]byte, error) {
+	if s.Keyscan != nil {
+		return s.Keyscan(ctx, host, port)
+	}
+	if port == 0 {
+		port = 22
+	}
+	out, err := exec.CommandContext(ctx, s.toolPath("ssh-keyscan"), "-T", "10", "-p", strconv.Itoa(port), "--", host).Output()
+	if len(bytes.TrimSpace(out)) == 0 {
+		return nil, valise.New("keyscan_failed", "连不上 "+host+"，没有拿到服务器的身份信息", "检查地址、端口和网络").WithDetail(fmt.Sprint(err))
+	}
+	return out, nil
+}
+
+// knownHostsField is how OpenSSH names a host in known_hosts.
+func knownHostsField(host string, port int) string {
+	if port == 0 || port == 22 {
+		return host
+	}
+	return "[" + host + "]:" + strconv.Itoa(port)
+}
+
+// parseHostKeys keeps well-formed known_hosts lines for field and their
+// SHA256 fingerprints.
+func parseHostKeys(data []byte, field string) ([]HostKey, []string) {
+	var keys []HostKey
+	var lines []string
+	sc := bufio.NewScanner(bytes.NewReader(data))
+	for sc.Scan() {
+		f := strings.Fields(sc.Text())
+		if len(f) < 3 || strings.HasPrefix(f[0], "#") || f[0] != field {
+			continue
+		}
+		blob, err := base64.StdEncoding.DecodeString(f[2])
+		if err != nil {
+			continue
+		}
+		sum := sha256.Sum256(blob)
+		keys = append(keys, HostKey{Type: f[1], Fingerprint: "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])})
+		lines = append(lines, f[0]+" "+f[1]+" "+f[2])
+	}
+	return keys, lines
+}
+
+// ScanHostKeys asks the server for its host keys, to show the fingerprints
+// before anything is trusted. The scan is not authenticated: the user
+// compares the fingerprints with the provider's console.
+func (s *Service) ScanHostKeys(ctx context.Context, srv config.Server) ([]HostKey, error) {
+	data, err := s.keyscan(ctx, srv.HostName, srv.Port)
+	if err != nil {
+		return nil, err
+	}
+	keys, _ := parseHostKeys(data, knownHostsField(srv.HostName, srv.Port))
+	if len(keys) == 0 {
+		return nil, valise.New("keyscan_failed", "服务器没有给出可用的身份信息", "确认地址与端口是 SSH 服务")
+	}
+	return keys, nil
+}
+
+// TrustHostKeys scans again and records the keys in Valise's known_hosts,
+// refusing if they differ from the fingerprints the user confirmed.
+func (s *Service) TrustHostKeys(ctx context.Context, srv config.Server, confirmed []HostKey) error {
+	data, err := s.keyscan(ctx, srv.HostName, srv.Port)
+	if err != nil {
+		return err
+	}
+	field := knownHostsField(srv.HostName, srv.Port)
+	keys, lines := parseHostKeys(data, field)
+	if !slices.Equal(keys, confirmed) {
+		return valise.New("host_key_changed_during_add", "服务器的身份在确认期间变了", "重新开始添加，并再次核对指纹")
+	}
+	return s.writeKnownHosts(field, lines)
+}
+
+func (s *Service) writeKnownHosts(field string, lines []string) error {
+	path := filepath.Join(s.Dirs.Data, config.KnownHostsFile)
+	old, _ := os.ReadFile(path)
+	var keep []string
+	for _, l := range strings.Split(string(old), "\n") {
+		if f := strings.Fields(l); len(f) > 0 && f[0] != field {
+			keep = append(keep, l)
+		}
+	}
+	keep = append(keep, lines...)
+	if err := os.MkdirAll(s.Dirs.Data, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(strings.Join(keep, "\n")+"\n"), 0o600)
+}
+
+// hostKeyKnown reports whether Valise's known_hosts has a key for srv.
+func (s *Service) hostKeyKnown(ctx context.Context, srv config.Server) bool {
+	path := filepath.Join(s.Dirs.Data, config.KnownHostsFile)
+	if !fileExists(path) {
+		return false
+	}
+	return exec.CommandContext(ctx, s.toolPath("ssh-keygen"), "-F", knownHostsField(srv.HostName, srv.Port), "-f", path).Run() == nil
+}
+
+// bootstrapTransport is the one full login of adding a server (or creating
+// its admin key): password or the user's own key file, never Valise keys.
+func (s *Service) bootstrapTransport(srv config.Server) (*ssh.Transport, error) {
+	o := s.valiseOptions(srv)
+	o.IdentityAgent = "none"
+	if srv.Login == config.LoginKey {
+		o.Identity = srv.LoginKey
+	} else {
+		o.NoPubkey = true
+	}
+	if o.ControlPath = ssh.SocketPath(s.Dirs.Cache, "op-"); o.ControlPath == "" {
+		o.NoControl = true
+	}
+	return ssh.New(srv.Name, o)
+}
+
+func (s *Service) installKeys(ctx context.Context, t *ssh.Transport, host string, names ...string) error {
+	lines, err := s.keyLines(host, names...)
+	if err != nil {
+		return err
+	}
+	res, err := t.Run(ctx, "sh -s", strings.NewReader(installKeysScript(lines)))
+	if err != nil {
+		return err
+	}
+	if res.ExitCode != 0 {
+		return valise.New("install_keys_failed", "没能把钥匙写进服务器的 ~/.ssh/authorized_keys", "检查服务器上 ~/.ssh 的权限与磁盘空间").
+			WithDetail(strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
+// Steps of adding a server by hand, in addition to the setup steps.
+const (
+	SetupKeys  = "keys"
+	SetupDaily = "daily"
+)
+
+// AddServerOptions configure adding a server by hand.
+type AddServerOptions struct {
+	Server config.Server
+	// AdminPassphrase, when set, creates the admin key too.
+	AdminPassphrase string
+	Setup           SetupOptions
+}
+
+// AddServer records a server added by hand and sets it up. The host key
+// must have been confirmed with TrustHostKeys first.
+func (s *Service) AddServer(ctx context.Context, o AddServerOptions) error {
+	srv := o.Server
+	srv.Source = config.SourceValise
+	if srv.Login == "" {
+		srv.Login = config.LoginPassword
+	}
+	if err := srv.Validate(); err != nil {
+		return valise.New("server_invalid", err.Error(), "修改后重试")
+	}
+	list, err := config.LoadServerList(s.Dirs.Data)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(list, func(x config.Server) bool { return x.Name == srv.Name })
+	if i >= 0 && !list[i].Valise() {
+		return valise.New("server_exists", "已经有一台叫 "+srv.Name+" 的服务器（来自 SSH 配置）", "换一个别名")
+	}
+	if !s.hostKeyKnown(ctx, srv) {
+		return valise.New("host_key_unconfirmed", "还没有确认这台服务器的身份", "先核对并确认服务器的指纹")
+	}
+	if i >= 0 {
+		list[i] = srv
+	} else {
+		list = append(list, srv)
+	}
+	if err := config.SaveServerList(s.Dirs.Data, list); err != nil {
+		return err
+	}
+	keys := []string{dailyKeyName}
+	if err := s.ensureDailyKey(ctx, srv.Name); err != nil {
+		return err
+	}
+	if o.AdminPassphrase != "" {
+		if err := s.createAdminKey(ctx, srv.Name, o.AdminPassphrase); err != nil {
+			return err
+		}
+		keys = append(keys, adminKeyName)
+	}
+	t, err := s.bootstrapTransport(srv)
+	if err != nil {
+		return err
+	}
+	defer t.CloseMaster()
+	if err := s.installKeys(ctx, t, srv.Name, keys...); err != nil {
+		return err
+	}
+	step := o.Setup.step
+	step(SetupStep{Step: SetupKeys, OK: true, Detail: strings.Join(keys, "、")})
+	hc := ssh.HostConfig{Alias: srv.Name, HostName: srv.HostName, User: srv.User, Port: srv.Port}
+	if err := s.setupOn(ctx, t, hc, o.Setup); err != nil {
+		return err
+	}
+	if o.AdminPassphrase != "" {
+		_ = s.loadAdmin(ctx, srv.Name, o.AdminPassphrase)
+	}
+	return s.checkDaily(ctx, srv.Name, step)
+}
+
+// checkDaily confirms the daily key now reaches the porter.
+func (s *Service) checkDaily(ctx context.Context, host string, step func(SetupStep)) error {
+	doc, err := s.Doctor(ctx, host)
+	if err != nil {
+		return err
+	}
+	if doc.Problem != nil {
+		return valise.New("daily_key_unusable", "日常钥匙已安装，但还连不上服务器上的 porter："+doc.Problem.Reason, doc.Problem.Suggestion)
+	}
+	step(SetupStep{Step: SetupDaily, OK: true, Detail: "porter " + doc.PorterVersion})
+	return nil
+}
+
+// CreateAdminKey creates host's admin key and installs it with one
+// temporary login (password or the user's own key file).
+func (s *Service) CreateAdminKey(ctx context.Context, host, passphrase string) error {
+	srv := s.server(host)
+	if !srv.Valise() {
+		return valise.New("admin_key_untiered", host+" 用的是你自己的 SSH 设置，不需要管理钥匙", "先迁移到 Valise 日常钥匙")
+	}
+	if s.HasAdminKey(host) {
+		return valise.New("admin_key_exists", host+" 已经有管理钥匙", "要换口令请用修改管理口令")
+	}
+	if err := s.createAdminKey(ctx, host, passphrase); err != nil {
+		return err
+	}
+	t, err := s.bootstrapTransport(srv)
+	if err != nil {
+		return err
+	}
+	defer t.CloseMaster()
+	if err := s.installKeys(ctx, t, host, adminKeyName); err != nil {
+		return err
+	}
+	return s.loadAdmin(ctx, host, passphrase)
+}
+
+// MigrateServer moves a server from ~/.ssh/config to Valise's own keys: the
+// daily key (and the admin key if a passphrase is given) is installed over
+// the user's existing login, and the host key already trusted in
+// ~/.ssh/known_hosts is copied. Hosts behind ProxyJump are refused.
+func (s *Service) MigrateServer(ctx context.Context, host, adminPassphrase string) error {
+	srv := s.server(host)
+	if srv.Valise() {
+		return valise.New("already_migrated", host+" 已经在用 Valise 日常钥匙", "")
+	}
+	c, err := s.SSHConfig()
+	if err != nil {
+		return err
+	}
+	hc := c.Lookup(host)
+	if hc.ProxyJump != "" {
+		return valise.New("migrate_proxyjump", host+" 经跳板机连接，暂时不能迁移", "继续使用你自己的 SSH 设置")
+	}
+	n := config.Server{Name: host, Source: config.SourceValise, HostName: hc.HostName, Port: hc.Port, User: hc.User, Login: config.LoginPassword}
+	if n.HostName == "" {
+		n.HostName = host
+	}
+	for _, f := range hc.IdentityFiles {
+		if filepath.IsAbs(f) && fileExists(f) {
+			n.Login, n.LoginKey = config.LoginKey, f
+			break
+		}
+	}
+	if err := n.Validate(); err != nil {
+		return valise.New("server_invalid", err.Error(), "检查 ~/.ssh/config 中的设置")
+	}
+	field := knownHostsField(n.HostName, n.Port)
+	out, _ := exec.CommandContext(ctx, s.toolPath("ssh-keygen"), "-F", field, "-f", filepath.Join(s.Home, ".ssh", "known_hosts")).Output()
+	var lines []string
+	for _, l := range strings.Split(string(out), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) == 0 {
+		return valise.New("migrate_no_host_key", "在 ~/.ssh/known_hosts 里找不到 "+field+" 的身份记录", "先用 ssh 登录一次这台服务器")
+	}
+	keys := []string{dailyKeyName}
+	if err := s.ensureDailyKey(ctx, host); err != nil {
+		return err
+	}
+	if adminPassphrase != "" {
+		if err := s.createAdminKey(ctx, host, adminPassphrase); err != nil {
+			return err
+		}
+		keys = append(keys, adminKeyName)
+	}
+	t, done, err := s.adminTransport(ctx, host)
+	if err != nil {
+		return err
+	}
+	defer done()
+	if err := s.installKeys(ctx, t, host, keys...); err != nil {
+		return err
+	}
+	if err := s.writeKnownHosts(field, lines); err != nil {
+		return err
+	}
+	list, err := config.LoadServerList(s.Dirs.Data)
+	if err != nil {
+		return err
+	}
+	if i := slices.IndexFunc(list, func(x config.Server) bool { return x.Name == host }); i >= 0 {
+		list[i] = n
+	} else {
+		list = append(list, n)
+	}
+	if err := config.SaveServerList(s.Dirs.Data, list); err != nil {
+		return err
+	}
+	if adminPassphrase != "" {
+		_ = s.loadAdmin(ctx, host, adminPassphrase)
+	}
+	return s.checkDaily(ctx, host, func(SetupStep) {})
+}

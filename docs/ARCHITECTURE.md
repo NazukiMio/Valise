@@ -44,7 +44,7 @@
   - minisign 校验：同时接受预哈希（`ED`，BLAKE2b-512）与旧版（`Ed`）签名，并且必须校验 trusted comment 的全局签名。签名公钥随客户端发布；客户端尚未配置发布公钥时，拒绝从 Release 部署，只允许上传本地构建产物。
   - 在 `chmod` 与 `mv` 之间，执行 `valise-porter.tmp version --json`：确认它能在目标架构上运行，并且它自报的 SHA-256 与本地文件一致，才执行 `mv`。任何一步失败都不替换已有的 porter。
   - 部署目标固定为 `~/.local/bin/valise-porter`，全程不使用 sudo。首次部署在添加服务器的引导登录中完成（第 3 节），之后的更新是管理操作。
-  - **检查更新**：客户端经 GitHub API 列出 Release，发现比服务器上更新的 porter 时提示，用户确认后按上述流程更新；不自动更新。发布签名公钥尚未配置的开发构建，界面不显示"一键部署"，只提供"上传本地构建"，不把尚未建立的发布链描述为可用。
+  - **检查更新**（`valise porter check`）：客户端经 GitHub API 列出 Release，取 tag 形如 `v<主>.<次>.<修订>` 的正式版（与资料包的 `profiles-*` 区分，草稿与预发布不算），按数字比较，发现比服务器上更新的 porter 时提示，用户确认后按上述流程更新；不自动更新。发布签名公钥尚未配置的开发构建，界面不显示"一键部署"，只提供"上传本地构建"，不把尚未建立的发布链描述为可用。
 
 ### 2.1 日常钥匙、管理登录与操作分级（2026-11-01 用户决定）
 
@@ -62,11 +62,16 @@
   - **管理口令**：单独的口令，**与保护加密钥匙的 Valise 口令不同**（至少 12 个字符，界面检查两者不相同）。所有服务器的管理钥匙共用这一个管理口令；修改时全部重新加密。
   - 时间窗口：输入管理口令后由 `ssh-add -t <窗口>` 载入 **Valise 自己启动的 ssh-agent**（默认 15 分钟，设置中可改为 1–120 分钟）；到期由 ssh-agent 清除；退出 Valise 时结束这个 ssh-agent（它是 Valise 自己的子进程）。
 - **临时登录**（没有管理钥匙时）：每次管理操作都用服务器密码（或用户自己的私钥）新登录一次，密码只在 OpenSSH 自己的提示中输入（GUI 经 Valise 的 askpass 转交，只在内存中经过），不保存，没有时间窗口。
-- **连接隔离**：每次管理操作新开自己的连接，绝不复用日常钥匙的连接或任何已有连接；一次操作需要多次调用（例如着陆）时，可以为这一次操作开一个临时 ControlMaster，操作结束立即关闭。原生界面、harness 安装与工具安装都是一次操作一条独立连接。
+- **连接隔离**：每次管理操作新开自己的连接，绝不复用日常钥匙的连接或任何已有连接；一次操作需要多次调用（例如着陆）时，为这一次操作开一个临时 ControlMaster（套接字名 `op-<随机>`），操作结束立即关闭，万一没有关闭，闲置 120 秒后由 OpenSSH 自动结束。原生界面、harness 安装与工具安装都是一次操作一条独立连接。
+- **客户端的实现细节**（M10 确定）：
+  - 管理口令经 askpass 交给 OpenSSH 工具：`SSH_ASKPASS` 指向 Valise 自己的可执行文件，口令放在只传给这一个子进程的环境变量里（同一用户的进程才能读到，与钥匙文件的保护相同）；口令错误时 askpass 回答空，让 `ssh-add` 放弃而不是反复询问。
+  - Valise 的 ssh-agent 属于一个 Valise 进程：TUI / GUI 在整个运行期间共享时间窗口；CLI 每条命令是一个进程，窗口只在这条命令内有效。
+  - TUI 运行时 OpenSSH 无法在终端里询问服务器密码：需要临时登录的管理操作在 TUI 中直接提示"创建管理钥匙或在命令行执行"；管理口令由 TUI 的掩码输入框询问。CLI 中由 OpenSSH 自己询问密码。
+  - "自带钥匙"服务器的软限制只在界面（TUI / GUI）中实施，留到界面改版；CLI 用户本来就能直接 `ssh`，CLI 不加软限制。
 
 **其他规则**：
 - **Valise 口令**只保护加密钥匙（`keystore.age`），与服务器管理无关；Valise 不另设登录密码。
-- **自带钥匙的服务器**：经用户自己的 `~/.ssh/config` 别名接入、未迁移到 Valise 日常钥匙的服务器，Valise 无法在服务器端设限。界面标明"软限制"：管理操作前要求输入管理口令（已创建时）或 Valise 口令（已设置时）确认，两者都没有时只做文字确认；并提供"迁移到 Valise 日常钥匙"。
+- **自带钥匙的服务器**：经用户自己的 `~/.ssh/config` 别名接入、未迁移到 Valise 日常钥匙的服务器，Valise 无法在服务器端设限。界面（不含 CLI）标明"软限制"：管理操作前要求输入管理口令（已创建时）或 Valise 口令（已设置时）确认，两者都没有时只做文字确认；并提供"迁移到 Valise 日常钥匙"。
 - **如实说明的局限**：管理钥匙解锁期间，本机若已有恶意程序，它可以使用 ssh-agent 中的钥匙；这套分级防的是"别人打开你开着的 Valise"和"agent 借客户端越权"。Windows 上 ssh-agent 是系统服务，Valise 自启 agent 的方式 `verify: pending`，未核实前 Windows 版每次管理操作都直接要求管理口令、不提供时间窗口。
 
 ### 2.2 操作分级
@@ -85,7 +90,7 @@
 - **口令长度**：按 Unicode 字符计数，至少 12 个字符。
 - **客户端数据目录**：`os.UserConfigDir()/valise/`（macOS 为 `~/Library/Application Support/valise/`，Linux 为 `~/.config/valise/`），其中包括 `keystore.age`、`config.json`、`servers.json`、`ssh_config`、`known_hosts` 与 `keys/`。ControlMaster 套接字与 Valise 的 ssh-agent 套接字放在 `os.UserCacheDir()/valise/` 下。
 - **已记录服务器**：`servers.json` 保存服务器列表，每项为 `{"name": "<别名>", "source": "valise" | "ssh_config"}`。
-  - `valise`：手动添加的服务器。地址、端口、用户名写在 Valise 自己的 `ssh_config`（`Host <别名>`、`HostName`、`Port`、`User`、`IdentityFile keys/<别名>/daily`、`IdentitiesOnly yes`、`UserKnownHostsFile <客户端数据目录>/known_hosts`），每次调用 OpenSSH 时用 `-F` 传入；用户的 `~/.ssh/config` 不被修改。不保存任何密码。
+  - `valise`：手动添加的服务器。`servers.json` 中记录地址、端口、用户名与临时登录方式（`login: password | key`，`key` 时只记私钥文件的路径）；Valise 由它生成自己的 `ssh_config`（`Host <别名>`、`HostName`、`Port`、`User`、`UserKnownHostsFile <客户端数据目录>/known_hosts`、`StrictHostKeyChecking yes`），每次调用 OpenSSH 时用 `-F` 传入；用户的 `~/.ssh/config` 不被修改。钥匙不写进 `ssh_config`，而是按访问级别在命令行上传入（日常：`-i daily -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes`；管理钥匙：`-i admin` 加 Valise 的 ssh-agent；临时登录：`-o PubkeyAuthentication=no` 或用户的私钥文件），这样临时登录不会退回到日常钥匙。不保存任何密码。
   - `ssh_config`：从用户 `~/.ssh/config` 导入的别名（只列具体的 `Host`，跳过通配符），连接参数与密钥交给用户自己的配置。
   - CLI 仍然接受任意别名，不要求先记录；界面只列已记录的服务器。旧版只含别名字符串的 `servers.json` 读作 `ssh_config` 来源。服务器上的实例由 RPC `instance_list` 列出。
 - **添加服务器**（2026-11-01 改版）：每一步失败都停在该步并给出原因与建议。

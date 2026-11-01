@@ -28,6 +28,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
                                                  登记 agent：展示登记报告，加 --accept 才写入实例记录
   porter deploy <服务器> --release <版本>         从 GitHub Release 下载、校验并部署 porter
   porter deploy <服务器> --local <文件>           上传本地构建的 porter
+  porter check <服务器>                           检查服务器上的 porter 有没有新版本（更新用 porter deploy --release）
   key register <服务器> [--label 说明]            把本机钥匙登记到服务器（之后的逃生舱都能用它打开）
   seal <服务器> <实例> [--tier soul|soul-secrets|full|raw] [--reason 原因]
                                                  建立一个逃生舱（soul=轻装、soul-secrets=标准、full=完整、raw=原样）
@@ -61,11 +62,17 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   profiles status                                查看 harness 资料包与本地 profile
   profiles install [--tag profiles-…] [--file <文件>] [--yes]
                                                  安装 harness 资料包（在线拉取最新版，或本地文件；未签名的只能作为本地 profile）
+  server add <别名> --host <地址> [--port 22] [--user 用户] [--login password|key:<私钥路径>] [--admin-key]
+         [--trust-fingerprint SHA256:…] [--name 名字] [--release 版本 | --local 文件]
+                                                 手动添加服务器：确认身份 → 用密码登录一次装好日常钥匙 → 检查 → 部署 porter → 起名
+  server admin-key <服务器>                        创建管理钥匙（单独的管理口令；需要用服务器密码登录一次）
+  server migrate <别名> [--admin-key]              把 ~/.ssh/config 中的服务器改用 Valise 日常钥匙
+  admin passphrase                               修改管理口令（重新加密所有管理钥匙）
   server setup <别名> [--name 名字] [--release 版本 | --local 文件]
-                                                 添加服务器：检查 → 部署 porter（缺少时）→ 登记钥匙 → 起名 → 记录
-  server name <别名> <名字>                       给服务器起名（云备份文件夹名，只能设一次）
+                                                 用你自己的 SSH 设置添加服务器：检查 → 部署 porter（缺少时）→ 登记钥匙 → 起名 → 记录
+  server name <别名> <名字>                       给服务器起名（空间站文件夹名，只能设一次）
   server list | add <别名>… | remove <别名> | import [<别名>…]
-                                                 已记录服务器（只存 SSH 别名；import 从 ~/.ssh/config 选择）
+                                                 已记录服务器（add/import 记录 ~/.ssh/config 中的别名）
   login <服务器> <实例> [--method id]              登录授权：在本机浏览器中完成服务器上 agent 的登录
   open <服务器> <实例> [--entry id] [--idle 30m] [--no-browser]
                                                  打开管理页：经隧道转到本机，需要令牌时用 harness 自己的命令取得
@@ -124,7 +131,9 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 		c.svc, err = service.New(dirs, version)
 	}
 	if err == nil {
+		c.svc.AdminAuth.Passphrase = c.adminPassphrase
 		err = c.dispatch(ctx, args)
+		c.svc.Close()
 	}
 	return c.report(err)
 }
@@ -137,6 +146,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.enroll(ctx, args[1:])
 	case args[0] == "porter" && len(args) > 1 && args[1] == "deploy":
 		return c.deploy(ctx, args[2:])
+	case args[0] == "porter" && len(args) > 1 && args[1] == "check":
+		return c.porterCheck(ctx, args[2:])
 	case args[0] == "revive":
 		return c.revive(ctx, args[1:])
 	case args[0] == "prev" && len(args) > 1:
@@ -153,6 +164,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.profilesCmd(ctx, args[1:])
 	case args[0] == "server":
 		return c.server(ctx, args[1:])
+	case args[0] == "admin":
+		return c.admin(ctx, args[1:])
 	case args[0] == "period":
 		return c.period(ctx, args[1:])
 	case args[0] == "timer":

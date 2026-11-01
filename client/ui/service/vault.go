@@ -12,22 +12,11 @@ import (
 	"sort"
 	"strings"
 
-	"valise/client/porter"
 	"valise/client/ssh"
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 )
-
-// withSession runs fn on a porter RPC session to host.
-func (s *Service) withSession(ctx context.Context, host string, fn func(*ssh.RPCClient) error) error {
-	c, err := s.session(ctx, host)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-	return fn(c)
-}
 
 // KeyRegister adds this client's public key to the server's recipients.
 func (s *Service) KeyRegister(ctx context.Context, host, label string) (*vaultrpc.RecipientAddResult, *KeyInfo, error) {
@@ -36,7 +25,7 @@ func (s *Service) KeyRegister(ctx context.Context, host, label string) (*vaultrp
 		return nil, nil, err
 	}
 	var res vaultrpc.RecipientAddResult
-	err = s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err = s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, vaultrpc.MethodRecipientAdd, vaultrpc.RecipientAddParams{Recipient: info.Recipient, Label: label}, &res)
 	})
 	return &res, info, err
@@ -45,7 +34,7 @@ func (s *Service) KeyRegister(ctx context.Context, host, label string) (*vaultrp
 // Seal seals an enrolled instance on host.
 func (s *Service) Seal(ctx context.Context, host string, p vaultrpc.SealParams) (*vaultrpc.SealReport, error) {
 	var rep vaultrpc.SealReport
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, vaultrpc.MethodSeal, p, &rep)
 	})
 	return &rep, err
@@ -54,7 +43,7 @@ func (s *Service) Seal(ctx context.Context, host string, p vaultrpc.SealParams) 
 // VaultStatus lists snapshots and sync state without any key.
 func (s *Service) VaultStatus(ctx context.Context, host string) (*vaultrpc.StatusResult, error) {
 	var res vaultrpc.StatusResult
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, vaultrpc.MethodStatus, struct{}{}, &res)
 	})
 	return &res, err
@@ -63,7 +52,7 @@ func (s *Service) VaultStatus(ctx context.Context, host string) (*vaultrpc.Statu
 // VaultVerifyRemote runs the no-key verification on the server.
 func (s *Service) VaultVerifyRemote(ctx context.Context, host string) (*vaultrpc.VerifyResult, error) {
 	var res vaultrpc.VerifyResult
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, vaultrpc.MethodVerify, struct{}{}, &res)
 	})
 	return &res, err
@@ -71,7 +60,7 @@ func (s *Service) VaultVerifyRemote(ctx context.Context, host string) (*vaultrpc
 
 // TargetSet adds or replaces a sync target on host.
 func (s *Service) TargetSet(ctx context.Context, host string, t vaultrpc.Target) error {
-	return s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	return s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, vaultrpc.MethodTargetSet, vaultrpc.TargetSetParams{Target: t}, nil)
 	})
 }
@@ -79,7 +68,7 @@ func (s *Service) TargetSet(ctx context.Context, host string, t vaultrpc.Target)
 // Sync copies host's vault to one of its targets.
 func (s *Service) Sync(ctx context.Context, host, target string) (*vaultrpc.SyncResult, error) {
 	var res vaultrpc.SyncResult
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, vaultrpc.MethodSync, vaultrpc.SyncParams{Target: target}, &res)
 	})
 	return &res, err
@@ -152,7 +141,7 @@ func (s *Service) Pull(ctx context.Context, host, leaf, dir string) (*PullResult
 	if err != nil {
 		return nil, err
 	}
-	found, err := porter.Probe(ctx, t)
+	found, err := s.porterOn(ctx, t, s.Tiered(host))
 	if err != nil {
 		return nil, err
 	}

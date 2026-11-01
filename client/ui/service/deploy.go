@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"valise/client/porter"
+	"valise/client/ssh"
 	"valise/core/valise"
 )
 
@@ -32,10 +33,21 @@ func (s *Service) DeployPorter(ctx context.Context, host string, src DeploySourc
 		return nil, valise.New("deploy_source_required", "需要明确选择 porter 的来源",
 			"二选一：--release <版本> 从 GitHub Release 下载并校验，或 --local <文件> 上传本地构建产物")
 	}
-	t, _, err := s.transport(host)
+	t, done, err := s.adminTransport(ctx, host)
 	if err != nil {
 		return nil, err
 	}
+	defer done()
+	return s.deployOn(ctx, t, src)
+}
+
+// deployOn installs the porter through a full login t.
+func (s *Service) deployOn(ctx context.Context, t *ssh.Transport, src DeploySource) (*DeployReport, error) {
+	if (src.LocalPath == "") == (src.ReleaseTag == "") {
+		return nil, valise.New("deploy_source_required", "需要明确选择 porter 的来源",
+			"二选一：--release <版本> 从 GitHub Release 下载并校验，或 --local <文件> 上传本地构建产物")
+	}
+	host := t.Host()
 	p, err := porter.RemotePlatform(ctx, t)
 	if err != nil {
 		return nil, err

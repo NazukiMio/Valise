@@ -15,6 +15,9 @@ const ConfigFile = "config.json"
 type Config struct {
 	// SSHBinary is the ssh(1) to run. Tests point it at fake-ssh.
 	SSHBinary string `json:"ssh_binary,omitempty"`
+	// AdminWindowMinutes is how long an unlocked admin key stays usable
+	// (1–120, default 15; docs/ARCHITECTURE.md 2.1).
+	AdminWindowMinutes int `json:"admin_window_minutes,omitempty"`
 }
 
 // Default returns the default settings.

@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	agentkitfiles "valise/agentkit"
-	"valise/client/porter"
-	"valise/client/ssh"
 	"valise/core/agentkit"
 	"valise/core/valise"
 )
@@ -16,7 +14,7 @@ import (
 // Checkup runs the code-only checkup of an instance on host.
 func (s *Service) Checkup(ctx context.Context, host, instance string) (*agentkit.CheckupResult, error) {
 	var res agentkit.CheckupResult
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, agentkit.MethodCheckup, agentkit.CheckupParams{InstanceID: instance}, &res)
 	})
 	return &res, err
@@ -25,7 +23,7 @@ func (s *Service) Checkup(ctx context.Context, host, instance string) (*agentkit
 // Proposals lists an instance's pending classification proposals.
 func (s *Service) Proposals(ctx context.Context, host, instance string) ([]agentkit.Proposal, error) {
 	var res agentkit.ProposalsResult
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, agentkit.MethodProposalsList, agentkit.ProposalsParams{InstanceID: instance}, &res)
 	})
 	return res.Proposals, err
@@ -34,7 +32,7 @@ func (s *Service) Proposals(ctx context.Context, host, instance string) ([]agent
 // DecideProposals applies the user's decisions.
 func (s *Service) DecideProposals(ctx context.Context, host string, d agentkit.DecideParams) (*agentkit.DecideResult, error) {
 	var res agentkit.DecideResult
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, agentkit.MethodProposalsDecide, d, &res)
 	})
 	return &res, err
@@ -78,17 +76,13 @@ func (s *Service) KitInstall(ctx context.Context, host, instance string, dryRun 
 	if err != nil {
 		return nil, err
 	}
-	t, _, err := s.transport(host)
-	if err != nil {
-		return nil, err
-	}
-	found, err := porter.Probe(ctx, t)
+	porterPath, err := s.porterAbsPath(ctx, host)
 	if err != nil {
 		return nil, err
 	}
 	plan := &KitPlan{}
 	var res agentkit.KitInstallResult
-	err = s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err = s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, agentkit.MethodKitInstall, agentkit.KitInstallParams{InstanceID: instance, Files: files, DryRun: dryRun}, &res)
 	})
 	switch ue, _ := valise.As(err); {
@@ -99,14 +93,14 @@ func (s *Service) KitInstall(ctx context.Context, host, instance string, dryRun 
 	default:
 		return nil, err
 	}
-	serverCmd := found.Path + " mcp --instance " + instance
+	serverCmd := porterPath + " mcp --instance " + instance
 	plan.AgentLine = "Add an MCP server named \"valise\" (stdio) that runs: " + serverCmd +
 		" — then use the valise-enroll skill: 我给你装了一个逃生舱，你学习一下。"
 	if ak := target.Profile.AgentKit; ak != nil {
 		plan.MCPDoc = ak.MCPConfigDoc
-		plan.MCPSnippet = strings.NewReplacer("${PORTER}", found.Path, "${INSTANCE}", instance).Replace(ak.MCPConfigSnippet)
+		plan.MCPSnippet = strings.NewReplacer("${PORTER}", porterPath, "${INSTANCE}", instance).Replace(ak.MCPConfigSnippet)
 		for _, a := range ak.MCPAddArgv {
-			a = strings.ReplaceAll(a, "${PORTER}", found.Path)
+			a = strings.ReplaceAll(a, "${PORTER}", porterPath)
 			a = strings.ReplaceAll(a, "${INSTANCE}", instance)
 			plan.MCPCommand = append(plan.MCPCommand, a)
 		}
@@ -122,7 +116,7 @@ func (s *Service) KitStatus(ctx context.Context, host, instance string) (*agentk
 		return nil, err
 	}
 	var res agentkit.KitStatusResult
-	err = s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err = s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, agentkit.MethodKitStatus, agentkit.KitStatusParams{InstanceID: instance, Files: files}, &res)
 	})
 	return &res, err
@@ -148,7 +142,7 @@ func (s *Service) KitUninstall(ctx context.Context, host, instance string, force
 		return nil, err
 	}
 	var res agentkit.KitUninstallResult
-	if err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	if err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, agentkit.MethodKitUninstall, agentkit.KitUninstallParams{InstanceID: instance, Files: files, Force: force, DryRun: dryRun}, &res)
 	}); err != nil {
 		return nil, err

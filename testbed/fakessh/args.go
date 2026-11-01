@@ -22,7 +22,10 @@ type invocation struct {
 	port    string
 	user    string
 	config  string
-	ignored []string
+	// identity is the -i key; ctl is -O (master control, e.g. exit).
+	identity string
+	ctl      string
+	ignored  []string
 }
 
 func parseArgs(args []string) (invocation, error) {
@@ -70,6 +73,10 @@ func parseArgs(args []string) (invocation, error) {
 					inv.user = val
 				case 'F':
 					inv.config = val
+				case 'i':
+					inv.identity = val
+				case 'O':
+					inv.ctl = val
 				default:
 					inv.ignored = append(inv.ignored, "-"+string(c)+" "+val)
 				}

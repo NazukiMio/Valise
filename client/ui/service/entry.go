@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"valise/client/porter"
-	"valise/client/ssh"
 	"valise/client/tunnel"
 	"valise/core/login"
 	"valise/core/profile"
@@ -86,11 +84,7 @@ func (s *Service) OpenEntry(ctx context.Context, host, instance string, o OpenOp
 	if err != nil {
 		return err
 	}
-	found, err := porter.Probe(ctx, t)
-	if err != nil {
-		return err
-	}
-	c, _, err := ssh.Dial(ctx, t, found.Path, s.Version)
+	c, err := s.session(ctx, host)
 	if err != nil {
 		return err
 	}

@@ -72,13 +72,13 @@ func Probe(ctx context.Context, t *ssh.Transport) (*Found, error) {
 }
 
 func versionOf(ctx context.Context, t *ssh.Transport, path string) (*Found, error) {
-	return versionAt(ctx, t, path, ssh.Quote(path))
+	return VersionAt(ctx, t, path, ssh.Quote(path))
 }
 
-// versionAt runs `<word> version --json`, where word is already a shell
+// VersionAt runs `<word> version --json`, where word is already a shell
 // word (for example "$HOME/…" in double quotes, so the remote shell expands
 // it).
-func versionAt(ctx context.Context, t *ssh.Transport, path, word string) (*Found, error) {
+func VersionAt(ctx context.Context, t *ssh.Transport, path, word string) (*Found, error) {
 	res, err := t.Run(ctx, word+" version --json", nil)
 	if err != nil {
 		return nil, err

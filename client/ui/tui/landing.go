@@ -159,6 +159,7 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 	case rvPlan:
 		switch k {
 		case "b":
+			r.plan.Close()
 			r.step, r.plan = rvOptions, nil
 		case "enter":
 			if len(r.plan.Blockers) > 0 {
@@ -176,6 +177,7 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 						send(stageVerified{v, reply})
 						return <-reply
 					})
+					rp.Close()
 					return reviveFinished{res, err}
 				}
 			})), true

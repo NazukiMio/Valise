@@ -6,12 +6,17 @@ import (
 	"slices"
 
 	"valise/client/config"
+	"valise/client/porter"
 	"valise/client/ssh"
 	"valise/core/enroll"
 	"valise/core/valise"
+	"valise/core/vaultrpc"
 )
 
-// Servers returns the recorded servers (SSH aliases).
+// ServerList returns the recorded servers with how they are reached.
+func (s *Service) ServerList() ([]config.Server, error) { return config.LoadServerList(s.Dirs.Data) }
+
+// Servers returns the recorded server names.
 func (s *Service) Servers() ([]string, error) { return config.LoadServers(s.Dirs.Data) }
 
 // AddServers records aliases; already recorded ones are skipped. It returns
@@ -70,7 +75,7 @@ func (s *Service) ImportableHosts() ([]string, error) {
 // Instances lists the instances enrolled on host.
 func (s *Service) Instances(ctx context.Context, host string) ([]enroll.InstanceSummary, error) {
 	var res enroll.InstanceListResult
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, enroll.MethodInstanceList, struct{}{}, &res)
 	})
 	return res.Instances, err
@@ -101,59 +106,91 @@ type SetupOptions struct {
 	Step     func(SetupStep)
 }
 
-// SetupServer adds a server: check it, deploy porter when missing, register
-// this client's key, name it, and record it. It stops at the first failing
-// step and returns that step's error.
-func (s *Service) SetupServer(ctx context.Context, host string, o SetupOptions) error {
-	step := func(st SetupStep) {
-		if o.Step != nil {
-			o.Step(st)
-		}
+func (o SetupOptions) step(st SetupStep) {
+	if o.Step != nil {
+		o.Step(st)
 	}
-	doc, err := s.Doctor(ctx, host)
+}
+
+// SetupServer sets up a server reached through the user's own SSH setup (or
+// re-runs setup on one added by hand, as an admin operation): check it,
+// deploy porter when missing, register this client's key, name it, and
+// record it. It stops at the first failing step and returns its error.
+func (s *Service) SetupServer(ctx context.Context, host string, o SetupOptions) error {
+	t, done, err := s.adminTransport(ctx, host)
 	if err != nil {
 		return err
 	}
-	step(SetupStep{Step: SetupCheck, OK: true, Detail: doc.Platform.String()})
+	defer done()
+	if err := s.setupOn(ctx, t, ssh.HostConfig{Alias: host}, o); err != nil {
+		return err
+	}
+	if s.Tiered(host) {
+		return nil
+	}
+	if _, err := s.AddServers(host); err != nil {
+		return err
+	}
+	o.step(SetupStep{Step: SetupRecord, OK: true})
+	return nil
+}
+
+// setupOn runs the setup steps over a full login t. Registering this
+// client's key is skipped while there is no key yet: it is registered
+// before the first seal (the daily key may register the first recipient).
+func (s *Service) setupOn(ctx context.Context, t *ssh.Transport, hc ssh.HostConfig, o SetupOptions) error {
+	host := t.Host()
+	doc, err := s.doctorOn(ctx, t, hc, false)
+	if err != nil {
+		return err
+	}
+	o.step(SetupStep{Step: SetupCheck, OK: true, Detail: doc.Platform.String()})
 	if doc.Problem != nil {
 		if o.Deploy == (DeploySource{}) {
 			return valise.New("setup_need_porter", "服务器上还没有可用的 porter："+doc.Problem.Reason,
 				"选择 porter 的来源：--release <版本>（从 GitHub Release 下载并校验）或 --local <文件>")
 		}
-		rep, err := s.DeployPorter(ctx, host, o.Deploy)
+		rep, err := s.deployOn(ctx, t, o.Deploy)
 		if err != nil {
 			return err
 		}
-		step(SetupStep{Step: SetupDeploy, OK: true, Detail: rep.Porter.Info.Version})
+		o.step(SetupStep{Step: SetupDeploy, OK: true, Detail: rep.Porter.Info.Version})
 	} else {
-		step(SetupStep{Step: SetupDeploy, OK: true, Detail: "已有 porter " + doc.PorterVersion})
+		o.step(SetupStep{Step: SetupDeploy, OK: true, Detail: "已有 porter " + doc.PorterVersion})
 	}
-	label := o.KeyLabel
-	if label == "" {
-		if h, err := os.Hostname(); err == nil {
-			label = h
-		}
-	}
-	if _, _, err := s.KeyRegister(ctx, host, label); err != nil {
+	found, err := porter.Probe(ctx, t)
+	if err != nil {
 		return err
 	}
-	step(SetupStep{Step: SetupRegister, OK: true})
+	c, _, err := ssh.Dial(ctx, t, found.Path, s.Version)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if info, err := s.KeyShow(); err == nil {
+		label := o.KeyLabel
+		if label == "" {
+			label, _ = os.Hostname()
+		}
+		if err := c.Call(ctx, vaultrpc.MethodRecipientAdd, vaultrpc.RecipientAddParams{Recipient: info.Recipient, Label: label}, nil); err != nil {
+			return err
+		}
+		o.step(SetupStep{Step: SetupRegister, OK: true})
+	} else {
+		o.step(SetupStep{Step: SetupRegister, OK: true, Detail: "还没有加密钥匙，第一次建立逃生舱前再登记"})
+	}
 	name := o.Name
 	if name == "" {
 		name = host
 	}
-	if err := s.ServerNameSet(ctx, host, name); err != nil {
+	if err := c.Call(ctx, vaultrpc.MethodServerNameSet, vaultrpc.ServerNameSetParams{Name: name}, nil); err != nil {
 		ue, ok := valise.As(err)
 		if !ok || ue.Code != "server_name_set" {
 			return err
 		}
-		step(SetupStep{Step: SetupName, OK: true, Detail: ue.Reason})
+		o.step(SetupStep{Step: SetupName, OK: true, Detail: ue.Reason})
 	} else {
-		step(SetupStep{Step: SetupName, OK: true, Detail: name})
+		o.step(SetupStep{Step: SetupName, OK: true, Detail: name})
 	}
-	if _, err := s.AddServers(host); err != nil {
-		return err
-	}
-	step(SetupStep{Step: SetupRecord, OK: true})
 	return nil
 }

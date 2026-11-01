@@ -78,10 +78,18 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 	// a cancelled caller (Ctrl-C, a closed window) no longer cancels it.
 	ctx = context.WithoutCancel(ctx)
 	stopped := false
+	var source *ssh.Transport
+	var sourcePorter string
 	if rp.StopSource != "" {
-		src, err := porter.Probe(ctx, rp.source)
+		// Stopping the source's service is an admin operation on the source.
+		t, done, err := s.adminTransport(ctx, rp.From)
 		if err == nil {
-			err = s.callOn(ctx, rp.source, src.Path, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "stop"}, nil)
+			defer done()
+			var src *porter.Found
+			if src, err = porter.Probe(ctx, t); err == nil {
+				source, sourcePorter = t, src.Path
+				err = s.callOn(ctx, source, sourcePorter, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "stop"}, nil)
+			}
 		}
 		if err != nil {
 			return back(valise.New("source_stop_failed", "无法停止原服务器上的 "+rp.StopSource, "手动停止后重试；独占凭据不能两边同时使用").WithDetail(err.Error()))
@@ -91,8 +99,7 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 	var res revive.SwapResult
 	err := s.callOn(ctx, rp.target, rp.porterP, faultEnv(fault), revive.MethodSwap, revive.OpParams{OpID: plan.OpID}, &res)
 	if stopped && (err != nil || res.State == revive.StateRolledBack) {
-		if src, perr := porter.Probe(ctx, rp.source); perr == nil {
-			s.callOn(ctx, rp.source, src.Path, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "start"}, nil)
+		if s.callOn(ctx, source, sourcePorter, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "start"}, nil) == nil {
 			res.Message += "；已重新启动原服务器上的 " + rp.StopSource
 		}
 	}
@@ -144,10 +151,11 @@ func (s *Service) streamStage(ctx context.Context, rp *RevivePlan) error {
 
 // ReviveResume continues or backs out an unfinished operation.
 func (s *Service) ReviveResume(ctx context.Context, host, op, action, fault string) (*revive.SwapResult, error) {
-	t, _, err := s.transport(host)
+	t, done, err := s.adminTransport(ctx, host)
 	if err != nil {
 		return nil, err
 	}
+	defer done()
 	found, err := porter.Probe(ctx, t)
 	if err != nil {
 		return nil, err
@@ -160,14 +168,14 @@ func (s *Service) ReviveResume(ctx context.Context, host, op, action, fault stri
 // PrevList lists kept pre-swap states on host.
 func (s *Service) PrevList(ctx context.Context, host string) (*revive.PrevListResult, error) {
 	var res revive.PrevListResult
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error { return c.Call(ctx, revive.MethodPrevList, struct{}{}, &res) })
+	err := s.withSession(ctx, host, func(c caller) error { return c.Call(ctx, revive.MethodPrevList, struct{}{}, &res) })
 	return &res, err
 }
 
 // PrevDrop deletes the leftovers of one finished operation (explicit).
 func (s *Service) PrevDrop(ctx context.Context, host, op string) ([]string, error) {
 	var res map[string][]string
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, revive.MethodPrevDrop, revive.OpParams{OpID: op}, &res)
 	})
 	return res["removed"], err
@@ -176,7 +184,7 @@ func (s *Service) PrevDrop(ctx context.Context, host, op string) ([]string, erro
 // OldList lists superseded instances on host.
 func (s *Service) OldList(ctx context.Context, host string) (*revive.OldListResult, error) {
 	var res revive.OldListResult
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error { return c.Call(ctx, revive.MethodOldList, struct{}{}, &res) })
+	err := s.withSession(ctx, host, func(c caller) error { return c.Call(ctx, revive.MethodOldList, struct{}{}, &res) })
 	return &res, err
 }
 
@@ -184,7 +192,7 @@ func (s *Service) OldList(ctx context.Context, host string) (*revive.OldListResu
 // (explicit).
 func (s *Service) OldCleanup(ctx context.Context, host, instance string) ([]string, error) {
 	var res map[string][]string
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, revive.MethodOldCleanup, revive.OldCleanupParams{InstanceID: instance}, &res)
 	})
 	return res["removed"], err
@@ -197,7 +205,7 @@ func (s *Service) KeyUnregister(ctx context.Context, host, recipient string) ([]
 		Added        bool     `json:"added"`
 		Fingerprints []string `json:"fingerprints"`
 	}
-	err := s.withSession(ctx, host, func(c *ssh.RPCClient) error {
+	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, revive.MethodRecipientRm, revive.RecipientRemoveParams{Recipient: recipient}, &res)
 	})
 	return res.Fingerprints, res.Added, err

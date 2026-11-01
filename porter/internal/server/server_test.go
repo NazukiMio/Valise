@@ -103,3 +103,13 @@ func TestBadInput(t *testing.T) {
 		t.Fatalf("%+v", resps)
 	}
 }
+
+// Every porter method must be classified into a tier
+// (docs/ARCHITECTURE.md 2.2).
+func TestMethodsClassified(t *testing.T) {
+	for m := range methods {
+		if !rpc.Classified(m) {
+			t.Errorf("method %q has no tier in core/rpc/tier.go", m)
+		}
+	}
+}

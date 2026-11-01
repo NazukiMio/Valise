@@ -22,6 +22,16 @@ type Service struct {
 	// SSHConfigPath defaults to ~/.ssh/config.
 	SSHConfigPath string
 	Release       porter.Release
+	// AdminAuth is set by the frontend to ask for the admin passphrase.
+	AdminAuth AdminAuth
+	// Keyscan replaces ssh-keyscan in tests.
+	Keyscan Keyscan
+	// NoTerminalLogin is set by full-screen frontends: a temporary admin
+	// login cannot ask for the server password on the terminal, so it is
+	// refused with a suggestion instead.
+	NoTerminalLogin bool
+
+	agent adminAgent
 }
 
 // New loads config.json from dirs.Data.
@@ -48,17 +58,4 @@ func (s *Service) SSHConfig() (*ssh.Config, error) {
 		return nil, valise.New("ssh_config_invalid", "无法解析 SSH 配置文件", "检查 "+s.SSHConfigPath+" 的语法").WithDetail(err.Error())
 	}
 	return c, nil
-}
-
-func (s *Service) transport(host string) (*ssh.Transport, ssh.HostConfig, error) {
-	c, err := s.SSHConfig()
-	if err != nil {
-		return nil, ssh.HostConfig{}, err
-	}
-	hc := c.Lookup(host)
-	t, err := ssh.New(host, ssh.Options{Binary: s.Config.SSHBinary, ControlDir: s.Dirs.Cache, HostConfig: &hc})
-	if err != nil {
-		return nil, hc, valise.New("bad_host", "服务器别名无效："+host, "使用 ~/.ssh/config 中的 Host 别名，或 user@host")
-	}
-	return t, hc, nil
 }

@@ -32,16 +32,24 @@ func (s *Service) Doctor(ctx context.Context, host string) (*DoctorReport, error
 	if err != nil {
 		return nil, err
 	}
-	r := &DoctorReport{Host: host, SSH: hc, ReusesUserControlMaster: t.ReusesUserControlMaster()}
-	found, err := porter.Probe(ctx, t)
+	return s.doctorOn(ctx, t, hc, s.Tiered(host))
+}
+
+// doctorOn checks the porter through t; daily is the daily key's porter,
+// which cannot run the shell commands of the probe chain.
+func (s *Service) doctorOn(ctx context.Context, t *ssh.Transport, hc ssh.HostConfig, daily bool) (*DoctorReport, error) {
+	r := &DoctorReport{Host: t.Host(), SSH: hc, ReusesUserControlMaster: t.ReusesUserControlMaster()}
+	found, err := s.porterOn(ctx, t, daily)
 	if err != nil {
 		ue, ok := valise.As(err)
 		if !ok || (ue.Code != "porter_not_found" && ue.Code != "porter_unusable") {
 			return nil, err
 		}
 		r.Problem = ue
-		if r.Platform, err = porter.RemotePlatform(ctx, t); err != nil {
-			return nil, err
+		if !daily {
+			if r.Platform, err = porter.RemotePlatform(ctx, t); err != nil {
+				return nil, err
+			}
 		}
 		return r, nil
 	}
