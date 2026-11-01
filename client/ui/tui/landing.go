@@ -36,8 +36,12 @@ type reviveScreen struct {
 	err    error
 	// Progress of the running step and the landing scene (docs/UI.md 9.6).
 	prog   progressBox
-	began  time.Time
+	began  time.Time // start of the running step (plain layout)
+	t0     time.Time // start of the landing (telemetry)
+	ended  time.Time
 	rocket *rocketPlayer
+	scroll int    // plan lines scrolled away
+	m      *Model // for help(), which has no model
 }
 
 func newRevive(host string, snap vault.Meta) *reviveScreen {
@@ -78,11 +82,15 @@ func (r *reviveScreen) help() string {
 		if len(r.plan.Blockers) > 0 {
 			return errStyle.Render("计划无法执行") + "   " + menu("b", "返回修改选项")
 		}
-		return menu("enter", "暂存并校验（agent 现在的文件不会被改动）", "b", "返回修改选项")
+		return menu("enter", "开始着陆（先暂存并校验）", "↑↓", "滚动计划", "b", "返回修改选项")
 	case rvAskSwap:
-		return menu("y", "开始交换", "n", "放弃（暂存保留）")
+		return menu("y", "下令着陆", "n", "放弃（暂存保留）")
 	case rvSwapping:
 		return warnStyle.Render("交换进行中，不能中断")
+	case rvDone:
+		if r.m != nil && !r.revealed(r.m) {
+			return menu("enter", "跳过动画")
+		}
 	}
 	return ""
 }
@@ -101,8 +109,7 @@ func (r *reviveScreen) busy() string {
 func (r *reviveScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case planned:
-		r.plan, r.err, r.step = msg.rp, msg.err, rvPlan
-		r.rocket = nil
+		r.plan, r.err, r.step, r.scroll = msg.rp, msg.err, rvPlan, 0
 		if msg.err != nil {
 			r.step = rvOptions
 			return func() tea.Msg { return failed(msg.err) }, true
@@ -112,15 +119,17 @@ func (r *reviveScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		r.verify, r.reply, r.step = msg.v, msg.reply, rvAskSwap
 		return nil, true
 	case reviveFinished:
-		r.result, r.err, r.step = msg.res, msg.err, rvDone
-		if msg.err != nil && (msg.res == nil || msg.res.State == "") {
-			r.rocket = nil
-			return func() tea.Msg { return failed(msg.err) }, true
+		r.result, r.err, r.step, r.ended = msg.res, msg.err, rvDone, m.now()
+		if r.rocket == nil {
+			return nil, true
 		}
-		if msg.res.State == revive.StateRolledBack {
-			r.rocket = nil
-		} else if r.rocket != nil {
-			r.rocket.go_(m.now()) // landed: the rocket comes into sight and touches down
+		if r.landed() {
+			// Landed: a hovering rocket touches down; the outcome shows
+			// once it has (docs/UI.md section 8).
+			r.rocket.go_(m.now(), false)
+			r.rocket.release(m.now())
+		} else {
+			r.rocket.fail(m.now())
 		}
 		return nil, true
 	case tea.KeyPressMsg:
@@ -179,24 +188,28 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 			if len(r.plan.Blockers) > 0 {
 				return nil, true
 			}
+			// The plan on screen says nothing changes before the swap is
+			// confirmed; enter starts staging.
 			rp := r.plan
-			return m.push(confirm("按上面的计划暂存并校验？在你下一次确认之前，agent 现在的文件不会被改动。", nil, func(m *Model) tea.Cmd {
-				r.step = rvStaging
-				r.startScene(m)
-				send := m.send
-				// The revive keeps the root context: closing the screen must
-				// not interrupt a swap.
-				ctx := service.WithProgress(m.ctx, r.prog.set)
-				return func() tea.Msg {
-					res, err := m.svc.ExecuteRevive(ctx, rp, "", func(v *revive.StageVerifyResult) bool {
-						reply := make(chan bool, 1)
-						send(stageVerified{v, reply})
-						return <-reply
-					})
-					rp.Close()
-					return reviveFinished{res, err}
-				}
-			})), true
+			r.step = rvStaging
+			r.startScene(m)
+			send := m.send
+			// The revive keeps the root context: closing the screen must
+			// not interrupt a swap.
+			ctx := service.WithProgress(m.ctx, r.prog.set)
+			return func() tea.Msg {
+				res, err := m.svc.ExecuteRevive(ctx, rp, "", func(v *revive.StageVerifyResult) bool {
+					reply := make(chan bool, 1)
+					send(stageVerified{v, reply})
+					return <-reply
+				})
+				rp.Close()
+				return reviveFinished{res, err}
+			}, true
+		case "up", "k":
+			r.scroll--
+		case "down", "j":
+			r.scroll++
 		default:
 			return nil, false
 		}
@@ -206,6 +219,12 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 		case "y":
 			r.step = rvSwapping
 			r.began = m.now()
+			r.prog.set(service.Progress{Stage: service.StageSwap})
+			if r.rocket != nil {
+				// The swap and health check take seconds: the rocket comes
+				// down now and hovers if they are not done yet.
+				r.rocket.go_(m.now(), true)
+			}
 			r.reply <- true
 		case "n", "esc":
 			r.step = rvStaging
@@ -214,11 +233,20 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 		return nil, true
 	case rvPlanning, rvStaging, rvSwapping:
 		return nil, k == "esc" || k == "q" // stay until the operation reports back
+	case rvDone:
+		if k == "enter" && !r.revealed(m) {
+			r.rocket.skip(m.now())
+			return nil, true
+		}
 	}
 	return nil, false
 }
 
 func (r *reviveScreen) view(m *Model) string {
+	r.m = m
+	if r.step != rvOptions && r.rocket != nil && hudFits(m.width, m.bodyHeight()) {
+		return r.hudView(m)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "逃生舱：%s 的 %s · %s · 来自 %s\n", r.snap.InstanceID,
 		r.snap.CreatedAt.Local().Format("2006-01-02 15:04"), tierNames[r.snap.Tier], r.from)
@@ -240,14 +268,14 @@ func (r *reviveScreen) view(m *Model) string {
 	case rvStaging:
 		b.WriteString(dimStyle.Render("agent 现在的文件还没有被改动。") + "\n\n" + stepsView(stageSteps, r.prog.get(), m.now(), r.began))
 	case rvAskSwap:
-		fmt.Fprintf(&b, "%s\n\n%s", okStyle.Render(fmt.Sprintf("暂存校验通过：%d 个文件，%s，SHA-256 与 SQLite 完整性检查全部通过。", r.verify.Files, size(r.verify.Bytes))),
+		fmt.Fprintf(&b, "%s\n\n%s", okStyle.Render(fmt.Sprintf("暂存与校验都通过了：%d 个文件，%s，SHA-256 与 SQLite 完整性检查全部通过。", r.verify.Files, size(r.verify.Bytes))),
 			warnStyle.Render("开始交换？会停止服务；失败会自动退回。"))
 	case rvSwapping:
 		b.WriteString(warnStyle.Render("交换进行中，请勿关闭终端。") + "\n\n" + stepsView(swapSteps, r.prog.get(), m.now(), r.began))
 	case rvDone:
 		b.WriteString(resultText(r.result, r.err))
 	}
-	return animBelow(m, b.String(), r.rocket)
+	return b.String()
 }
 
 // Steps shown while the revive runs.
@@ -263,19 +291,16 @@ var (
 func (r *reviveScreen) startScene(m *Model) {
 	r.prog.set(service.Progress{})
 	r.began = m.now()
+	if r.t0.IsZero() {
+		r.t0 = m.now()
+	}
 	if r.rocket == nil {
 		r.rocket = newRocket(sceneLanding, m.now())
 	}
 }
 
 func (r *reviveScreen) animating(m *Model) bool {
-	switch r.step {
-	case rvPlanning, rvStaging, rvAskSwap, rvSwapping:
-		return true
-	case rvDone:
-		return r.rocket != nil
-	}
-	return false
+	return r.step != rvOptions
 }
 
 func planText(rp *service.RevivePlan) string {

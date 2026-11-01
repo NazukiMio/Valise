@@ -4,13 +4,12 @@ package tui
 // assets/TUI/rocket ("静海 · 着陆" and "地球 · 启航", by the Valise authors).
 //
 // Two clocks drive a scene: ambient (stars, planets, meteors, sea) always
-// runs; phase moves the rocket. A long operation shows the scene with the
-// rocket waiting (launch: on the pad; landing: not yet in sight); when it
-// succeeds the rocket part plays.
+// runs; the rocket's part follows a pose computed by rocketPlayer (anim.go).
+// The screens draw it under their telemetry panels (hud.go).
 
 import (
+	"image/color"
 	"math"
-	"strings"
 
 	"charm.land/lipgloss/v2"
 )
@@ -27,11 +26,10 @@ const rocketCols, rocketRows = 120, 34
 
 var (
 	rocketGround  = lipgloss.Color("#080e24")
-	rocketPalette = []string{"#172b50", "#385477", "#6f98b8", "#b6d9df", "#e9e7d7", "#b9534c", "#f19872", "#a775aa", "#d4ae83", "#78644f", "#fff2bd", "#75a6be"}
-	rocketStyles  = func() []lipgloss.Style {
-		out := make([]lipgloss.Style, len(rocketPalette))
-		for i, c := range rocketPalette {
-			out[i] = lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Background(rocketGround)
+	rocketPalette = func() []color.Color {
+		var out []color.Color
+		for _, c := range []string{"#172b50", "#385477", "#6f98b8", "#b6d9df", "#e9e7d7", "#b9534c", "#f19872", "#a775aa", "#d4ae83", "#78644f", "#fff2bd", "#75a6be"} {
+			out = append(out, lipgloss.Color(c))
 		}
 		return out
 	}()
@@ -44,76 +42,77 @@ func rhash(x, y float64) float64 {
 	return float64(h^(h>>16)) / 4294967296
 }
 
-// rocketSize keeps the pieces' aspect within cols × rows; ok is false when
-// the space is too small to read.
-func rocketSize(cols, rows int) (w, h int, ok bool) {
-	k := min(float64(cols)/rocketCols, float64(rows)/rocketRows, 1)
-	w, h = int(rocketCols*k+0.5), int(rocketRows*k+0.5)
-	return w, h, h >= 6 && w >= 24
+// rocketPose places the rocket: centre, descent progress p (the landing
+// flame shortens as it grows) and the phase that drives flicker and dust.
+type rocketPose struct {
+	show       bool
+	cx, cy, p  float64
+	ph         float64
+	launchFire bool // the launch flame (ignition and ascent) instead of the landing one
 }
 
-// rocketView renders one frame of w × h cells. rocket hides the rocket
-// (and its flame and dust) when false.
-func rocketView(sc rocketScene, w, h int, ambient, phase float64, rocket bool) string {
-	sx, sy := float64(rocketCols)/float64(w), float64(rocketRows)/float64(h)
-	var p, j, cx, cy float64
-	if sc == sceneLanding {
-		p = min(1, max(0, phase-3)/18)
-		if p > .75 && p < 1 {
-			j = math.Sin((p - .75) / .25 * math.Pi)
-		}
-		cy = -65 + 143*(1-(1-p)*(1-p)) + j*.7*math.Sin(phase*19)
-		cx = 122 + j*1.3*math.Sin(phase*15)
-	} else {
-		p = min(1, max(0, phase-7)/13)
-		if phase > 4 && phase < 10 {
-			j = math.Sin((phase - 4) / 6 * math.Pi)
-		}
-		cy = 78 - 230*p*p + j*.45*math.Sin(phase*24)
-		cx = 122 + j*.6*math.Sin(phase*21)
+// landingPose and launchPose are the pieces' own rocket paths.
+func landingPose(ph float64) rocketPose {
+	p := min(1, max(0, ph-3)/18)
+	j := 0.0
+	if p > .75 && p < 1 {
+		j = math.Sin((p - .75) / .25 * math.Pi)
 	}
-	var b strings.Builder
-	for r := 0; r < h; r++ {
-		run, runCol := []rune{}, -1
-		flush := func() {
-			if len(run) > 0 {
-				b.WriteString(rocketStyles[max(runCol, 0)].Render(string(run)))
-			}
-			run = run[:0]
-		}
-		for c := 0; c < w; c++ {
-			bits, col := 0, 0
+	return rocketPose{show: true, p: p, ph: ph,
+		cy: -65 + 143*(1-(1-p)*(1-p)) + j*.7*math.Sin(ph*19), cx: 122 + j*1.3*math.Sin(ph*15)}
+}
+
+func launchPose(ph float64) rocketPose {
+	p := min(1, max(0, ph-7)/13)
+	j := 0.0
+	if ph > 4 && ph < 10 {
+		j = math.Sin((ph - 4) / 6 * math.Pi)
+	}
+	return rocketPose{show: true, p: p, ph: ph, launchFire: true,
+		cy: 78 - 230*p*p + j*.45*math.Sin(ph*24), cx: 122 + j*.6*math.Sin(ph*21)}
+}
+
+// sceneCell is one braille cell: its rune and palette index (-1: empty).
+type sceneCell struct {
+	ch  rune
+	col int
+}
+
+// rocketCells renders w × h cells, scaled uniformly to cover the area and
+// cropped around the centre.
+func rocketCells(sc rocketScene, w, h int, ambient float64, ps rocketPose) [][]sceneCell {
+	k := max(float64(w)/rocketCols, float64(h)/rocketRows)
+	W, H := int(math.Ceil(rocketCols*k)), int(math.Ceil(rocketRows*k))
+	ox, oy := (W-w)/2, (H-h)/2
+	sx, sy := float64(rocketCols)/float64(W), float64(rocketRows)/float64(H)
+	out := make([][]sceneCell, h)
+	for r := range out {
+		out[r] = make([]sceneCell, w)
+		for c := range out[r] {
+			vc, vr := c+ox, r+oy
+			bits, col := 0, -1
 			for dy := 0; dy < 4; dy++ {
 				for dx := 0; dx < 2; dx++ {
-					x, y := float64(c*2+dx)*sx, float64(r*4+dy)*sy*1.2
-					on, k := rocketDot(sc, c, r, x, y, ambient, phase, p, cx, cy, rocket)
-					if on && (ambient >= 3 || rhash(float64(c), float64(r+731)) < max(0, (ambient-.2)/2.8)) {
+					x, y := float64(vc*2+dx)*sx, float64(vr*4+dy)*sy*1.2
+					on, kk := rocketDot(sc, vc, vr, x, y, ambient, ps)
+					if on && (ambient >= 3 || rhash(float64(vc), float64(vr+731)) < max(0, (ambient-.2)/2.8)) {
 						bits |= int(brailleBit[dy][dx])
-						col = k
+						col = kk
 					}
 				}
 			}
-			ch := ' '
-			if bits != 0 {
-				ch = rune(0x2800 + bits)
+			out[r][c] = sceneCell{rune(0x2800 + bits), col}
+			if bits == 0 {
+				out[r][c] = sceneCell{' ', -1}
 			}
-			if col != runCol && bits != 0 {
-				flush()
-				runCol = col
-			}
-			run = append(run, ch)
-		}
-		flush()
-		if r < h-1 {
-			b.WriteByte('\n')
 		}
 	}
-	return b.String()
+	return out
 }
 
 // rocketDot is one braille dot of the scene: whether it is lit and its
 // palette index. x, y are in the pieces' coordinates.
-func rocketDot(sc rocketScene, c, r int, x, y, t, ph, p, cx, cy float64, rocket bool) (on bool, k int) {
+func rocketDot(sc rocketScene, c, r int, x, y, t float64, ps rocketPose) (on bool, k int) {
 	if rhash(float64(c), float64(r)) > .969 && y < 112 {
 		on, k = true, 2
 		if rhash(float64(c+91), float64(r+37)) > .92 {
@@ -185,10 +184,11 @@ func rocketDot(sc rocketScene, c, r int, x, y, t, ph, p, cx, cy float64, rocket 
 			on, k = true, 3
 		}
 	}
-	if !rocket {
+	if !ps.show {
 		return on, k
 	}
-	X, Y := x-cx, y-cy
+	ph, p := ps.ph, ps.p
+	X, Y := x-ps.cx, y-ps.cy
 	width := 11 - (Y-15)*.035
 	if Y < 15 {
 		width = math.Sqrt(max(0, 1-((Y-15)/15)*((Y-15)/15))) * 11
@@ -216,7 +216,7 @@ func rocketDot(sc rocketScene, c, r int, x, y, t, ph, p, cx, cy float64, rocket 
 		on, k = true, 9
 	}
 	flicker := .8 + .2*math.Sin(ph*22+y)
-	if sc == sceneLanding {
+	if !ps.launchFire {
 		if p < 1 && Y > 57 && Y < 57+(1-p)*24+7 && math.Abs(X) < (7-(Y-57)*.19)*flicker {
 			on, k = true, flameColor(Y)
 		}

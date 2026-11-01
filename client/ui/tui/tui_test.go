@@ -219,19 +219,22 @@ func TestLandingRollback(t *testing.T) {
 	if strings.Contains(v, "无法执行") {
 		t.Fatalf("plan blocked:\n%s", v)
 	}
-	key(t, m, "enter") // asks to stage
 	msgs := make(chan tea.Msg, 4)
 	m.send = func(msg tea.Msg) { msgs <- msg }
-	_, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // stage
 	go func() { msgs <- cmd() }()
 	m.Update(<-msgs) // stageVerified
-	wantText(t, m, "暂存校验通过")
+	wantText(t, m, "暂存与校验都通过了", "正在呼叫地面指挥")
 	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd != nil || !strings.Contains(m.flash, "不能退出") {
 		t.Fatalf("ctrl+c during a landing: flash %q", m.flash)
 	}
 	m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.Update(<-msgs) // reviveFinished
-	wantText(t, m, "着陆完成")
+	if strings.Contains(screenText(m), "登陆成功") {
+		t.Fatal("success shown before the rocket landed")
+	}
+	key(t, m, "enter") // skip the animation
+	wantText(t, m, "逃生舱登陆成功！", "健康检查")
 	if b, _ := os.ReadFile(filepath.Join(home, ".demo/memory/a.md")); string(b) != "m" {
 		t.Fatalf("memory not rolled back: %q", b)
 	}

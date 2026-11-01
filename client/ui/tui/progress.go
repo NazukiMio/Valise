@@ -6,22 +6,34 @@ import (
 	"sync"
 	"time"
 
-	"charm.land/lipgloss/v2"
-
 	"valise/ui/service"
 )
 
 // progressBox receives a long operation's progress from its goroutine;
 // the animation tick reads it, so reports never queue up as messages.
 type progressBox struct {
-	mu  sync.Mutex
-	cur service.Progress
+	mu    sync.Mutex
+	cur   service.Progress
+	since time.Time // when the current stage started
 }
 
 func (b *progressBox) set(p service.Progress) {
 	b.mu.Lock()
+	if p.Stage != b.cur.Stage || b.since.IsZero() {
+		b.since = time.Now()
+	}
 	b.cur = p
 	b.mu.Unlock()
+}
+
+// stageTime is how long the current stage has run.
+func (b *progressBox) stageTime() time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.since.IsZero() {
+		return 0
+	}
+	return time.Since(b.since)
 }
 
 func (b *progressBox) get() service.Progress {
@@ -80,19 +92,4 @@ func progressBar(done, total int64, cells int) string {
 func clock(d time.Duration) string {
 	s := int(d.Seconds())
 	return fmt.Sprintf("%d:%02d", s/60, s%60)
-}
-
-// animBelow places a rocket frame under text in the space the screen has
-// left, centred; text alone when there is no room.
-func animBelow(m *Model, text string, r *rocketPlayer) string {
-	if r == nil {
-		return text
-	}
-	rows := m.bodyHeight() - lipgloss.Height(text) - 1
-	width := min(m.width, 120)
-	frame := r.view(m.now(), width-2, rows)
-	if frame == "" {
-		return text
-	}
-	return text + "\n\n" + lipgloss.PlaceHorizontal(width, lipgloss.Center, frame)
 }
