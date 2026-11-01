@@ -96,7 +96,11 @@ body:
 install:                         # 可选：官方方案（INSTALL.md 第 3 节），只写已核实的版本
   id: npm-user-prefix
   summary: "安装 Example 1.2.3，约 300 MB，不需要管理员权限"
-  requires: [ { binary: node, version: ">=22" } ]
+  requires:
+    - binary: node
+      version: ">=22"
+      install:                   # 可选：只在完全访问模式下由 Valise 代为执行（INSTALL.md 4.1），按发行版区分
+        - { os_id: [ubuntu, debian], argv: [sudo, apt-get, install, -y, nodejs] }
   steps:
     - { kind: npm_global, package: example, version: "1.2.3", integrity: "sha512-…" }
     - { kind: script, url: "https://example.com/install.sh", sha256: "…", interpreter: [bash], args: ["--user"], runtime_downloads: "会从 example.com 下载 Node 运行时" }
@@ -124,6 +128,9 @@ entries:
       token_argv: null           # 只打印令牌本身；配合 url_suffix 使用
       url_suffix: null           # 例如 "#token=${TOKEN}"，只能引用 ${TOKEN}
       hint: "…"                  # 没法自动取得时给用户看的说明（例如"运行 example token --show，粘贴到页面的密钥栏"）
+    port_change:                 # 可选：本机端口被占用时"两边一起改端口"（LOGIN_RELAY.md 4.2）
+      argv: [example, config, set, port, "${PORT}"]   # harness 自己的改端口命令，只能引用 ${PORT}
+      restart_service: true      # 改完是否需要重启服务
 
 health:
   grace_seconds: 20
