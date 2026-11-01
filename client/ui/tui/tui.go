@@ -239,6 +239,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshed:
 		m.flash, m.flashErr = msg.text, false
 		return m, m.loadServer(msg.host)
+	case thenMsg:
+		m.data[msg.loaded.d.host], m.flash, m.flashErr = msg.loaded.d, msg.text, false
+		return m, msg.then(m)
 	case adminTick:
 		return m, m.tickAdmin()
 	case tea.KeyPressMsg:

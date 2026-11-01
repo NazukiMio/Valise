@@ -124,7 +124,11 @@ func (c *cloudScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		case "r":
 			return tea.Batch(m.loadServer(c.host), c.list(m, t.Name)), true
 		case "s":
-			return m.push(newSync(c.host, t.Name)), true
+			sync := func(m *Model) tea.Cmd { return m.push(newSync(c.host, t.Name)) }
+			if st := m.server(c.host).status; st != nil && st.ServerName == "" {
+				return nameServer(m, c.host, sync), true
+			}
+			return sync(m), true
 		case "a":
 			return c.chooseAuto(m, t.Target), true
 		case "d":

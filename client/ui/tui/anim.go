@@ -31,16 +31,17 @@ func (m *Model) ensureAnim() tea.Cmd {
 // rocketPlayer times a rocket scene: the ambient clock from creation, the
 // rocket's part from go_ (the operation succeeded).
 type rocketPlayer struct {
-	scene  rocketScene
-	start  time.Time
-	gone   time.Time // when the rocket part started; zero while waiting
-	frozen float64   // ambient time of the last frame once finished
+	scene rocketScene
+	start time.Time
+	gone  time.Time // when the rocket part started; zero while waiting
 }
 
-// Speeds and end points of the rocket part, in the pieces' seconds.
+// Speeds and end points of the rocket part, in the pieces' seconds; each
+// ends once the dust has cleared. The ambient clock keeps running until the
+// screen is left.
 const (
-	landingFrom, landingTo, landingSpeed = 3.0, 27.0, 3.2
-	launchFrom, launchTo, launchSpeed    = 4.0, 21.0, 2.4
+	landingFrom, landingTo, landingSpeed = 3.0, 28.0, 3.2
+	launchFrom, launchTo, launchSpeed    = 4.0, 25.0, 2.4
 )
 
 func newRocket(sc rocketScene, now time.Time) *rocketPlayer {
@@ -79,12 +80,6 @@ func (r *rocketPlayer) view(now time.Time, cols, rows int) string {
 		return ""
 	}
 	amb := now.Sub(r.start).Seconds()
-	if r.done(now) {
-		if r.frozen == 0 {
-			r.frozen = amb
-		}
-		amb = r.frozen
-	}
 	ph, going := r.phase(now)
 	// Waiting: a landing has no rocket in sight yet; a launch has it on
 	// the pad, engines off.

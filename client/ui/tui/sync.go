@@ -28,9 +28,13 @@ func newSync(host, target string) *syncScreen {
 }
 
 // startSync picks the location: none yet opens the cloud backup page, one
-// starts at once, several are chosen from.
+// starts at once, several are chosen from. A server without a name is
+// named first (the name is its folder on the cloud).
 func startSync(m *Model, host string) tea.Cmd {
 	var names []string
+	if st := m.server(host).status; st != nil && st.ServerName == "" {
+		return nameServer(m, host, func(m *Model) tea.Cmd { return startSync(m, host) })
+	}
 	if st := m.server(host).status; st != nil {
 		for _, t := range st.Targets {
 			names = append(names, t.Name)
@@ -72,7 +76,7 @@ func (s *syncScreen) init(m *Model) tea.Cmd {
 }
 
 func (s *syncScreen) animating(m *Model) bool {
-	return s.rocket != nil && (s.running || !s.rocket.done(m.now()))
+	return s.rocket != nil
 }
 
 func (s *syncScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {

@@ -25,7 +25,7 @@ func newServerSettings(host string) *serverSettings { return &serverSettings{hos
 
 func (s *serverSettings) title() string { return "服务器设置" }
 func (s *serverSettings) help() string {
-	return menu("u", "更新 porter", "k", "登记我的钥匙", "K", "装这台电脑的日常钥匙", "x", "从列表中移除", "r", "刷新")
+	return menu("n", "起名", "u", "更新 porter", "k", "登记我的钥匙", "K", "装这台电脑的日常钥匙", "x", "从列表中移除", "r", "刷新")
 }
 
 func (s *serverSettings) init(m *Model) tea.Cmd {
@@ -69,6 +69,13 @@ func (s *serverSettings) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 					}
 				}))
 			})), true
+		case "n":
+			if st := m.server(host).status; st != nil && st.ServerName != "" {
+				return func() tea.Msg {
+					return flashMsg(host + " 已经叫 " + st.ServerName + "；云备份里的文件夹名依赖它，起好后不能修改")
+				}, true
+			}
+			return nameServer(m, host, func(m *Model) tea.Cmd { return s.init(m) }), true
 		case "k":
 			return func() tea.Msg {
 				if _, _, err := svc.KeyRegister(ctx, host, ""); err != nil {
@@ -110,7 +117,7 @@ func (s *serverSettings) view(m *Model) string {
 		return dimStyle.Render("正在检查 " + s.host + " …")
 	}
 	d := m.server(s.host)
-	name := warnStyle.Render("还没有名字（云备份前需要起名）")
+	name := warnStyle.Render("还没有名字（云备份前需要起名）；按 n 起名")
 	keyState := dimStyle.Render("读取中…")
 	if d.status != nil {
 		if d.status.ServerName != "" {
@@ -142,4 +149,24 @@ func (s *serverSettings) view(m *Model) string {
 	body := kv("服务器名", name, "SSH 别名", s.host, "系统", s.doc.Platform.String(), "porter", porter,
 		"可用工具", strings.Join(tools, "  "), "日常钥匙", daily, "你的钥匙", keyState)
 	return box(s.host, body, w) + "\n" + dimStyle.Render("porter 是 Valise 放在服务器上的小程序，只在你连接时由 SSH 唤起，不常驻、不开端口。")
+}
+
+// nameServer asks for the server name (its cloud backup folder, set once)
+// and records it; then runs after it is saved.
+func nameServer(m *Model, host string, then func(m *Model) tea.Cmd) tea.Cmd {
+	return m.push(newInput("给 "+host+" 起名：云备份里的文件夹名，只能用小写字母、数字和连字符，起好后不能修改", host, false,
+		func(m *Model, v string) tea.Cmd {
+			name := strings.TrimSpace(v)
+			if name == "" {
+				name = host
+			}
+			m.pop()
+			svc, ctx, load := m.svc, m.ctx, m.loadServer(host)
+			return func() tea.Msg {
+				if err := svc.ServerNameSet(ctx, host, name); err != nil {
+					return failed(err)
+				}
+				return thenMsg{load().(srvLoaded), host + " 的服务器名是 " + name, then}
+			}
+		}))
 }

@@ -117,6 +117,13 @@ func (s *serverPage) install(m *Model) tea.Cmd {
 // pushMsg asks the root to push a screen (from a command chain).
 type pushMsg struct{ s screen }
 
+// thenMsg carries a server's fresh data and continues on the update loop.
+type thenMsg struct {
+	loaded srvLoaded
+	text   string
+	then   func(m *Model) tea.Cmd
+}
+
 // live drops superseded instances.
 func live(ins []enroll.InstanceSummary) []enroll.InstanceSummary {
 	var out []enroll.InstanceSummary

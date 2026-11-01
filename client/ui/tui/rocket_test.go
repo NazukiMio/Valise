@@ -30,8 +30,8 @@ func TestRocketFrames(t *testing.T) {
 		if !r.done(end) {
 			t.Fatal("rocket part never ends")
 		}
-		if a, b := r.view(end, 60, 17), r.view(end.Add(time.Minute), 60, 17); a != b {
-			t.Fatal("finished frame still moves")
+		if a, b := r.view(end, 60, 17), r.view(end.Add(7*time.Second), 60, 17); a == b {
+			t.Fatal("background stops once the rocket part ends")
 		}
 	}
 	// The landing hides the rocket while waiting: the rocket's orange

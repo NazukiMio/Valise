@@ -1,21 +1,7 @@
 package tui
 
 // The escape pod's rocket: two braille scenes ported from the pieces in
-// assets/TUI/rocket ("静海 · 着陆" and "地球 · 启航"). Their runtime and
-// hash() follow ascii-motion and ascii.rest:
-//
-//   MIT License, Copyright (c) 2026 ascii-motion contributors;
-//   Copyright (c) 2026 bas3line (https://github.com/bas3line/ascii).
-//   Permission is hereby granted, free of charge, to any person obtaining a
-//   copy of this software and associated documentation files (the
-//   "Software"), to deal in the Software without restriction, including
-//   without limitation the rights to use, copy, modify, merge, publish,
-//   distribute, sublicense, and/or sell copies of the Software, and to
-//   permit persons to whom the Software is furnished to do so, subject to
-//   the following conditions: The above copyright notice and this
-//   permission notice shall be included in all copies or substantial
-//   portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT
-//   WARRANTY OF ANY KIND.
+// assets/TUI/rocket ("静海 · 着陆" and "地球 · 启航", by the Valise authors).
 //
 // Two clocks drive a scene: ambient (stars, planets, meteors, sea) always
 // runs; phase moves the rocket. A long operation shows the scene with the

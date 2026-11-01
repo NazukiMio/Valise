@@ -273,7 +273,7 @@ func (r *reviveScreen) animating(m *Model) bool {
 	case rvPlanning, rvStaging, rvAskSwap, rvSwapping:
 		return true
 	case rvDone:
-		return r.rocket != nil && !r.rocket.done(m.now())
+		return r.rocket != nil
 	}
 	return false
 }

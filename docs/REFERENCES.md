@@ -37,7 +37,7 @@
 | go.yaml.in/yaml/v3 | https://github.com/yaml/go-yaml | profile 解析（含注释节点，用于统计 `verify: pending`） |
 | mygo | https://github.com/egoist/mygo | 桌面 UI；系统 WebView，纯 Go 无 cgo，从 Go 代码生成类型化的 TypeScript 客户端（见 `docs/UI.md`） |
 | Model Context Protocol | https://modelcontextprotocol.io | `valise-porter mcp` 遵循的协议 |
-| ascii-motion / ascii.rest | https://github.com/bas3line/ascii | 火箭字符画动画的运行时与 `hash()`（MIT）；用户提供的场景在 `assets/TUI/rocket`，移植到 `client/ui/tui/rocket.go`，许可声明保留在源码头部 |
+| ascii-motion / ascii.rest | https://github.com/bas3line/ascii | 火箭字符画动画的运行时与 `hash()`（MIT）；场景由用户创作，在 `assets/TUI/rocket`（文件内保留 ascii.rest 的许可声明），移植到 `client/ui/tui/rocket.go` |
 
 ## 四、认知层面的参考（只用于体检解读与选择标准的措辞，不引入任何依赖）
 
