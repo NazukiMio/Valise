@@ -115,3 +115,22 @@ func TestTTYAndForwardArgs(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+// A daily-key master and a full login's master to the same host must not
+// share a socket: OpenSSH keys masters by host, port and user only.
+func TestControlNameSeparatesAccessLevels(t *testing.T) {
+	dir := t.TempDir()
+	full, _ := New("h", Options{ControlDir: dir})
+	daily, _ := New("h", Options{ControlDir: dir, ControlName: "cmd-", Identity: "/k/daily"})
+	path := func(tr *Transport) string {
+		for _, a := range tr.Args("x") {
+			if strings.HasPrefix(a, "ControlPath=") {
+				return a
+			}
+		}
+		return ""
+	}
+	if p1, p2 := path(full), path(daily); p1 == "" || p2 == "" || p1 == p2 || !strings.Contains(p2, "/cmd-%C") {
+		t.Fatalf("%q %q", p1, p2)
+	}
+}

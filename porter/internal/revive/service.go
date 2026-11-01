@@ -59,6 +59,9 @@ func StartUnit(ctx context.Context, e *porterenroll.Env, unit string) error {
 	if !unitRe.MatchString(unit) {
 		return valise.New("unit_invalid", "服务单元名无效："+unit, "检查 profile")
 	}
+	// A unit that crash-looped while its directory was moved away is held
+	// by systemd's start limit; this start is the user's confirmed action.
+	_, _, _ = systemctl(ctx, e, "reset-failed", unit)
 	if _, code, err := systemctl(ctx, e, "start", unit); err != nil || code != 0 {
 		return valise.New("service_start_failed", "无法启动服务 "+unit, "在服务器上运行 systemctl --user status "+unit+" 查看原因")
 	}

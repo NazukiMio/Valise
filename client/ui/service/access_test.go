@@ -79,7 +79,7 @@ func TestAddServerByHand(t *testing.T) {
 
 	ak, _ := os.ReadFile(filepath.Join(home, ".ssh", "authorized_keys"))
 	if !strings.Contains(string(ak), `command="$HOME/.local/bin/valise-porter serve --tier daily" ssh-ed25519 `) ||
-		!strings.Contains(string(ak), `permitopen="127.0.0.1:*"`) || strings.Contains(string(ak), "valise-admin") {
+		!strings.Contains(string(ak), `permitopen="127.0.0.1:*"`) || !strings.Contains(string(ak), `permitlisten="127.0.0.1:1"`) || strings.Contains(string(ak), "valise-admin") {
 		t.Fatalf("authorized_keys:\n%s", ak)
 	}
 	cfg, _ := os.ReadFile(filepath.Join(s.Dirs.Data, config.SSHConfigFile))
@@ -134,7 +134,7 @@ func TestAdminKey(t *testing.T) {
 	s, _, home := addVPS(t, adminPass)
 	ctx := context.Background()
 	ak, _ := os.ReadFile(filepath.Join(home, ".ssh", "authorized_keys"))
-	if strings.Count(string(ak), "valise-daily") != 1 || strings.Count(string(ak), " valise-admin") != 1 {
+	if strings.Count(string(ak), "valise-daily@") != 1 || strings.Count(string(ak), " valise-admin@") != 1 {
 		t.Fatalf("authorized_keys:\n%s", ak)
 	}
 	if !s.HasAdminKey("vps") || !s.AdminUnlocked(ctx, "vps") {
@@ -164,7 +164,6 @@ func TestAdminKey(t *testing.T) {
 	}
 	s.AdminAuth.Passphrase = func(string) (string, error) { return "", errors.New("cancelled") }
 
-	// Re-installing keys keeps one line per key.
 	if err := s.CreateAdminKey(ctx, "vps", adminPass); err == nil {
 		t.Fatal("second admin key")
 	}
@@ -221,4 +220,78 @@ func TestFirstRecipientOnDailyKey(t *testing.T) {
 	// A second registration needs an admin login, which now fails.
 	_, _, err := s.KeyRegister(ctx, "vps", "laptop")
 	wantCode(t, err, "ssh_auth_failed")
+}
+
+func TestInstallKeysKeepsOtherClients(t *testing.T) {
+	s, _, home := addVPS(t, "")
+	ctx := context.Background()
+	ak := filepath.Join(home, ".ssh", "authorized_keys")
+	other := `restrict,command="x" ssh-ed25519 AAAAotherclient valise-daily@desktop` + "\n"
+	b, _ := os.ReadFile(ak)
+	os.WriteFile(ak, append(b, other...), 0o600)
+	// Re-installing this client's daily key replaces only its own line.
+	tr, err := s.bootstrapTransport(s.server("vps"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.installKeys(ctx, tr, "vps", dailyKeyName); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(ak)
+	if !strings.Contains(string(got), "AAAAotherclient") || strings.Count(string(got), "valise-daily@") != 2 {
+		t.Fatalf("authorized_keys:\n%s", got)
+	}
+}
+
+// A server that lets anyone in (InstaBox's SSH gateway authenticates with
+// "none") cannot restrict a daily key: adding it by hand is refused before
+// any key is installed.
+func TestAddServerRefusesNoAuthGateway(t *testing.T) {
+	needOpenSSH(t)
+	e := fakesshenv.New(t)
+	home := e.AddHost("box")
+	t.Setenv("FAKESSH_AUTH_NONE", "box")
+	s := newService(t, e.SSH)
+	s.Keyscan = fakeHostKey(t)
+	t.Cleanup(s.Close)
+	ctx := context.Background()
+	srv := config.Server{Name: "box", HostName: "198.51.100.4"}
+	keys, _ := s.ScanHostKeys(ctx, srv)
+	if err := s.TrustHostKeys(ctx, srv, keys); err != nil {
+		t.Fatal(err)
+	}
+	err := s.AddServer(ctx, AddServerOptions{Server: srv, Setup: SetupOptions{Deploy: DeploySource{LocalPath: e.Porter()}}})
+	wantCode(t, err, "daily_key_unenforceable")
+	if _, err := os.Stat(filepath.Join(home, ".ssh", "authorized_keys")); err == nil {
+		t.Fatal("keys installed on a server that lets anyone in")
+	}
+	if list, _ := s.ServerList(); len(list) != 0 {
+		t.Fatalf("recorded: %+v", list)
+	}
+}
+
+// A server that ignores authorized_keys options would give the daily key a
+// full shell: the keys are removed again and the server is not recorded.
+func TestAddServerRefusesIgnoredRestrictions(t *testing.T) {
+	needOpenSSH(t)
+	e := fakesshenv.New(t)
+	home := e.AddHost("box")
+	t.Setenv("FAKESSH_IGNORE_KEYS", "box")
+	s := newService(t, e.SSH)
+	s.Keyscan = fakeHostKey(t)
+	t.Cleanup(s.Close)
+	ctx := context.Background()
+	srv := config.Server{Name: "box", HostName: "198.51.100.4"}
+	keys, _ := s.ScanHostKeys(ctx, srv)
+	if err := s.TrustHostKeys(ctx, srv, keys); err != nil {
+		t.Fatal(err)
+	}
+	err := s.AddServer(ctx, AddServerOptions{Server: srv, Setup: SetupOptions{Deploy: DeploySource{LocalPath: e.Porter()}}})
+	wantCode(t, err, "daily_key_unenforceable")
+	if b, _ := os.ReadFile(filepath.Join(home, ".ssh", "authorized_keys")); strings.Contains(string(b), "valise-daily") {
+		t.Fatalf("daily key left behind:\n%s", b)
+	}
+	if list, _ := s.ServerList(); len(list) != 0 {
+		t.Fatalf("recorded: %+v", list)
+	}
 }

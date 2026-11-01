@@ -294,25 +294,28 @@ func (s *Service) Close() {
 
 // authorizedKeyLine is the authorized_keys line for a Valise key: the
 // daily key is restricted to the porter's daily tier and loopback
-// forwarding (docs/ARCHITECTURE.md 2.1).
+// forwarding (docs/ARCHITECTURE.md 2.1). "port-forwarding" re-enables -R
+// too; permitlisten has no "none", so it allows only privileged port 1,
+// which the user's sshd process cannot bind.
 func authorizedKeyLine(name, pub string) string {
 	pub = strings.TrimSpace(pub)
 	f := strings.Fields(pub)
 	if len(f) >= 2 {
-		pub = f[0] + " " + f[1] + " valise-" + name
+		pub = f[0] + " " + f[1] + " valise-" + name + "@" + localName()
 	}
 	if name == dailyKeyName {
-		return `restrict,port-forwarding,permitopen="127.0.0.1:*",permitopen="[::1]:*",command="` + dailyPorterPath + ` serve --tier daily" ` + pub
+		return `restrict,port-forwarding,permitlisten="127.0.0.1:1",permitopen="127.0.0.1:*",permitopen="[::1]:*",command="` + dailyPorterPath + ` serve --tier daily" ` + pub
 	}
 	return pub
 }
 
 // installKeysScript appends the given authorized_keys lines, first dropping
-// earlier lines of the same Valise keys. Sent on stdin to `sh -s`.
+// earlier lines with the same public keys (so re-installing is idempotent
+// and other clients' Valise keys are kept). Sent on stdin to `sh -s`.
 func installKeysScript(lines map[string]string) string {
 	var drop, add strings.Builder
-	for name, line := range lines {
-		fmt.Fprintf(&drop, " -e ' valise-%s$'", name)
+	for _, line := range lines {
+		fmt.Fprintf(&drop, " -e '%s'", keyBlob(line))
 		add.WriteString(line + "\n")
 	}
 	return `set -e
@@ -321,12 +324,41 @@ mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
 f="$HOME/.ssh/authorized_keys"
 touch "$f"
-grep -v` + drop.String() + ` "$f" > "$f.valise-new" || true
+grep -v -F` + drop.String() + ` "$f" > "$f.valise-new" || true
 cat >> "$f.valise-new" <<'VALISE_KEYS'
 ` + add.String() + `VALISE_KEYS
 chmod 600 "$f.valise-new"
 mv "$f.valise-new" "$f"
 `
+}
+
+// keyBlob is the base64 key of an authorized_keys line (no shell or grep
+// special characters: [A-Za-z0-9+/=]).
+func keyBlob(line string) string {
+	f := strings.Fields(line)
+	for i, w := range f {
+		if strings.HasPrefix(w, "ssh-") && i+1 < len(f) {
+			return f[i+1]
+		}
+	}
+	return ""
+}
+
+// localName names this computer in key comments, so the user can tell
+// which client a line on the server belongs to.
+func localName() string {
+	h, _ := os.Hostname()
+	h, _, _ = strings.Cut(h, ".")
+	var b strings.Builder
+	for _, r := range h {
+		if r < 128 && (r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return "client"
+	}
+	return b.String()
 }
 
 // keyLines reads the public keys to install.

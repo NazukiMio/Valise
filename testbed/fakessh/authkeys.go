@@ -17,6 +17,18 @@ func (inv invocation) noPubkey() bool {
 	return false
 }
 
+// authNone reports -o PreferredAuthentications=none: a login with no
+// credential, which the fake host refuses unless FAKESSH_AUTH_NONE lists
+// the alias (a gateway that lets anyone in).
+func (inv invocation) authNone() bool {
+	for _, o := range inv.options {
+		if strings.EqualFold(strings.ReplaceAll(o, " ", "="), "PreferredAuthentications=none") {
+			return true
+		}
+	}
+	return false
+}
+
 // authorize emulates sshd's public-key check against the fake home's
 // ~/.ssh/authorized_keys: the key in <identity>.pub must be listed. It
 // returns the line's command="…" option, if any.

@@ -31,7 +31,12 @@ func (c *cli) printStep(s service.SetupStep) {
 // adminPassphrase asks for the admin passphrase when an admin key must be
 // unlocked.
 func (c *cli) adminPassphrase(host string) (string, error) {
-	return c.passphrase(host + " 的管理口令：")
+	p, err := c.passphrase(host + " 的管理口令：")
+	if err != nil {
+		return "", valise.New("admin_locked", "这一步需要管理权限，但没有读到 "+host+" 的管理口令",
+			"在终端里运行并按提示输入；脚本中可以从标准输入传入管理口令")
+	}
+	return p, nil
 }
 
 // newAdminPassphrase asks for a new admin passphrase twice.

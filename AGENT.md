@@ -85,7 +85,7 @@ fake-ssh 是一个**冒充 `ssh` 命令的本地小程序**。客户端平时调
 - 位置：`testbed/fakessh/`，是一个独立的 Go 程序。测试时由 `go build` 构建到 `t.TempDir()` 中。
 - 注入方式：客户端配置中有一项 `ssh_binary`（默认值 `ssh`），测试时把它指向 fake-ssh。**不修改 PATH**，也不影响开发机上的真实 ssh。
 - 参数：解析 `-T`、`-tt`、`-o key=value`、`-p`、`-l`、`-F`、`-i`、`-O`、主机别名，以及剩下的远端命令。不认识的选项忽略，但要在调试日志中记录下来。
-- 公钥检查（M10）：给了 `-i <钥匙>` 且没有 `-o PubkeyAuthentication=no` 时，模拟 sshd：`<钥匙>.pub` 必须出现在假 HOME 的 `~/.ssh/authorized_keys` 中，否则以退出码 255 报 `Permission denied (publickey)`；该行带 `command="…"` 时，改为执行这条强制命令，并把原命令放进 `SSH_ORIGINAL_COMMAND`。没有 `-i` 或指定了 `PubkeyAuthentication=no`（模拟密码登录）时照常放行。`-O`（主连接控制）直接以 0 退出。
+- 公钥检查（M10）：给了 `-i <钥匙>` 且没有 `-o PubkeyAuthentication=no` 时，模拟 sshd：`<钥匙>.pub` 必须出现在假 HOME 的 `~/.ssh/authorized_keys` 中，否则以退出码 255 报 `Permission denied (publickey)`；该行带 `command="…"` 时，改为执行这条强制命令，并把原命令放进 `SSH_ORIGINAL_COMMAND`。没有 `-i` 或指定了 `PubkeyAuthentication=no`（模拟密码登录）时照常放行。`-O`（主连接控制）直接以 0 退出。`-o PreferredAuthentications=none`（不带任何凭据登录）默认被拒绝；`FAKESSH_AUTH_NONE=<别名>` 模拟"谁都能登录"的网关。`FAKESSH_IGNORE_KEYS=<别名>` 模拟不检查、也不执行 `authorized_keys` 的服务器（任何钥匙都放行，强制命令被忽略）。
 - 根目录：由环境变量 `FAKESSH_ROOT` 指定 `<临时目录>`。假 HOME 不存在的别名，按"无法解析主机名"处理（退出码 255）。调试日志写入 `FAKESSH_LOG` 指定的文件（未设置时不记录）。`FAKESSH_*` 变量不会传给远端命令。
 - 执行：每个主机别名对应一个独立的假 HOME（`<临时目录>/hosts/<别名>/home`）。远端命令以 `sh -c "<命令>"` 的方式执行，并设置 `HOME` 为对应的假 HOME，工作目录也设为假 HOME。stdin、stdout、stderr 原样透传，退出码原样返回。
 - porter：测试准备阶段，为宿主机系统构建 porter，放到假 HOME 的 `~/.local/bin/valise-porter`，这样探测链也能被测到。

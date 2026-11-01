@@ -149,6 +149,81 @@ func (s *Service) bootstrapTransport(srv config.Server) (*ssh.Transport, error) 
 	return ssh.New(srv.Name, o)
 }
 
+// refuseNoAuth stops when the server (or a gateway in front of it) lets
+// anyone in without a key or password: the daily key's restrictions live
+// in authorized_keys, which such a server never consults, so a "daily" key
+// there would be a full login (seen on a cloud VM behind an SSH gateway).
+func (s *Service) refuseNoAuth(ctx context.Context, srv config.Server) error {
+	// srv may not be in servers.json yet: probe with a config of its own.
+	if err := os.MkdirAll(s.Dirs.Cache, 0o700); err != nil {
+		return err
+	}
+	cfg, err := os.CreateTemp(s.Dirs.Cache, "probe-ssh_config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(cfg.Name())
+	_, err = cfg.WriteString(config.RenderSSHConfig(s.Dirs.Data, []config.Server{srv}))
+	if cerr := cfg.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	o := ssh.Options{Binary: s.Config.SSHBinary, ConfigFile: cfg.Name(), IdentityAgent: "none", NoPubkey: true, AuthNone: true, NoControl: true}
+	t, err := ssh.New(srv.Name, o)
+	if err != nil {
+		return err
+	}
+	if res, err := t.Run(ctx, "true", nil); err == nil && res.ExitCode == 0 {
+		return errNoRestriction(srv.Name, "这台服务器（或它前面的 SSH 网关）不需要任何钥匙或密码就能登录：知道地址和用户名的人都能进入")
+	}
+	return nil
+}
+
+func errNoRestriction(host, why string) *valise.UserError {
+	return valise.New("daily_key_unenforceable", why+"。Valise 的日常钥匙在这里无法限制权限，所以不能用日常钥匙管理 "+host,
+		"继续用你自己的 SSH 设置接入（valise server import），并留意这台服务器本身的登录风险")
+}
+
+// verifyRestricted runs an ordinary shell command with the daily key; it
+// must be refused by the porter's forced command.
+func (s *Service) verifyRestricted(ctx context.Context, host string) error {
+	t, _, err := s.transport(host)
+	if err != nil {
+		return err
+	}
+	res, err := t.Run(ctx, "echo valise-unrestricted-probe", nil)
+	if err == nil && res.ExitCode == 0 && strings.Contains(string(res.Stdout), "valise-unrestricted-probe") {
+		return errNoRestriction(host, "服务器没有执行日常钥匙在 authorized_keys 里的限制，它拿到了完整的 shell")
+	}
+	return nil
+}
+
+// uninstallKeys removes this client's Valise keys for host from the
+// server's authorized_keys (matched by public key).
+func (s *Service) uninstallKeys(ctx context.Context, t *ssh.Transport, host string, names ...string) error {
+	lines, err := s.keyLines(host, names...)
+	if err != nil {
+		return err
+	}
+	var drop strings.Builder
+	for _, l := range lines {
+		fmt.Fprintf(&drop, " -e '%s'", keyBlob(l))
+	}
+	res, err := t.Run(ctx, "sh -s", strings.NewReader(`set -e
+f="$HOME/.ssh/authorized_keys"
+[ -f "$f" ] || exit 0
+grep -v -F`+drop.String()+` "$f" > "$f.valise-new" || true
+chmod 600 "$f.valise-new"
+mv "$f.valise-new" "$f"
+`))
+	if err == nil && res.ExitCode != 0 {
+		err = fmt.Errorf("exit %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return err
+}
+
 func (s *Service) installKeys(ctx context.Context, t *ssh.Transport, host string, names ...string) error {
 	lines, err := s.keyLines(host, names...)
 	if err != nil {
@@ -201,6 +276,9 @@ func (s *Service) AddServer(ctx context.Context, o AddServerOptions) error {
 	if !s.hostKeyKnown(ctx, srv) {
 		return valise.New("host_key_unconfirmed", "还没有确认这台服务器的身份", "先核对并确认服务器的指纹")
 	}
+	if err := s.refuseNoAuth(ctx, srv); err != nil {
+		return err
+	}
 	if i >= 0 {
 		list[i] = srv
 	} else {
@@ -233,10 +311,26 @@ func (s *Service) AddServer(ctx context.Context, o AddServerOptions) error {
 	if err := s.setupOn(ctx, t, hc, o.Setup); err != nil {
 		return err
 	}
+	if err := s.verifyRestricted(ctx, srv.Name); err != nil {
+		_ = s.uninstallKeys(ctx, t, srv.Name, keys...)
+		s.forgetServer(srv.Name)
+		return err
+	}
 	if o.AdminPassphrase != "" {
 		_ = s.loadAdmin(ctx, srv.Name, o.AdminPassphrase)
 	}
 	return s.checkDaily(ctx, srv.Name, step)
+}
+
+// forgetServer drops a server added by hand from the list.
+func (s *Service) forgetServer(host string) {
+	list, err := config.LoadServerList(s.Dirs.Data)
+	if err != nil {
+		return
+	}
+	if i := slices.IndexFunc(list, func(x config.Server) bool { return x.Name == host }); i >= 0 {
+		_ = config.SaveServerList(s.Dirs.Data, slices.Delete(list, i, i+1))
+	}
 }
 
 // checkDaily confirms the daily key now reaches the porter.
@@ -317,6 +411,12 @@ func (s *Service) MigrateServer(ctx context.Context, host, adminPassphrase strin
 	if len(lines) == 0 {
 		return valise.New("migrate_no_host_key", "在 ~/.ssh/known_hosts 里找不到 "+field+" 的身份记录", "先用 ssh 登录一次这台服务器")
 	}
+	if err := s.writeKnownHosts(field, lines); err != nil {
+		return err
+	}
+	if err := s.refuseNoAuth(ctx, n); err != nil {
+		return err
+	}
 	keys := []string{dailyKeyName}
 	if err := s.ensureDailyKey(ctx, host); err != nil {
 		return err
@@ -335,19 +435,22 @@ func (s *Service) MigrateServer(ctx context.Context, host, adminPassphrase strin
 	if err := s.installKeys(ctx, t, host, keys...); err != nil {
 		return err
 	}
-	if err := s.writeKnownHosts(field, lines); err != nil {
-		return err
-	}
-	list, err := config.LoadServerList(s.Dirs.Data)
+	old, err := config.LoadServerList(s.Dirs.Data)
 	if err != nil {
 		return err
 	}
+	list := slices.Clone(old)
 	if i := slices.IndexFunc(list, func(x config.Server) bool { return x.Name == host }); i >= 0 {
 		list[i] = n
 	} else {
 		list = append(list, n)
 	}
 	if err := config.SaveServerList(s.Dirs.Data, list); err != nil {
+		return err
+	}
+	if err := s.verifyRestricted(ctx, host); err != nil {
+		_ = s.uninstallKeys(ctx, t, host, keys...)
+		_ = config.SaveServerList(s.Dirs.Data, old)
 		return err
 	}
 	if adminPassphrase != "" {

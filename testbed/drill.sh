@@ -263,7 +263,7 @@ if [ "${VALISE_DRILL_REVIVE:-0}" = 1 ]; then
 	R() { # R <args...>: revive with the drill passphrase; output in $work/revive.out
 		V revive "$@" --allow-draft-profile --yes < "$keydir/passphrase.txt" > "$work/revive.out" 2>&1
 	}
-	opid() { sed -n 's/^复活计划.*op \(op_[0-9A-Z]*\).*/\1/p' "$work/revive.out" | head -1; }
+	opid() { sed -nE 's/^(复活|着陆)计划.*op (op_[0-9A-Z]*).*/\2/p' "$work/revive.out" | head -1; }
 	unit_active() { ssh -T -o BatchMode=yes -- "$1" "systemctl --user is-active '$2'" 2>/dev/null | grep -qx active; }
 	# State root of an instance, and a listing of every file with its digest
 	# and mtime; the root's inode tells whether the original directory is back.

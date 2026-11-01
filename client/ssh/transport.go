@@ -42,12 +42,20 @@ type Options struct {
 	// BatchMode forbids interactive prompts (the daily key must never fall
 	// back to asking for a password).
 	BatchMode bool
+	// AuthNone tries only the "none" method: logging in with no credential
+	// at all (a probe for servers whose gateway lets anyone in).
+	AuthNone bool
 	// ControlPath is a master socket owned by one operation (closed by
 	// CloseMaster, or after OperationPersistSeconds idle); it overrides
 	// ControlDir.
 	ControlPath string
 	// NoControl disables connection sharing entirely.
 	NoControl bool
+	// ControlName prefixes Valise's shared master socket ("cm-" by
+	// default). Masters are keyed only by host, port and user, so each
+	// access level needs its own prefix: a daily-key master must never be
+	// reused by a full login, or the other way round.
+	ControlName string
 }
 
 // ControlPersistSeconds keeps Valise's master connection alive between calls.
@@ -89,7 +97,7 @@ func (t *Transport) ReusesUserControlMaster() bool {
 // maxControlDirLen keeps "<dir>/cm-<40 hex>" plus the 17-byte temporary
 // suffix OpenSSH appends while creating the master under the 104-byte
 // sun_path limit (macOS; Linux allows 108).
-const maxControlDirLen = 104 - len("/cm-") - 40 - 17 - 1
+const maxControlDirLen = 104 - len("/cmd-") - 40 - 17 - 1
 
 // controlDir returns the directory for Valise's own ControlMaster sockets:
 // the configured one if short enough, else /tmp/valise-<uid> when it is a
@@ -106,6 +114,13 @@ func (t *Transport) controlDir() string {
 		return ""
 	}
 	return privateTmpDir()
+}
+
+func (t *Transport) controlName() string {
+	if t.opts.ControlName != "" {
+		return t.opts.ControlName
+	}
+	return "cm-"
 }
 
 // Args builds the ssh argument list for a remote command.
@@ -160,6 +175,9 @@ func (t *Transport) base(first ...string) []string {
 	if t.opts.BatchMode {
 		args = append(args, "-o", "BatchMode=yes")
 	}
+	if t.opts.AuthNone {
+		args = append(args, "-o", "PreferredAuthentications=none", "-o", "BatchMode=yes")
+	}
 	switch {
 	case t.opts.NoControl:
 		args = append(args, "-o", "ControlPath=none")
@@ -173,7 +191,7 @@ func (t *Transport) base(first ...string) []string {
 	if dir := t.controlDir(); dir != "" {
 		args = append(args,
 			"-o", "ControlMaster=auto",
-			"-o", "ControlPath="+filepath.Join(dir, "cm-%C"),
+			"-o", "ControlPath="+filepath.Join(dir, t.controlName()+"%C"),
 			"-o", fmt.Sprintf("ControlPersist=%d", ControlPersistSeconds),
 		)
 	}

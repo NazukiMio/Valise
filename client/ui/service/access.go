@@ -79,6 +79,7 @@ func (s *Service) transport(host string) (*ssh.Transport, ssh.HostConfig, error)
 	}
 	o := s.valiseOptions(srv)
 	o.Identity, o.IdentityAgent, o.BatchMode, o.ControlDir = s.keyPath(host, dailyKeyName), "none", true, s.Dirs.Cache
+	o.ControlName = "cmd-" // never shared with a full login's master
 	t, err := ssh.New(host, o)
 	if err != nil {
 		return nil, ssh.HostConfig{}, valise.New("bad_host", "服务器别名无效："+host, "检查服务器列表")

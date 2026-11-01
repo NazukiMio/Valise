@@ -17,7 +17,7 @@
               │  SSH stdio：JSONL JSON-RPC 2.0（控制面）/ 原始字节流（数据面）
               ▼
 [ 服务器：valise-porter（按需唤起，不监听任何端口）]
-  ├─ ~/.ssh/authorized_keys                          日常钥匙（带强制命令）一行、可选的管理钥匙一行，注释 valise-daily / valise-admin
+  ├─ ~/.ssh/authorized_keys                          日常钥匙（带强制命令）一行、可选的管理钥匙一行，注释 valise-daily@<本机名> / valise-admin@<本机名>
   ├─ ~/.config/valise/instances/<instance_id>.json   实例记录
   ├─ ~/.config/valise/instances/<instance_id>.profile.json  登记时生效的 profile（离线封存用）
   ├─ ~/.config/valise/recipients.txt                 age 收件人公钥
@@ -37,6 +37,7 @@
 - **控制面**：`ssh -T <host> "<porter_path> rpc"` 启动一个会话级子进程，通过 stdin/stdout 交换单行 JSON-RPC 2.0 消息。首个请求必须是 `hello`，返回 porter 版本、协议版本、架构、HOME 路径、可用工具（`systemctl --user`、`git`、`npm`、`uv`、`rsync`、`rclone`；按登录环境的 PATH 查找，与登记、复活一致），以及**未完成的交换日志**。协议主版本不一致时，客户端拒绝继续。交换日志的内容格式在 M4 定义；在此之前，`hello` 只按 `journal/` 目录中的 `<op_id>.json` 文件名列出 op_id。
 - **数据面**：大数据流使用独立的一次性 SSH 调用，例如 `porter blob-read`（加密 blob 从服务器流向客户端）和 `porter stage-write --op <id>`（复活时，明文 tar 流从客户端流向服务器）。明文只会出现在客户端内存中，以及目标服务器的暂存目录里。
 - **连接复用**：优先复用用户已有的 ControlMaster；没有时，使用 `-o ControlMaster=auto -o ControlPath=<客户端缓存目录>/cm-%C -o ControlPersist=60`。Unix 套接字路径有长度上限（macOS 为 104 字节，OpenSSH 建立 master 时还会追加约 17 字节的临时后缀），缓存目录过长时改用 `/tmp/valise-<uid>`（必须是本人所有、权限 0700 的真实目录）；仍不满足时不使用连接复用。
+- **主连接按访问级别分开命名**：OpenSSH 只按主机、端口、用户区分主连接，复用时不看用的是哪把钥匙。日常钥匙的主连接套接字用 `cmd-%C`，你自己 SSH 设置的用 `cm-%C`，管理操作用一次性的 `op-<随机>`，三者绝不互相复用（M10 真机发现：两个配置目录都退回 `/tmp/valise-<uid>` 时，完整登录复用了日常钥匙的主连接）。
 - **只有日常钥匙使用持续的连接复用**：管理操作每次新开自己的连接（`-o IdentitiesOnly=yes`，不连到日常钥匙的 ControlMaster），需要时只为这一次操作开临时 ControlMaster，结束即关（第 2.1 节）。
 - **协议版本**：格式为 `<主>.<次>`，当前为 `1.0`。主版本号不一致时客户端拒绝继续；次版本号只表示向后兼容的新增。
 - **porter 部署**：客户端从 GitHub Release 下载目标架构的二进制，用随客户端发布的公钥校验 `SHA256SUMS` 的 minisign 签名，再核对哈希；或者由用户显式选择本地构建产物。上传时先执行 `cat > ~/.local/bin/valise-porter.tmp`，再 `chmod 0755`，最后 `mv` 原子替换。
@@ -52,13 +53,14 @@
 
 **日常钥匙**（每台 Valise 管理的服务器都有）：
 - 生成：`ssh-keygen -t ed25519 -N ''`，存于 `<客户端数据目录>/keys/<服务器>/daily`（0600）。
-- 服务器端：`authorized_keys` 中一行 `restrict,port-forwarding,permitopen="127.0.0.1:*",permitopen="[::1]:*",command="$HOME/.local/bin/valise-porter serve --tier daily" <公钥> valise-daily`（`verify: pending`：各靶机 OpenSSH 对端口通配与强制命令的支持）。
+- 服务器端：`authorized_keys` 中一行 `restrict,port-forwarding,permitlisten="127.0.0.1:1",permitopen="127.0.0.1:*",permitopen="[::1]:*",command="$HOME/.local/bin/valise-porter serve --tier daily" <公钥> valise-daily@<本机名>`（注释里的本机名用来分辨是哪台电脑的钥匙；安装时按公钥本身去重，只替换同一把钥匙，别的电脑或别名装的 Valise 钥匙不受影响）。`port-forwarding` 会同时放开远程转发（`-R`），而 `authorized_keys` 的 `permitlisten` 不接受 `none`（写了整行钥匙失效），所以只允许监听特权端口 1：普通用户的 sshd 子进程绑定不了它，远程转发因此全部失败（M10 在 OpenSSH 10.2 / 10.5 / 10.0 上实测）。TrueNAS 默认 `AllowTcpForwarding no`，这时任何钥匙都不能转发，管理页与本地页面转发不可用（NAS 上通常也不跑 harness）。
 - 能做什么：第 2.2 节的日常操作，以及转发到服务器本机回环端口；拿不到 shell。可以使用 ControlMaster 复用连接。
+- **限制必须真正生效才用**（M10 在 InstaBox 上发现：它的 SSH 网关用 `none` 认证放行任何人，根本不看机器上的 `authorized_keys`，日常钥匙在那里等于完整登录，而且该用户有免密 sudo）。添加或迁移时：先试一次不带任何凭据的登录，能登进去就拒绝使用日常钥匙；装好日常钥匙后再用它执行一条普通 shell 命令，若被执行（强制命令没生效），立即从服务器撤掉刚装的钥匙、恢复原来的记录并拒绝。两种情况都提示用户继续用自己的 SSH 设置接入，并说明这台服务器本身的登录风险。
 - porter 的日常模式：`serve --tier daily` 读取 `SSH_ORIGINAL_COMMAND`，只允许 `rpc`、`blob-read`、`vault-cat`、`version`；`rpc` 中凡属"管理操作"的方法一律返回"需要管理权限"。即使日常钥匙被盗，也不能着陆、删除、改收件人或改同步目标。
 
 **管理登录**（执行管理操作时出示，两种方式任选）：
 - **管理钥匙（可选，默认不创建）**：入门用法用不到管理功能，所以添加服务器时默认不创建；用户可以在添加服务器时勾选，或之后在服务器设置里创建（需要用服务器密码或自己的私钥登录一次来安装公钥）。
-  - 生成：`ssh-keygen -t ed25519 -N <管理口令>`，存于 `keys/<服务器>/admin`（0600）；服务器端是普通一行 `<公钥> valise-admin`。私钥加密由 OpenSSH 完成，Valise 不自研。
+  - 生成：`ssh-keygen -t ed25519 -N <管理口令>`，存于 `keys/<服务器>/admin`（0600）；服务器端是普通一行 `<公钥> valise-admin@<本机名>`。私钥加密由 OpenSSH 完成，Valise 不自研。
   - **管理口令**：单独的口令，**与保护加密钥匙的 Valise 口令不同**（至少 12 个字符，界面检查两者不相同）。所有服务器的管理钥匙共用这一个管理口令；修改时全部重新加密。
   - 时间窗口：输入管理口令后由 `ssh-add -t <窗口>` 载入 **Valise 自己启动的 ssh-agent**（默认 15 分钟，设置中可改为 1–120 分钟）；到期由 ssh-agent 清除；退出 Valise 时结束这个 ssh-agent（它是 Valise 自己的子进程）。
 - **临时登录**（没有管理钥匙时）：每次管理操作都用服务器密码（或用户自己的私钥）新登录一次，密码只在 OpenSSH 自己的提示中输入（GUI 经 Valise 的 askpass 转交，只在内存中经过），不保存，没有时间窗口。

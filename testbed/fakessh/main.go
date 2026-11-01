@@ -68,7 +68,11 @@ func run(args []string) int {
 		return 0 // master control (-O exit): there is no master to stop
 	}
 	command, env := inv.command, remoteEnv(home)
-	if inv.identity != "" && !inv.noPubkey() {
+	if inv.authNone() && !listed(os.Getenv("FAKESSH_AUTH_NONE"), inv.alias) {
+		fmt.Fprintf(os.Stderr, "%s@%s: Permission denied (publickey,password).\n", inv.user, inv.alias)
+		return 255
+	}
+	if inv.identity != "" && !inv.noPubkey() && !listed(os.Getenv("FAKESSH_IGNORE_KEYS"), inv.alias) {
 		forced, ok := authorize(home, inv.identity)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "%s@%s: Permission denied (publickey).\n", inv.user, inv.alias)
@@ -114,6 +118,15 @@ func run(args []string) int {
 	_ = cmd.Wait()
 	fmt.Fprintf(os.Stderr, "Connection to %s closed by remote host.\n", inv.alias)
 	return 255
+}
+
+func listed(csv, alias string) bool {
+	for _, a := range strings.Split(csv, ",") {
+		if a != "" && a == alias {
+			return true
+		}
+	}
+	return false
 }
 
 // remoteEnv is the caller's environment with HOME and PWD pointing at the

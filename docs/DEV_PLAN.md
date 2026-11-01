@@ -223,10 +223,18 @@
 
 ## M10：接入服务器、日常钥匙与管理登录
 
-- **状态**：`In progress`（2026-11-01 开始）
+- **状态**：`Done`（2026-11-01）
 - **范围调整**（2026-11-01 用户决定"TUI 和 GUI 将在新的阶段开始优化"）：TUI 中手动添加服务器的完整流程、第一次启动可跳过钥匙的引导、软限制的界面移到 M12；M10 只给 TUI 接上管理口令输入框，并在 TUI 中遇到需要服务器密码的操作时给出明确提示。
 - **交付**：Valise 自己的 `ssh_config` 与 `known_hosts`；手动添加服务器（主机身份确认、引导登录、安装日常钥匙、可选创建管理钥匙）；`servers.json` 新格式与旧格式兼容；porter `serve --tier daily` 与 RPC 方法分级（含"没有收件人时日常钥匙可登记第一把"）；管理登录（管理钥匙与单独的管理口令、Valise 自己的 ssh-agent 与时间窗口；没有管理钥匙时用服务器密码临时登录；每次操作独立连接）；自带钥匙服务器的软限制与"迁移到日常钥匙"；第一次启动允许跳过钥匙；porter 检查更新；TUI 的添加服务器流程与解锁提示（UI.md 9.1、9.3、8 节）。
 - **验收**：fake-ssh 测试覆盖分级拒绝与参数构造；靶机实测：不经 `~/.ssh/config` 手动添加一台服务器、日常钥匙无法拿到 shell 也无法调用管理方法、`permitopen` 只放行回环、没有管理钥匙时管理操作要求服务器密码、管理钥匙窗口到期后要求管理口令、管理操作不复用日常连接、指纹变化时停止；NAS（TrueNAS）上强制命令的支持情况如实记录。
+- **进度**（2026-11-01，提交 `df6e332` 及之后）：
+  - 已完成交付：porter `serve --tier daily`（自己解析 `SSH_ORIGINAL_COMMAND`，只允许 `rpc`、`version`、`vault-cat`）与 RPC 分级（`core/rpc/tier.go`，测试强制每个方法都要归类）；"没有收件人时日常钥匙可登记第一把"；`servers.json` 新格式与 Valise 自己的 `ssh_config`；日常钥匙；管理钥匙（`ssh-keygen` 以管理口令加密、Valise 自己的 ssh-agent 与时间窗口）与临时登录；每次管理操作独立连接；按方法分级自动路由的 porter 会话；手动添加、创建管理钥匙、迁移、修改管理口令、`porter check`；TUI 的管理口令输入框。
+  - 真机（用户同意后，在三台的 `~/.ssh/authorized_keys` 中临时加钥匙，先备份为 `authorized_keys.bak-valise-m10`，验收后删除）：`vm-arm`（ubuntu-vm，OpenSSH 10.2）、`vm-x86`（ubuntu-vm-x86，10.5）、`nas`（TrueNAS，10.0）都不经 `~/.ssh/config` 手动添加成功（指纹与 Mac 已信任的记录一致，临时登录用已有私钥文件）。三台上日常钥匙：拿不到 shell（126）、不能分配终端、scp 与 sftp 失败、RPC 管理方法返回 `admin_required`、`-W` 只放行回环、`-R` 失败。vm-arm 上日常钥匙登记报告、建立逃生舱、体检；管理口令错误时不解锁，正确时设置周期；着陆计划（dry-run）经管理钥匙走通，结束后没有残留的临时主连接与 agent。vm-x86 上时间窗口设为 1 分钟：窗口内第二次管理操作不再询问，65 秒后被清除，再次操作重新询问。本机副本中伪造指纹，连接被拦下并提示核对。`ubuntu-vm` 别名从 `~/.ssh/config` 迁移成功，与 `vm-arm` 的日常钥匙并存。
+  - 真机发现并修正：`restrict,port-forwarding` 同时放开了远程转发（`-R` 能在服务器回环上监听），`permitlisten="none"` 会让整行钥匙失效，改为 `permitlisten="127.0.0.1:1"`（普通用户绑定不了特权端口）；安装钥匙按注释删除旧行会删掉别的电脑或别名装的钥匙，改为按公钥去重、注释带本机名；没有终端也没有口令时报错不清楚。TrueNAS 默认 `AllowTcpForwarding no`，任何钥匙都不能转发（已写入 ARCHITECTURE.md）。
+  - 测试中发现并修正：askpass 用"含 old"判断旧口令，被路径里的 `folders` 误判，生成钥匙时卡住；口令错误时 `ssh-add` 无限重问。
+  - 附加靶机 InstaBox `nazukiki-insta-01`（`m_agqvodzudt6na6ts26xpdu3hgi`，Debian 13 x86_64，有免密 sudo；用户 2026-11-01 提供并授权清空历史）：先拍快照 `valise-pre-wipe-20261101`（`sn_agqzkux7dyi6p2rpmnwzl4xdsu`），再清除旧 Fathom 文件与程序、Hermes 及其用户服务、后装的 apt 包（age、zstd、sqlite3、golang 1.24），家目录回到模板状态。从零用用户自己的 SSH 设置接入并部署 porter 成功（没有加密钥匙时按设计推迟登记）。发现（严重）：InstaBox 的 SSH 网关以 `none` 认证放行任何人、不看 `authorized_keys`，日常钥匙在那里拿到完整 shell。修正：添加与迁移前先探测无凭据登录，装好后再验证限制确实生效，否则撤掉钥匙并拒绝（fake-ssh 新增对应模拟，单元测试覆盖；在 InstaBox 上实测两条路径都被拒绝、服务器上没有留下钥匙）。
+  - drill 回归中发现并修正（严重）：测试配置与 drill 配置的缓存目录都过长、都退回 `/tmp/valise-<uid>`，而主连接套接字只按主机、端口、用户命名，drill 对 ubuntu-vm 的完整登录复用了测试配置里日常钥匙的主连接，管理操作被拒绝，崩溃注入后的 `resume --back` 没有执行，OpenClaw 停在 `LIVE_MOVED`。处理：关闭共享主连接后 `resume --back` 退回成功（数据完整）；日常钥匙的主连接改用 `cmd-%C`，与完整登录的 `cm-%C` 分开（单元测试覆盖）。顺带修正：服务在目录被移走期间崩溃重启触发 systemd 启动频率限制，退回后启动失败，porter 现在启动前先 `reset-failed`。
+  - 修正后 `testbed/drill.sh` M1–M7a.1（`VALISE_DRILL_REVIVE=1`）输出 `ALL_PASS (failures=0)`，共 133 项（drill 的 op id 匹配同时接受 M7a.2 改名后的"着陆计划"）。验收结束后按用户要求删除三台靶机上的测试钥匙（`authorized_keys` 与备份逐字一致后删除备份），并删除测试在 NAS 上生成的 `~/.config/valise/`；测试钥匙确认已被拒绝。
 
 ## M11：OpenClaw 端到端安装
 
