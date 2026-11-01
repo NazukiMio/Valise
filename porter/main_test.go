@@ -6,11 +6,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
+	"valise/core/enroll"
+	"valise/core/profile"
 	"valise/core/rpc"
+	porterenroll "valise/porter/internal/enroll"
 )
 
 func TestVersionJSON(t *testing.T) {
@@ -102,5 +107,46 @@ func TestDailyFirstRecipientOnly(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if len(lines) != 3 || !strings.Contains(lines[1], `"added":true`) || !strings.Contains(lines[2], rpc.AdminRequiredCode) {
 		t.Fatalf("%q", lines)
+	}
+}
+
+// Read actions run on the daily tier; secret and admin actions are refused
+// there and run on a full login (docs/INSTALL.md section 5).
+func TestActionTiers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	p := profile.Profile{ID: "demo", ProfileVersion: 1, Actions: []profile.Action{
+		{ID: "hello", Name: "h", Explain: "e", Risk: profile.RiskRead, Argv: profile.Argv{"/bin/echo", "hi"}, Output: profile.OutputText},
+		{ID: "token", Name: "t", Explain: "e", Risk: profile.RiskRead, Argv: profile.Argv{"/bin/echo", "tok-1"}, Output: profile.OutputSecret, Secret: &profile.SecretPick{}},
+		{ID: "restart", Name: "r", Explain: "e", Risk: profile.RiskManage, Argv: profile.Argv{"/bin/echo", "x"}, Output: profile.OutputNone},
+	}}
+	if _, err := porterenroll.WriteRecord(home, enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1}, p); err != nil {
+		t.Fatal(err)
+	}
+	call := func(id int, action string) string {
+		return `{"jsonrpc":"2.0","id":` + strconv.Itoa(id) + `,"method":"action_run","params":{"instance_id":"demo","action_id":"` + action + `"}}` + "\n"
+	}
+	in := `{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol":"1.2"}}` + "\n" + call(2, "hello") + call(3, "token") + call(4, "restart") + call(5, "nope")
+	var out, errb bytes.Buffer
+	t.Setenv("SSH_ORIGINAL_COMMAND", "valise-porter rpc")
+	if code := run([]string{"serve", "--tier", "daily"}, strings.NewReader(in), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 5 || !strings.Contains(lines[1], `"output":"hi"`) || !strings.Contains(lines[2], rpc.AdminRequiredCode) ||
+		!strings.Contains(lines[3], rpc.AdminRequiredCode) || !strings.Contains(lines[4], "action_unknown") || strings.Contains(out.String(), "tok-1") {
+		t.Fatalf("daily: %q", lines)
+	}
+	out.Reset()
+	if code := run([]string{"rpc"}, strings.NewReader(in), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	lines = strings.Split(strings.TrimSpace(out.String()), "\n")
+	if !strings.Contains(lines[2], `"secret":"tok-1"`) || !strings.Contains(lines[3], `"exit":0`) {
+		t.Fatalf("admin: %q", lines)
+	}
+	audit, _ := os.ReadFile(filepath.Join(home, ".local/state/valise/audit.jsonl"))
+	if strings.Contains(string(audit), "tok-1") || strings.Count(string(audit), `"op":"action"`) != 4 {
+		t.Fatalf("audit: %s", audit)
 	}
 }

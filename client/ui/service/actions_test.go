@@ -1,0 +1,76 @@
+package service
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"valise/core/valise"
+)
+
+const demoActions = `actions:
+  - { id: hello, name: 打招呼, explain: "输出 hi", risk: read, argv: [/bin/echo, hi], output: text }
+  - { id: token, name: 复制令牌, explain: "复制", risk: read, argv: [/bin/echo, "{\"url\":\"http://127.0.0.1:1/#token=tok-9\"}"], output: secret, secret: { json_field: url, url_param: token } }
+  - { id: restart, name: 重启, explain: "重启", risk: manage, argv: [/bin/echo, ok], output: none }
+`
+
+func TestActions(t *testing.T) {
+	s, _ := enrollWorld(t)
+	p := filepath.Join(s.Dirs.Data, "profiles", "demo.yaml")
+	os.WriteFile(p, []byte(demoProfile+demoActions), 0o644)
+	ctx := context.Background()
+	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.Actions(ctx, "box", "demo")
+	if err != nil || len(list.Actions) != 3 || list.Stale {
+		t.Fatalf("%+v %v", list, err)
+	}
+	res, err := s.RunAction(ctx, "box", "demo", "hello", ActionOptions{})
+	if err != nil || res.Exit != 0 || res.Output != "hi" || res.Checked {
+		t.Fatalf("%+v %v", res, err)
+	}
+	res, err = s.RunAction(ctx, "box", "demo", "restart", ActionOptions{})
+	if err != nil || res.Exit != 0 || !res.Checked || res.Output != "" {
+		t.Fatalf("%+v %v", res, err)
+	}
+
+	res, err = s.RunAction(ctx, "box", "demo", "token", ActionOptions{})
+	if err != nil || res.Secret != "tok-9" || res.Output != "" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	var board string
+	clipboardCopy = func(v string) error { board = v; return nil }
+	clipboardPaste = func() (string, error) { return board, nil }
+	secretWindow = 50 * time.Millisecond
+	t.Cleanup(func() { clipboardCopy, clipboardPaste, secretWindow = systemCopy, systemPaste, SecretWindow })
+	clip, err := CopySecret(ctx, res.Secret)
+	if err != nil || board != "tok-9" {
+		t.Fatalf("%q %v", board, err)
+	}
+	<-clip.Done()
+	if board != "" {
+		t.Fatalf("not cleared: %q", board)
+	}
+	// Something else copied meanwhile is left alone.
+	clip, _ = CopySecret(ctx, "tok-9")
+	board = "user text"
+	clip.Clear()
+	if board != "user text" {
+		t.Fatalf("cleared the user's clipboard: %q", board)
+	}
+
+	// An action only in the local profile: the server refuses it.
+	os.WriteFile(p, []byte(strings.Replace(demoProfile, "profile_version: 1", "profile_version: 2", 1)+demoActions+
+		"  - { id: newer, name: 新动作, explain: \"x\", risk: read, argv: [/bin/echo, x], output: text }\n"), 0o644)
+	if list, _ := s.Actions(ctx, "box", "demo"); !list.Stale {
+		t.Fatal("not stale")
+	}
+	_, err = s.RunAction(ctx, "box", "demo", "newer", ActionOptions{})
+	if ue, ok := valise.As(err); !ok || ue.Code != "action_unknown" || !strings.Contains(ue.Suggestion, "重新登记") {
+		t.Fatalf("%v", err)
+	}
+}

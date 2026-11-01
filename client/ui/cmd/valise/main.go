@@ -79,6 +79,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   login <服务器> <实例> [--method id]              登录授权：在本机浏览器中完成服务器上 agent 的登录
   open <服务器> <实例> [--entry id] [--idle 30m] [--no-browser]
          [--change-port [--to 端口] [--no-seal] [--yes]]   本机端口被占用时两边一起改端口
+  action <服务器> <实例> [<动作>] [--yes] [--no-seal]
+                                                 管理动作：不带动作名列出可用动作；机密结果只复制到剪贴板，20 秒后清除
   forward <服务器> <地址|端口> [--idle 30m] [--no-browser]
                                                  在本机打开服务器回环地址上的页面（同端口，地址里的令牌不显示）
                                                  打开管理页：经隧道转到本机，需要令牌时用 harness 自己的命令取得
@@ -188,6 +190,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.login(ctx, args[1:])
 	case args[0] == "open":
 		return c.open(ctx, args[1:])
+	case args[0] == "action":
+		return c.action(ctx, args[1:])
 	case args[0] == "forward":
 		return c.forward(ctx, args[1:])
 	case args[0] == "key" && len(args) > 1 && args[1] == "unregister":
@@ -246,6 +250,11 @@ func (c *cli) printProblem(err error) {
 // parseArgs parses flags that may appear before or after one positional
 // argument, e.g. `doctor host --json`.
 func parseArgs(fs *flag.FlagSet, args []string, positional int) ([]string, error) {
+	return parseArgsRange(fs, args, positional, positional)
+}
+
+// parseArgsRange accepts between min and max positional arguments.
+func parseArgsRange(fs *flag.FlagSet, args []string, min, max int) ([]string, error) {
 	fs.SetOutput(io.Discard)
 	var pos []string
 	for {
@@ -258,7 +267,7 @@ func parseArgs(fs *flag.FlagSet, args []string, positional int) ([]string, error
 		pos = append(pos, fs.Arg(0))
 		args = fs.Args()[1:]
 	}
-	if len(pos) != positional {
+	if len(pos) < min || len(pos) > max {
 		return nil, errUsage
 	}
 	return pos, nil

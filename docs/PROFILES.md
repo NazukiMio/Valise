@@ -113,7 +113,28 @@ native_cli: [example, onboard]   # 可选：原生界面的命令（INSTALL.md �
 native_hints:                    # 可选：打开原生界面前显示的提示（INSTALL.md 第 2 节），只是文字
   - "引导最后会等待控制台登录：另开终端运行 valise open <服务器> <实例>"
 
-actions: []                      # 可选：管理动作（INSTALL.md 第 5 节，schema 在 M12 定稿；之前 lint 只接受空列表）
+actions:                         # 可选：管理动作（INSTALL.md 第 5 节；M12 定稿）
+  - id: status                   # 小写字母、数字和连字符，profile 内唯一
+    name: 查看状态                # 界面上的名称
+    explain: "显示服务是否在运行"   # 对用户的解释：会发生什么
+    risk: read                   # read | manage | config | danger
+    argv: [example, status]      # 只能引用 ${HOME}
+    output: text                 # text | none | secret
+  - id: copy-token
+    name: 复制控制台令牌
+    explain: "把控制台登录用的令牌复制到剪贴板（不显示）"
+    risk: read
+    argv: [example, dashboard, --json]
+    output: secret
+    secret: { json_field: url, url_param: token }   # 从输出取出机密本身；都不写时取第一行
+  - id: reset-token
+    name: 生成新令牌
+    explain: "生成新的控制台令牌"
+    undo: "无法撤销；旧令牌立即失效"  # 可选：能否撤销、怎样撤销
+    risk: config
+    argv: [example, token, --rotate]
+    output: none
+    terminal: false              # 可选：true 时在独立交互终端运行，输出不经 Valise，不能是 secret
 
 relocation: { env: EXAMPLE_HOME }   # 状态目录可以通过此变量改到别处；不支持时写 null（此时克隆只能到另一个用户或另一台服务器）
 
@@ -204,6 +225,7 @@ agent_kit:
 - `display.icon` 最多 12 行、每行显示宽度不超过 24；`display.icon_compact` 最多 6 行、每行不超过 12。只允许单宽字符（推荐盲文 U+2800–U+28FF，空白用 `⠀`；也可用框线与 ASCII），不得包含全角字符、emoji、制表符、控制字符或 ANSI 转义；`display.color` 必须是 `#RRGGBB`。图标原样显示、不在运行时缩放；只有标准图标时，紧凑场景按点缩放兜底（UI.md 8.1）。
 - `install.steps` 中 `script` 必须有 `sha256` 与 `runtime_downloads`（没有时写空字符串表示已确认没有）；`url` 必须是 `https`；所有命令都是 argv 数组。
 - `capabilities` 中状态为 `tested` 的项必须有 `versions` 与 `env`。
+- `actions`：`id` 唯一且合法；`name`、`explain` 不能为空；`risk` 与 `output` 只能取规定的值；`argv` 只能引用 `${HOME}`；`output: secret` 必须写 `secret`（`url_param` 只能与 `json_field` 一起出现），其他 `output` 不能写 `secret`；`terminal: true` 不能与 `secret` 同时出现；`config` 与 `danger` 必须写 `undo`。
 - `entries[].auth` 中 `url_argv` 与 `token_argv` 最多出现一个；`url_suffix` 只能与 `token_argv` 一起出现，并且只能引用 `${TOKEN}`；`url_field` 只能与 `url_argv` 一起出现，必须是点分字段路径。
 - profile 使用严格解析，出现 schema 中没有的字段即报错。子 profile 只能包含元信息字段（`schema`、`id`、`display_name`、`profile_version`、`status`、`harness_versions_tested`、`docs`、`extends`、`when`）以及 `paths`、`consistency`、`checkup`；它的父 profile 必须出现在同一次 lint 的文件集合中。
 

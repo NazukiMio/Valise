@@ -13,11 +13,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"time"
 	_ "time/tzdata" // period time zones (docs/VAULT_FORMAT.md 10.2) on servers without zoneinfo
 
 	"valise/core/login"
 	"valise/core/profile"
 	"valise/core/rpc"
+	"valise/core/vaultrpc"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/forced"
 	porterinstall "valise/porter/internal/install"
@@ -42,6 +44,7 @@ const usage = `用法：
   valise-porter exec [--path <目录>]... -- <命令>...（用登录环境执行原生界面、安装步骤）
   valise-porter exec [--path <目录>]... --shell（打开用户自己的交互 shell，PATH 中加入这些目录）
   valise-porter path-add --dir <目录> --label <标签>（把家目录下的目录加入登录 shell 的 PATH）
+  valise-porter action-exec --instance <实例> --id <动作>（在当前终端运行登记过的、需要终端的管理动作）
   valise-porter serve --tier daily           （日常钥匙的强制命令）
   valise-porter seal-timer --instance <实例>（由定时器运行）
   valise-porter autosync                    （由封存后自动启动，同步到期的云备份）
@@ -90,6 +93,33 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			argv = []string{sh, "-i"}
 		}
 		fmt.Fprintln(stderr, "exec:", porterinstall.Exec(ctx, env, argv))
+		return 127
+	case "action-exec":
+		// Admin connections only: a terminal action from the instance's
+		// stored profile, in the caller's terminal (docs/INSTALL.md 5).
+		if len(args) != 5 || args[1] != "--instance" || args[3] != "--id" {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		prof, err := porterenroll.ReadProfile(home, args[2])
+		if err != nil {
+			fmt.Fprintln(stderr, "action-exec:", err)
+			return 1
+		}
+		a := prof.FindAction(args[4])
+		if a == nil || !a.Terminal {
+			fmt.Fprintln(stderr, "action-exec: 服务器上登记的 profile 里没有这个需要终端的动作")
+			return 1
+		}
+		seal.Paths{Home: home}.AppendAudit(seal.AuditEntry{Time: time.Now().UTC(), Op: "action", Instance: args[2],
+			Initiator: vaultrpc.InitiatorClient, Result: "started in terminal", Reason: fmt.Sprintf("%s (%s)", a.ID, a.Risk)})
+		ctx := context.Background()
+		fmt.Fprintln(stderr, "action-exec:", porterinstall.Exec(ctx, porterenroll.LoadEnv(ctx, home).For(prof), a.Argv))
 		return 127
 	case "path-add":
 		// Admin connections only (an install step the user opted in to).

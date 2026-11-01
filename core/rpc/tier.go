@@ -43,9 +43,13 @@ var dailyMethods = map[string]bool{
 }
 
 // conditionalMethods are allowed on the daily tier only in a state the
-// handler checks: recipient_add while the server has no recipient yet.
+// handler checks: recipient_add while the server has no recipient yet,
+// action_run for read actions without secret output.
 var conditionalMethods = map[string]bool{
 	"recipient_add": true,
+	// Read actions without secret output run on the daily tier; the
+	// handler refuses the others (docs/INSTALL.md section 5).
+	"action_run": true,
 }
 
 // adminMethods change what is protected, where it goes, or the harness

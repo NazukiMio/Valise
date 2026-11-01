@@ -358,3 +358,65 @@ capabilities:
 		}
 	}
 }
+
+func TestLintIconSizes(t *testing.T) {
+	row := strings.Repeat("⣿", 24)
+	ok := baseYAML + "display:\n  color: \"#112233\"\n  icon: |\n" + strings.Repeat("    "+row+"\n", 12) +
+		"  icon_compact: |\n" + strings.Repeat("    "+strings.Repeat("⣿", 12)+"\n", 6)
+	if issues := lintOne(t, ok); len(issues) > 0 {
+		t.Fatal(issues)
+	}
+	for name, src := range map[string]string{
+		"rows":          strings.Replace(ok, "  icon_compact", "    "+row+"\n  icon_compact", 1),
+		"width":         strings.Replace(ok, row, row+"⣿", 1),
+		"compact width": strings.Replace(ok, strings.Repeat("⣿", 12)+"\n", strings.Repeat("⣿", 13)+"\n", 1),
+		"wide":          strings.Replace(ok, row, strings.Repeat("⣿", 22)+"龙", 1),
+		"tab":           strings.Replace(ok, row, strings.Repeat("⣿", 23)+"\t", 1),
+	} {
+		if issues := lintOne(t, src); len(issues) == 0 {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestLintActions(t *testing.T) {
+	ok := baseYAML + `actions:
+  - { id: status, name: 查看状态, explain: "显示状态", risk: read, argv: [example, status], output: text }
+  - { id: copy-token, name: 复制令牌, explain: "复制令牌", risk: read, argv: [example, dash, --json], output: secret, secret: { json_field: url, url_param: token } }
+  - { id: first-line, name: 复制, explain: "复制", risk: read, argv: [example, token], output: secret, secret: {} }
+  - { id: restart, name: 重启, explain: "重启服务", risk: manage, argv: [example, restart], output: none, terminal: true }
+  - { id: rotate, name: 换令牌, explain: "换令牌", undo: "无法撤销", risk: config, argv: [example, rotate, "${HOME}/x"], output: none }
+`
+	if issues := lintOne(t, ok); len(issues) > 0 {
+		t.Fatal(issues)
+	}
+	p := &Profile{Actions: []Action{{ID: "a", Risk: RiskRead, Output: OutputText}, {ID: "b", Risk: RiskRead, Output: OutputSecret}, {ID: "c", Risk: RiskManage, Output: OutputNone}}}
+	if p.FindAction("a").NeedsAdmin() || !p.FindAction("b").NeedsAdmin() || !p.FindAction("c").NeedsAdmin() || p.FindAction("z") != nil {
+		t.Fatal("NeedsAdmin / FindAction")
+	}
+	bad := map[string]string{
+		"actions[0].risk":             strings.Replace(ok, "risk: read, argv: [example, status]", "risk: low, argv: [example, status]", 1),
+		"actions[0].output":           strings.Replace(ok, "output: text }", "output: html }", 1),
+		"actions[0].explain":          strings.Replace(ok, `explain: "显示状态"`, `explain: ""`, 1),
+		"actions[1].id":               strings.Replace(ok, "id: copy-token", "id: status", 1),
+		"actions[1].secret.url_param": strings.Replace(ok, "{ json_field: url, url_param: token }", "{ url_param: token }", 1),
+		"actions[2].secret":           strings.Replace(ok, "output: secret, secret: {} }", "output: secret }", 1),
+		"actions[3].secret":           strings.Replace(ok, "output: none, terminal: true }", "output: none, terminal: true, secret: {} }", 1),
+		"actions[4].undo":             strings.Replace(ok, `undo: "无法撤销", `, "", 1),
+		"actions[4].argv":             strings.Replace(ok, `"${HOME}/x"`, `"${PORT}"`, 1),
+	}
+	for field, src := range bad {
+		found := false
+		for _, i := range lintOne(t, src) {
+			if strings.HasPrefix(i.Field, field) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: no issue in %v", field, lintOne(t, src))
+		}
+	}
+	if issues := lintOne(t, strings.Replace(ok, "output: secret, secret: {} }", "output: secret, secret: {}, terminal: true }", 1)); len(issues) == 0 {
+		t.Error("accepted a terminal secret action")
+	}
+}

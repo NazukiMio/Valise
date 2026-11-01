@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 12
+profile_version: 13
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -197,6 +197,46 @@ native_cli: [openclaw, onboard]
 native_hints:
   - "引导最后会等待控制台（Control UI）登录：不要退出引导，另开一个本机终端运行 valise open <服务器> <实例>，浏览器会带着一次性令牌打开控制台并自动登录"
   - "要手动取令牌：在 Valise 打开的终端里运行 openclaw gateway auth-token --show"
+
+# Managed actions (docs/INSTALL.md section 5). OBS (2026-11-01, 2026.10.9,
+# debian-vm): status and health need no terminal and print no token;
+# `dashboard --no-open --json` has url with #token=; `gateway restart`
+# restarts the user unit. `doctor --generate-gateway-token` only creates a
+# token when none is set (not a rotation), so it is not offered.
+actions:
+  - id: status
+    name: 查看网关状态
+    explain: "显示网关服务是否在运行、监听的地址与端口、配置文件位置"
+    risk: read
+    argv: [openclaw, gateway, status]
+    output: text
+  - id: health
+    name: 检查网关健康
+    explain: "向正在运行的网关请求一次健康检查"
+    risk: read
+    argv: [openclaw, gateway, health]
+    output: text
+  - id: copy-token
+    name: 复制控制台令牌
+    explain: "把控制台（Control UI）登录用的网关令牌复制到剪贴板，不显示；20 秒后清除"
+    risk: read
+    argv: [openclaw, dashboard, --no-open, --json]
+    output: secret
+    secret: { json_field: url, url_param: token }
+  - id: restart
+    name: 重启网关
+    explain: "重启 OpenClaw 网关服务；正在进行的对话会中断几秒"
+    risk: manage
+    argv: [openclaw, gateway, restart]
+    output: none
+  - id: doctor
+    name: 运行 OpenClaw Doctor（交互）
+    explain: "运行 OpenClaw 自己的诊断与修复向导，在独立终端里进行；它会在修改之前逐项询问"
+    undo: "Doctor 的修改无法单独撤销；可以从执行前建立的逃生舱原地着陆"
+    risk: config
+    argv: [openclaw, doctor]
+    output: none
+    terminal: true
 
 capabilities:
   install: { status: tested, versions: ["2026.10.9"], env: "Debian 13 arm64（全新虚拟机，完全访问模式装好 git 与 curl）；Debian 13 amd64（InstaBox，清空后）", note: "官方 install-cli.sh 本地前缀方案；Node 由脚本自带" }

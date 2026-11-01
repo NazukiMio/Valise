@@ -252,7 +252,12 @@
 
 ## M12：日常管理
 
-- **状态**：`Ready`（M11 已完成，待开工）
+- **状态**：`In progress`（2026-11-01）
+- **进度**：
+  - 草图 `docs/sketches/M12-tui.md` 与设计点已由用户确认（动作规则、首页卡片样式、图标尺寸），结论已写回 INSTALL.md 第 5 节、PROFILES.md、UI.md 9.2。
+  - 已完成（后台）：图标 lint 改为 12×24 / 6×12（含 `icon_compact`、只允许单宽字符），Hermes 原图案超标，移到 `docs/icons/` 待用户重绘，暂用内置机器人；管理动作 schema 与 lint；porter `action_run`（按服务器上保存的 profile 副本执行，日常钥匙只能跑非机密的只读动作，审计不含输出）与 `action-exec`（需要终端的动作）；服务层 `Actions` / `RunAction`（`config`/`danger` 默认先建逃生舱，`manage` 及以上动作后检查服务与管理页）与剪贴板（20 秒，仅当剪贴板仍是该机密时清除）；CLI `valise action`。
+  - OpenClaw v13 声明 5 个动作（status、health、copy-token、restart、doctor），前四个在 debian-vm 上核实：只读动作走日常钥匙；复制令牌不显示、20 秒后清除、审计只记 id 与退出码；重启后服务运行、管理页端口在监听。`doctor --generate-gateway-token` 不是令牌轮换（已有令牌时不变），没有作为动作。
+  - 未完成：终端 UI 改版（开工前先交付 Artifact 草图确认）；`doctor`（交互终端动作）的靶机验收；真实渠道下的日常管理验收。
 - **交付**：首页与实例页按 UI.md 第 9 节改版（管理优先、备份安静）；UI.md 8.1 的统一卡片、横向翻页与新图标标准（含 profile 图标重绘与 lint 新尺寸）；管理动作 schema 定稿与实现（INSTALL.md 第 5 节）；状态与错误的诚实展示；按能力展示 profile 支持程度。
 - **验收**：在不同安装方式与真实渠道下验证 OpenClaw 的日常管理（不记录秘密）；动作的确认与结果展示符合风险等级。
 

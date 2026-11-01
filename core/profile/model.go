@@ -49,9 +49,8 @@ type Profile struct {
 	NativeCLI Argv `yaml:"native_cli" json:"native_cli,omitempty"`
 	// NativeHints are shown before the native CLI opens.
 	NativeHints []string `yaml:"native_hints" json:"native_hints,omitempty"`
-	// Actions are managed actions; the schema is settled in M12, until then
-	// only an empty list is accepted.
-	Actions []any `yaml:"actions" json:"actions,omitempty"`
+	// Actions are managed actions (docs/INSTALL.md section 5).
+	Actions []Action `yaml:"actions" json:"actions,omitempty"`
 	// Capabilities record what was verified, per capability
 	// (docs/PROFILES.md 1.2).
 	Capabilities map[string]Capability `yaml:"capabilities" json:"capabilities,omitempty"`
@@ -61,8 +60,10 @@ type Profile struct {
 type Display struct {
 	Color string `yaml:"color" json:"color,omitempty"`
 	// Icon is character art taken from the harness's own TUI.
-	Icon       string `yaml:"icon" json:"icon,omitempty"`
-	IconSource string `yaml:"icon_source" json:"icon_source,omitempty"`
+	Icon string `yaml:"icon" json:"icon,omitempty"`
+	// IconCompact is the optional small icon (docs/UI.md 8.1).
+	IconCompact string `yaml:"icon_compact" json:"icon_compact,omitempty"`
+	IconSource  string `yaml:"icon_source" json:"icon_source,omitempty"`
 }
 
 // When is the activation condition of a child profile.
@@ -268,6 +269,57 @@ type InstallStep struct {
 	Optional   bool   `yaml:"optional" json:"optional,omitempty"`
 	ID         string `yaml:"id" json:"id,omitempty"`
 	SkipEffect string `yaml:"skip_effect" json:"skip_effect,omitempty"`
+}
+
+// Action risk levels and output kinds (docs/INSTALL.md section 5).
+const (
+	RiskRead   = "read"
+	RiskManage = "manage"
+	RiskConfig = "config"
+	RiskDanger = "danger"
+
+	OutputText   = "text"
+	OutputNone   = "none"
+	OutputSecret = "secret"
+)
+
+// Action is one managed action: a fixed command with a risk level.
+type Action struct {
+	ID      string `yaml:"id" json:"id"`
+	Name    string `yaml:"name" json:"name"`
+	Explain string `yaml:"explain" json:"explain"`
+	// Undo says whether and how the action can be undone.
+	Undo   string `yaml:"undo" json:"undo,omitempty"`
+	Risk   string `yaml:"risk" json:"risk"`
+	Argv   Argv   `yaml:"argv" json:"argv"`
+	Output string `yaml:"output" json:"output"`
+	// Secret picks the secret out of the output; nil takes the first line.
+	Secret *SecretPick `yaml:"secret" json:"secret,omitempty"`
+	// Terminal actions run in their own interactive terminal; their output
+	// never passes through Valise.
+	Terminal bool `yaml:"terminal" json:"terminal,omitempty"`
+}
+
+// SecretPick extracts a secret from JSON output: the string at JSONField
+// and, when URLParam is set, that parameter of the URL's query or fragment.
+type SecretPick struct {
+	JSONField string `yaml:"json_field" json:"json_field,omitempty"`
+	URLParam  string `yaml:"url_param" json:"url_param,omitempty"`
+}
+
+// NeedsAdmin reports whether running a needs an admin login.
+func (a Action) NeedsAdmin() bool {
+	return a.Risk != RiskRead || a.Output == OutputSecret || a.Terminal
+}
+
+// FindAction returns the action with id, or nil.
+func (p *Profile) FindAction(id string) *Action {
+	for i := range p.Actions {
+		if p.Actions[i].ID == id {
+			return &p.Actions[i]
+		}
+	}
+	return nil
 }
 
 // Capability is the verification status of one capability.

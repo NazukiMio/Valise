@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Issue is one profilelint finding. Every issue is an error.
@@ -397,9 +398,7 @@ func (c *checker) checkTop(p *Profile) {
 	if len(p.NativeHints) > 0 && len(p.NativeCLI) == 0 {
 		c.add("native_hints", "没有 native_cli 时不需要提示")
 	}
-	if len(p.Actions) > 0 {
-		c.add("actions", "管理动作的 schema 在 M12 定稿，之前只能是空列表")
-	}
+	c.checkActions(p.Actions)
 	c.checkInstall(p.Install)
 	c.checkCapabilities(p)
 }
@@ -477,26 +476,40 @@ var (
 // (docs/AGENT_KIT.md 8.4).
 var FindingCodes = []string{"long_session", "cost_growth", "memory_bloat", "session_pileup", "no_memory_mechanism"}
 
-// Icon limits, see docs/PROFILES.md section 3.
+// Icon limits, see docs/PROFILES.md section 3 and docs/UI.md 8.1.
 const (
-	MaxIconLines = 16
-	MaxIconWidth = 32
+	MaxIconLines        = 12
+	MaxIconWidth        = 24
+	MaxCompactIconLines = 6
+	MaxCompactIconWidth = 12
 )
 
 func (c *checker) checkDisplay(d *Display) {
 	if d.Color != "" && !colorRe.MatchString(d.Color) {
 		c.add("display.color", "必须是 #RRGGBB")
 	}
-	lines := strings.Split(strings.TrimRight(d.Icon, "\n"), "\n")
-	if len(lines) > MaxIconLines {
-		c.add("display.icon", "最多 %d 行", MaxIconLines)
+	c.checkIcon("display.icon", d.Icon, MaxIconLines, MaxIconWidth)
+	c.checkIcon("display.icon_compact", d.IconCompact, MaxCompactIconLines, MaxCompactIconWidth)
+}
+
+func (c *checker) checkIcon(field, icon string, maxLines, maxWidth int) {
+	if strings.TrimSpace(icon) == "" {
+		return
+	}
+	lines := strings.Split(strings.TrimRight(icon, "\n"), "\n")
+	if len(lines) > maxLines {
+		c.add(field, "最多 %d 行", maxLines)
 	}
 	for i, l := range lines {
+		f := fmt.Sprintf("%s 第 %d 行", field, i+1)
 		if strings.IndexFunc(l, unicode.IsControl) >= 0 {
-			c.add(fmt.Sprintf("display.icon 第 %d 行", i+1), "不能包含控制字符或 ANSI 转义")
+			c.add(f, "不能包含制表符、控制字符或 ANSI 转义")
 		}
-		if w := DisplayWidth(l); w > MaxIconWidth {
-			c.add(fmt.Sprintf("display.icon 第 %d 行", i+1), "显示宽度 %d 超过 %d", w, MaxIconWidth)
+		if DisplayWidth(l) != utf8.RuneCountInString(l) {
+			c.add(f, "只能用单宽字符（不能有全角字符或 emoji）")
+		}
+		if w := DisplayWidth(l); w > maxWidth {
+			c.add(f, "显示宽度 %d 超过 %d", w, maxWidth)
 		}
 	}
 }
@@ -803,6 +816,56 @@ func (c *checker) checkCapabilities(p *Profile) {
 		}
 		if !uses {
 			c.add(f, "必须用 ${PORT} 表示新端口")
+		}
+	}
+}
+
+var paramRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+
+func (c *checker) checkActions(as []Action) {
+	ids := map[string]bool{}
+	for i, a := range as {
+		f := fmt.Sprintf("actions[%d]", i)
+		if !idRe.MatchString(a.ID) {
+			c.add(f+".id", "只能用小写字母、数字和连字符")
+		} else if ids[a.ID] {
+			c.add(f+".id", "重复的动作 id：%s", a.ID)
+		}
+		ids[a.ID] = true
+		if strings.TrimSpace(a.Name) == "" {
+			c.add(f+".name", "不能为空")
+		}
+		if strings.TrimSpace(a.Explain) == "" {
+			c.add(f+".explain", "不能为空：说明会发生什么")
+		}
+		if !slices.Contains([]string{RiskRead, RiskManage, RiskConfig, RiskDanger}, a.Risk) {
+			c.add(f+".risk", "只能是 read、manage、config 或 danger")
+		}
+		if (a.Risk == RiskConfig || a.Risk == RiskDanger) && strings.TrimSpace(a.Undo) == "" {
+			c.add(f+".undo", "config 与 danger 动作必须说明能否撤销")
+		}
+		c.argvVars(f+".argv", a.Argv, true, VarHome)
+		switch a.Output {
+		case OutputText, OutputNone:
+			if a.Secret != nil {
+				c.add(f+".secret", "只有 output: secret 才能写 secret")
+			}
+		case OutputSecret:
+			if a.Secret == nil {
+				c.add(f+".secret", "output: secret 必须写明怎样取出机密（json_field / url_param）")
+			} else {
+				if a.Secret.JSONField != "" && !fieldPathRe.MatchString(a.Secret.JSONField) {
+					c.add(f+".secret.json_field", "必须是点分字段路径")
+				}
+				if a.Secret.URLParam != "" && (a.Secret.JSONField == "" || !paramRe.MatchString(a.Secret.URLParam)) {
+					c.add(f+".secret.url_param", "只能与 json_field 一起使用，且只能是参数名")
+				}
+			}
+			if a.Terminal {
+				c.add(f+".terminal", "在交互终端里运行的动作不能是 secret")
+			}
+		default:
+			c.add(f+".output", "只能是 text、none 或 secret")
 		}
 	}
 }
