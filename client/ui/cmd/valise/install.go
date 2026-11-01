@@ -37,7 +37,7 @@ func (c *cli) install(ctx context.Context, args []string) error {
 		}
 	} else if len(plan.Missing) > 0 {
 		hint := "自己在服务器上装好（valise shell " + host + "）或交给服务器管理员，装好后重新运行"
-		if c.svc.FullAccessReady(host) == nil {
+		if len(plan.Unfixable) == 0 && c.svc.FullAccessReady(host) == nil {
 			hint += "；也可以加 --full-access 让 Valise 在完全访问模式下代为安装"
 		}
 		return valise.New("install_requirements", "服务器还缺少方案需要的程序，没有开始安装", hint)
