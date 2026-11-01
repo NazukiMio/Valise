@@ -18,6 +18,7 @@ const (
 	MethodInstanceGet   = "instance_get"
 	MethodInstanceWrite = "instance_write"
 	MethodInstanceList  = "instance_list"
+	MethodEntryPortSet  = "entry_port_set"
 )
 
 var idRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -148,6 +149,7 @@ type Report struct {
 	Entries        []EntryState        `json:"entries"`
 	Pending        []profile.Pending   `json:"pending,omitempty"`
 	Overrides      []profile.Override  `json:"local_overrides,omitempty"`
+	EntryPorts     map[string]int      `json:"entry_ports,omitempty"`
 	Warnings       []string            `json:"warnings,omitempty"`
 	Previous       *Record             `json:"previous,omitempty"`
 	Changes        []Change            `json:"changes,omitempty"`
@@ -207,7 +209,10 @@ type Record struct {
 	Service        []ServiceState     `json:"service"`
 	Entries        []EntryState       `json:"entries"`
 	LocalOverrides []profile.Override `json:"local_overrides"`
-	EnrolledAt     time.Time          `json:"enrolled_at"`
+	// EntryPorts override the profile's entry ports for this instance after
+	// a port change (docs/LOGIN_RELAY.md 4.2).
+	EntryPorts map[string]int `json:"entry_ports,omitempty"`
+	EnrolledAt time.Time      `json:"enrolled_at"`
 	// Superseded is set when a migrate or clone replaced this instance's
 	// directories with another instance (ARCHITECTURE.md 8.2.1).
 	Superseded *Supersession `json:"superseded,omitempty"`
@@ -233,8 +238,22 @@ func RecordFrom(r *Report, now time.Time) Record {
 	return Record{
 		InstanceID: r.InstanceID, ProfileID: r.ProfileID, ProfileVersion: r.ProfileVersion,
 		Roots: roots, Provenance: r.Provenance, Service: r.Service, Entries: r.Entries,
-		LocalOverrides: ov, EnrolledAt: now.UTC(),
+		LocalOverrides: ov, EntryPorts: r.EntryPorts, EnrolledAt: now.UTC(),
 	}
+}
+
+// ApplyEntryPorts sets p's entry ports to the instance's overrides.
+func (r *Record) ApplyEntryPorts(p *profile.Profile) {
+	if r == nil || len(r.EntryPorts) == 0 {
+		return
+	}
+	entries := append([]profile.Entry{}, p.Entries...)
+	for i, e := range entries {
+		if port, ok := r.EntryPorts[e.ID]; ok {
+			entries[i].Port = port
+		}
+	}
+	p.Entries = entries
 }
 
 // Change is one difference from the previous enrollment.
@@ -277,6 +296,19 @@ type InstanceListResult struct {
 type InstanceWriteParams struct {
 	Record  Record          `json:"record"`
 	Profile profile.Profile `json:"profile"`
+}
+
+// EntryPortSetParams records a new port for one entry of an instance
+// after a two-sided port change (docs/LOGIN_RELAY.md section 4.2).
+type EntryPortSetParams struct {
+	InstanceID string `json:"instance_id"`
+	Entry      string `json:"entry"`
+	Port       int    `json:"port"`
+}
+
+// EntryPortSetResult is the instance's entry ports after the change.
+type EntryPortSetResult struct {
+	EntryPorts map[string]int `json:"entry_ports"`
 }
 
 // InstanceWriteResult reports where the record was written.

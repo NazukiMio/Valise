@@ -75,10 +75,10 @@ func TestBusyPortIsAnErrorNeverAnotherPort(t *testing.T) {
 	if !errors.As(err, &busy) || busy.Port != port {
 		t.Fatalf("%v", err)
 	}
-	// Web entries may move up.
-	l, err := BindFrom(port, 5)
-	if err != nil || l.Port == port {
-		t.Fatalf("%v %v", l, err)
+	ln.Close()
+	l, err := Bind(port)
+	if err != nil {
+		t.Fatal(err)
 	}
 	l.Close()
 	if _, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(l.Port)); err == nil {

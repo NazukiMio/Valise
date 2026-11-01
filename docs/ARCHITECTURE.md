@@ -39,7 +39,7 @@
 - **连接复用**：优先复用用户已有的 ControlMaster；没有时，使用 `-o ControlMaster=auto -o ControlPath=<客户端缓存目录>/cm-%C -o ControlPersist=60`。Unix 套接字路径有长度上限（macOS 为 104 字节，OpenSSH 建立 master 时还会追加约 17 字节的临时后缀），缓存目录过长时改用 `/tmp/valise-<uid>`（必须是本人所有、权限 0700 的真实目录）；仍不满足时不使用连接复用。
 - **主连接按访问级别分开命名**：OpenSSH 只按主机、端口、用户区分主连接，复用时不看用的是哪把钥匙。日常钥匙的主连接套接字用 `cmd-%C`，你自己 SSH 设置的用 `cm-%C`，管理操作用一次性的 `op-<随机>`，三者绝不互相复用（M10 真机发现：两个配置目录都退回 `/tmp/valise-<uid>` 时，完整登录复用了日常钥匙的主连接）。
 - **只有日常钥匙使用持续的连接复用**：管理操作每次新开自己的连接（`-o IdentitiesOnly=yes`，不连到日常钥匙的 ControlMaster），需要时只为这一次操作开临时 ControlMaster，结束即关（第 2.1 节）。
-- **协议版本**：格式为 `<主>.<次>`，当前为 `1.0`。主版本号不一致时客户端拒绝继续；次版本号只表示向后兼容的新增。
+- **协议版本**：格式为 `<主>.<次>`，当前为 `1.2`（1.1：M10 的访问级别；1.2：M11 的 `install_check`、`install_audit`、`entry_port_set`）。主版本号不一致时客户端拒绝继续；次版本号只表示向后兼容的新增。
 - **porter 部署**：客户端从 GitHub Release 下载目标架构的二进制，用随客户端发布的公钥校验 `SHA256SUMS` 的 minisign 签名，再核对哈希；或者由用户显式选择本地构建产物。上传时先执行 `cat > ~/.local/bin/valise-porter.tmp`，再 `chmod 0755`，最后 `mv` 原子替换。
   - Release 资产命名：`valise-porter_linux_amd64`、`valise-porter_linux_arm64`、`SHA256SUMS`（`sha256sum` 输出格式）、`SHA256SUMS.minisig`。远端架构由 `uname -s -m` 判定，只支持 Linux 的 `x86_64` / `aarch64`。
   - minisign 校验：同时接受预哈希（`ED`，BLAKE2b-512）与旧版（`Ed`）签名，并且必须校验 trusted comment 的全局签名。签名公钥随客户端发布；客户端尚未配置发布公钥时，拒绝从 Release 部署，只允许上传本地构建产物。

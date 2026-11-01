@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 10
+profile_version: 11
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -116,6 +116,14 @@ entries:
       url_argv: [openclaw, dashboard, --no-open, --json]
       url_field: browserUrl
       hint: "如果页面要求 Gateway 令牌：打开服务器终端，运行 openclaw gateway auth-token --show，把令牌粘贴到页面的 Gateway 密钥栏，再点连接"
+    # OBS (2026-11-01, 2026.10.9): the port lives in config gateway.port
+    # (unset by default) and in the user unit (OPENCLAW_GATEWAY_PORT and
+    # ExecStart --port); `gateway install --force --port N` rewrites the unit.
+    port_change:
+      steps:
+        - [openclaw, config, set, gateway.port, "${PORT}"]
+        - [openclaw, gateway, install, --force, --port, "${PORT}"]
+      restart_service: true
 
 health:
   grace_seconds: 20

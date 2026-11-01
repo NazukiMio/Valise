@@ -764,9 +764,16 @@ func (c *checker) checkCapabilities(p *Profile) {
 		if e.PortChange == nil {
 			continue
 		}
-		f := fmt.Sprintf("entries[%d].port_change.argv", i)
-		c.argvVars(f, e.PortChange.Argv, true, VarPort)
-		if !slices.ContainsFunc(e.PortChange.Argv, func(a string) bool { return strings.Contains(a, "${"+VarPort+"}") }) {
+		f := fmt.Sprintf("entries[%d].port_change.steps", i)
+		if len(e.PortChange.Steps) == 0 {
+			c.add(f, "不能为空")
+		}
+		uses := false
+		for j, st := range e.PortChange.Steps {
+			c.argvVars(fmt.Sprintf("%s[%d]", f, j), st, true, VarPort)
+			uses = uses || slices.ContainsFunc(st, func(a string) bool { return strings.Contains(a, "${"+VarPort+"}") })
+		}
+		if !uses {
 			c.add(f, "必须用 ${PORT} 表示新端口")
 		}
 	}

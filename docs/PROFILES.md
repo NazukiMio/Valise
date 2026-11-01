@@ -129,8 +129,11 @@ entries:
       url_suffix: null           # 例如 "#token=${TOKEN}"，只能引用 ${TOKEN}
       hint: "…"                  # 没法自动取得时给用户看的说明（例如"运行 example token --show，粘贴到页面的密钥栏"）
     port_change:                 # 可选：本机端口被占用时"两边一起改端口"（LOGIN_RELAY.md 4.2）
-      argv: [example, config, set, port, "${PORT}"]   # harness 自己的改端口命令，只能引用 ${PORT}
-      restart_service: true      # 改完是否需要重启服务
+      steps:                     # harness 自己的改端口命令，按顺序运行；argv 只能引用 ${PORT} 与 ${HOME}
+        - [example, config, set, port, "${PORT}"]
+      restart_service: true      # 改完是否还需要 Valise 重启服务（命令自己会重装/重启服务时填 false）
+    # 改过端口后，新端口记在实例记录的 entry_ports 里（按入口 id），打开管理页、健康检查都用它；
+    # profile 中的 port 只是默认值。
 
 health:
   grace_seconds: 20

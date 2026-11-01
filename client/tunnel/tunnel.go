@@ -72,20 +72,6 @@ func Bind(port int) (*Listener, error) {
 	return l, nil
 }
 
-// BindFrom tries port, port+1, ... (web entries may move; login relays
-// never do).
-func BindFrom(port, tries int) (*Listener, error) {
-	var last error
-	for p := port; p < port+tries && p <= 65535; p++ {
-		l, err := Bind(p)
-		if err == nil {
-			return l, nil
-		}
-		last = err
-	}
-	return nil, last
-}
-
 // Close stops listening; connections in flight finish on their own.
 func (l *Listener) Close() {
 	for _, ln := range l.lns {

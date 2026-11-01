@@ -199,11 +199,11 @@ type Entry struct {
 	PortChange *PortChange `yaml:"port_change" json:"port_change,omitempty"`
 }
 
-// PortChange is the harness's own command that moves an entry to another
-// port (docs/LOGIN_RELAY.md 4.2); Argv may only use ${PORT}.
+// PortChange is the harness's own commands that move an entry to another
+// port (docs/LOGIN_RELAY.md 4.2), run in order; they may only use ${PORT}.
 type PortChange struct {
-	Argv           Argv `yaml:"argv" json:"argv"`
-	RestartService bool `yaml:"restart_service" json:"restart_service,omitempty"`
+	Steps          []Argv `yaml:"steps" json:"steps"`
+	RestartService bool   `yaml:"restart_service" json:"restart_service,omitempty"`
 }
 
 // Install is an official install plan: what must already be there, and the

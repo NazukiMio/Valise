@@ -41,6 +41,7 @@ func (e *Env) ExpandArgv(argv []string, vars map[string]string) ([]string, bool)
 func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enroll.Record) (*enroll.Report, error) {
 	p := &params.Profile
 	e = e.For(p)
+	previous.ApplyEntryPorts(p)
 	if err := enroll.ValidInstanceID(params.InstanceID); err != nil {
 		return nil, valise.New("instance_id_invalid", err.Error(), "用 --id 指定一个由小写字母、数字和连字符组成的 id")
 	}
@@ -57,6 +58,9 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 		Categories: map[string]enroll.Tally{}, Secrets: []enroll.FileRef{}, SQLite: []enroll.SQLiteFile{},
 		UnclassGroups: []enroll.UnclassifiedGroup{}, Service: []enroll.ServiceState{}, Entries: []enroll.EntryState{},
 		Overrides: params.Overrides, ScannedAt: time.Now().UTC(), Previous: previous,
+	}
+	if previous != nil {
+		r.EntryPorts = previous.EntryPorts
 	}
 	r.Warnings = append(r.Warnings, e.Warnings...)
 	r.Roots = resolveRoots(ctx, e, p, params.StateDir, &r.Warnings)

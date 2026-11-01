@@ -94,6 +94,14 @@ var methods = map[string]handler{
 		path, err := porterenroll.WriteRecord(s.cfg.Home, p.Record, p.Profile)
 		return enroll.InstanceWriteResult{Path: path}, err
 	},
+	enroll.MethodEntryPortSet: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p enroll.EntryPortSetParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		ports, err := porterenroll.SetEntryPort(s.cfg.Home, p.InstanceID, p.Entry, p.Port)
+		return enroll.EntryPortSetResult{EntryPorts: ports}, err
+	},
 }
 
 func init() {

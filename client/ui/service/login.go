@@ -80,7 +80,9 @@ func (s *Service) LoginMethods(ctx context.Context, host, instance string) (*Log
 	if lp == nil {
 		return nil, valise.New("profile_missing", "本机没有 profile "+res.Record.ProfileID, "安装或更新 harness 资料包：valise profiles install")
 	}
-	return &LoginTarget{Record: res.Record, Profile: *lp.Effective, Local: lp.Local}, nil
+	prof := *lp.Effective
+	res.Record.ApplyEntryPorts(&prof)
+	return &LoginTarget{Record: res.Record, Profile: prof, Local: lp.Local}, nil
 }
 
 // OpenURL opens a link in the system browser of this machine.

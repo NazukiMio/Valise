@@ -319,7 +319,7 @@ capabilities:
   restore: { status: untested }
 `
 	if issues := lintOne(t, strings.Replace(ok, `  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/" }`,
-		`  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/", port_change: { argv: [example, port, "${PORT}"], restart_service: true } }`, 1)); len(issues) > 0 {
+		`  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/", port_change: { steps: [[example, port, "${PORT}"]], restart_service: true } }`, 1)); len(issues) > 0 {
 		t.Fatal(issues)
 	}
 	bad := map[string]string{
@@ -332,8 +332,8 @@ capabilities:
 		"actions":                            strings.Replace(ok, "actions: []", "actions: [ { id: x } ]", 1),
 		"capabilities.install":               strings.Replace(ok, `, versions: ["1.2.3"], env: "Debian 13 x86_64"`, "", 1),
 		"capabilities.fly":                   strings.Replace(ok, "restore: { status: untested }", "fly: { status: untested }", 1),
-		"entries[0].port_change.argv": strings.Replace(ok, `  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/" }`,
-			`  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/", port_change: { argv: [example, port, "9"] } }`, 1),
+		"entries[0].port_change.steps": strings.Replace(ok, `  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/" }`,
+			`  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/", port_change: { steps: [[example, port, "9"]] } }`, 1),
 	}
 	for field, src := range bad {
 		issues := lintOne(t, src)

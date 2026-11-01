@@ -353,3 +353,34 @@ func TestRefreshDescribesThisServer(t *testing.T) {
 		t.Fatalf("kind mismatch replaced provenance: %+v", rec.Provenance)
 	}
 }
+
+func TestSetEntryPort(t *testing.T) {
+	home := t.TempDir()
+	p := profile.Profile{ID: "demo", ProfileVersion: 1, Entries: []profile.Entry{{ID: "web", Host: "127.0.0.1", Port: 4000}}}
+	if _, err := WriteRecord(home, enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1}, p); err != nil {
+		t.Fatal(err)
+	}
+	ports, err := SetEntryPort(home, "demo", "web", 4001)
+	if err != nil || ports["web"] != 4001 {
+		t.Fatalf("%v %v", ports, err)
+	}
+	got, err := ReadProfile(home, "demo")
+	if err != nil || got.Entries[0].Port != 4001 {
+		t.Fatalf("effective profile %+v %v", got, err)
+	}
+	// Back to the profile's default: the override goes away.
+	if ports, err = SetEntryPort(home, "demo", "web", 4000); err != nil || len(ports) != 0 {
+		t.Fatalf("%v %v", ports, err)
+	}
+	for _, bad := range []struct {
+		entry string
+		port  int
+	}{{"nope", 4002}, {"web", 0}, {"web", 70000}} {
+		if _, err := SetEntryPort(home, "demo", bad.entry, bad.port); err == nil {
+			t.Fatalf("accepted %+v", bad)
+		}
+	}
+	if _, err := SetEntryPort(home, "missing", "web", 4002); err == nil {
+		t.Fatal("accepted an instance that is not enrolled")
+	}
+}

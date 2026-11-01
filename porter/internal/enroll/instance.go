@@ -60,7 +60,61 @@ func ReadProfile(home, id string) (*profile.Profile, error) {
 	if err := json.Unmarshal(b, &p); err != nil {
 		return nil, valise.New("instance_profile_corrupt", "服务器上的 profile 副本无法解析："+id, "重新登记以覆盖它")
 	}
+	if rec, err := ReadRecord(home, id); err == nil {
+		rec.ApplyEntryPorts(&p)
+	}
 	return &p, nil
+}
+
+// SetEntryPort records port for one entry of an enrolled instance. The
+// profile's own port stays the default; setting it back removes the
+// override.
+func SetEntryPort(home, id, entry string, port int) (map[string]int, error) {
+	if port < 1 || port > 65535 {
+		return nil, valise.New("entry_port_invalid", "端口必须在 1 到 65535 之间", "")
+	}
+	rec, err := ReadRecord(home, id)
+	if err != nil {
+		return nil, err
+	}
+	if rec == nil {
+		return nil, valise.New("instance_not_enrolled", "服务器上没有登记实例 "+id, "先运行 valise enroll <服务器> --accept")
+	}
+	b, err := os.ReadFile(ProfilePath(home, id))
+	if err != nil {
+		return nil, valise.New("instance_profile_missing", "服务器上没有实例 "+id+" 登记时的 profile", "重新登记：valise enroll <服务器> --accept")
+	}
+	var p profile.Profile
+	if err := json.Unmarshal(b, &p); err != nil {
+		return nil, valise.New("instance_profile_corrupt", "服务器上的 profile 副本无法解析："+id, "重新登记以覆盖它")
+	}
+	def := 0
+	for _, e := range p.Entries {
+		if e.ID == entry {
+			def = e.Port
+		}
+	}
+	if def == 0 {
+		return nil, valise.New("entry_unknown", "实例 "+id+" 没有入口 "+entry, "")
+	}
+	if rec.EntryPorts == nil {
+		rec.EntryPorts = map[string]int{}
+	}
+	rec.EntryPorts[entry] = port
+	if port == def {
+		delete(rec.EntryPorts, entry)
+	}
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := writeFile0600(InstancesDir(home), RecordPath(home, id), out); err != nil {
+		return nil, err
+	}
+	if rec.EntryPorts == nil {
+		rec.EntryPorts = map[string]int{}
+	}
+	return rec.EntryPorts, nil
 }
 
 // Refresh replaces the facts in rec that describe the server it lives on

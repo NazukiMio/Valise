@@ -78,6 +78,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
                                                  已记录服务器（add/import 记录 ~/.ssh/config 中的别名）
   login <服务器> <实例> [--method id]              登录授权：在本机浏览器中完成服务器上 agent 的登录
   open <服务器> <实例> [--entry id] [--idle 30m] [--no-browser]
+         [--change-port [--to 端口] [--no-seal] [--yes]]   本机端口被占用时两边一起改端口
                                                  打开管理页：经隧道转到本机，需要令牌时用 harness 自己的命令取得
   shell <服务器>                                  打开服务器终端（系统 OpenSSH 的交互式登录 shell）
   key unregister <服务器> [--recipient age1…]     从服务器移除一把钥匙（以前的逃生舱仍可被它打开）

@@ -49,6 +49,7 @@ var conditionalMethods = map[string]bool{
 // itself. Listed explicitly so a new method has to be classified.
 var adminMethods = map[string]bool{
 	"instance_write":     true,
+	"entry_port_set":     true,
 	"recipient_remove":   true,
 	"target_set":         true,
 	"target_leaf_delete": true,

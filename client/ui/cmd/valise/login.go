@@ -179,9 +179,20 @@ func (c *cli) open(ctx context.Context, args []string) error {
 	entry := fs.String("entry", "", "")
 	idle := fs.Duration("idle", service.DefaultEntryIdle, "")
 	noBrowser := fs.Bool("no-browser", false, "")
+	change := fs.Bool("change-port", false, "")
+	to := fs.Int("to", 0, "")
+	noSeal := fs.Bool("no-seal", false, "")
+	yes := fs.Bool("yes", false, "")
 	pos, err := parseArgs(fs, args, 2)
 	if err != nil {
 		return err
+	}
+	if *change {
+		if err := c.changePort(ctx, pos[0], pos[1], *entry, *to, *noSeal, *yes); err != nil {
+			return err
+		}
+	} else if *to != 0 || *noSeal {
+		return errUsage
 	}
 	steps := map[string]string{service.EntryTunnel: "隧道已建立", service.EntryRemote: "远端端口在监听", service.EntryHealth: "健康检查通过", service.EntryAuth: "管理页令牌"}
 	err = c.svc.OpenEntry(ctx, pos[0], pos[1], service.OpenOptions{Entry: *entry, Idle: *idle,

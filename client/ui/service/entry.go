@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -52,8 +53,22 @@ const DefaultEntryIdle = 30 * time.Minute
 // entryDialer forwards one connection; tests replace it.
 var entryDialer = tunnel.SSHDialer
 
-// entryPortTries is how far the local port may move up on conflicts.
-const entryPortTries = 20
+// EntryPortBusyCode is returned when the entry's port is taken on this
+// machine. The local port always equals the server's (docs/LOGIN_RELAY.md
+// section 1); it never moves silently.
+const EntryPortBusyCode = "entry_port_busy"
+
+func entryBusy(err error, host, instance string, entry *profile.Entry) error {
+	var busy *tunnel.BusyError
+	if !errors.As(err, &busy) {
+		return err
+	}
+	hint := "关闭占用这个端口的程序后重试"
+	if entry.PortChange != nil {
+		hint += fmt.Sprintf("；也可以让服务器和本机一起改用另一个端口：valise open %s %s --change-port", host, instance)
+	}
+	return valise.New(EntryPortBusyCode, busy.Error()+"；管理页的本机端口必须与服务器相同，Valise 不会悄悄换端口", hint)
+}
 
 // OpenEntry tunnels a web entry of an instance to this machine and keeps it
 // open until ctx ends or it has been idle for o.Idle.
@@ -98,10 +113,9 @@ func (s *Service) OpenEntry(ctx context.Context, host, instance string, o OpenOp
 		remote = "::1"
 	}
 
-	ln, err := tunnel.BindFrom(entry.Port, entryPortTries)
+	ln, err := tunnel.Bind(entry.Port)
 	if err != nil {
-		return valise.New("entry_port_busy", fmt.Sprintf("本机端口 %d 到 %d 都被占用", entry.Port, entry.Port+entryPortTries-1),
-			"关闭占用这些端口的程序后重试").WithDetail(err.Error())
+		return entryBusy(err, host, instance, entry)
 	}
 	defer ln.Close()
 	ctx, cancel := context.WithCancel(ctx)
@@ -110,9 +124,6 @@ func (s *Service) OpenEntry(ctx context.Context, host, instance string, o OpenOp
 	local := "http://127.0.0.1:" + strconv.Itoa(ln.Port) + entry.Path
 	display := local
 	detail := fmt.Sprintf("本机 %v → 服务器 %s", ln.Addrs, net.JoinHostPort(remote, strconv.Itoa(entry.Port)))
-	if ln.Port != entry.Port {
-		detail += fmt.Sprintf("（本机端口 %d 被占用，改用 %d）", entry.Port, ln.Port)
-	}
 	status(EntryStatus{Step: EntryTunnel, OK: true, Detail: detail})
 	if len(listen.Addrs) > 0 {
 		status(EntryStatus{Step: EntryRemote, OK: true, Detail: fmt.Sprintf("%v", listen.Addrs)})
@@ -129,9 +140,6 @@ func (s *Service) OpenEntry(ctx context.Context, host, instance string, o OpenOp
 		if err == nil {
 			local = "http://127.0.0.1:" + strconv.Itoa(ln.Port) + suffix
 			d := "已用 harness 自己的命令取得令牌，直接放进浏览器地址（没有显示，也没有保存）"
-			if ln.Port != entry.Port {
-				d += fmt.Sprintf("；本机端口与服务器不同，如果页面连不上，关闭占用本机端口 %d 的程序后重试", entry.Port)
-			}
 			status(EntryStatus{Step: EntryAuth, OK: true, Detail: d})
 		} else {
 			reason := err.Error()
