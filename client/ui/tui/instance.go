@@ -21,7 +21,7 @@ type tab interface {
 	view(m *Model, p *instancePage, height int) string
 }
 
-// instancePage is one agent: a header card and five tabs (docs/UI.md 9.4).
+// instancePage is one agent: a header and five tabs (docs/UI.md 9.5).
 type instancePage struct {
 	host   string
 	inst   enroll.InstanceSummary
@@ -37,7 +37,7 @@ type instancePage struct {
 
 func newInstancePage(host string, in enroll.InstanceSummary) *instancePage {
 	p := &instancePage{host: host, inst: in, log: map[string]vaultrpc.SealLogEntry{}}
-	p.tabs = []tab{&overviewTab{}, newPodsTab(), &checkupTab{}, &webTab{}, &isetTab{}}
+	p.tabs = []tab{&overviewTab{}, &manageTab{}, &checkupTab{}, newPodsTab(), &isetTab{}}
 	return p
 }
 
@@ -52,7 +52,24 @@ type (
 	logLoaded struct{ l *vaultrpc.SealLogResult }
 )
 
-func (p *instancePage) title() string { return p.inst.InstanceID }
+func (p *instancePage) title() string    { return p.inst.InstanceID }
+func (p *instancePage) hostName() string { return p.host }
+
+// flourish follows the tab; the overview has none while something needs
+// the user.
+func (p *instancePage) flourish(m *Model) string {
+	switch p.tabs[p.active].(type) {
+	case *overviewTab:
+		if len(attention(m, m.server(p.host), p.inst)) == 0 {
+			return flourishOverview
+		}
+	case *manageTab:
+		return flourishManage
+	case *podsTab:
+		return flourishPods
+	}
+	return ""
+}
 func (p *instancePage) help() string {
 	return p.tabs[p.active].help(p) + "   " + menu("←→", "切换")
 }
@@ -124,22 +141,25 @@ func (p *instancePage) switchTo(m *Model, i int) tea.Cmd {
 }
 
 func (p *instancePage) view(m *Model) string {
-	icon := renderSmall(m, p)
-	name := p.inst.ProfileID
-	if m.prof != nil && m.prof.ByID[p.inst.ProfileID] != nil {
-		name = m.prof.ByID[p.inst.ProfileID].Effective.DisplayName
+	icon := compactIcon(m.display(p.inst.ProfileID))
+	name := displayName(m, p.inst.ProfileID)
+	if v := p.version(); v != "" {
+		name += " " + v
 	}
-	verified := warnStyle.Render("profile 未核实")
-	if p.inst.ProfileStatus == "verified" {
-		verified = okStyle.Render("profile 已核实")
+	info := []string{headStyle.Render(p.inst.InstanceID) + dimStyle.Render(" · "+name+" · "+p.host), runState(p.inst)}
+	if len(p.inst.Entries) > 0 {
+		e := p.inst.Entries[0]
+		info = append(info, "管理页：http://127.0.0.1:"+itoa(e.Port)+" "+mark(e.Listening, true))
 	}
-	info := headStyle.Render(p.inst.InstanceID) + "  " + dimStyle.Render(name+" · "+p.host) + "\n" + runState(p.inst) + "   " + verified
-	head := lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(icon, "\n"), "  ", info)
+	if p.inst.ProfileStatus != "verified" {
+		info = append(info, faintStyle.Render("profile 未经审核或尚未完整核实（见概览里的支持程度）"))
+	}
+	head := lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(icon, "\n"), "  ", strings.Join(info, "\n"))
 	names := make([]string, len(p.tabs))
 	for i, t := range p.tabs {
 		names[i] = t.name()
 	}
-	top := head + "\n\n" + tabs(names, p.active) + "\n" + dimStyle.Render(strings.Repeat("─", min(m.width, 100))) + "\n"
+	top := head + "\n" + tabs(names, p.active) + "\n" + dimStyle.Render(strings.Repeat("─", min(m.width, 100))) + "\n"
 	height := m.bodyHeight() - lipgloss.Height(top)
 	content := p.tabs[p.active].view(m, p, height)
 	lines := strings.Split(content, "\n")
@@ -153,100 +173,130 @@ func (p *instancePage) view(m *Model) string {
 	return top + content
 }
 
-// renderSmall is the header icon, at most 10×4: braille art is scaled by
-// dots; other art is shown only when it already fits (sampling it down
-// garbles it), otherwise a colored marker stands in.
-func renderSmall(m *Model, p *instancePage) []string {
-	d := m.display(p.inst.ProfileID)
-	if d == nil || strings.TrimSpace(d.Icon) == "" {
-		return renderIcon(nil)[:4]
+// version is the harness version from the recorded install source.
+func (p *instancePage) version() string {
+	if p.target == nil || p.target.Record == nil {
+		return ""
 	}
-	st := lipgloss.NewStyle().Foreground(cDim)
-	if d.Color != "" {
-		st = st.Foreground(lipgloss.Color(d.Color))
-	}
-	art := trimArt(strings.Split(strings.TrimRight(d.Icon, "\n"), "\n"))
-	w := 0
-	for _, r := range art {
-		w = max(w, len(r))
-	}
-	var small []string
+	pv := p.target.Record.Provenance
 	switch {
-	case w <= 10 && len(art) <= 4:
-		small = toStrings(art)
-	case isBraille(art):
-		small = scaleBraille(art, w, 10, 4)
-	default:
-		small = []string{"██", "██"}
+	case pv.NPM != nil:
+		return pv.NPM.Version
+	case pv.Tool != nil:
+		return pv.Tool.Version
 	}
-	for i := range small {
-		small[i] = st.Render(small[i])
-	}
-	return small
+	return ""
 }
 
-// overviewTab: the state at a glance (docs/UI.md 9.4 "概览").
-type overviewTab struct{}
+// overviewTab: is it running, how to open it, does anything need the
+// user (docs/UI.md 9.5 "概览").
+type overviewTab struct{ cursor int }
+
+// quick is one quick action of the overview.
+type quick struct {
+	label string
+	do    func(m *Model, p *instancePage) tea.Cmd
+}
+
+func (o *overviewTab) quicks(p *instancePage) []quick {
+	var qs []quick
+	host, inst := p.host, p.inst.InstanceID
+	if len(p.inst.Entries) > 0 {
+		qs = append(qs, quick{"打开管理页（浏览器，需要令牌时自动带上）", func(m *Model, p *instancePage) tea.Cmd { return m.runCLI("open", host, inst) }})
+	}
+	if p.target != nil && len(p.target.Profile.NativeCLI) > 0 {
+		pid := p.target.Profile.ID
+		qs = append(qs, quick{"原生界面（" + strings.Join(p.target.Profile.NativeCLI, " ") + "，高级）", func(m *Model, p *instancePage) tea.Cmd {
+			return m.runCLI("native", host, "--profile", pid)
+		}})
+	}
+	return append(qs, quick{"建立逃生舱", func(m *Model, p *instancePage) tea.Cmd { return startSeal(m, p) }})
+}
 
 func (o *overviewTab) name() string { return "概览" }
 func (o *overviewTab) help(p *instancePage) string {
-	return menu("b", "建立逃生舱", "o", "打开管理页")
+	return menu("↑↓", "选择", "enter", "执行", "b", "建立逃生舱")
 }
 func (o *overviewTab) load(m *Model, p *instancePage) tea.Cmd { return nil }
 func (o *overviewTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool) {
-	if k, ok := msg.(tea.KeyPressMsg); ok {
-		switch k.String() {
-		case "b":
-			return startSeal(m, p), true
-		case "o":
-			return p.switchTo(m, 3), true
-		}
+	k, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return nil, false
+	}
+	qs := o.quicks(p)
+	if c, moved := moveList(o.cursor, len(qs), k.String()); moved {
+		o.cursor = c
+		return nil, true
+	}
+	switch k.String() {
+	case "enter":
+		return qs[min(o.cursor, len(qs)-1)].do(m, p), true
+	case "b":
+		return startSeal(m, p), true
 	}
 	return nil, false
 }
 
+// capLabels are the plain names of profile capabilities (PROFILES.md 1.2).
+var capLabels = []struct{ name, label string }{
+	{"install", "安装"}, {"manage", "管理"}, {"backup", "备份"}, {"restore", "着陆"}, {"login", "登录"},
+}
+
+func capMark(status string) string {
+	switch status {
+	case "tested":
+		return okStyle.Render("✓已测")
+	case "partial":
+		return warnStyle.Render("◐部分")
+	case "failed":
+		return errStyle.Render("✗失败")
+	}
+	return dimStyle.Render("·未测")
+}
+
 func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
-	w := min(m.width-2, 100)
-	now := m.now()
 	d := m.server(p.host)
-	source := dimStyle.Render("读取中…")
-	if p.target != nil && p.target.Record != nil {
-		source = provenanceText(p.target.Record.Provenance)
-	}
-	contact := dimStyle.Render("还没有（逃生舱技能未接入或 agent 还没用过）")
-	if p.kit != nil && p.kit.LastMCP != nil {
-		contact = ago(*p.kit.LastMCP, now) + dimStyle.Render("，通过逃生舱技能")
-	}
-	now1 := box("现在", kv("运行状态", runState(p.inst), "安装来源", source, "agent 上次联系", contact), w)
-	pods := "还没有逃生舱。按 " + keyStyle.Render("b") + " 建立第一个。"
-	if t, ok := d.lastSeal(p.inst.InstanceID); ok {
-		n, unsynced := 0, 0
-		for _, s := range d.status.Snapshots {
-			if s.InstanceID == p.inst.InstanceID {
-				n++
-				if !d.synced(s.SnapshotID) {
-					unsynced++
-				}
-			}
+	var b strings.Builder
+	attn := attention(m, d, p.inst)
+	if len(attn) == 0 {
+		b.WriteString(dimStyle.Render("需要处理：无") + "\n\n")
+	} else {
+		b.WriteString(warnStyle.Render("需要处理") + "\n")
+		for _, a := range attn {
+			b.WriteString(warnStyle.Render("  ! "+a) + "\n")
 		}
-		cloud := okStyle.Render("全部已上云")
-		switch {
-		case len(d.status.Targets) == 0:
-			cloud = warnStyle.Render("未设置云备份")
-		case unsynced > 0:
-			cloud = warnStyle.Render(itoa(unsynced) + " 个还没上云")
-		}
-		pods = kv("最近一个", ago(t, now)+" · "+whoText(p.log[lastSnapshotID(d, p.inst.InstanceID)]), "一共", itoa(n)+" 个", "云备份", cloud)
+		b.WriteString("\n")
 	}
-	check := dimStyle.Render("体检中…")
-	if c := p.check; c != nil {
-		if len(c.Findings) == 0 {
-			check = okStyle.Render("✓ 健康")
-		} else {
-			check = warnStyle.Render("▲ "+itoa(len(c.Findings))+" 个提醒") + "：" + findingTitle(c.Findings[0].ID) + dimStyle.Render("（按 3 查看处理建议）")
-		}
+	b.WriteString(headStyle.Render("快捷操作") + "\n")
+	qs := o.quicks(p)
+	o.cursor = min(o.cursor, len(qs)-1)
+	for i, q := range qs {
+		b.WriteString("  " + cursorLine(i == o.cursor, q.label) + "\n")
 	}
-	return now1 + "\n" + box("逃生舱", pods, w) + "\n" + box("体检", check, w)
+	b.WriteString("\n")
+	if p.target != nil {
+		var caps []string
+		for _, c := range capLabels {
+			caps = append(caps, c.label+" "+capMark(p.target.Profile.CapabilityStatus(c.name)))
+		}
+		rows := []string{"支持程度", strings.Join(caps, "  ")}
+		if p.target.Local {
+			rows = append(rows, "", dimStyle.Render("本地 profile，未经审核"))
+		}
+		if p.target.Record != nil {
+			rows = append(rows, "安装来源", provenanceText(p.target.Record.Provenance))
+		}
+		backup := backupLine(m, d, p.inst, true)
+		if p.check != nil && len(p.check.Findings) > 0 {
+			backup += dimStyle.Render("  ·  ") + warnStyle.Render("体检有 "+itoa(len(p.check.Findings))+" 个提醒（见体检）")
+		}
+		rows = append(rows, "备份", backup)
+		if p.kit != nil && p.kit.LastMCP != nil {
+			rows = append(rows, "agent 上次联系", ago(*p.kit.LastMCP, m.now())+dimStyle.Render("，通过逃生舱技能"))
+		}
+		b.WriteString(kv(rows...))
+	}
+	return b.String()
 }
 
 func provenanceText(pv enroll.Provenance) string {

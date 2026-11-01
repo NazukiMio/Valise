@@ -98,13 +98,15 @@ type Model struct {
 	// send delivers a message from a background goroutine (the landing
 	// confirmation); set by Run.
 	send func(tea.Msg)
+	// tick is how often the top bar redraws for the admin window; 0 off.
+	tick time.Duration
 }
 
 // New returns the TUI model: the first-run guide when there is no key,
 // otherwise the home page.
 func New(ctx context.Context, opt Options) *Model {
 	m := &Model{opt: opt, svc: opt.Service, ctx: ctx, width: 100, height: 32, send: func(tea.Msg) {},
-		data: map[string]*srvData{}, now: time.Now}
+		data: map[string]*srvData{}, now: time.Now, tick: 30 * time.Second}
 	m.prof, _ = opt.Service.Profiles()
 	if _, err := opt.Service.KeyShow(); err != nil {
 		m.stack = []screen{newWizard()}
@@ -191,7 +193,17 @@ func (m *Model) loadServer(host string) tea.Cmd {
 }
 
 // Init implements tea.Model.
-func (m *Model) Init() tea.Cmd { return m.top().init(m) }
+func (m *Model) Init() tea.Cmd { return tea.Batch(m.top().init(m), m.tickAdmin()) }
+
+// adminTick redraws the top bar so the admin window's minutes stay true.
+type adminTick struct{}
+
+func (m *Model) tickAdmin() tea.Cmd {
+	if m.tick <= 0 {
+		return nil
+	}
+	return tea.Tick(m.tick, func(time.Time) tea.Msg { return adminTick{} })
+}
 
 // errMsg reports a failed background action on the status line.
 type errMsg struct{ err error }
@@ -217,7 +229,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshed:
 		m.flash, m.flashErr = msg.text, false
 		return m, m.loadServer(msg.host)
+	case adminTick:
+		return m, m.tickAdmin()
 	case tea.KeyPressMsg:
+		if msg.String() == "L" && m.accessState() != "" && m.svc.FullAccessHost() == "" {
+			if _, ok := m.svc.AdminRemaining(m.currentHost()); ok {
+				m.svc.LockAdmin()
+				m.flash, m.flashErr = "管理权限已锁定；下一次管理操作会再询问管理口令", false
+				return m, nil
+			}
+		}
 		if msg.String() == "ctrl+c" {
 			for _, s := range m.stack {
 				if b, ok := s.(interface{ busy() string }); ok && b.busy() != "" {
@@ -245,9 +266,33 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// wrapMenu adds esc/q and wraps the footer's key pairs onto as many lines
+// as the width needs (docs/UI.md section 8: two lines at 80 columns).
+func wrapMenu(help string, width int, back bool) string {
+	if back {
+		help += "   " + menu("esc", "返回")
+	} else {
+		help += "   " + menu("q", "退出")
+	}
+	width = min(width, 120)
+	var lines []string
+	cur := ""
+	for _, item := range strings.Split(help, "   ") {
+		if cur != "" && lipgloss.Width(cur)+3+lipgloss.Width(item) > width {
+			lines, cur = append(lines, cur), item
+			continue
+		}
+		if cur != "" {
+			cur += "   "
+		}
+		cur += item
+	}
+	return strings.Join(append(lines, cur), "\n")
+}
+
 // bodyHeight is the number of lines a screen may use.
 func (m *Model) bodyHeight() int {
-	h := m.height - 5
+	h := m.height - 6
 	if m.flash != "" {
 		h -= strings.Count(m.flash, "\n") + 2
 	}
@@ -264,11 +309,22 @@ func (m *Model) View() tea.View {
 		crumbs[len(crumbs)-1] = headStyle.Render(crumbs[len(crumbs)-1])
 	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("◢ Valise") + "  " + dimStyle.Render(strings.Join(crumbs, " › ")) + "\n\n")
+	left := titleStyle.Render("◢ Valise") + "  " + dimStyle.Render(strings.Join(crumbs, " › "))
+	b.WriteString(topBar(left, m.accessState(), m.width) + "\n\n")
 	b.WriteString(clip(m.top().view(m), m.bodyHeight()))
 	body := b.String()
-	if pad := m.height - 3 - lipgloss.Height(body); pad > 0 && m.flash == "" {
+	foot := wrapMenu(m.top().help(), m.width, len(m.stack) > 1)
+	if pad := m.height - 2 - lipgloss.Height(foot) - lipgloss.Height(body); pad > 0 && m.flash == "" {
 		body += strings.Repeat("\n", pad)
+		// The flourish takes the last spare line, right-aligned near the
+		// frame, with a blank line above it; otherwise it is left out.
+		if f, ok := m.top().(flourisher); ok && pad >= 2 {
+			if line := f.flourish(m); line != "" && lipgloss.Width(line)+2 <= m.width {
+				lines := strings.Split(body, "\n")
+				lines[len(lines)-1] = lipgloss.NewStyle().Width(min(m.width, 120) - 1).Align(lipgloss.Right).Render(flourishStyle.Render(line))
+				body = strings.Join(lines, "\n")
+			}
+		}
 	}
 	var f strings.Builder
 	f.WriteString(body + "\n")
@@ -278,12 +334,6 @@ func (m *Model) View() tea.View {
 			st = errStyle
 		}
 		f.WriteString("\n" + st.Render(m.flash) + "\n")
-	}
-	foot := m.top().help()
-	if len(m.stack) > 1 {
-		foot += "   " + menu("esc", "返回")
-	} else {
-		foot += "   " + menu("q", "退出")
 	}
 	f.WriteString(dimStyle.Render(strings.Repeat("─", max(10, min(m.width, 120)))) + "\n" + foot)
 	v := tea.NewView(f.String())

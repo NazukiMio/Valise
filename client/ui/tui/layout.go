@@ -51,47 +51,6 @@ func cardStyle(selected, muted bool, width int) lipgloss.Style {
 	return st
 }
 
-// cardWidth is the outer width of grid cards.
-const cardWidth = 46
-
-// gridCols is how many cards fit the width.
-func gridCols(width int) int {
-	return max(1, (width+1)/(cardWidth+1))
-}
-
-// grid lays cards out in rows that fit width, scrolled by whole rows so
-// the selected card stays within height lines.
-func grid(cards []string, selected, width, height int) string {
-	if len(cards) == 0 {
-		return ""
-	}
-	cols := gridCols(width)
-	var rows []string
-	for i := 0; i < len(cards); i += cols {
-		end := min(i+cols, len(cards))
-		h := 0
-		for _, c := range cards[i:end] {
-			h = max(h, lipgloss.Height(c))
-		}
-		var cells []string
-		for _, c := range cards[i:end] {
-			cells = append(cells, lipgloss.NewStyle().Height(h).Render(c))
-		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, intersperse(cells, " ")...))
-	}
-	selRow := selected / cols
-	// Drop whole rows above the selection until the selection fits.
-	from := 0
-	for from < selRow && sumHeight(rows[from:selRow+1]) > height {
-		from++
-	}
-	out := strings.Join(rows[from:], "\n")
-	if from > 0 {
-		out = faintStyle.Render("  ↑ 上面还有") + "\n" + out
-	}
-	return out
-}
-
 func sumHeight(rows []string) int {
 	n := 0
 	for _, r := range rows {
@@ -109,23 +68,6 @@ func intersperse(cells []string, sep string) []string {
 		out = append(out, c)
 	}
 	return out
-}
-
-// moveGrid moves a grid cursor by key.
-func moveGrid(cursor, n, cols int, key string) (int, bool) {
-	switch key {
-	case "left":
-		cursor--
-	case "right":
-		cursor++
-	case "up":
-		cursor -= cols
-	case "down":
-		cursor += cols
-	default:
-		return cursor, false
-	}
-	return max(0, min(n-1, cursor)), true
 }
 
 // moveList moves a list cursor by key.

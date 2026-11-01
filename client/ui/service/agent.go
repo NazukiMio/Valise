@@ -174,6 +174,9 @@ type adminAgent struct {
 	mu   sync.Mutex
 	sock string
 	cmd  *exec.Cmd
+	// unlocked is when each host's admin key was added, for the remaining
+	// window shown in the UI (the agent itself enforces the window).
+	unlocked map[string]time.Time
 }
 
 // AdminWindow is how long an unlocked admin key stays in the agent.
@@ -253,6 +256,12 @@ func (s *Service) loadAdmin(ctx context.Context, host, passphrase string) error 
 	if err := runTool(ctx, s.toolPath("ssh-add"), []string{"-q", "-t", secs, s.keyPath(host, adminKeyName)}, env); err != nil {
 		return valise.New("admin_passphrase_wrong", "管理口令不对，没有解锁", "重新输入管理口令").WithDetail(err.Error())
 	}
+	s.agent.mu.Lock()
+	if s.agent.unlocked == nil {
+		s.agent.unlocked = map[string]time.Time{}
+	}
+	s.agent.unlocked[host] = time.Now()
+	s.agent.mu.Unlock()
 	return nil
 }
 
@@ -267,10 +276,24 @@ func (s *Service) AdminUnlocked(ctx context.Context, host string) bool {
 	return runTool(ctx, s.toolPath("ssh-add"), []string{"-T", s.keyPath(host, adminKeyName) + ".pub"}, append(os.Environ(), "SSH_AUTH_SOCK="+sock)) == nil
 }
 
+// AdminRemaining is how much of host's admin window is left, as Valise
+// recorded it when the key was unlocked; false when it is locked.
+func (s *Service) AdminRemaining(host string) (time.Duration, bool) {
+	s.agent.mu.Lock()
+	t, ok := s.agent.unlocked[host]
+	s.agent.mu.Unlock()
+	if !ok {
+		return 0, false
+	}
+	left := s.AdminWindow() - time.Since(t)
+	return left, left > 0
+}
+
 // LockAdmin removes every unlocked admin key from the agent.
 func (s *Service) LockAdmin() {
 	s.agent.mu.Lock()
 	sock := s.agent.sock
+	s.agent.unlocked = nil
 	s.agent.mu.Unlock()
 	if sock != "" {
 		_ = runTool(context.Background(), s.toolPath("ssh-add"), []string{"-D"}, append(os.Environ(), "SSH_AUTH_SOCK="+sock))

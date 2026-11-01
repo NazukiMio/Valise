@@ -19,6 +19,7 @@ var (
 	cFaint   = lipgloss.Color("#555B66")
 	cLine    = lipgloss.Color("#3A3F4A")
 	cSelLine = accent
+	cRobot   = lipgloss.Color("#9FB3C8")
 )
 
 var (

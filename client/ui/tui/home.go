@@ -8,8 +8,8 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// homeScreen is the home page: one card per recorded server, no instances
-// to pick here (docs/UI.md 9.2).
+// homeScreen is the home page: one full-width card per recorded server,
+// stacked; no instances to pick here (docs/UI.md 9.2).
 type homeScreen struct {
 	hosts  []string
 	cursor int
@@ -28,8 +28,10 @@ func (h *homeScreen) help() string {
 	if len(h.hosts) == 0 {
 		return menu("a", "添加服务器", "s", "设置")
 	}
-	return menu("enter", "进入服务器", "a", "添加服务器", "r", "刷新", "s", "设置")
+	return menu("↑↓", "选择", "enter", "进入服务器", "a", "添加服务器", "r", "刷新", "s", "设置")
 }
+
+func (h *homeScreen) flourish(m *Model) string { return flourishHome(len(h.hosts)) }
 
 func (h *homeScreen) init(m *Model) tea.Cmd {
 	svc := m.svc
@@ -52,7 +54,7 @@ func (h *homeScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		return tea.Batch(cmds...), true
 	case tea.KeyPressMsg:
 		k := msg.String()
-		if c, ok := moveGrid(h.cursor, len(h.hosts), gridCols(m.width), k); ok {
+		if c, ok := moveList(h.cursor, len(h.hosts), k); ok {
 			h.cursor = c
 			return nil, true
 		}
@@ -81,93 +83,98 @@ func (h *homeScreen) view(m *Model) string {
 		return errText(h.err)
 	}
 	if len(h.hosts) == 0 {
-		return box("", "还没有添加服务器。\n\n"+
-			"Valise 通过你电脑上已经配置好的 SSH 连接服务器，不保存任何密码或私钥。\n"+
-			"按 "+keyStyle.Render("a")+" 添加第一台服务器（可以从 ~/.ssh/config 里选）。", min(m.width-2, 80))
+		return subtitle(flourishHome(0)) + "\n\n" + box("", "还没有添加服务器。\n\n"+
+			"Valise 在你的服务器上安装和管理 agent，并替它做好备份。\n"+
+			"按 "+keyStyle.Render("a")+" 添加你的第一台服务器（手动填写，或从 ~/.ssh/config 导入）。", min(m.width-2, 80))
 	}
+	w := min(m.width-2, 100)
 	var cards []string
 	for i, host := range h.hosts {
-		cards = append(cards, serverCard(m, m.server(host), i == h.cursor))
+		cards = append(cards, serverCard(m, m.server(host), i == h.cursor, w))
 	}
-	return grid(cards, h.cursor, m.width, m.bodyHeight())
+	return dimStyle.Render("你的服务器（"+itoa(len(h.hosts))+" 台）") + "\n\n" + vstack(cards, h.cursor, m.bodyHeight()-2)
 }
 
-// serverCard summarizes one server: reachability, agents, the oldest
-// "last escape pod", cloud backup and what needs attention.
-func serverCard(m *Model, d *srvData, selected bool) string {
-	var b strings.Builder
-	state := dimStyle.Render("● 连接中…")
+// vstack stacks cards, dropping whole cards above the selection until it
+// fits in height lines.
+func vstack(cards []string, cursor, height int) string {
+	from := 0
+	for from < cursor && sumHeight(cards[from:cursor+1]) > height {
+		from++
+	}
+	out := strings.Join(cards[from:], "\n")
+	if from > 0 {
+		out = faintStyle.Render("  ↑ 上面还有 "+itoa(from)+" 台") + "\n" + out
+	}
+	return out
+}
+
+// serverCard: name and reachability, one line per agent, what needs the
+// user, and one quiet backup line (docs/UI.md 9.2).
+func serverCard(m *Model, d *srvData, selected bool, w int) string {
+	state := dimStyle.Render("连接中…")
 	switch {
 	case d.err != nil:
-		state = errStyle.Render("● 连不上")
+		state = errStyle.Render("连不上")
 	case d.loaded:
-		state = okStyle.Render("● 在线")
+		state = okStyle.Render("在线")
 	}
-	name := headStyle.Render(d.host)
-	pad := cardWidth - 4 - lipgloss.Width(name) - lipgloss.Width(state)
-	b.WriteString(name + strings.Repeat(" ", max(1, pad)) + state + "\n")
-	if !d.loaded || d.err != nil {
-		if d.err != nil {
-			b.WriteString(dimStyle.Render(firstLine(errText(d.err))))
-		}
-		return cardStyle(selected, false, cardWidth).Render(b.String())
+	agents := live(d.instances)
+	head := headStyle.Render(d.host) + dimStyle.Render(" · ") + state
+	if d.loaded && d.err == nil {
+		head += dimStyle.Render(" · " + itoa(len(agents)) + " 个 agent")
 	}
-	now := m.now()
-	var live []string
-	oldest := time.Time{}
-	never := 0
-	attention := 0
-	for _, in := range d.instances {
-		if in.Superseded != nil {
-			continue
+	var lines []string
+	if d.err != nil {
+		lines = append(lines, dimStyle.Render(firstLine(errText(d.err))))
+	}
+	var issues []string
+	oldest, never, stationBad := time.Time{}, false, false
+	for _, in := range agents {
+		row := "  " + headStyle.Render(in.InstanceID) + "  " + runState(in)
+		if len(in.Entries) > 0 {
+			row += dimStyle.Render(" · ") + entryState(in)
 		}
-		color := cDim
-		if dp := m.display(in.ProfileID); dp != nil && dp.Color != "" {
-			color = lipgloss.Color(dp.Color)
+		lines = append(lines, row)
+		for _, a := range attention(m, d, in) {
+			issues = append(issues, in.InstanceID+"："+a)
 		}
-		live = append(live, lipgloss.NewStyle().Foreground(color).Render("■")+" "+in.InstanceID)
 		t, ok := d.lastSeal(in.InstanceID)
 		switch {
 		case !ok:
-			never++
-			attention++
+			never = true
 		case oldest.IsZero() || t.Before(oldest):
 			oldest = t
 		}
-		if ok && now.Sub(t) > 7*24*time.Hour {
-			attention++
+		if d.status != nil && len(d.status.Targets) > 0 && !d.synced(lastSnapshotID(d, in.InstanceID)) {
+			stationBad = true
 		}
 	}
-	b.WriteString(dimStyle.Render(itoa(len(live))+" 个 agent") + "\n")
-	b.WriteString(strings.Join(live, "  ") + "\n\n")
-	last := "—"
-	switch {
-	case never > 0:
-		last = warnStyle.Render(itoa(never) + " 个还没有逃生舱")
-	case !oldest.IsZero():
-		last = ago(oldest, now)
-	}
-	cloud := warnStyle.Render("未设置云备份")
-	if d.status != nil && len(d.status.Targets) > 0 {
-		cloud = ""
+	if d.status != nil {
 		for _, t := range d.status.Targets {
-			s := t.Name + " " + dimStyle.Render("从未同步")
-			if t.LastOK != nil {
-				s = t.Name + " " + ago(*t.LastOK, now)
-			}
 			if t.LastError != "" {
-				s = t.Name + " " + errStyle.Render("上次失败")
-				attention++
+				issues = append(issues, "空间站 "+t.Name+" 上次同步失败")
 			}
-			cloud += s + "  "
 		}
 	}
-	need := okStyle.Render("没有")
-	if attention > 0 {
-		need = warnStyle.Render(itoa(attention) + " 件事")
+	if len(issues) > 0 {
+		need := warnStyle.Render("需要处理 " + itoa(len(issues)) + " 件事")
+		head += strings.Repeat(" ", max(2, w-4-lipgloss.Width(head)-lipgloss.Width(need))) + need
+		lines = append(lines, warnStyle.Render("  ! "+strings.Join(issues[:min(2, len(issues))], "  ! ")))
 	}
-	b.WriteString(kv("最久没建舱", last, "云备份", strings.TrimSpace(cloud), "需要注意", need))
-	return cardStyle(selected, false, cardWidth).Render(b.String())
+	if len(agents) > 0 && !never && !oldest.IsZero() {
+		backup := "  备份正常 · " + ago(oldest, m.now())
+		if d.status != nil && len(d.status.Targets) > 0 {
+			backup += " · 空间站 " + mark(!stationBad, true)
+		}
+		lines = append(lines, dimStyle.Render(backup))
+	}
+	body := head + "\n" + fitLines(lines, w-4, 6)
+	b, c := lipgloss.RoundedBorder(), cLine
+	if selected {
+		b, c = lipgloss.ThickBorder(), cSelLine
+	}
+	return lipgloss.NewStyle().Border(b).BorderForeground(c).Padding(0, 1).Width(w).Render(body)
 }
 
 func firstLine(s string) string {

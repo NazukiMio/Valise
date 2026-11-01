@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"valise/client/config"
 	"valise/core/vault"
@@ -31,6 +32,11 @@ paths:
   - { root: state, glob: "demo.json", category: config }
   - { root: state, glob: "memory/**", category: memory }
 provenance: { kind: binary, binary: { name: demo } }
+actions:
+  - { id: hello, name: 打招呼, explain: "输出 hi", risk: read, argv: [/bin/echo, hi], output: text }
+  - { id: restart, name: 重启演示, explain: "重启", risk: manage, argv: [/bin/echo, ok], output: none }
+  - { id: rotate, name: 换令牌, explain: "换一个令牌", undo: "无法撤销", risk: config, argv: [/bin/echo, x], output: none }
+  - { id: wipe, name: 清空演示, explain: "清空", undo: "无法撤销", risk: danger, argv: [/bin/echo, y], output: none }
 checkup:
   memory_files: [ { root: state, glob: "memory/a.md", warn_lines: 100 } ]
   memory_mechanism_markers: [ { root: state, glob: "memory/*.md" } ]
@@ -75,6 +81,7 @@ func world(t *testing.T) (*Model, string) {
 	}
 	m := New(ctx, Options{Service: svc})
 	m.send = func(msg tea.Msg) { m.Update(msg) }
+	m.tick = 0
 	return m, home
 }
 
@@ -90,7 +97,8 @@ func drive(t *testing.T, m *Model, cmd tea.Cmd) {
 		return // cursor blinking: a timer loop that the runtime handles
 	}
 	switch msg := msg.(type) {
-	case nil:
+	case nil, adminTick:
+		// adminTick: the top bar's 30 s redraw loop, handled by the runtime
 	case tea.BatchMsg:
 		for _, c := range msg {
 			drive(t, m, c)
@@ -119,6 +127,8 @@ func key(t *testing.T, m *Model, k string) {
 		msg = tea.KeyPressMsg{Code: tea.KeyTab}
 	case "end":
 		msg = tea.KeyPressMsg{Code: tea.KeyEnd}
+	case "space":
+		msg = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 	default:
 		msg = tea.KeyPressMsg{Code: rune(k[0]), Text: k}
 	}
@@ -157,13 +167,13 @@ func openInstance(t *testing.T, m *Model) {
 	key(t, m, "enter")
 	wantText(t, m, "demo", "Demo", "profile 未核实")
 	key(t, m, "enter")
-	wantText(t, m, "1 概览", "2 逃生舱", "3 体检", "4 管理页与登录", "5 设置")
+	wantText(t, m, "1 概览", "2 管理", "3 体检", "4 逃生舱", "5 设置")
 }
 
 func TestHomeServerInstanceAndSeal(t *testing.T) {
 	m, _ := world(t)
 	openInstance(t, m)
-	wantText(t, m, "最近一个", "体检")
+	wantText(t, m, "需要处理：无", "快捷操作", "建立逃生舱", "支持程度", "备份")
 	// Build an escape pod: what to pack, then why.
 	key(t, m, "b")
 	wantText(t, m, "轻装", "标准", "完整", "原样")
@@ -173,7 +183,7 @@ func TestHomeServerInstanceAndSeal(t *testing.T) {
 	if !strings.Contains(m.flash, "逃生舱已建立") || m.flashErr {
 		t.Fatalf("flash %q", m.flash)
 	}
-	key(t, m, "2")
+	key(t, m, "4")
 	wantText(t, m, "你手动建立", "升级前", "轻装", "共 2 个逃生舱")
 	// Search narrows the list.
 	key(t, m, "/")
@@ -193,7 +203,7 @@ func TestLandingRollback(t *testing.T) {
 	m, home := world(t)
 	openInstance(t, m)
 	os.WriteFile(filepath.Join(home, ".demo/memory/a.md"), []byte("changed after the seal"), 0o644)
-	key(t, m, "2")
+	key(t, m, "4")
 	key(t, m, "enter")
 	key(t, m, "l")
 	wantText(t, m, "逃生舱着陆", "原地着陆")
@@ -254,7 +264,7 @@ func TestLongListsScroll(t *testing.T) {
 		d.status.Snapshots = append(d.status.Snapshots, s)
 	}
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
-	key(t, m, "2")
+	key(t, m, "4")
 	for i := 0; i < 60; i++ {
 		key(t, m, "down")
 	}
@@ -326,19 +336,32 @@ func TestIconFitting(t *testing.T) {
 	for i := 0; i < 15; i++ {
 		art = append(art, braille)
 	}
-	out := fitIcon(art, iconMaxW, iconMaxH)
-	if len(out) > iconMaxH || len([]rune(out[0])) > iconMaxW || out[0][0] == ' ' {
+	out := fitIcon(art, iconW, iconH)
+	if len(out) > iconH || len([]rune(out[0])) > iconW || out[0][0] == ' ' {
 		t.Fatalf("braille not scaled into the box: %d×%d", len(out), len([]rune(out[0])))
 	}
+	// A hollow square keeps its inside empty when scaled by dot share.
+	hollow := []string{"⣿⣿⣿⣿⣿⣿", "⣿⠀⠀⠀⠀⣿", "⣿⠀⠀⠀⠀⣿", "⣿⣿⣿⣿⣿⣿"}
+	small := fitIcon(hollow, 3, 2)
+	if strings.ContainsRune(small[0][1:2]+small[1][1:2], '⣿') {
+		t.Fatalf("inside filled in: %q", small)
+	}
 	dots := []string{" •●●:.        .:●●•", ":●●●●:        :●●●●:"}
-	for len(dots) < 10 {
+	for len(dots) < 14 {
 		dots = append(dots, "   ●●●●●●●●●●●●")
 	}
-	out = fitIcon(dots, iconMaxW, iconMaxH)
-	if len(out) > iconMaxH {
+	if out = fitIcon(dots, iconW, iconH); len(out) > iconH {
 		t.Fatalf("art not sampled: %d rows", len(out))
 	}
-	if r := renderIcon(nil); len(r) != len(robotIcon) {
-		t.Fatal("no placeholder for profiles without art")
+	for _, icon := range [][]string{standardIcon(nil), compactIcon(nil)} {
+		w := lipgloss.Width(icon[0])
+		for _, l := range icon {
+			if lipgloss.Width(l) != w {
+				t.Fatalf("icon box not uniform: %q", icon)
+			}
+		}
+	}
+	if len(standardIcon(nil)) != iconH || len(compactIcon(nil)) != compactIconH || lipgloss.Width(standardIcon(nil)[0]) != iconW {
+		t.Fatal("robot icon not in the standard boxes")
 	}
 }

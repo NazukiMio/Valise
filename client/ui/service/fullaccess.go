@@ -95,6 +95,14 @@ func (s *Service) FullAccess(ctx context.Context) *FullAccessState {
 	return &FullAccessState{Host: host, Since: since, Paused: !s.AdminUnlocked(ctx, host)}
 }
 
+// FullAccessHost is the server full access mode is on for, "" when off
+// (cheap: no agent query, for the UI's top bar).
+func (s *Service) FullAccessHost() string {
+	s.full.mu.Lock()
+	defer s.full.mu.Unlock()
+	return s.full.host
+}
+
 // DisableFullAccess ends the mode.
 func (s *Service) DisableFullAccess(ctx context.Context) {
 	s.full.mu.Lock()

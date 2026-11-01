@@ -1,6 +1,7 @@
 package tui
 
 import (
+	_ "embed"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -8,43 +9,76 @@ import (
 	"valise/core/profile"
 )
 
-// Icon box on instance cards. Profiles keep the harness's art verbatim
-// (docs/PROFILES.md); it is scaled here to fit.
+// Instance icons (docs/UI.md 8.1). Profiles keep the harness's art at the
+// standard size; the compact icon is the profile's own or, failing that,
+// the standard one scaled down. Harnesses without art get the built-in
+// robot, drawn by the user (copies of docs/robot-icon-*.txt).
 const (
-	iconMaxW = 20
-	iconMaxH = 10
+	iconW        = 24
+	iconH        = 12
+	compactIconW = 12
+	compactIconH = 6
 )
 
-// robotIcon is the placeholder for harnesses whose profile has no art.
-var robotIcon = []string{
-	"   ┌┴┐",
-	" ┌─┴─┴─┐",
-	" │ ◕ ◕ │",
-	" │ ╰─╯ │",
-	" └┬───┬┘",
+var (
+	//go:embed robot-24x12.txt
+	robotStd string
+	//go:embed robot-12x6.txt
+	robotCompact string
+)
+
+// iconStyle colors an icon with the profile's color.
+func iconStyle(d *profile.Display) lipgloss.Style {
+	if d != nil && d.Color != "" && strings.TrimSpace(d.Icon+d.IconCompact) != "" {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(d.Color))
+	}
+	return lipgloss.NewStyle().Foreground(cRobot)
 }
 
-// renderIcon returns the instance icon as lines, colored.
-func renderIcon(d *profile.Display) []string {
-	color := cDim
-	lines := robotIcon
+// standardIcon is the icon centered in a 24×12 box.
+func standardIcon(d *profile.Display) []string {
+	art := splitArt(robotStd)
 	if d != nil && strings.TrimSpace(d.Icon) != "" {
-		lines = fitIcon(strings.Split(strings.TrimRight(d.Icon, "\n"), "\n"), iconMaxW, iconMaxH)
-		if d.Color != "" {
-			color = lipgloss.Color(d.Color)
-		}
+		art = fitIcon(splitArt(d.Icon), iconW, iconH)
 	}
-	st := lipgloss.NewStyle().Foreground(color)
-	out := make([]string, len(lines))
-	for i, l := range lines {
-		out[i] = st.Render(l)
+	return boxArt(art, iconW, iconH, iconStyle(d))
+}
+
+// compactIcon is the icon centered in a 12×6 box.
+func compactIcon(d *profile.Display) []string {
+	art := splitArt(robotCompact)
+	switch {
+	case d != nil && strings.TrimSpace(d.IconCompact) != "":
+		art = fitIcon(splitArt(d.IconCompact), compactIconW, compactIconH)
+	case d != nil && strings.TrimSpace(d.Icon) != "":
+		art = fitIcon(splitArt(d.Icon), compactIconW, compactIconH)
+	}
+	return boxArt(art, compactIconW, compactIconH, iconStyle(d))
+}
+
+func splitArt(s string) []string { return strings.Split(strings.TrimRight(s, "\n"), "\n") }
+
+// boxArt centers art in w×h and colors it; every line is exactly w wide.
+func boxArt(art []string, w, h int, st lipgloss.Style) []string {
+	top := max(0, (h-len(art))/2)
+	out := make([]string, h)
+	for i := range out {
+		line := ""
+		if j := i - top; j >= 0 && j < len(art) {
+			line = art[j]
+		}
+		lw := lipgloss.Width(line)
+		if lw > w {
+			line, lw = string([]rune(line)[:w]), w
+		}
+		left := (w - lw) / 2
+		out[i] = strings.Repeat(" ", left) + st.Render(line) + strings.Repeat(" ", w-lw-left)
 	}
 	return out
 }
 
-// fitIcon scales art into w×h: braille art by OR-pooling its dots, other
-// art by nearest-neighbor sampling of characters. Blank border rows and
-// columns are trimmed first.
+// fitIcon scales art into w×h after trimming blank borders: braille art by
+// the share of dots in each block, other art by sampling characters.
 func fitIcon(lines []string, w, h int) []string {
 	grid := trimArt(lines)
 	if len(grid) == 0 {
@@ -133,6 +167,9 @@ func isBraille(g [][]rune) bool {
 // Braille dot bit for (x in 0..1, y in 0..3).
 var brailleBit = [4][2]uint8{{0x01, 0x08}, {0x02, 0x10}, {0x04, 0x20}, {0x40, 0x80}}
 
+// scaleBraille shrinks braille art by an integer factor; a target dot is
+// set when at least half of its block is set (UI.md 8.1: not "any dot",
+// which would fill in the inside of the drawing).
 func scaleBraille(g [][]rune, gw, w, h int) []string {
 	pw, ph := gw*2, len(g)*4
 	dots := make([][]bool, ph)
@@ -163,11 +200,16 @@ func scaleBraille(g [][]rune, gw, w, h int) []string {
 	for y := range small {
 		small[y] = make([]bool, nw)
 		for x := range small[y] {
+			set, area := 0, 0
 			for dy := 0; dy < f && y*f+dy < ph; dy++ {
 				for dx := 0; dx < f && x*f+dx < pw; dx++ {
-					small[y][x] = small[y][x] || dots[y*f+dy][x*f+dx]
+					area++
+					if dots[y*f+dy][x*f+dx] {
+						set++
+					}
 				}
 			}
+			small[y][x] = set*2 >= area && set > 0
 		}
 	}
 	var out []string
