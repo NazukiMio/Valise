@@ -241,7 +241,8 @@
 - **状态**：`In progress`（2026-11-01）
 - **进度**：
   - 已完成：官方方案（install-cli.sh 本地前缀，脚本哈希核对、展示、上传后执行）与 `native_cli`；依赖检测（`install_check`）与审计（`install_audit`）；`detect.bin_dirs`；`capabilities` 与 lint；安装后检测并引导纳入管理、打开管理页；管理页同端口规则与"两边一起改端口"（`entry_ports`、`entry_port_set`，OpenClaw 的 `port_change` 在 InstaBox 上 18789 → 18790 → 18789 核实）；完全访问模式（只用于 profile 依赖安装，INSTALL.md 4.1 的 M11 范围）与第 7 节基础检查（`core/install` `CheckCommand`）；本地页面转发 `valise forward`（同端口、只接受回环地址、查询与片段不显示不记录，日常钥匙即可）。
-  - 未完成：drill 补充（安装、改端口、完全访问、转发的 fake-ssh 演练）；原生引导（`valise native`）在全新靶机上走完一遍并确认输入不进日志。
+  - drill：新增 M11 段（转发、非回环拒绝、端口占用提示、两边改端口并改回），M5 的端口冲突断言改为同端口规则；`testbed/drill.sh ubuntu-vm` ALL_PASS（74 项，2026-11-01）。
+  - 未完成：原生引导（`valise native`）在全新靶机上走完一遍并确认输入不进日志。
 - **靶机记录（2026-11-01）**：
   - InstaBox（Debian 13 amd64，清空后）：从零安装 OpenClaw 2026.10.9，登记（来源含 integrity），管理页健康 HTTP 200；本机端口被占用时报告占用进程并提示 `--change-port`；两边一起改端口并改回。
   - debian-vm（Debian 13 arm64，全新）：Valise 接入（日常钥匙 + 管理钥匙，限制检查通过）→ 部署 porter → `install --full-access`：两个口令与确认句挑战、sudo 依赖（git、curl）装好、重新检测通过 → 官方方案 5 步完成 → 登记 → 管理页 HTTP 200。管理窗口到期（清空 agent）后，下一步要求重新输入管理口令，错误口令时停止，后续命令未执行；含"网络内容经管道交给解释器"的批次在开启前整批拒绝；审计记录开启、每条命令与退出码、关闭（`install_audit` 改为日常级，窗口到期后仍能补记）；`valise forward` 只用日常钥匙打开 OpenClaw 管理页（HTTP 200），地址中的测试令牌未出现在输出、审计与本机文件中，非回环地址被拒绝。用临时本地 profile 在 debian-vm 上验证三种错误提示：脚本哈希不符（停止，提示等资料包更新或原生安装）、版本不符（列出实际与要求的版本，未开始安装）、步骤失败（报告第几步与退出码）。

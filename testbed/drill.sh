@@ -400,7 +400,10 @@ if in_hosts "$eh"; then
 	python3 -m http.server "$ep" --bind 127.0.0.1 >/dev/null 2>&1 &
 	blocker=$!; sleep 1
 	V open "$eh" "$ei" --no-browser --idle 2s > "$work/open2.out" 2>&1
-	grep -q "本机端口 $ep 被占用，改用" "$work/open2.out" && pass "$eh/$ei: entry moved to another local port" || { fail "$eh/$ei: entry port conflict"; cat "$work/open2.out"; }
+	# Same-port rule (M11, LOGIN_RELAY.md section 1): an error naming the
+	# process, never another local port.
+	grep -q "本机端口 $ep 已被 .*占用" "$work/open2.out" && ! grep -q "管理页：" "$work/open2.out" \
+		&& pass "$eh/$ei: busy entry port is an error naming the process, never another port" || { fail "$eh/$ei: entry port conflict"; cat "$work/open2.out"; }
 	kill "$blocker"
 fi
 IFS=: read -r lh li lm lp <<<"${VALISE_DRILL_LOGIN:-ubuntu-vm:openclaw:openai-codex:1455}"
@@ -547,6 +550,33 @@ if in_hosts "$kh"; then
 		&& pass "$kh: timer unit seals" || fail "$kh: timer"
 	V timer "$kh" drill-synthetic off >/dev/null && ! ssh -T -o BatchMode=yes -- "$kh" 'ls ~/.config/systemd/user/ | grep -q valise-seal' \
 		&& pass "$kh: timer removed" || fail "$kh: timer off"
+fi
+
+# ---------------------------------------------------------------- M11 ----
+# Same-port entries, the two-sided port change and page forwarding, on the
+# OpenClaw instance (LOGIN_RELAY.md sections 4, 4.2 and 6). The port change
+# restarts the harness's service and changes it back.
+if in_hosts ubuntu-vm; then
+	echo "== M11: entries and forwarding on ubuntu-vm"
+	mh=ubuntu-vm
+	eport=$(python3 -c 'import re,sys; print(re.search(r"id: gateway[\s\S]*?port: (\d+)", open(sys.argv[1]).read()).group(1))' "$root/profiles/openclaw.yaml")
+	V forward "$mh" "http://127.0.0.1:${eport}/?token=DRILL-TOKEN" --no-browser --idle 2s > "$work/m11.forward" 2>&1 </dev/null
+	grep -q "页面可以访问：HTTP" "$work/m11.forward" && ! grep -q DRILL-TOKEN "$work/m11.forward" \
+		&& pass "$mh: forward opens the gateway; the token is not shown" || { fail "$mh: forward"; cat "$work/m11.forward"; }
+	if V forward "$mh" "http://10.0.0.1:${eport}/" --no-browser </dev/null >/dev/null 2>&1; then fail "$mh: forward to another host"; else pass "$mh: forward refuses non-loopback hosts"; fi
+	python3 -c 'import socket,sys,time; s=socket.socket(); s.bind(("127.0.0.1",int(sys.argv[1]))); s.listen(); time.sleep(20)' "$eport" &
+	holder=$!; sleep 1
+	V open "$mh" openclaw --no-browser --idle 2s > "$work/m11.busy" 2>&1 </dev/null
+	grep -q "已被 .*占用" "$work/m11.busy" && grep -q -- "--change-port" "$work/m11.busy" \
+		&& pass "$mh: busy entry port names the process and offers --change-port" || { fail "$mh: busy entry port"; cat "$work/m11.busy"; }
+	kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+	V open "$mh" openclaw --change-port --no-seal --yes --no-browser --idle 2s > "$work/m11.change" 2>&1 </dev/null
+	newport=$(sed -nE 's/.*已改用端口 ([0-9]+).*/\1/p' "$work/m11.change" | head -1)
+	[ -n "$newport" ] && [ "$newport" != "$eport" ] && grep -q "健康检查通过" "$work/m11.change" \
+		&& pass "$mh: two-sided port change to $newport, health OK" || { fail "$mh: port change"; cat "$work/m11.change"; }
+	V open "$mh" openclaw --change-port --to "$eport" --no-seal --yes --no-browser --idle 2s > "$work/m11.back" 2>&1 </dev/null
+	grep -q "已改用端口 $eport" "$work/m11.back" && grep -q "健康检查通过" "$work/m11.back" \
+		&& pass "$mh: port changed back to $eport" || { fail "$mh: port change back"; cat "$work/m11.back"; }
 fi
 
 # ------------------------------------------------------------- result -----
