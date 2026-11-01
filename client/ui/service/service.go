@@ -32,6 +32,7 @@ type Service struct {
 	NoTerminalLogin bool
 
 	agent adminAgent
+	full  fullAccess
 }
 
 // New loads config.json from dirs.Data.

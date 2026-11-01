@@ -241,9 +241,17 @@ func init() {
 		for _, st := range p.Steps {
 			steps = append(steps, fmt.Sprintf("%s %q exit %d", st.Kind, st.Command, st.Exit))
 		}
-		seal.Paths{Home: s.cfg.Home}.AppendAudit(seal.AuditEntry{Time: time.Now().UTC(), Op: "install", Instance: p.Instance,
+		op := p.Op
+		switch op {
+		case "":
+			op = install.AuditInstall
+		case install.AuditInstall, install.AuditPortChange, install.AuditFullAccess:
+		default:
+			return nil, errInvalidParams
+		}
+		seal.Paths{Home: s.cfg.Home}.AppendAudit(seal.AuditEntry{Time: time.Now().UTC(), Op: op, Instance: p.Instance,
 			Initiator: vaultrpc.InitiatorClient, Result: p.Result,
-			Reason: fmt.Sprintf("%s (%s v%d): %s", p.PlanID, p.ProfileID, p.ProfileVersion, strings.Join(steps, "; "))})
+			Reason: auditReason(p, steps)})
 		return struct{}{}, nil
 	}
 }
@@ -275,4 +283,15 @@ func (s *session) call(ctx context.Context, req rpc.Request) rpc.Response {
 		return errorResponse(req.ID, rpc.CodeInternalError, err.Error(), nil)
 	}
 	return rpc.Response{JSONRPC: rpc.JSONRPCVersion, ID: req.ID, Result: b}
+}
+
+func auditReason(p install.AuditParams, steps []string) string {
+	r := p.PlanID
+	if p.ProfileID != "" {
+		r += fmt.Sprintf(" (%s v%d)", p.ProfileID, p.ProfileVersion)
+	}
+	if len(steps) > 0 {
+		r += ": " + strings.Join(steps, "; ")
+	}
+	return r
 }

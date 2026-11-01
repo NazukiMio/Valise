@@ -37,6 +37,9 @@ var dailyMethods = map[string]bool{
 	"old_list":       true,
 	"journal_get":    true,
 	"listen_addrs":   true,
+	// Appending an audit entry after an admin operation must not need the
+	// admin window again; it changes nothing protected.
+	"install_audit": true,
 }
 
 // conditionalMethods are allowed on the daily tier only in a state the
@@ -73,7 +76,6 @@ var adminMethods = map[string]bool{
 	"old_cleanup":        true,
 	"service_control":    true,
 	"install_check":      true,
-	"install_audit":      true,
 }
 
 // TierOf returns the tier a method needs. Conditional methods report

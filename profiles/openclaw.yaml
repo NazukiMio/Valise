@@ -186,7 +186,7 @@ install:
 native_cli: [openclaw, onboard]
 
 capabilities:
-  install: { status: untested, note: "M11 在空服务器上验收后更新" }
+  install: { status: tested, versions: ["2026.10.9"], env: "Debian 13 arm64（全新虚拟机，完全访问模式装好 git 与 curl）；Debian 13 amd64（InstaBox，清空后）", note: "官方 install-cli.sh 本地前缀方案；Node 由脚本自带" }
   manage: { status: partial, versions: ["2026.10.9"], env: "Ubuntu 26.04 arm64（npm 用户级前缀）", note: "管理页与一次性配对链接已测；渠道未接入" }
   backup: { status: tested, versions: ["2026.10.9"], env: "Ubuntu 26.04 arm64（npm 用户级前缀）" }
   restore: { status: tested, versions: ["2026.10.9"], env: "Ubuntu 26.04 arm64 → 26.10 x86_64", note: "回滚、迁移、克隆、故障与崩溃退回均已演练" }

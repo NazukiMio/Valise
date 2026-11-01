@@ -211,7 +211,7 @@ func (s *Service) ChangeEntryPort(ctx context.Context, p *PortChangePlan, o Port
 	if err != nil {
 		return err
 	}
-	audit := install.AuditParams{PlanID: "port-change-" + p.Entry, ProfileID: p.ProfileID, Instance: p.Instance, Result: "failed"}
+	audit := install.AuditParams{Op: install.AuditPortChange, PlanID: "port-change-" + p.Entry, ProfileID: p.ProfileID, Instance: p.Instance, Result: "failed"}
 	defer func() {
 		_ = s.withSession(context.WithoutCancel(ctx), p.Host, func(c caller) error { return c.Call(ctx, install.MethodAudit, audit, nil) })
 	}()

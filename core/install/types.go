@@ -16,9 +16,19 @@ const (
 	MethodAudit = "install_audit"
 )
 
+// Audit operations.
+const (
+	AuditInstall    = "install"
+	AuditPortChange = "port_change"
+	AuditFullAccess = "full_access"
+)
+
 // AuditParams record one install attempt in the server's audit log:
 // commands and exit codes only, never terminal output.
 type AuditParams struct {
+	// Op is the audit operation: AuditInstall (default), AuditPortChange
+	// or AuditFullAccess.
+	Op             string      `json:"op,omitempty"`
 	PlanID         string      `json:"plan_id"`
 	ProfileID      string      `json:"profile_id"`
 	ProfileVersion int         `json:"profile_version"`

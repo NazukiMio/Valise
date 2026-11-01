@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path"
+	"slices"
 	"strings"
 
 	"valise/client/porter"
@@ -63,6 +64,9 @@ type InstallPlan struct {
 	// Fixes are the profile's commands for Missing on this distribution,
 	// run only in full access mode.
 	Fixes [][]string `json:"fixes,omitempty"`
+	// Unfixable are missing requirements without a command for this
+	// distribution.
+	Unfixable []install.Requirement `json:"unfixable,omitempty"`
 	// NativeCLI is the harness's own setup, to continue with natively.
 	NativeCLI []string `json:"native_cli,omitempty"`
 	// BinDirs are put on PATH for the steps (detect.bin_dirs).
@@ -106,12 +110,16 @@ func (s *Service) PlanInstall(ctx context.Context, host, profileID string) (*Ins
 			continue
 		}
 		plan.Missing = append(plan.Missing, q)
+		fixed := false
 		for _, fix := range prof.Install.Requires[i].Install {
-			for _, id := range fix.OSID {
-				if id == plan.Check.OSID {
-					plan.Fixes = append(plan.Fixes, fix.Argv)
-				}
+			if slices.Contains(fix.OSID, plan.Check.OSID) {
+				plan.Fixes = append(plan.Fixes, fix.Argv)
+				fixed = true
+				break
 			}
+		}
+		if !fixed {
+			plan.Unfixable = append(plan.Unfixable, q)
 		}
 	}
 	for _, st := range prof.Install.Steps {
