@@ -18,6 +18,7 @@ import (
 
 var (
 	hudPanelBg = lipgloss.Color("#0f1d3d")
+	hudThinBg  = lipgloss.Color("#0b1430") // the bottom panel: thin, the ground shows through
 	hudCorner  = lipgloss.NewStyle().Foreground(lipgloss.Color("#6f98b8"))
 	hudEdge    = lipgloss.NewStyle().Foreground(lipgloss.Color("#24375c"))
 	hudTitle   = lipgloss.NewStyle().Foreground(accent).Background(hudPanelBg).Bold(true)
@@ -56,16 +57,20 @@ func newHUD(cells [][]sceneCell, w, h int) *hud {
 	return &hud{b, w, h}
 }
 
-// shade mixes c into the ground: what shows through a panel.
-func shade(c color.Color) color.Color {
+// shade mixes c into the ground, keeping tenths of it: what shows
+// through a panel.
+func shade(c color.Color, tenths uint32) color.Color {
 	r, g, b, _ := c.RGBA()
 	gr, gg, gb, _ := rocketGround.RGBA()
-	mix := func(a, z uint32) uint8 { return uint8((z + (a-z)*3/10) >> 8) }
+	mix := func(a, z uint32) uint8 { return uint8((z + (a-z)*tenths/10) >> 8) }
 	return color.RGBA{mix(r, gr), mix(g, gg), mix(b, gb), 255}
 }
 
 // panel darkens x, y, w × h and frames it, with title on the top edge.
-func (d *hud) panel(x, y, w, h int, title string) {
+func (d *hud) panel(x, y, w, h int, title string) { d.glass(x, y, w, h, title, 3, hudPanelBg) }
+
+// glass is a panel letting tenths of the scene through over bg.
+func (d *hud) glass(x, y, w, h int, title string, tenths uint32, bg color.Color) {
 	for r := y; r < y+h; r++ {
 		for c := x; c < x+w; c++ {
 			cell := d.buf.CellAt(c, r)
@@ -74,9 +79,9 @@ func (d *hud) panel(x, y, w, h int, title string) {
 			}
 			nc := *cell
 			if nc.Style.Fg != nil {
-				nc.Style.Fg = shade(nc.Style.Fg)
+				nc.Style.Fg = shade(nc.Style.Fg, tenths)
 			}
-			nc.Style.Bg = hudPanelBg
+			nc.Style.Bg = bg
 			d.buf.SetCell(c, r, &nc)
 		}
 	}
@@ -244,7 +249,7 @@ func drawHUD(cells [][]sceneCell, w, h int, l hudLayout) string {
 	}
 	if bottomH > 0 {
 		y := h - bottomH - 1
-		d.panel(2, y, w-4, bottomH+1, "进度")
+		d.glass(2, y, w-4, bottomH+1, "进度", 7, hudThinBg)
 		d.text(5, y+1, w-10, hudText.Bold(true).Render(l.bottom))
 		if l.amount != "" {
 			d.text(w-6-lipgloss.Width(l.amount), y+1, lipgloss.Width(l.amount), hudDim.Render(l.amount))

@@ -67,7 +67,7 @@ func (s *syncScreen) help() string {
 	case s.m != nil && !s.revealed(s.m):
 		return menu("enter", "跳过动画")
 	}
-	return menu("esc", "完成")
+	return ""
 }
 func (s *syncScreen) busy() string {
 	if s.running {
