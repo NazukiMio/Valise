@@ -116,8 +116,6 @@ func (s *Service) ForwardPage(ctx context.Context, host string, ft *ForwardTarge
 		status(EntryStatus{Step: EntryRemote, OK: false, Detail: fmt.Sprintf("服务器上没有程序监听端口 %d；页面可能已经关闭", ft.Port)})
 	}
 	switch {
-	case len(listen.Addrs) == 0:
-		status(EntryStatus{Step: EntryHealth, OK: false, Detail: "服务器上没有程序在这个端口上提供页面"})
 	case ft.scheme == "http":
 		// Path only: the query may hold a token.
 		status(healthCheck(ctx, "http://127.0.0.1:"+strconv.Itoa(ft.Port)+ft.path, nil))
