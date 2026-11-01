@@ -244,16 +244,22 @@ func (c *cli) timer(ctx context.Context, args []string) error {
 // shell opens an interactive login shell on the server with the system
 // OpenSSH (for running a harness's own commands, e.g. to get a token).
 func (c *cli) shell(ctx context.Context, args []string) error {
-	pos, err := parseArgs(flag.NewFlagSet("shell", flag.ContinueOnError), args, 1)
+	fs := flag.NewFlagSet("shell", flag.ContinueOnError)
+	prof := fs.String("profile", "", "")
+	pos, err := parseArgs(fs, args, 1)
 	if err != nil {
 		return err
 	}
-	cmd, done, err := c.svc.ShellCommand(ctx, pos[0])
+	cmd, done, err := c.svc.ShellCommand(ctx, pos[0], *prof)
 	if err != nil {
 		return err
 	}
 	defer done()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	fmt.Fprintf(c.out, "正在打开 %s 的终端，输入 exit 返回。Valise 不读取这个终端里的任何内容。\n", pos[0])
+	if *prof != "" {
+		fmt.Fprintf(c.out, "正在打开 %s 的终端（%s 的命令已加入 PATH，独立的管理连接），输入 exit 返回。Valise 不读取这个终端里的任何内容。\n", pos[0], *prof)
+	} else {
+		fmt.Fprintf(c.out, "正在打开 %s 的终端，输入 exit 返回。Valise 不读取这个终端里的任何内容。\n", pos[0])
+	}
 	return cmd.Run()
 }

@@ -389,6 +389,14 @@ func (c *checker) checkTop(p *Profile) {
 		}
 	}
 	c.argvVars("native_cli", p.NativeCLI, false, VarHome)
+	for i, h := range p.NativeHints {
+		if strings.TrimSpace(h) == "" {
+			c.add(fmt.Sprintf("native_hints[%d]", i), "不能为空")
+		}
+	}
+	if len(p.NativeHints) > 0 && len(p.NativeCLI) == 0 {
+		c.add("native_hints", "没有 native_cli 时不需要提示")
+	}
 	if len(p.Actions) > 0 {
 		c.add("actions", "管理动作的 schema 在 M12 定稿，之前只能是空列表")
 	}
@@ -713,6 +721,7 @@ func (c *checker) checkInstall(in *Install) {
 	if len(in.Steps) == 0 {
 		c.add("install.steps", "不能为空")
 	}
+	ids := map[string]bool{}
 	for i, st := range in.Steps {
 		f := fmt.Sprintf("install.steps[%d]", i)
 		switch st.Kind {
@@ -741,8 +750,27 @@ func (c *checker) checkInstall(in *Install) {
 			}
 		case StepArgv:
 			c.argvVars(f+".argv", st.Argv, true, VarHome)
+		case StepPathAdd:
+			if !strings.HasPrefix(st.Dir, "${HOME}/") || strings.ContainsAny(strings.TrimPrefix(st.Dir, "${HOME}"), "$`\"'\n;&|<>*?") || strings.Contains(st.Dir, "..") {
+				c.add(f+".dir", "必须是 ${HOME} 下的固定目录（不能含其他变量、引号或 ..）")
+			}
 		default:
-			c.add(f+".kind", "只能是 npm_global、script 或 argv")
+			c.add(f+".kind", "只能是 npm_global、script、argv 或 path_add")
+		}
+		if st.Optional || st.ID != "" || st.SkipEffect != "" {
+			if !st.Optional {
+				c.add(f+".optional", "写了 id 或 skip_effect 的步骤必须是 optional: true")
+			}
+			if !idRe.MatchString(st.ID) {
+				c.add(f+".id", "可选步骤需要 id（小写字母、数字和连字符）")
+			}
+			if strings.TrimSpace(st.SkipEffect) == "" {
+				c.add(f+".skip_effect", "可选步骤必须说明不执行会怎样")
+			}
+			if ids[st.ID] {
+				c.add(f+".id", "重复的步骤 id：%s", st.ID)
+			}
+			ids[st.ID] = true
 		}
 	}
 }

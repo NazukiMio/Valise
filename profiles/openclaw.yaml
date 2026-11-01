@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 11
+profile_version: 12
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -181,9 +181,22 @@ install:
     - { kind: argv, argv: [mkdir, -p, "${HOME}/.config/systemd/user"], note: "准备 systemd 用户服务目录" }
     - { kind: argv, argv: [chmod, go-w, "${HOME}/.config", "${HOME}/.config/systemd", "${HOME}/.config/systemd/user"], note: "去掉这些目录的组与他人写权限：OpenClaw 拒绝在组可写的目录里安装服务" }
     - { kind: argv, argv: [openclaw, gateway, install], note: "安装并启动网关的 systemd 用户服务（DOC: cli/gateway/service）" }   # verify: pending
+    # OBS (2026-11-01, install-cli.sh): the local-prefix installer never puts
+    # ~/.openclaw/bin on PATH (only its npm-global branch edits ~/.bashrc), so
+    # `openclaw` is "command not found" in a plain ssh login.
+    - kind: path_add
+      dir: "${HOME}/.openclaw/bin"
+      optional: true
+      id: path
+      skip_effect: "以后你自己 ssh 登录服务器时，直接输入 openclaw 会提示找不到命令，需要写完整路径 ~/.openclaw/bin/openclaw；用 valise shell <服务器> --profile openclaw 打开的终端不受影响。Valise 自己的功能都不受影响。"
 
 # The harness's own guided setup: models, channels, skills (DOC: cli/onboard).
 native_cli: [openclaw, onboard]
+# OBS (2026-11-01, debian-vm): onboard ends waiting for the Control UI to log
+# in; the UI asks for the gateway token.
+native_hints:
+  - "引导最后会等待控制台（Control UI）登录：不要退出引导，另开一个本机终端运行 valise open <服务器> <实例>，浏览器会带着一次性令牌打开控制台并自动登录"
+  - "要手动取令牌：在 Valise 打开的终端里运行 openclaw gateway auth-token --show"
 
 capabilities:
   install: { status: tested, versions: ["2026.10.9"], env: "Debian 13 arm64（全新虚拟机，完全访问模式装好 git 与 curl）；Debian 13 amd64（InstaBox，清空后）", note: "官方 install-cli.sh 本地前缀方案；Node 由脚本自带" }

@@ -105,8 +105,13 @@ install:                         # 可选：官方方案（INSTALL.md 第 3 节�
     - { kind: npm_global, package: example, version: "1.2.3", integrity: "sha512-…" }
     - { kind: script, url: "https://example.com/install.sh", sha256: "…", interpreter: [bash], args: ["--user"], runtime_downloads: "会从 example.com 下载 Node 运行时" }
     - { kind: argv, argv: [example, setup, --baseline] }
+    - { kind: path_add, dir: "${HOME}/.example/bin", optional: true, id: path,
+        skip_effect: "以后自己 ssh 登录时直接输入 example 会提示找不到命令，需要写完整路径或用 valise shell <服务器> --profile example" }
+    # 任何步骤都可以 optional: true（必须同时写 id 与 skip_effect），可选步骤默认不执行（INSTALL.md 第 3 节）
 
 native_cli: [example, onboard]   # 可选：原生界面的命令（INSTALL.md 第 2 节）
+native_hints:                    # 可选：打开原生界面前显示的提示（INSTALL.md 第 2 节），只是文字
+  - "引导最后会等待控制台登录：另开终端运行 valise open <服务器> <实例>"
 
 actions: []                      # 可选：管理动作（INSTALL.md 第 5 节，schema 在 M12 定稿；之前 lint 只接受空列表）
 

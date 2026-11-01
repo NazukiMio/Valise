@@ -40,6 +40,8 @@ const usage = `用法：
   valise-porter version [--json]
   valise-porter rpc
   valise-porter exec [--path <目录>]... -- <命令>...（用登录环境执行原生界面、安装步骤）
+  valise-porter exec [--path <目录>]... --shell（打开用户自己的交互 shell，PATH 中加入这些目录）
+  valise-porter path-add --dir <目录> --label <标签>（把家目录下的目录加入登录 shell 的 PATH）
   valise-porter serve --tier daily           （日常钥匙的强制命令）
   valise-porter seal-timer --instance <实例>（由定时器运行）
   valise-porter autosync                    （由封存后自动启动，同步到期的云备份）
@@ -78,8 +80,43 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		ctx := context.Background()
 		env := porterenroll.LoadEnv(ctx, home).For(&profile.Profile{Detect: &profile.Detect{BinDirs: dirs}})
+		if len(argv) == 1 && argv[0] == "--shell" {
+			// The user's own interactive shell, not a login shell: a login
+			// shell's /etc/profile would reset PATH.
+			sh := os.Getenv("SHELL")
+			if sh == "" {
+				sh = "/bin/sh"
+			}
+			argv = []string{sh, "-i"}
+		}
 		fmt.Fprintln(stderr, "exec:", porterinstall.Exec(ctx, env, argv))
 		return 127
+	case "path-add":
+		// Admin connections only (an install step the user opted in to).
+		if len(args) != 5 || args[1] != "--dir" || args[3] != "--label" {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		file, lines, added, err := porterinstall.PathAdd(home, os.Getenv("SHELL"), args[2], args[4])
+		if err != nil {
+			fmt.Fprintln(stderr, "path-add:", err)
+			return 1
+		}
+		if added {
+			fmt.Fprintf(stdout, "已在 %s 末尾加入：\n", file)
+		} else {
+			fmt.Fprintf(stdout, "%s 里已经有这段设置，没有重复添加：\n", file)
+		}
+		for _, l := range lines {
+			fmt.Fprintf(stdout, "  %s\n", l)
+		}
+		fmt.Fprintln(stdout, "下次登录时生效；想撤销，删除这两行即可。")
+		return 0
 	case "stage-write":
 		if len(args) != 3 || args[1] != "--op" {
 			fmt.Fprintln(stderr, usage)

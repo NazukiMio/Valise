@@ -47,6 +47,8 @@ type Profile struct {
 	// NativeCLI is the harness's own interactive CLI (docs/INSTALL.md
 	// section 2).
 	NativeCLI Argv `yaml:"native_cli" json:"native_cli,omitempty"`
+	// NativeHints are shown before the native CLI opens.
+	NativeHints []string `yaml:"native_hints" json:"native_hints,omitempty"`
 	// Actions are managed actions; the schema is settled in M12, until then
 	// only an empty list is accepted.
 	Actions []any `yaml:"actions" json:"actions,omitempty"`
@@ -236,6 +238,7 @@ const (
 	StepNPMGlobal = "npm_global"
 	StepScript    = "script"
 	StepArgv      = "argv"
+	StepPathAdd   = "path_add"
 )
 
 // InstallStep is one step; which fields apply depends on Kind.
@@ -256,8 +259,15 @@ type InstallStep struct {
 	RuntimeDownloads *string `yaml:"runtime_downloads" json:"runtime_downloads,omitempty"`
 	// argv
 	Argv Argv `yaml:"argv" json:"argv,omitempty"`
+	// path_add: a directory under ${HOME} put on the login shell's PATH.
+	Dir string `yaml:"dir" json:"dir,omitempty"`
 	// Note explains the step to the user.
 	Note string `yaml:"note" json:"note,omitempty"`
+	// Optional steps run only when the user opts in; they need an ID and
+	// SkipEffect (what happens without them).
+	Optional   bool   `yaml:"optional" json:"optional,omitempty"`
+	ID         string `yaml:"id" json:"id,omitempty"`
+	SkipEffect string `yaml:"skip_effect" json:"skip_effect,omitempty"`
 }
 
 // Capability is the verification status of one capability.

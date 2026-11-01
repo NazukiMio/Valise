@@ -21,6 +21,8 @@ func (c *cli) install(ctx context.Context, args []string) error {
 	show := fs.Bool("show-script", false, "")
 	yes := fs.Bool("yes", false, "")
 	full := fs.Bool("full-access", false, "")
+	var with multiFlag
+	fs.Var(&with, "with", "")
 	pos, err := parseArgs(fs, args, 1)
 	if err != nil || *prof == "" {
 		return errUsage
@@ -47,9 +49,16 @@ func (c *cli) install(ctx context.Context, args []string) error {
 	if !*yes && !c.confirm("按上面的方案在 "+host+" 上安装？") {
 		return valise.New("cancelled", "已取消，服务器上没有任何改动", "")
 	}
+	if err := c.chooseOptional(plan, with, *yes); err != nil {
+		return err
+	}
 	fmt.Fprintln(c.out, "接下来每一步都在服务器的交互终端里运行；需要回答问题时直接在这里输入。Valise 不读取、不保存终端里的内容。")
 	res, err := c.svc.RunInstall(ctx, plan, service.InstallIO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
 		Step: func(i int, st service.PlanStep) {
+			if st.Optional && !st.Selected {
+				fmt.Fprintf(c.out, "\n[Valise] 第 %d/%d 步：跳过可选步骤「%s」\n", i+1, len(plan.Steps), st.Summary)
+				return
+			}
 			fmt.Fprintf(c.out, "\n[Valise] 第 %d/%d 步：%s\n", i+1, len(plan.Steps), st.Summary)
 		}})
 	if err != nil {
@@ -100,6 +109,9 @@ func (c *cli) printInstallPlan(plan *service.InstallPlan, show bool) {
 	fmt.Fprintln(c.out, "\n步骤：")
 	for i, st := range plan.Steps {
 		fmt.Fprintf(c.out, "  %d. %s\n", i+1, st.Summary)
+		if st.Optional {
+			fmt.Fprintf(c.out, "     可选步骤（%s），默认不执行。不执行的话：%s\n", st.ID, st.SkipEffect)
+		}
 		if st.Note != "" {
 			fmt.Fprintf(c.out, "     %s\n", st.Note)
 		}
@@ -145,5 +157,40 @@ func (c *cli) native(ctx context.Context, args []string) error {
 	defer done()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	fmt.Fprintf(c.out, "正在打开 %s 在 %s 上的原生界面（独立的管理连接）。Valise 不读取、不保存这里输入的任何内容。\n", *prof, pos[0])
+	if hints := c.svc.NativeHints(*prof); len(hints) > 0 {
+		fmt.Fprintln(c.out, "提示：")
+		for _, h := range hints {
+			fmt.Fprintf(c.out, "  · %s\n", strings.NewReplacer("<服务器>", pos[0], "<实例>", *prof).Replace(h))
+		}
+		fmt.Fprintf(c.out, "  · 需要另开终端运行 %s 自己的命令时：valise shell %s --profile %s\n", *prof, pos[0], *prof)
+	}
 	return cmd.Run()
+}
+
+// chooseOptional selects optional steps: --with <id>, or a y/N question per
+// step. --yes never selects one (docs/INSTALL.md section 3).
+func (c *cli) chooseOptional(plan *service.InstallPlan, with multiFlag, yes bool) error {
+	known := map[string]bool{}
+	for i := range plan.Steps {
+		st := &plan.Steps[i]
+		if !st.Optional {
+			continue
+		}
+		known[st.ID] = true
+		for _, w := range with {
+			if w == st.ID {
+				st.Selected = true
+			}
+		}
+		if !st.Selected && !yes {
+			fmt.Fprintf(c.out, "\n可选步骤：%s\n  不执行的话：%s\n", st.Summary, st.SkipEffect)
+			st.Selected = c.confirm("执行这个可选步骤？")
+		}
+	}
+	for _, w := range with {
+		if !known[w] {
+			return valise.New("install_optional_unknown", "方案里没有可选步骤 "+w, "去掉这个 --with，或看方案里列出的可选步骤 id")
+		}
+	}
+	return nil
 }

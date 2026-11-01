@@ -5,7 +5,9 @@ import (
 	"os/exec"
 	"sort"
 
+	"valise/client/porter"
 	"valise/core/login"
+	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 )
@@ -135,14 +137,39 @@ func (s *Service) LeafCopies(ctx context.Context, host, leaf string) (copies []C
 }
 
 // ShellCommand returns an unstarted interactive login shell on host over
-// a fresh admin connection (docs/INSTALL.md section 2); call done after it
-// exits.
-func (s *Service) ShellCommand(ctx context.Context, host string) (cmd *exec.Cmd, done func(), err error) {
+// a fresh admin connection (docs/INSTALL.md section 2); with profileID it
+// is the harness terminal instead. Call done after it exits.
+func (s *Service) ShellCommand(ctx context.Context, host, profileID string) (cmd *exec.Cmd, done func(), err error) {
+	var dirs []string
+	if profileID != "" {
+		set, err := s.Profiles()
+		if err != nil {
+			return nil, nil, err
+		}
+		lp := set.ByID[profileID]
+		if lp == nil {
+			return nil, nil, valise.New("profile_missing", "本机没有 profile "+profileID, "安装或更新 harness 资料包：valise profiles install")
+		}
+		if lp.Effective.Detect != nil {
+			dirs = lp.Effective.Detect.BinDirs
+		}
+	}
 	t, done, err := s.adminTransport(ctx, host)
 	if err != nil {
 		return nil, nil, err
 	}
-	return exec.CommandContext(ctx, t.Binary(), t.ShellArgs()...), done, nil
+	if profileID == "" {
+		return exec.CommandContext(ctx, t.Binary(), t.ShellArgs()...), done, nil
+	}
+	// The harness terminal (docs/INSTALL.md section 2): the user's own
+	// shell with the harness's bin dirs on PATH, nothing edited on the
+	// server.
+	found, err := porter.Probe(ctx, t)
+	if err != nil {
+		done()
+		return nil, nil, err
+	}
+	return exec.CommandContext(ctx, t.Binary(), t.TTYArgs(execLine(found.Path, dirs, []string{"--shell"}))...), done, nil
 }
 
 // entryAuth asks porter for the URL suffix holding an entry's token.

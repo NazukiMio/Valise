@@ -242,6 +242,7 @@
 - **进度**：
   - 已完成：官方方案（install-cli.sh 本地前缀，脚本哈希核对、展示、上传后执行）与 `native_cli`；依赖检测（`install_check`）与审计（`install_audit`）；`detect.bin_dirs`；`capabilities` 与 lint；安装后检测并引导纳入管理、打开管理页；管理页同端口规则与"两边一起改端口"（`entry_ports`、`entry_port_set`，OpenClaw 的 `port_change` 在 InstaBox 上 18789 → 18790 → 18789 核实）；完全访问模式（只用于 profile 依赖安装，INSTALL.md 4.1 的 M11 范围）与第 7 节基础检查（`core/install` `CheckCommand`）；本地页面转发 `valise forward`（同端口、只接受回环地址、查询与片段不显示不记录，日常钥匙即可）。
   - drill：新增 M11 段（转发、非回环拒绝、端口占用提示、两边改端口并改回），M5 的端口冲突断言改为同端口规则；`testbed/drill.sh ubuntu-vm` ALL_PASS（74 项，2026-11-01）。
+  - 原生引导收尾（2026-11-01 用户决定）：`valise shell <服务器> --profile <id>`（harness 终端，PATH 含 `bin_dirs`，不改服务器配置）；profile `native_hints`（打开原生界面前显示）；可选安装步骤（`optional`/`id`/`skip_effect`，默认不执行，`--with <id>`）与 `path_add` 步骤（porter `path-add`，带标记、只加一次）；OpenClaw v12 声明可选的 PATH 步骤与引导提示。debian-vm 核实：普通 ssh 找不到 openclaw，harness 终端里可以；勾选 `path` 后 `~/.profile` 追加两行，登录 shell 能直接运行 openclaw；重装没有改动用户已有的 `openclaw.json`。
   - 未完成：原生引导（`valise native`）在全新靶机上走完一遍并确认输入不进日志。
 - **靶机记录（2026-11-01）**：
   - InstaBox（Debian 13 amd64，清空后）：从零安装 OpenClaw 2026.10.9，登记（来源含 integrity），管理页健康 HTTP 200；本机端口被占用时报告占用进程并提示 `--change-port`；两边一起改端口并改回。

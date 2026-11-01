@@ -44,7 +44,14 @@ type PlanStep struct {
 	RuntimeDownloads string `json:"runtime_downloads,omitempty"`
 	// npm_global steps: the integrity the registry must report.
 	Integrity string `json:"integrity,omitempty"`
-	pkg       string
+	// Optional steps run only when Selected (docs/INSTALL.md section 3).
+	Optional   bool   `json:"optional,omitempty"`
+	ID         string `json:"id,omitempty"`
+	SkipEffect string `json:"skip_effect,omitempty"`
+	Selected   bool   `json:"selected,omitempty"`
+	pkg        string
+	// porterArgs are run by the porter itself (path_add), not through exec.
+	porterArgs []string
 }
 
 // InstallPlan is an official plan checked against one server.
@@ -123,7 +130,7 @@ func (s *Service) PlanInstall(ctx context.Context, host, profileID string) (*Ins
 		}
 	}
 	for _, st := range prof.Install.Steps {
-		ps, err := s.planStep(ctx, plan.ID, st)
+		ps, err := s.planStep(ctx, plan.ID, prof.ID, st)
 		if err != nil {
 			return nil, err
 		}
@@ -135,8 +142,8 @@ func (s *Service) PlanInstall(ctx context.Context, host, profileID string) (*Ins
 // installDir is the server directory holding a plan's uploaded scripts.
 func installDir(planID string) string { return ".local/state/valise/install/" + planID }
 
-func (s *Service) planStep(ctx context.Context, planID string, st profile.InstallStep) (PlanStep, error) {
-	ps := PlanStep{Kind: st.Kind, Note: st.Note}
+func (s *Service) planStep(ctx context.Context, planID, profileID string, st profile.InstallStep) (PlanStep, error) {
+	ps := PlanStep{Kind: st.Kind, Note: st.Note, Optional: st.Optional, ID: st.ID, SkipEffect: st.SkipEffect}
 	switch st.Kind {
 	case profile.StepNPMGlobal:
 		spec := st.Package + "@" + st.Version
@@ -167,6 +174,10 @@ func (s *Service) planStep(ctx context.Context, planID string, st profile.Instal
 	case profile.StepArgv:
 		ps.Summary = "运行 " + strings.Join(st.Argv, " ")
 		ps.Command = st.Argv
+	case profile.StepPathAdd:
+		ps.Summary = "把 " + st.Dir + " 加入你登录 shell 的 PATH（在登录文件末尾追加两行）"
+		ps.porterArgs = []string{"path-add", "--dir", st.Dir, "--label", profileID}
+		ps.Command = append([]string{"valise-porter"}, ps.porterArgs...)
 	}
 	return ps, nil
 }
@@ -220,12 +231,25 @@ func (s *Service) RunInstall(ctx context.Context, plan *InstallPlan, tio Install
 		if tio.Step != nil {
 			tio.Step(i, st)
 		}
+		if st.Optional && !st.Selected {
+			res.Exits = append(res.Exits, -1)
+			audit.Steps = append(audit.Steps, install.StepAudit{Kind: st.Kind + " (skipped)", Command: strings.Join(st.Command, " "), Exit: -1})
+			continue
+		}
 		if st.Kind == profile.StepNPMGlobal {
 			if err := s.checkIntegrity(ctx, t, found.Path, st); err != nil {
 				return res, err
 			}
 		}
-		code, err := runTTY(ctx, t, found.Path, plan.BinDirs, st.Command, tio)
+		line := execLine(found.Path, plan.BinDirs, st.Command)
+		if st.porterArgs != nil {
+			words := []string{ssh.Quote(found.Path)}
+			for _, a := range st.porterArgs {
+				words = append(words, ssh.Quote(a))
+			}
+			line = strings.Join(words, " ")
+		}
+		code, err := runLineTTY(ctx, t, line, tio)
 		res.Exits = append(res.Exits, code)
 		audit.Steps = append(audit.Steps, install.StepAudit{Kind: st.Kind, Command: strings.Join(st.Command, " "), Exit: code})
 		if err != nil {
@@ -266,7 +290,12 @@ func uploadScript(ctx context.Context, t *ssh.Transport, planID, name string, bo
 // runTTY runs a fixed command through `valise-porter exec` under a remote
 // terminal, connected to the user's terminal. Valise reads none of it.
 func runTTY(ctx context.Context, t *ssh.Transport, porterPath string, dirs, argv []string, tio InstallIO) (int, error) {
-	cmd := exec.CommandContext(ctx, t.Binary(), t.TTYArgs(execLine(porterPath, dirs, argv))...)
+	return runLineTTY(ctx, t, execLine(porterPath, dirs, argv), tio)
+}
+
+// runLineTTY runs one remote command line under a remote terminal.
+func runLineTTY(ctx context.Context, t *ssh.Transport, line string, tio InstallIO) (int, error) {
+	cmd := exec.CommandContext(ctx, t.Binary(), t.TTYArgs(line)...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = tio.Stdin, tio.Stdout, tio.Stderr
 	err := cmd.Run()
 	if cmd.ProcessState == nil {
@@ -317,6 +346,15 @@ func (s *Service) detectProfile(ctx context.Context, host, profileID string) (*e
 		return c.Call(ctx, enroll.MethodDetect, enroll.DetectParams{Profiles: []profile.Profile{*set.ByID[profileID].Effective}}, &res)
 	})
 	return &res, err
+}
+
+// NativeHints are the profile's notes shown before its native CLI opens.
+func (s *Service) NativeHints(profileID string) []string {
+	set, err := s.Profiles()
+	if err != nil || set.ByID[profileID] == nil {
+		return nil
+	}
+	return set.ByID[profileID].Effective.NativeHints
 }
 
 // NativeCommand returns an unstarted terminal session running profileID's

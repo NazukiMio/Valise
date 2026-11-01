@@ -312,7 +312,9 @@ func TestLintInstallCapabilities(t *testing.T) {
     - { kind: script, url: "https://example.invalid/i.sh", sha256: "` + strings.Repeat("a", 64) + `", interpreter: [bash], args: [--version, "1.2.3"], runtime_downloads: "Node" }
     - { kind: npm_global, package: example, version: "1.2.3", integrity: "sha512-x" }
     - { kind: argv, argv: [example, setup] }
+    - { kind: path_add, dir: "${HOME}/.example/bin", optional: true, id: path, skip_effect: "ssh 里要写完整路径" }
 native_cli: [example, onboard]
+native_hints: ["另开终端运行 valise open"]
 actions: []
 capabilities:
   install: { status: tested, versions: ["1.2.3"], env: "Debian 13 x86_64" }
@@ -322,6 +324,9 @@ capabilities:
 		`  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/", port_change: { steps: [[example, port, "${PORT}"]], restart_service: true } }`, 1)); len(issues) > 0 {
 		t.Fatal(issues)
 	}
+	if issues := lintOne(t, strings.Replace(ok, `dir: "${HOME}/.example/bin"`, `dir: "${HOME}/../x"`, 1)); len(issues) == 0 {
+		t.Fatal("accepted .. in path_add")
+	}
 	bad := map[string]string{
 		"install.steps[0].sha256":            strings.Replace(ok, strings.Repeat("a", 64), "abc", 1),
 		"install.steps[0].url":               strings.Replace(ok, "https://example.invalid/i.sh", "http://x/i.sh", 1),
@@ -330,6 +335,11 @@ capabilities:
 		"install.requires[1].version":        strings.Replace(ok, `">=24.16.0"`, `"24"`, 1),
 		"install.steps[2].kind":              strings.Replace(ok, "{ kind: argv, argv: [example, setup] }", "{ kind: shell, argv: [example, setup] }", 1),
 		"actions":                            strings.Replace(ok, "actions: []", "actions: [ { id: x } ]", 1),
+		"install.steps[3].dir":               strings.Replace(ok, `dir: "${HOME}/.example/bin"`, `dir: "/usr/local/bin"`, 1),
+		"install.steps[3].skip_effect":       strings.Replace(ok, `, skip_effect: "ssh 里要写完整路径"`, "", 1),
+		"install.steps[3].id":                strings.Replace(ok, "optional: true, id: path,", "optional: true,", 1),
+		"install.steps[2].optional":          strings.Replace(ok, "{ kind: argv, argv: [example, setup] }", "{ kind: argv, argv: [example, setup], id: x }", 1),
+		"native_hints[0]":                    strings.Replace(ok, `native_hints: ["另开终端运行 valise open"]`, `native_hints: [" "]`, 1),
 		"capabilities.install":               strings.Replace(ok, `, versions: ["1.2.3"], env: "Debian 13 x86_64"`, "", 1),
 		"capabilities.fly":                   strings.Replace(ok, "restore: { status: untested }", "fly: { status: untested }", 1),
 		"entries[0].port_change.steps": strings.Replace(ok, `  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/" }`,

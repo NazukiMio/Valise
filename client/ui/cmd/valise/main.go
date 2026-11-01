@@ -24,7 +24,7 @@ var version = "0.0.0-dev"
 const usage = `用法：valise [--config-dir 目录] [-v] <命令>
 
   doctor <服务器> [--json]                       检查服务器：架构、porter 版本、可用工具
-  install <服务器> --profile <id> [--show-script] [--yes] [--full-access]
+  install <服务器> --profile <id> [--show-script] [--yes] [--full-access] [--with <可选步骤 id>]...
                                                  按官方方案安装 harness：先检测依赖、核对脚本哈希并展示，确认后在交互终端里执行
   native <服务器> --profile <id>                   打开 harness 自己的原生界面（独立的管理连接）
   enroll <服务器> [--profile id] [--id 实例] [--assign root:glob=类别]... [--report-json] [--accept]
@@ -82,7 +82,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   forward <服务器> <地址|端口> [--idle 30m] [--no-browser]
                                                  在本机打开服务器回环地址上的页面（同端口，地址里的令牌不显示）
                                                  打开管理页：经隧道转到本机，需要令牌时用 harness 自己的命令取得
-  shell <服务器>                                  打开服务器终端（系统 OpenSSH 的交互式登录 shell）
+  shell <服务器> [--profile id]                   打开服务器终端（系统 OpenSSH 的交互式登录 shell）；带 --profile 时该 harness 的命令直接可用
   key unregister <服务器> [--recipient age1…]     从服务器移除一把钥匙（以前的逃生舱仍可被它打开）
   key init                                       生成新的密钥（口令至少 12 个字符）
   key import --file <身份文件>                    导入已有的 age 身份
