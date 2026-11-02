@@ -238,7 +238,7 @@ func (s *Service) restoreTestItem(host, instance string, now time.Time) HealthIt
 		it.Text = "上次测试 " + agoPlain(now.Sub(t.At)) + "前，没有通过：" + t.Problem
 		it.Detail = "可以换一个更早的逃生舱再测试；如果更早的也不行，请报告问题。"
 	default:
-		it.Level = HealthInfo
+		it.Level = HealthOK
 		it.Text = "上次测试 " + agoPlain(now.Sub(t.At)) + "前，通过（" + t.Created.Local().Format("01-02 15:04") + " 的逃生舱，" + strconv.Itoa(t.Files) + " 个文件）"
 	}
 	return it

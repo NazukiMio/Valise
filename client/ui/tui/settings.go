@@ -188,7 +188,7 @@ func (s *settingsScreen) action(m *Model, k string) (tea.Cmd, bool) {
 			})), true
 	case s.section == ssKey && k == "i":
 		return m.push(newInput("恢复套件文件夹的路径（导入后需要输入口令）", "", false, func(m *Model, dir string) tea.Cmd {
-			return tea.Sequence(m.runCLI("key", "import-kit", expandHome(m, strings.TrimSpace(dir))), s.init(m))
+			return m.cliThen(s.init(m), false, "key", "import-kit", expandHome(m, strings.TrimSpace(dir)))
 		})), true
 	case s.section == ssServers && k == "a":
 		return m.push(newAddServer(func(m *Model) tea.Cmd { return s.init(m) })), true

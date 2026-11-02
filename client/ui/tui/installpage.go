@@ -232,7 +232,7 @@ func (t *agentsTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 
 func (t *agentsTab) connect(m *Model, p *instancePage, d *service.DetectedInstance) tea.Cmd {
 	t.found = nil
-	return tea.Sequence(connectOne(m, p.host, d.ProfileID, d.Name), t.detect(m, p))
+	return connectOne(m, p.host, d.ProfileID, d.Name, t.detect(m, p))
 }
 
 func (t *agentsTab) view(m *Model, p *instancePage, height int) string {

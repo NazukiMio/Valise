@@ -94,7 +94,7 @@ func (s *serverSettings) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			return m.push(confirm("在 "+host+" 上装这台电脑自己的日常钥匙？", []string{
 				"会在终端里用服务器密码（或你的私钥）登录一次，把日常钥匙写进服务器的 ~/.ssh/authorized_keys；Valise 不保存密码。",
 				"换电脑、导入配置后，或日常钥匙被从服务器上移除时使用。"},
-				func(m *Model) tea.Cmd { return tea.Sequence(m.runCLI("server", "rekey", host), s.init(m)) })), true
+				func(m *Model) tea.Cmd { return m.cliThen(s.init(m), false, "server", "rekey", host) })), true
 		case "x":
 			return m.push(confirm("不再在这台电脑上显示 "+host+"？", []string{"只从列表中移除，服务器上的 agent、逃生舱和 porter 都不动。随时可以重新添加。"},
 				func(m *Model) tea.Cmd {

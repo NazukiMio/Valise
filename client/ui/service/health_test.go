@@ -68,7 +68,7 @@ func TestHealth(t *testing.T) {
 	if b := healthItem(t, r, "backup"); b.Level != HealthOK || !strings.Contains(b.Text, "仓库 usb") {
 		t.Fatalf("%+v", b)
 	}
-	if rt := healthItem(t, r, "restore_test"); rt.Level != HealthInfo || !strings.Contains(rt.Text, "通过") {
+	if rt := healthItem(t, r, "restore_test"); rt.Level != HealthOK || !strings.Contains(rt.Text, "通过") {
 		t.Fatalf("%+v", rt)
 	}
 }

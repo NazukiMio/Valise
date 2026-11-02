@@ -104,11 +104,11 @@ func (t *isetTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool)
 		case k == "enter" && t.cursor == isReenroll:
 			return m.push(confirm("重新接入 "+inst+"？", []string{"harness 升级、目录变化或换了 harness 资料版本后使用。会先在终端显示接入报告，你确认后才写入。"},
 				func(m *Model) tea.Cmd {
-					return tea.Sequence(m.runCLI("enroll", host, "--profile", p.inst.ProfileID, "--id", inst), func() tea.Msg {
+					return m.cliThen(func() tea.Msg {
 						return pushMsg{confirm("接受上面的接入报告？", nil, func(m *Model) tea.Cmd {
-							return m.runCLI("enroll", host, "--profile", p.inst.ProfileID, "--id", inst, "--accept")
+							return m.cliThen(m.loadServer(host), false, "enroll", host, "--profile", p.inst.ProfileID, "--id", inst, "--accept")
 						})}
-					})
+					}, false, "enroll", host, "--profile", p.inst.ProfileID, "--id", inst)
 				})), true
 		}
 	}

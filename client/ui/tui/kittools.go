@@ -75,7 +75,7 @@ func (k *kitToolsScreen) install(m *Model, t service.KitTool) tea.Cmd {
 	case t.Tier == kittools.TierExpert:
 		// Advanced mode asks for both passphrases in the terminal.
 		return gateThen(m, host, "", func(m *Model) tea.Cmd {
-			return tea.Sequence(m.runCLIAccepted("kit", "tool", "install", host, id), k.init(m))
+			return m.cliThen(k.init(m), true, "kit", "tool", "install", host, id)
 		})
 	}
 	return m.push(confirm("下载 "+t.Name+" 的官方版本并装到服务器？", []string{
@@ -104,7 +104,7 @@ func (k *kitToolsScreen) uninstall(m *Model, t service.KitTool) tea.Cmd {
 		return nil
 	case t.Tier == kittools.TierExpert:
 		return gateThen(m, host, "", func(m *Model) tea.Cmd {
-			return tea.Sequence(m.runCLIAccepted("kit", "tool", "uninstall", host, id), k.init(m))
+			return m.cliThen(k.init(m), true, "kit", "tool", "uninstall", host, id)
 		})
 	case !t.Ours:
 		m.flash, m.flashErr = t.Name+" 不是 Valise 装的，Valise 不删除它", false

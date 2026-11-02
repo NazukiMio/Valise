@@ -249,6 +249,10 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadServer(msg.host)
 	case contMsg:
 		return m, msg.then(m)
+	case execDone:
+		if msg.then != nil {
+			return m, msg.then
+		}
 	case thenMsg:
 		m.data[msg.loaded.d.host], m.flash, m.flashErr = msg.loaded.d, msg.text, false
 		return m, msg.then(m)
@@ -357,7 +361,10 @@ func errText(err error) string {
 }
 
 // execDone is sent when a CLI step run while paused has finished.
-type execDone struct{ err error }
+type execDone struct {
+	err  error
+	then tea.Cmd
+}
 
 // runCLI pauses the TUI and runs `valise <args>` in the terminal, then
 // waits for Enter so its output can be read before the TUI redraws.
@@ -367,19 +374,28 @@ func (m *Model) runCLI(args ...string) tea.Cmd {
 			return flashMsg("这个操作需要在终端中运行：valise " + strings.Join(args, " "))
 		}
 	}
-	return tea.Exec(&pausedStep{cmd: m.opt.Command(args...)}, func(err error) tea.Msg { return execDone{err} })
+	return tea.Exec(&pausedStep{cmd: m.opt.Command(args...)}, func(err error) tea.Msg { return execDone{err: err} })
 }
 
 // runCLIAccepted is runCLI after the user accepted a stale-backup warning
 // here: the CLI shows it again but does not ask a second time (the gate
 // itself still runs there).
 func (m *Model) runCLIAccepted(args ...string) tea.Cmd {
+	return m.cliThen(nil, true, args...)
+}
+
+// cliThen is runCLI (runCLIAccepted when accepted) followed by next once
+// the command has finished: tea.Sequence would start next while the
+// command still runs, and a refresh would read the server too early.
+func (m *Model) cliThen(next tea.Cmd, accepted bool, args ...string) tea.Cmd {
 	if m.opt.Command == nil {
 		return m.runCLI(args...)
 	}
 	cmd := m.opt.Command(args...)
-	cmd.Env = append(cmd.Environ(), service.StaleAcceptedEnv+"=1")
-	return tea.Exec(&pausedStep{cmd: cmd}, func(err error) tea.Msg { return execDone{err} })
+	if accepted {
+		cmd.Env = append(cmd.Environ(), service.StaleAcceptedEnv+"=1")
+	}
+	return tea.Exec(&pausedStep{cmd: cmd}, func(err error) tea.Msg { return execDone{err, next} })
 }
 
 // pausedStep runs a CLI command on the real terminal and holds its output

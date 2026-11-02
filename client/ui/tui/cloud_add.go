@@ -54,7 +54,7 @@ func (c *cloudScreen) addStation(m *Model) tea.Cmd {
 						if v == "any" {
 							args = append(args, "--any-source")
 						}
-						return tea.Sequence(m.runCLI(args...), func() tea.Msg { return srvRefresh(c.host, "") })
+						return m.cliThen(func() tea.Msg { return srvRefresh(c.host, "") }, false, args...)
 					}))
 				})
 			})

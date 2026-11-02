@@ -109,29 +109,30 @@ func (s *serverPage) connect(m *Model) tea.Cmd {
 			return flashMsg("没有找到还没接入的 agent")
 		case 1:
 			pid, name, _ := strings.Cut(cs[0].value, "|")
-			return contMsg{func(m *Model) tea.Cmd { return connectOne(m, host, pid, name) }}
+			return contMsg{func(m *Model) tea.Cmd { return connectOne(m, host, pid, name, nil) }}
 		}
 		return pushMsg{pick("接入哪一个 agent？", cs, func(m *Model, v string) tea.Cmd {
 			pid, name, _ := strings.Cut(v, "|")
-			return connectOne(m, host, pid, name)
+			return connectOne(m, host, pid, name, nil)
 		})}
 	}
 }
 
-// connectOne runs the report for one agent, then asks.
-func connectOne(m *Model, host, pid, name string) tea.Cmd {
+// connectOne runs the report for one agent, then asks; after (may be nil)
+// runs once the agent is written.
+func connectOne(m *Model, host, pid, name string, after tea.Cmd) tea.Cmd {
 	args := []string{"enroll", host, "--profile", pid}
 	if name != "" {
 		args = append(args, "--name", name)
 	}
-	return tea.Sequence(m.runCLI(args...), func() tea.Msg {
+	return m.cliThen(func() tea.Msg {
 		return pushMsg{confirm("接受上面的接入报告，把这个 agent 接入 Valise？", []string{
 			"接入只读取和记录：在服务器上写一份实例记录，不改动 agent 的任何文件，也不往 harness 里安装任何东西。",
 			"如果报告里有多个候选或需要补充归类，请在终端用 valise enroll 的参数处理。",
 		}, func(m *Model) tea.Cmd {
-			return tea.Sequence(m.runCLI(append(args, "--accept")...), m.loadServer(host))
+			return m.cliThen(tea.Batch(m.loadServer(host), after), false, append(args, "--accept")...)
 		})}
-	})
+	}, false, args...)
 }
 
 // install picks a harness with an official plan and runs the install in
@@ -153,7 +154,7 @@ func (s *serverPage) install(m *Model) tea.Cmd {
 	host := s.host
 	return m.push(pick("选择要安装的 harness", cs, func(m *Model, id string) tea.Cmd {
 		return gateThen(m, host, "", func(m *Model) tea.Cmd {
-			return tea.Sequence(m.runCLIAccepted("install", host, "--profile", id), m.loadServer(host))
+			return m.cliThen(m.loadServer(host), true, "install", host, "--profile", id)
 		})
 	}))
 }
