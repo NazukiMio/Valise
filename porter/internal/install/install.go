@@ -19,7 +19,7 @@ import (
 // Check reports each requirement as found on the login PATH.
 func Check(ctx context.Context, e *porterenroll.Env, p install.CheckParams) install.CheckResult {
 	res := install.CheckResult{Requirement: []install.Requirement{}}
-	res.OSID, res.OSVersion = osRelease("/etc/os-release")
+	res.OSID, res.OSVersion = OSRelease("/etc/os-release")
 	var st syscall.Statfs_t
 	if syscall.Statfs(e.Home, &st) == nil {
 		res.FreeBytes = uint64(st.Bavail) * uint64(st.Bsize)
@@ -52,8 +52,8 @@ func orUnknown(v string) string {
 	return v
 }
 
-// osRelease reads ID and VERSION_ID.
-func osRelease(path string) (id, version string) {
+// OSRelease reads ID and VERSION_ID.
+func OSRelease(path string) (id, version string) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", ""
@@ -77,7 +77,7 @@ func osRelease(path string) (id, version string) {
 }
 
 // Exec replaces the porter with argv, run in HOME with the login
-// environment ("${HOME}" expanded). It is used for a profile's native CLI,
+// environment ("${HOME}" and "${USER}" expanded). It is used for a profile's native CLI,
 // install steps and port changes, over an admin connection only (the daily
 // key's forced command never allows it). It returns only on failure.
 func Exec(ctx context.Context, e *porterenroll.Env, argv []string) error {
@@ -86,7 +86,7 @@ func Exec(ctx context.Context, e *porterenroll.Env, argv []string) error {
 	}
 	out := make([]string, len(argv))
 	for i, a := range argv {
-		out[i] = strings.ReplaceAll(a, "${HOME}", e.Home)
+		out[i] = strings.ReplaceAll(strings.ReplaceAll(a, "${HOME}", e.Home), "${USER}", e.Get("USER"))
 	}
 	bin := out[0]
 	if !strings.HasPrefix(bin, "/") {

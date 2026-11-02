@@ -33,7 +33,7 @@ func TestCheck(t *testing.T) {
 func TestOSRelease(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "os-release")
 	os.WriteFile(p, []byte("PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nID=debian\nVERSION_ID=\"13\"\n"), 0o644)
-	if id, v := osRelease(p); id != "debian" || v != "13" {
+	if id, v := OSRelease(p); id != "debian" || v != "13" {
 		t.Fatal(id, v)
 	}
 }

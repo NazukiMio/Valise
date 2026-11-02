@@ -36,7 +36,7 @@ func Status(ctx context.Context, e *porterenroll.Env, home, instance string) (*v
 	if err := enroll.ValidInstanceID(instance); err != nil {
 		return nil, valise.New("instance_invalid", err.Error(), "检查实例名")
 	}
-	st := &vaultrpc.TimerStatus{Linger: linger(ctx, e, home)}
+	st := &vaultrpc.TimerStatus{Linger: Linger(ctx, e, home)}
 	svc, tmr := UnitNames(instance)
 	b, err := os.ReadFile(filepath.Join(unitDir(home), tmr))
 	if err != nil {
@@ -62,7 +62,8 @@ func formatEvery(d time.Duration) string {
 	return d.String()
 }
 
-func linger(ctx context.Context, e *porterenroll.Env, home string) bool {
+// Linger reports whether the user's systemd instance runs without a login.
+func Linger(ctx context.Context, e *porterenroll.Env, home string) bool {
 	user := e.Get("USER")
 	if user == "" {
 		return false

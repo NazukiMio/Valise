@@ -1,0 +1,41 @@
+# Valise Kit tools (docs/AGENT_KIT.md 8.4.1). Packed into the signed
+# profile pack as kit-tools.yaml. Entries stay "verify: pending" (shown,
+# not installable) until checked on a target.
+schema: valise-kit-tools/1
+tools:
+  - id: rclone
+    tier: enhanced
+    name: rclone
+    purpose: 同步到网盘（Google Drive、OneDrive 等）
+    without: 不能同步到网盘；本机仓库与空间站不受影响
+    check: { binary: rclone }
+    # Filled after checking on a target: a pinned version, each
+    # architecture's https://downloads.rclone.org/v<version>/… zip, its
+    # SHA-256 from the release's SHA256SUMS, and the member path.
+    binary:
+      version: ""
+      archives: []
+    verify: pending
+
+  - id: rsync
+    tier: expert
+    name: rsync
+    purpose: 同步到仓库与空间站时更快（只传变化的部分）
+    without: 改用 sftp，速度慢一些
+    check: { binary: rsync }
+    install:
+      - { os_id: [debian, ubuntu], argv: [sudo, apt-get, install, -y, rsync] }
+      - { os_id: [ol, rhel, centos, rocky, almalinux, fedora], argv: [sudo, dnf, install, -y, rsync] }
+    verify: pending
+
+  - id: linger
+    tier: expert
+    name: 开启 linger
+    purpose: 你登出或服务器重启后，定时备份、自动同步与以 systemd 用户服务运行的 harness 继续运行
+    without: 这些会在登出或重启后停下，而且不报错
+    check: { linger: true }
+    install:
+      - { os_id: [debian, ubuntu, ol, rhel, centos, rocky, almalinux, fedora], argv: [sudo, loginctl, enable-linger, "${USER}"] }
+    uninstall:
+      - { os_id: [debian, ubuntu, ol, rhel, centos, rocky, almalinux, fedora], argv: [sudo, loginctl, disable-linger, "${USER}"] }
+    verify: pending

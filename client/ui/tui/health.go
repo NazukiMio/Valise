@@ -151,6 +151,8 @@ func (c *healthTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 			return c.runTest(m, p), true
 		case "u":
 			return startSync(m, p.host), true
+		case "k":
+			return m.push(newKitTools(p.host)), true
 		case "y":
 			m.flash, m.flashErr = "已复制到剪贴板（终端支持时）："+agentAsk, false
 			return tea.SetClipboard(agentAsk), true

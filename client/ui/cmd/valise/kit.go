@@ -150,6 +150,12 @@ func (c *cli) kit(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "uninstall" {
 		return c.kitUninstall(ctx, args[1:])
 	}
+	if len(args) > 0 && args[0] == "tools" {
+		return c.kitTools(ctx, args[1:])
+	}
+	if len(args) > 0 && args[0] == "tool" {
+		return c.kitTool(ctx, args[1:])
+	}
 	if len(args) == 0 || args[0] != "install" {
 		return errUsage
 	}

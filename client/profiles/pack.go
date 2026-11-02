@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"valise/client/minisign"
+	"valise/core/kittools"
 	"valise/core/profile"
 	"valise/core/valise"
 )
@@ -29,6 +30,7 @@ const (
 	PackSigAsset  = PackAsset + ".minisig"
 	PackTagPrefix = "profiles-"
 	manifestName  = "PACK.json"
+	kitToolsName  = "kit-tools.yaml"
 	maxPackBytes  = 4 << 20
 	maxPackFiles  = 256
 )
@@ -39,6 +41,14 @@ type Manifest struct {
 	Version   string          `json:"version"`
 	CreatedAt time.Time       `json:"created_at"`
 	Profiles  []ManifestEntry `json:"profiles"`
+	// KitTools is the Valise Kit tool list (docs/AGENT_KIT.md 8.4.1).
+	KitTools *ManifestFile `json:"kit_tools,omitempty"`
+}
+
+// ManifestFile is a file in the pack other than a profile.
+type ManifestFile struct {
+	File   string `json:"file"`
+	SHA256 string `json:"sha256"`
 }
 
 // ManifestEntry describes one profile file in the pack.
@@ -54,16 +64,19 @@ type ManifestEntry struct {
 type Pack struct {
 	Manifest Manifest
 	Docs     []*profile.Document
-	files    map[string][]byte
+	// Kit is the Kit tool list, nil in packs without one.
+	Kit   *kittools.List
+	files map[string][]byte
 }
 
 // PackDir holds the installed pack: the archive and its signature, kept as
 // downloaded and verified again on every load.
 func PackDir(dataDir string) string { return filepath.Join(dataDir, "profile-pack") }
 
-// Build packs every *.yaml in dir (the repository's profiles/) into a
-// deterministic tar.gz. Signing happens outside, with the minisign tool.
-func Build(dir, version string, now time.Time) ([]byte, error) {
+// Build packs every *.yaml in dir (the repository's profiles/) and the Kit
+// tool list kitFile ("" for none) into a deterministic tar.gz. Signing
+// happens outside, with the minisign tool.
+func Build(dir, kitFile, version string, now time.Time) ([]byte, error) {
 	names, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	if err != nil {
 		return nil, err
@@ -93,6 +106,18 @@ func Build(dir, version string, now time.Time) ([]byte, error) {
 	if err := lintAll(docs); err != nil {
 		return nil, err
 	}
+	if kitFile != "" {
+		b, err := os.ReadFile(kitFile)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := kittools.Parse(b); err != nil {
+			return nil, fmt.Errorf("%s: %w", kitFile, err)
+		}
+		sum := sha256.Sum256(b)
+		m.KitTools = &ManifestFile{File: kitToolsName, SHA256: hex.EncodeToString(sum[:])}
+		files[kitToolsName] = b
+	}
 	mj, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return nil, err
@@ -113,6 +138,11 @@ func Build(dir, version string, now time.Time) ([]byte, error) {
 	}
 	for _, e := range m.Profiles {
 		if err := add(e.File, files[e.File]); err != nil {
+			return nil, err
+		}
+	}
+	if m.KitTools != nil {
+		if err := add(kitToolsName, files[kitToolsName]); err != nil {
 			return nil, err
 		}
 	}
@@ -211,7 +241,19 @@ func Read(tgz []byte) (*Pack, error) {
 		p.Docs = append(p.Docs, d)
 		p.files[e.File] = b
 	}
-	if len(files) != len(m.Profiles)+1 {
+	want := len(m.Profiles) + 1
+	if m.KitTools != nil {
+		want++
+		b, ok := files[kitToolsName]
+		sum := sha256.Sum256(b)
+		if !ok || m.KitTools.File != kitToolsName || hex.EncodeToString(sum[:]) != m.KitTools.SHA256 {
+			return nil, bad("%s 缺少或 sha256 与 PACK.json 不符", kitToolsName)
+		}
+		if p.Kit, err = kittools.Parse(b); err != nil {
+			return nil, bad("%s: %v", kitToolsName, err)
+		}
+	}
+	if len(files) != want {
 		return nil, bad("包中有 PACK.json 没有列出的文件")
 	}
 	if err := lintAll(p.Docs); err != nil {

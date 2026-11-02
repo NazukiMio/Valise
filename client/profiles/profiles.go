@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"valise/core/kittools"
 
 	"valise/core/profile"
 )
@@ -29,6 +30,9 @@ type Set struct {
 	// it failed verification (then PackProblem says why).
 	Pack        *Manifest
 	PackProblem error
+	// Kit is the signed pack's Kit tool list (nil without one); local
+	// profiles never add tools.
+	Kit *kittools.List
 }
 
 // LocalDir is os.UserConfigDir()/valise/profiles.
@@ -46,7 +50,7 @@ func Load(dataDir, publicKey string) (*Set, error) {
 	if err != nil {
 		set.PackProblem = err
 	} else if pack != nil {
-		set.Pack = &pack.Manifest
+		set.Pack, set.Kit = &pack.Manifest, pack.Kit
 		docs = append(docs, pack.Docs...)
 	}
 	localDir := LocalDir(dataDir)

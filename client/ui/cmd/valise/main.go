@@ -64,6 +64,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   kit install <服务器> <实例>                      安装逃生舱技能，并给出接入 MCP 的方法
   kit status <服务器> <实例>                       查看技能安装状态与最近一次 agent 经 MCP 的调用
   kit uninstall <服务器> <实例> [--force]          删除逃生舱技能（被修改过的需 --force），并给出撤除 MCP 的方法
+  kit tools <服务器>                               Kit 工具：这台服务器上有没有、用途、不装会怎样
+  kit tool install|uninstall <服务器> <名称> [--yes]   安装或卸载 Kit 工具（增强级要 Valise 口令；专家级要高级模式）
   profiles status                                查看 harness 资料包与本地 profile
   profiles install [--tag profiles-…] [--file <文件>] [--yes]
                                                  安装 harness 资料包（在线拉取最新版，或本地文件；未签名的只能作为本地 profile）

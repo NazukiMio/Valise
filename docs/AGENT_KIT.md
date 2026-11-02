@@ -188,7 +188,7 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 
 每个工具一行展示：这台服务器上有没有、用于哪些功能、不装会怎样（如"rsync 没有时改用 sftp"）、安装方式与完整命令；也可以"打开终端窗口"由用户自己安装。
 
-**初版清单**（2026-11-02 用户确认，"不求多求精"）：清单放在签名资料包的 `kit/tools.yaml`，与 profile 分开；每项写明 `id`、级别、名称、用途、不装会怎样、检测方式（argv）、安装方式（增强级：各架构的下载地址与 SHA-256，装到 `~/.local/bin`；专家级：各发行版的包名或固定 argv）与卸载方式。
+**初版清单**（2026-11-02 用户确认，"不求多求精"）：清单在仓库的 `kit/tools.yaml`，打进签名资料包时名为 `kit-tools.yaml`（资料包是扁平结构，`PACK.json` 以 `kit_tools` 记录它的 SHA-256），与 profile 分开；每项写明 `id`、级别、名称、用途、不装会怎样、检测方式（argv）、安装方式（增强级：各架构的下载地址与 SHA-256，装到 `~/.local/bin`；专家级：各发行版的包名或固定 argv）与卸载方式。
 
 | id | 级别 | 用途 | 不装会怎样 | 安装方式 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -197,6 +197,35 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 | `linger` | 专家 | 用户登出或服务器重启后，定时封存、自动上云与以 systemd 用户服务运行的 harness 继续运行 | 这些会在登出或重启后停下，不报错 | `loginctl enable-linger <用户>`，需要 sudo；卸载为 `disable-linger` |
 
 不放进 Kit：zstd 与 age（porter 自带，独立恢复在用户电脑上进行）、harness 的运行时（由 profile 的 `requires` 与高级模式负责）、与 Valise 功能无关的运维工具。
+
+**schema 与安装流程**（M12，2026-11-02）：
+
+```yaml
+schema: valise-kit-tools/1
+tools:
+  - id: rclone                # 小写字母、数字、连字符
+    tier: enhanced            # enhanced | expert
+    name: rclone
+    purpose: 同步到网盘
+    without: 不能同步到网盘
+    check: { binary: rclone } # 或 { linger: true }
+    binary:                   # 只用于增强级：官方二进制，装到 ~/.local/bin/<check.binary>
+      version: "x.y.z"
+      archives:
+        - { arch: amd64, url: "https://…", sha256: "…", member: "压缩包内的路径" }
+    install:                  # 只用于专家级：按发行版（os-release ID）的固定 argv，只能引用 ${HOME}、${USER}
+      - { os_id: [debian, ubuntu], argv: [sudo, apt-get, install, -y, rsync] }
+    uninstall:                # 可选；增强级的二进制由 porter 删除，不需要写
+      - { os_id: [debian, ubuntu], argv: [sudo, loginctl, disable-linger, "${USER}"] }
+    verify: pending           # 在靶机上核实前保持 pending
+```
+
+- **检测**：porter 的 `install_check` 按登录 PATH 与 `~/.local/bin` 查找 `check.binary`，并报告 linger 是否开启；走日常钥匙。
+- **增强级安装**（主人）：客户端从签名清单里的地址下载压缩包，核对 SHA-256，取出 `member`，经一次性许可（`kit_tool_begin` 返回，绑定工具名与文件的 SHA-256）由 `valise-porter tool-put <名称>` 写到 `~/.local/bin/<名称>`（先写临时文件、核对 SHA-256、0755、改名）。目标已存在且不是 Valise 装的，拒绝覆盖。porter 在 `~/.local/state/valise/kit-tools.json` 记下它装的文件及其 SHA-256。
+- **增强级卸载**（主人）：`kit_tool_remove` 只删除记录中、且内容未被改动的文件。
+- **专家级**：需要开发者模式下的高级模式与 INSTALL.md 4.2 的前提；命令先过第 7 节检查，展示后确认，在新的管理连接的交互终端里执行（sudo 的密码由用户在终端里输入）。没有为这台服务器发行版写命令时，说明原因并给出"打开服务器终端自己装"。rsync 不提供卸载（系统包，可能被别的程序使用）。
+- 清单中 `verify: pending` 或缺少 SHA-256 的条目只展示，不能安装。
+
 
 ### 8.5 安装逃生舱技能
 

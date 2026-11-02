@@ -13,7 +13,7 @@ import (
 
 func TestFetchPack(t *testing.T) {
 	signer := minisigntest.New()
-	tgz, err := profiles.Build("../../../profiles", "2026.10.31", time.Now())
+	tgz, err := profiles.Build("../../../profiles", "../../../kit/tools.yaml", "2026.10.31", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

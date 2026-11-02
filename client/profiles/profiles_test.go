@@ -15,7 +15,7 @@ const repoProfiles = "../../profiles"
 
 func buildPack(t *testing.T) []byte {
 	t.Helper()
-	b, err := Build(repoProfiles, "2026.10.31", time.Unix(1_800_000_000, 0))
+	b, err := Build(repoProfiles, "../../kit/tools.yaml", "2026.10.31", time.Unix(1_800_000_000, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +57,9 @@ func TestSignedPack(t *testing.T) {
 	if len(p.Manifest.Profiles) < 3 {
 		t.Fatalf("%+v", p.Manifest)
 	}
+	if p.Kit == nil || p.Kit.ByID("linger") == nil || p.Manifest.KitTools == nil {
+		t.Fatalf("the Kit tool list is missing from the pack: %+v", p.Manifest)
+	}
 	s, err := Load(data, signer.PublicKey)
 	if err != nil || s.PackProblem != nil || s.Pack == nil || s.Pack.Version != "2026.10.31" {
 		t.Fatalf("%+v %v", s, err)
@@ -90,7 +93,7 @@ func TestReadRejects(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(repoProfiles, "dsh.yaml"))
 	os.WriteFile(filepath.Join(dir, "dsh.yaml"), b, 0o644)
 	os.WriteFile(filepath.Join(dir, "broken.yaml"), []byte(strings.Replace(string(b), "id: dsh", "id: Bad", 1)), 0o644)
-	if _, err := Build(dir, "x", time.Now()); err == nil {
+	if _, err := Build(dir, "", "x", time.Now()); err == nil {
 		t.Fatal("Build accepted a profile failing lint")
 	}
 }

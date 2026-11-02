@@ -125,8 +125,8 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 		case !ts.Enabled:
 			it.Level, it.Text = HealthInfo, "没有开启（在设置里开启）"
 		case !ts.Linger:
-			it.Level, it.Text = HealthWarn, "每 "+ts.Every+" 一次，但 linger 没有开启：你登出或服务器重启后会停下"
-			it.Detail = "linger 让服务器在你没有登录时也运行你的定时任务。开启需要管理员权限：在服务器终端里运行 sudo loginctl enable-linger $USER（Kit 专家级会提供一键开启）。"
+			it.Level, it.Text, it.Key = HealthWarn, "每 "+ts.Every+" 一次，但 linger 没有开启：你登出或服务器重启后会停下", "k"
+			it.Detail = "linger 让服务器在你没有登录时也运行你的定时任务。按 k 打开 Kit 工具开启它（专家级，需要高级模式），或在服务器终端里运行 sudo loginctl enable-linger $USER。"
 		default:
 			it.Level, it.Text = HealthOK, "每 "+ts.Every+" 一次，登出后也会运行"
 		}

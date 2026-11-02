@@ -9,6 +9,7 @@ import (
 	"valise/core/valise"
 	"valise/porter/internal/checkup"
 	porterenroll "valise/porter/internal/enroll"
+	"valise/porter/internal/forced"
 	"valise/porter/internal/kit"
 )
 
@@ -52,6 +53,32 @@ func init() {
 			return nil, err
 		}
 		return kit.Status(s.cfg.Home, p)
+	}
+	methods[agentkit.MethodKitToolsCheck] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[agentkit.KitToolsCheckParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		return kit.ToolsCheck(ctx, s.loginEnv(ctx), s.cfg.Home, p)
+	}
+	methods[agentkit.MethodKitToolBegin] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[agentkit.KitToolBeginParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		if err := kit.ToolBegin(s.cfg.Home, p.Name, p.SHA256); err != nil || !s.daily() {
+			return agentkit.KitToolBeginResult{}, err
+		}
+		// The daily key runs tool-put only with this one-time grant.
+		grant, err := forced.Mint(s.cfg.Home, "tool-put", p.Name)
+		return agentkit.KitToolBeginResult{Grant: grant}, err
+	}
+	methods[agentkit.MethodKitToolRemove] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[agentkit.KitToolRemoveParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		return nil, kit.ToolRemove(s.cfg.Home, p.Name)
 	}
 	methods[agentkit.MethodKitUninstall] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[agentkit.KitUninstallParams](raw)

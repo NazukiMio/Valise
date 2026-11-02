@@ -15,6 +15,9 @@ const (
 	MethodProposalsDecide = "proposals_decide"
 	MethodKitInstall      = "kit_install"
 	MethodKitStatus       = "kit_status"
+	MethodKitToolsCheck   = "kit_tools_check"
+	MethodKitToolBegin    = "kit_tool_begin"
+	MethodKitToolRemove   = "kit_tool_remove"
 	MethodKitUninstall    = "kit_uninstall"
 )
 
@@ -223,4 +226,38 @@ type KitUninstallParams struct {
 type KitUninstallResult struct {
 	Removed []string `json:"removed"`
 	Kept    []string `json:"kept,omitempty"`
+}
+
+// KitToolBeginParams starts writing an enhanced Kit tool's binary; the
+// daily key then runs `valise-porter tool-put <name> <sha256>` with the
+// returned grant (docs/AGENT_KIT.md 8.4.1).
+type KitToolBeginParams struct {
+	Name   string `json:"name"`
+	SHA256 string `json:"sha256"`
+}
+
+// KitToolBeginResult carries the grant (daily sessions only).
+type KitToolBeginResult struct {
+	Grant string `json:"grant,omitempty"`
+}
+
+// KitToolRemoveParams removes a tool binary Valise installed.
+type KitToolRemoveParams struct {
+	Name string `json:"name"`
+}
+
+// KitToolsCheckParams names the programs to look for (names only; nothing
+// is run).
+type KitToolsCheckParams struct {
+	Binaries []string `json:"binaries"`
+}
+
+// KitToolsCheckResult is what the server has for the Kit tools.
+type KitToolsCheckResult struct {
+	OSID   string            `json:"os_id"`
+	Arch   string            `json:"arch"`
+	Found  map[string]string `json:"found"` // binary → path
+	Linger bool              `json:"linger"`
+	// Ours lists the tool binaries Valise installed (name → SHA-256).
+	Ours map[string]string `json:"ours"`
 }

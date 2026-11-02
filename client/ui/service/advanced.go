@@ -161,51 +161,12 @@ func CheckRequirements(plan *InstallPlan) *RequirementBatch {
 // again. Valise reads nothing typed in the terminal (sudo's password
 // included).
 func (s *Service) RunRequirements(ctx context.Context, plan *InstallPlan, b *RequirementBatch, tio InstallIO) (*InstallPlan, error) {
-	st := s.Advanced(ctx)
-	if st == nil || st.Host != plan.Host {
-		return nil, valise.New("advanced_off", "高级模式没有为 "+plan.Host+" 开启", "")
-	}
-	if b.Refused {
-		return nil, valise.New("advanced_refused", "这批命令里有 Valise 一律不执行的命令，整批都没有执行",
-			"Valise 不会代为执行它们，也没有绕过的开关；如果坚持，只能自己登录服务器执行")
-	}
 	if len(b.Unfixable) > 0 {
 		return nil, valise.New("install_requirements_unfixable", "profile 没有为这台服务器的发行版给出 "+b.Unfixable[0].Binary+" 的安装命令",
 			"自己在服务器上装好它，或交给服务器管理员")
 	}
-	var audit []install.StepAudit
-	defer func() { s.auditAdvanced(ctx, plan.Host, "requirements", audit) }()
-	for i, c := range b.Commands {
-		if tio.Step != nil {
-			tio.Step(i, PlanStep{Kind: "requirement", Summary: strings.Join(c.Command, " "), Command: c.Command})
-		}
-		// The admin window is checked before every step; when it has
-		// expired the admin passphrase is asked again (the mode pauses).
-		if _, err := s.unlockAdmin(ctx, plan.Host); err != nil {
-			return nil, err
-		}
-		if s.Advanced(ctx) == nil {
-			return nil, valise.New("advanced_off", "高级模式已经关闭，后面的命令没有执行", "")
-		}
-		t, done, err := s.adminTransport(ctx, plan.Host)
-		if err != nil {
-			return nil, err
-		}
-		found, err := porter.Probe(ctx, t)
-		if err != nil {
-			done()
-			return nil, err
-		}
-		code, err := runTTY(ctx, t, found.Path, nil, c.Command, tio)
-		done()
-		audit = append(audit, install.StepAudit{Kind: c.Source, Command: strings.Join(c.Command, " "), Exit: code})
-		if err != nil {
-			return nil, err
-		}
-		if code != 0 {
-			return nil, valise.New("install_requirement_failed", fmt.Sprintf("依赖安装命令失败（退出码 %d）：%s", code, strings.Join(c.Command, " ")),
-				"看上面的输出找原因；后面的命令没有执行")
-		}
+	if err := s.runAdvancedBatch(ctx, plan.Host, "requirements", b, tio); err != nil {
+		return nil, err
 	}
 	again, err := s.PlanInstall(ctx, plan.Host, plan.ProfileID)
 	if err != nil {
@@ -216,4 +177,53 @@ func (s *Service) RunRequirements(ctx context.Context, plan *InstallPlan, b *Req
 			again.Missing[0].Reason)
 	}
 	return again, nil
+}
+
+// runAdvancedBatch runs a confirmed batch in advanced mode, one terminal
+// per command on a fresh admin connection. Valise reads nothing typed in
+// the terminal (sudo's password included).
+func (s *Service) runAdvancedBatch(ctx context.Context, host, what string, b *RequirementBatch, tio InstallIO) error {
+	st := s.Advanced(ctx)
+	if st == nil || st.Host != host {
+		return valise.New("advanced_off", "高级模式没有为 "+host+" 开启", "")
+	}
+	if b.Refused {
+		return valise.New("advanced_refused", "这批命令里有 Valise 一律不执行的命令，整批都没有执行",
+			"Valise 不会代为执行它们，也没有绕过的开关；如果坚持，只能自己登录服务器执行")
+	}
+	var audit []install.StepAudit
+	defer func() { s.auditAdvanced(ctx, host, what, audit) }()
+	for i, c := range b.Commands {
+		if tio.Step != nil {
+			tio.Step(i, PlanStep{Kind: "requirement", Summary: strings.Join(c.Command, " "), Command: c.Command})
+		}
+		// The admin window is checked before every step; when it has
+		// expired the admin passphrase is asked again (the mode pauses).
+		if _, err := s.unlockAdmin(ctx, host); err != nil {
+			return err
+		}
+		if s.Advanced(ctx) == nil {
+			return valise.New("advanced_off", "高级模式已经关闭，后面的命令没有执行", "")
+		}
+		t, done, err := s.adminTransport(ctx, host)
+		if err != nil {
+			return err
+		}
+		found, err := porter.Probe(ctx, t)
+		if err != nil {
+			done()
+			return err
+		}
+		code, err := runTTY(ctx, t, found.Path, nil, c.Command, tio)
+		done()
+		audit = append(audit, install.StepAudit{Kind: c.Source, Command: strings.Join(c.Command, " "), Exit: code})
+		if err != nil {
+			return err
+		}
+		if code != 0 {
+			return valise.New("install_requirement_failed", fmt.Sprintf("命令失败（退出码 %d）：%s", code, strings.Join(c.Command, " ")),
+				"看上面的输出找原因；后面的命令没有执行")
+		}
+	}
+	return nil
 }

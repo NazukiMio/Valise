@@ -1,5 +1,5 @@
 // Command profilepack builds the harness profile pack from the repository's
-// profiles/ (docs/PROFILES.md 1.1). Sign the output with minisign:
+// profiles/ and kit/tools.yaml (docs/PROFILES.md 1.1, AGENT_KIT.md 8.4.1). Sign the output with minisign:
 //
 //	go run ./cmd/profilepack -dir ../profiles -version 2026.10.31 -out valise-profiles.tar.gz
 //	minisign -S -m valise-profiles.tar.gz
@@ -16,10 +16,11 @@ import (
 
 func main() {
 	dir := flag.String("dir", "../profiles", "profile directory")
+	kit := flag.String("kit", "../kit/tools.yaml", "Kit tool list (empty for none)")
 	version := flag.String("version", time.Now().UTC().Format("2006.01.02"), "pack version")
 	out := flag.String("out", profiles.PackAsset, "output file")
 	flag.Parse()
-	b, err := profiles.Build(*dir, *version, time.Now())
+	b, err := profiles.Build(*dir, *kit, *version, time.Now())
 	if err == nil {
 		err = os.WriteFile(*out, b, 0o644)
 	}

@@ -18,7 +18,7 @@ const grantTTL = 5 * time.Minute
 
 // GrantSubcommands are the subcommands the daily key runs with a grant;
 // the value is the index of the argument the grant is bound to.
-var GrantSubcommands = map[string]int{"stage-write": 2, "login-run": 1}
+var GrantSubcommands = map[string]int{"stage-write": 2, "login-run": 1, "tool-put": 1}
 
 // ErrGrant is returned for a missing, used, expired or mismatched grant.
 var ErrGrant = errors.New("这一步的许可无效或已过期；请在 Valise 里重新开始这一步")

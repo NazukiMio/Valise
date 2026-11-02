@@ -23,6 +23,7 @@ import (
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/forced"
 	porterinstall "valise/porter/internal/install"
+	"valise/porter/internal/kit"
 	porterlogin "valise/porter/internal/login"
 	"valise/porter/internal/mcp"
 	porterrevive "valise/porter/internal/revive"
@@ -50,6 +51,7 @@ const usage = `用法：
   valise-porter autosync                    （由封存后自动启动，同步到期的云备份）
   valise-porter vault-cat <周期> <金库内的相对路径>
   valise-porter stage-write --op <op_id>
+  valise-porter tool-put <名称> <sha256>
   valise-porter login-run <会话> [<列数> <行数>]
   valise-porter browser-shim <链接>...
   valise-porter mcp --instance <实例>`
@@ -163,6 +165,21 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(stdout, "%d\n", n)
+		return 0
+	case "tool-put":
+		if len(args) != 3 {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if err := kit.ToolPut(home, args[1], args[2], stdin); err != nil {
+			fmt.Fprintln(stderr, "tool-put:", err)
+			return 1
+		}
 		return 0
 	case "login-run":
 		if len(args) != 2 && len(args) != 4 {

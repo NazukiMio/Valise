@@ -25,7 +25,7 @@ func newServerSettings(host string) *serverSettings { return &serverSettings{hos
 
 func (s *serverSettings) title() string { return "服务器设置" }
 func (s *serverSettings) help() string {
-	return menu("n", "起名", "u", "更新 porter", "k", "登记我的钥匙", "K", "装这台电脑的日常钥匙", "x", "从列表中移除", "r", "刷新")
+	return menu("n", "起名", "u", "更新 porter", "t", "Kit 工具", "k", "登记我的钥匙", "K", "装这台电脑的日常钥匙", "x", "从列表中移除", "r", "刷新")
 }
 
 func (s *serverSettings) init(m *Model) tea.Cmd {
@@ -43,6 +43,8 @@ func (s *serverSettings) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		switch msg.String() {
 		case "r":
 			return tea.Batch(s.init(m), m.loadServer(host)), true
+		case "t":
+			return m.push(newKitTools(host)), true
 		case "u":
 			return m.push(pick("porter 的来源", []choice{
 				{label: "从 GitHub Release 下载", value: "release", desc: "校验签名与 SHA-256"},
