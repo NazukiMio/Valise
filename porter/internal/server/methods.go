@@ -80,6 +80,7 @@ var methods = map[string]handler{
 			sum := enroll.InstanceSummary{InstanceID: r.InstanceID, ProfileID: r.ProfileID,
 				ProfileVersion: r.ProfileVersion, Roots: r.Roots, Superseded: r.Superseded,
 				Name: r.Name, InstallID: porterenroll.InstallOf(s.cfg.Home, r.InstanceID),
+				Label: r.Label(), HarnessAgents: r.HarnessAgents,
 				Service: []enroll.ServiceState{}, Entries: []enroll.EntryState{}}
 			if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
 				sum.ProfileStatus = p.Status
@@ -98,6 +99,13 @@ var methods = map[string]handler{
 		}
 		path, err := porterenroll.WriteRecord(s.cfg.Home, p.Record, p.Profile)
 		return enroll.InstanceWriteResult{Path: path}, err
+	},
+	enroll.MethodLabelSet: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p enroll.LabelSetParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return struct{}{}, porterenroll.SetDisplayName(s.cfg.Home, p.InstanceID, p.DisplayName)
 	},
 	enroll.MethodEntryPortSet: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p enroll.EntryPortSetParams

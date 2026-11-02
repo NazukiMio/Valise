@@ -97,6 +97,12 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 	fmt.Fprintf(w, "接入报告：%s 上的实例 %s\n", res.Host, r.InstanceID)
 	fmt.Fprintf(w, "harness 资料：%s v%d（%s，%s）\n\n", r.ProfileID, r.ProfileVersion, origin, verified)
 
+	if r.HarnessName != "" {
+		fmt.Fprintf(w, "名字：harness 里叫它 %s，在 Valise 里也这样显示（之后可以改：valise agent name）\n", r.HarnessName)
+	}
+	if len(r.HarnessAgents) > 1 {
+		fmt.Fprintf(w, "这个目录里有 %d 个 agent：%s（一起备份与恢复）\n", len(r.HarnessAgents), strings.Join(r.HarnessAgents, "、"))
+	}
 	// Re-detecting: what changed since the dossier comes first (docs/UI.md 9.4).
 	if r.Previous != nil {
 		if len(r.Changes) == 0 {
@@ -247,7 +253,7 @@ func changeLabel(f string) string {
 		return "目录（" + root + "）"
 	}
 	if l, ok := map[string]string{"profile_id": "harness 资料", "profile_version": "harness 资料版本",
-		"provenance.kind": "安装方式", "provenance": "安装来源与版本"}[f]; ok {
+		"provenance.kind": "安装方式", "provenance": "安装来源与版本", "harness_name": "harness 里的名字"}[f]; ok {
 		return l
 	}
 	return f
@@ -258,4 +264,24 @@ func orNone(s string) string {
 		return "（无）"
 	}
 	return s
+}
+
+// agentName: valise agent name <服务器> <实例> [名字] (docs/UI.md 9.5 "名字").
+func (c *cli) agentName(ctx context.Context, args []string) error {
+	if len(args) < 2 || len(args) > 3 {
+		return errUsage
+	}
+	name := ""
+	if len(args) == 3 {
+		name = args[2]
+	}
+	if err := c.svc.SetAgentLabel(ctx, args[0], args[1], name); err != nil {
+		return err
+	}
+	if name == "" {
+		fmt.Fprintf(c.out, "%s 不再用你起的名字，跟随 harness 里的名字。\n", args[1])
+	} else {
+		fmt.Fprintf(c.out, "%s 在 Valise 里显示为「%s」（实例名 %s 不变）。\n", args[1], name, args[1])
+	}
+	return nil
 }

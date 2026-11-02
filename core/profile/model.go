@@ -64,6 +64,8 @@ type Profile struct {
 	// ApprovalCheck reads whether the harness asks before risky commands
 	// (docs/PROFILES.md 1, 审批状态检查).
 	ApprovalCheck *ApprovalCheck `yaml:"approval_check" json:"approval_check,omitempty"`
+	// Identity reads the name the harness gives its agent (UI.md 9.5 "名字").
+	Identity *Identity `yaml:"identity" json:"identity,omitempty"`
 	// Capabilities record what was verified, per capability
 	// (docs/PROFILES.md 1.2).
 	Capabilities map[string]Capability `yaml:"capabilities" json:"capabilities,omitempty"`
@@ -636,6 +638,44 @@ type ApprovalCheck struct {
 	// every bypass item matches one of these groups.
 	DefaultWhen []map[string]string `yaml:"default_when" json:"default_when,omitempty"`
 	Verify      string              `yaml:"verify" json:"verify,omitempty"`
+}
+
+// Identity reads agent names from a read-only command's JSON output: Each
+// is the list ("" when the output is the list), Pick the entry that is this
+// instance's agent (equality), Name the name field. A state directory may
+// hold several of the harness's agents: all their names are listed.
+type Identity struct {
+	Argv   Argv              `yaml:"argv" json:"argv"`
+	Each   string            `yaml:"each" json:"each,omitempty"`
+	Pick   map[string]string `yaml:"pick" json:"pick,omitempty"`
+	Name   string            `yaml:"name" json:"name"`
+	Verify string            `yaml:"verify" json:"verify,omitempty"`
+}
+
+// EvalIdentity returns the picked agent's name and every listed name.
+func EvalIdentity(c *Identity, out []byte) (name string, all []string) {
+	var doc any
+	if json.Unmarshal(out, &doc) != nil {
+		return "", nil
+	}
+	list, ok := doc.([]any)
+	if c.Each != "" {
+		list, ok = field(doc, c.Each).([]any)
+	}
+	if !ok {
+		return "", nil
+	}
+	for _, it := range list {
+		n, ok := field(it, c.Name).(string)
+		if !ok || strings.TrimSpace(n) == "" {
+			continue
+		}
+		all = append(all, n)
+		if name == "" && matches(it, c.Pick) {
+			name = n
+		}
+	}
+	return name, all
 }
 
 // Approval modes read by ApprovalCheck.

@@ -225,3 +225,9 @@ type DetectedInstance struct {
 	ID       string `json:"id"`
 	Enrolled string `json:"enrolled,omitempty"`
 }
+
+// SetAgentLabel sets the name an agent shows in Valise; "" follows the
+// harness's own name (docs/UI.md 9.5 "名字").
+func (s *Service) SetAgentLabel(ctx context.Context, host, instance, name string) error {
+	return s.call(ctx, host, enroll.MethodLabelSet, enroll.LabelSetParams{InstanceID: instance, DisplayName: name}, nil)
+}

@@ -74,6 +74,7 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 	r.Provenance = Provenance(ctx, e, p, r.Roots)
 	r.Service = services(ctx, e, p, &r.Warnings)
 	r.Entries = entries(p)
+	r.HarnessName, r.HarnessAgents = identity(ctx, e, p, params.StateDir, &r.Warnings)
 	if previous != nil {
 		r.Changes = enroll.Diff(*previous, enroll.RecordFrom(r, r.ScannedAt))
 	}
@@ -334,4 +335,22 @@ func entries(p *profile.Profile) []enroll.EntryState {
 		out = append(out, s)
 	}
 	return out
+}
+
+// identity reads the names the harness gives its agents (profile identity).
+func identity(ctx context.Context, e *Env, p *profile.Profile, stateDir string, warnings *[]string) (string, []string) {
+	c := p.Identity
+	if c == nil {
+		return "", nil
+	}
+	argv, ok := e.ExpandArgv(c.Argv, map[string]string{"STATE_DIR": stateDir})
+	if !ok {
+		return "", nil
+	}
+	out, err := e.Run(ctx, versionTimeout, stateDir, argv...)
+	if err != nil || out.Code != 0 {
+		*warnings = append(*warnings, "没能读出 harness 里 agent 的名字")
+		return "", nil
+	}
+	return profile.EvalIdentity(c, out.Stdout)
 }

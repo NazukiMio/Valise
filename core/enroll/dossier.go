@@ -37,6 +37,10 @@ type DossierAgent struct {
 	// Service and Entries are a named agent's own (empty unless its
 	// service is shared, see profile.ForAgent).
 	Service []ServiceState `json:"service,omitempty"`
+	// Names: the user's (display_name) and the harness's (UI.md 9.5).
+	DisplayName   string   `json:"display_name,omitempty"`
+	HarnessName   string   `json:"harness_name,omitempty"`
+	HarnessAgents []string `json:"harness_agents,omitempty"`
 }
 
 // Agent returns the agent with id, nil when none.
@@ -57,7 +61,8 @@ func (d *Dossier) Record(id string) *Record {
 	}
 	r := &Record{InstanceID: a.InstanceID, ProfileID: d.ProfileID, ProfileVersion: d.Version, Roots: a.Roots,
 		Provenance: d.Provenance, Service: d.Service, Entries: d.Entries, LocalOverrides: a.LocalOverrides,
-		EntryPorts: a.EntryPorts, EnrolledAt: a.EnrolledAt, Superseded: a.Superseded, Name: a.Name, Env: a.Env}
+		EntryPorts: a.EntryPorts, EnrolledAt: a.EnrolledAt, Superseded: a.Superseded, Name: a.Name, Env: a.Env,
+		DisplayName: a.DisplayName, HarnessName: a.HarnessName, HarnessAgents: a.HarnessAgents}
 	if a.Name != "" {
 		r.Provenance, r.Service, r.Entries = Provenance{}, a.Service, []EntryState{}
 	}
@@ -75,13 +80,17 @@ func (d *Dossier) Put(r Record, now time.Time) {
 		d.InstallID = r.ProfileID
 	}
 	a := DossierAgent{InstanceID: r.InstanceID, Name: r.Name, Env: r.Env, Roots: r.Roots, LocalOverrides: r.LocalOverrides,
-		EntryPorts: r.EntryPorts, EnrolledAt: r.EnrolledAt, Superseded: r.Superseded}
+		EntryPorts: r.EntryPorts, EnrolledAt: r.EnrolledAt, Superseded: r.Superseded,
+		DisplayName: r.DisplayName, HarnessName: r.HarnessName, HarnessAgents: r.HarnessAgents}
 	if r.Name == "" {
 		d.Provenance, d.Service, d.Entries = r.Provenance, r.Service, r.Entries
 	} else {
 		a.Service = r.Service
 	}
 	if old := d.Agent(r.InstanceID); old != nil {
+		if a.DisplayName == "" {
+			a.DisplayName = old.DisplayName // a re-enrollment keeps the user's name
+		}
 		*old = a
 		return
 	}

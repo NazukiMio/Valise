@@ -6,6 +6,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -424,6 +425,23 @@ func (c *checker) checkTop(p *Profile) {
 	}
 	c.checkActions(p.Actions)
 	c.checkApproval(p.ApprovalCheck)
+	if id := p.Identity; id != nil {
+		c.argvVars("identity.argv", id.Argv, true, VarHome, VarStateDir)
+		if len(id.Argv) == 0 {
+			c.add("identity.argv", "不能为空：一条只读命令，输出 JSON")
+		}
+		for _, f := range append([]string{id.Each, id.Name}, keys(id.Pick)...) {
+			if f != "" && !fieldPathRe.MatchString(f) {
+				c.add("identity", "字段必须是点分路径：%q", f)
+			}
+		}
+		if id.Name == "" {
+			c.add("identity.name", "不能为空：名字所在的字段")
+		}
+		if id.Verify != "" && id.Verify != "pending" {
+			c.add("identity.verify", "只能是 pending 或不写")
+		}
+	}
 	if p.Terms != nil && (strings.TrimSpace(p.Terms.Agent) == "" || len([]rune(p.Terms.Agent)) > 20) {
 		c.add("terms.agent", "要写 harness 自己对一个 agent 的叫法（不超过 20 个字）")
 	}
@@ -922,4 +940,13 @@ func (c *checker) checkApproval(a *ApprovalCheck) {
 	if a.Verify != "" && a.Verify != "pending" {
 		c.add("approval_check.verify", "只能是 pending 或不写")
 	}
+}
+
+func keys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

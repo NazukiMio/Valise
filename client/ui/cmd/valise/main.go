@@ -57,6 +57,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   old list <服务器> | old cleanup <服务器> <实例>  查看 / 清理被迁移或克隆取代的旧实例
   tui                                            终端界面：服务器、agent、逃生舱、体检、管理页、登录授权、设置
   checkup <服务器> <实例> [--json]                 体检：会话、记忆文件、记忆机制（只读）
+  agent name <服务器> <实例> [名字]                 在 Valise 里给 agent 起名字；不写名字就跟随 harness 里的名字
   health <服务器> <实例> [--json]                  健康：备份、恢复测试、服务、定时备份、审批（只读）
   restore-test <服务器> <实例> [--snapshot id]     恢复测试：两边各解开一次逃生舱并核对，不切换，过后删除
   proposals <服务器> <实例> [--accept id,…|all] [--accept-demotion id,…] [--reject id,…|all]
@@ -174,6 +175,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.prev(ctx, args[1:])
 	case args[0] == "old" && len(args) > 1:
 		return c.old(ctx, args[1:])
+	case args[0] == "agent" && len(args) > 1 && args[1] == "name":
+		return c.agentName(ctx, args[2:])
 	case args[0] == "health":
 		return c.health(ctx, args[1:])
 	case args[0] == "restore-test":

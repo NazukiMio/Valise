@@ -60,7 +60,12 @@ type (
 	logLoaded struct{ l *vaultrpc.SealLogResult }
 )
 
-func (p *instancePage) title() string { return p.inst.InstanceID }
+func (p *instancePage) title() string {
+	if p.install != "" {
+		return p.install
+	}
+	return instTitle(p.inst)
+}
 func (p *instancePage) typing() bool {
 	t, ok := p.tabs[p.active].(interface{ typing() bool })
 	return ok && t.typing()
@@ -182,6 +187,12 @@ func (p *instancePage) switchTo(m *Model, i int) tea.Cmd {
 }
 
 func (p *instancePage) view(m *Model) string {
+	// Follow the server's fresh listing (a new name, a new service state).
+	for _, in := range m.server(p.host).instances {
+		if in.InstanceID == p.inst.InstanceID {
+			p.inst = in
+		}
+	}
 	icon := compactIcon(m.display(p.inst.ProfileID))
 	name := displayName(m, p.inst.ProfileID)
 	if v := p.version(); v != "" {

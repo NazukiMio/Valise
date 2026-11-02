@@ -64,3 +64,16 @@ func TestApprovalDefault(t *testing.T) {
 		}
 	}
 }
+
+// The default agent's name from OpenClaw's `agents list --json` (trimmed).
+func TestEvalIdentity(t *testing.T) {
+	c := &Identity{Pick: map[string]string{"isDefault": "true"}, Name: "identityName"}
+	out := []byte(`[{"id":"debugbench","identityName":"debugbench","isDefault":false},{"id":"sec","identityName":"NazukikiSecretary","isDefault":true},{"id":"x","identityName":""}]`)
+	name, all := EvalIdentity(c, out)
+	if name != "NazukikiSecretary" || len(all) != 2 {
+		t.Fatalf("%q %v", name, all)
+	}
+	if name, all := EvalIdentity(c, []byte(`{"not":"a list"}`)); name != "" || all != nil {
+		t.Fatalf("%q %v", name, all)
+	}
+}

@@ -19,6 +19,7 @@ const (
 	MethodInstanceWrite = "instance_write"
 	MethodInstanceList  = "instance_list"
 	MethodEntryPortSet  = "entry_port_set"
+	MethodLabelSet      = "agent_label_set"
 )
 
 var idRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -163,7 +164,11 @@ type Report struct {
 	Previous       *Record             `json:"previous,omitempty"`
 	Changes        []Change            `json:"changes,omitempty"`
 	ScannedAt      time.Time           `json:"scanned_at"`
-	Unreadable     []FileRef           `json:"unreadable,omitempty"`
+	// HarnessName is the name the harness gives this agent, HarnessAgents
+	// every agent name in the state directory (profile identity).
+	HarnessName   string    `json:"harness_name,omitempty"`
+	HarnessAgents []string  `json:"harness_agents,omitempty"`
+	Unreadable    []FileRef `json:"unreadable,omitempty"`
 }
 
 // Provenance records where the body came from.
@@ -229,6 +234,19 @@ type Record struct {
 	// is set on every harness command run for it.
 	Name string            `json:"name,omitempty"`
 	Env  map[string]string `json:"env,omitempty"`
+	// DisplayName is the name the user gave the agent in Valise ("" to
+	// follow HarnessName); the instance id never changes with it.
+	DisplayName   string   `json:"display_name,omitempty"`
+	HarnessName   string   `json:"harness_name,omitempty"`
+	HarnessAgents []string `json:"harness_agents,omitempty"`
+}
+
+// Label is what the agent is called: the user's name, the harness's, or "".
+func (r *Record) Label() string {
+	if r.DisplayName != "" {
+		return r.DisplayName
+	}
+	return r.HarnessName
 }
 
 // Supersession says which operation replaced an instance.
@@ -252,7 +270,7 @@ func RecordFrom(r *Report, now time.Time) Record {
 		InstanceID: r.InstanceID, ProfileID: r.ProfileID, ProfileVersion: r.ProfileVersion,
 		Roots: roots, Provenance: r.Provenance, Service: r.Service, Entries: r.Entries,
 		LocalOverrides: ov, EntryPorts: r.EntryPorts, EnrolledAt: now.UTC(),
-		Name: r.Name, Env: r.Env,
+		Name: r.Name, Env: r.Env, HarnessName: r.HarnessName, HarnessAgents: r.HarnessAgents,
 	}
 }
 
@@ -299,6 +317,10 @@ type InstanceSummary struct {
 	// the agent's name within it, "" for the default agent.
 	InstallID string `json:"install_id,omitempty"`
 	Name      string `json:"name,omitempty"`
+	// Label is the agent's name for display (Record.Label), "" when none;
+	// HarnessAgents lists the harness's agents in its state directory.
+	Label         string   `json:"label,omitempty"`
+	HarnessAgents []string `json:"harness_agents,omitempty"`
 	// Live state read when listing (systemctl show, a TCP dial).
 	Service []ServiceState `json:"service"`
 	Entries []EntryState   `json:"entries"`
@@ -314,6 +336,12 @@ type InstanceListResult struct {
 type InstanceWriteParams struct {
 	Record  Record          `json:"record"`
 	Profile profile.Profile `json:"profile"`
+}
+
+// LabelSetParams sets the name an agent shows in Valise ("" clears it).
+type LabelSetParams struct {
+	InstanceID  string `json:"instance_id"`
+	DisplayName string `json:"display_name"`
 }
 
 // EntryPortSetParams records a new port for one entry of an instance

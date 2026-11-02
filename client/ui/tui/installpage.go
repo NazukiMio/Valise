@@ -90,6 +90,9 @@ func installCard(m *Model, d *srvData, g installGroup, selected, compact bool) s
 	var rows []string
 	for _, in := range g.agents {
 		r := "· " + agentLabel(m, in.ProfileID, in.Name)
+		if in.Label != "" {
+			r = "· " + in.Label + faintStyle.Render(" · "+agentLabel(m, in.ProfileID, in.Name))
+		}
 		if len(attention(m, d, in)) > 0 {
 			r += warnStyle.Render("  !")
 		}
@@ -246,7 +249,11 @@ func (t *agentsTab) view(m *Model, p *instancePage, height int) string {
 			p.setFocus(n, n)
 		}
 		if r.in != nil {
-			line := agentLabel(m, r.in.ProfileID, r.in.Name) + dimStyle.Render("  ·  ") + backupLine(m, d, *r.in, true)
+			label := agentLabel(m, r.in.ProfileID, r.in.Name)
+			if r.in.Label != "" {
+				label = r.in.Label + faintStyle.Render(" · "+label)
+			}
+			line := label + dimStyle.Render("  ·  ") + backupLine(m, d, *r.in, true)
 			if a := attention(m, d, *r.in); len(a) > 0 && !strings.Contains(line, a[0]) {
 				line += warnStyle.Render("  ! " + a[0])
 			}
@@ -273,7 +280,7 @@ func (t *agentsTab) view(m *Model, p *instancePage, height int) string {
 // install page, the instance otherwise.
 func (p *instancePage) heading(m *Model) string {
 	if p.install == "" {
-		return p.inst.InstanceID
+		return instName(p.inst)
 	}
 	return p.install + "（" + itoa(len(groupOf(m, p.host, p.install).agents)) + " 个 " + agentTerm(m, p.inst.ProfileID) + "）"
 }

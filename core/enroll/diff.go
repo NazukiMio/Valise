@@ -33,6 +33,7 @@ func Diff(prev, next Record) []Change {
 	}
 	add("provenance.kind", prev.Provenance.Kind, next.Provenance.Kind)
 	add("provenance", provenanceSummary(prev.Provenance), provenanceSummary(next.Provenance))
+	add("harness_name", prev.HarnessName, next.HarnessName)
 	return out
 }
 

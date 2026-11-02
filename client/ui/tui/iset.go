@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"valise/core/agentkit"
+	"valise/core/enroll"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 	"valise/ui/service"
@@ -21,7 +22,8 @@ type isetTab struct {
 }
 
 const (
-	isKit = iota
+	isName = iota
+	isKit
 	isPeriod
 	isTimer
 	isRules
@@ -95,6 +97,8 @@ func (t *isetTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool)
 				pl, err := svc.KitUninstall(ctx, host, inst, force, true)
 				return kitPlanned{removal: pl, force: force, err: err}
 			}, true
+		case k == "enter" && t.cursor == isName:
+			return askAgentName(m, p), true
 		case k == "enter" && t.cursor == isPeriod:
 			return t.choosePeriod(m, p), true
 		case k == "enter" && t.cursor == isTimer:
@@ -184,6 +188,7 @@ func (t *isetTab) chooseTimer(m *Model, p *instancePage) tea.Cmd {
 func (t *isetTab) view(m *Model, p *instancePage, height int) string {
 	w := min(m.width-2, 100)
 	sections := []struct{ title, body string }{
+		{"名字", nameText(p.inst)},
 		{"逃生舱技能", t.kitText(p)},
 		{"云备份周期", t.periodText(m, p)},
 		{"定时建立逃生舱", t.timerText()},
@@ -283,4 +288,34 @@ func (t *isetTab) rulesText(p *instancePage) string {
 		}
 	}
 	return s + "\n" + dimStyle.Render("按 enter 查看每一类文件进哪些逃生舱，以及怎么修改。")
+}
+
+// nameText is the name section: the agent's name and where it comes from.
+func nameText(in enroll.InstanceSummary) string {
+	var b strings.Builder
+	switch {
+	case in.Label == "":
+		b.WriteString(dimStyle.Render("没有名字，只显示实例名 " + in.InstanceID + "；按 enter 起一个"))
+	default:
+		b.WriteString(in.Label + dimStyle.Render("（实例名 "+in.InstanceID+" 不变；按 enter 修改）"))
+	}
+	if len(in.HarnessAgents) > 1 {
+		b.WriteString("\n" + dimStyle.Render("这个目录里有 "+itoa(len(in.HarnessAgents))+" 个 agent："+strings.Join(in.HarnessAgents, "、")+"（一起备份与恢复）"))
+	}
+	return b.String()
+}
+
+// askAgentName sets the agent's name in Valise (an owner operation).
+func askAgentName(m *Model, p *instancePage) tea.Cmd {
+	host, inst := p.host, p.inst.InstanceID
+	return m.push(newInput("在 Valise 里显示为（留空：跟随 harness 里的名字；只改显示，不改任何文件）", p.inst.Label, false, func(m *Model, v string) tea.Cmd {
+		svc, ctx := m.svc, m.ctx
+		v = strings.TrimSpace(v)
+		return func() tea.Msg {
+			if err := svc.SetAgentLabel(ctx, host, inst, v); err != nil {
+				return failed(err)
+			}
+			return refreshed{host, "名字已保存"}
+		}
+	}))
 }

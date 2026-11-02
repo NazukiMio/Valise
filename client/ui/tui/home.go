@@ -139,7 +139,7 @@ func serverCard(m *Model, d *srvData, selected bool, w int) string {
 	var issues []string
 	oldest, never, stationBad := time.Time{}, false, false
 	for _, in := range agents {
-		row := "  " + headStyle.Render(in.InstanceID) + "  " + runState(in)
+		row := "  " + instName(in) + "  " + runState(in)
 		if len(in.Entries) > 0 {
 			row += dimStyle.Render(" · ") + entryState(in)
 		}

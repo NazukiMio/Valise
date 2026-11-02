@@ -58,7 +58,7 @@ func instanceCard(m *Model, d *srvData, in enroll.InstanceSummary, selected, com
 	attn := attention(m, d, in)
 	if compact {
 		icon := compactIcon(dp)
-		info := []string{headStyle.Render(in.InstanceID), runStateShort(in)}
+		info := []string{instName(in), runStateShort(in)}
 		switch {
 		case in.Superseded != nil:
 			info = append(info, warnStyle.Render("已被取代"))
@@ -72,7 +72,7 @@ func instanceCard(m *Model, d *srvData, in enroll.InstanceSummary, selected, com
 		return cardFrame(body, compactCardW, compactCardH, selected, in.Superseded != nil)
 	}
 	icon := standardIcon(dp)
-	info := []string{headStyle.Render(in.InstanceID), dimStyle.Render(name)}
+	info := []string{instName(in), dimStyle.Render(name)}
 	if in.ProfileStatus != "verified" {
 		info = append(info, faintStyle.Render("（harness 资料未核实）"))
 	} else {
@@ -233,4 +233,21 @@ func lastSnapshotID(d *srvData, inst string) string {
 		}
 	}
 	return best
+}
+
+// instName is an agent's name for display: 「名字 · 实例 id」 with the id
+// faint, or just the id (docs/UI.md 9.5 "名字").
+func instName(in enroll.InstanceSummary) string {
+	if in.Label == "" || in.Label == in.InstanceID {
+		return headStyle.Render(in.InstanceID)
+	}
+	return headStyle.Render(in.Label) + faintStyle.Render(" · "+in.InstanceID)
+}
+
+// instTitle is instName without styles (breadcrumbs).
+func instTitle(in enroll.InstanceSummary) string {
+	if in.Label == "" || in.Label == in.InstanceID {
+		return in.InstanceID
+	}
+	return in.Label + " · " + in.InstanceID
 }

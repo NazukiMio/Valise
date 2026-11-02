@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"valise/core/enroll"
@@ -93,6 +94,24 @@ func SetEntryPort(home, id, entry string, port int) (map[string]int, error) {
 		a.EntryPorts = map[string]int{}
 	}
 	return a.EntryPorts, nil
+}
+
+// SetDisplayName sets the name the user gives agent id in Valise ("" to
+// follow the harness's name).
+func SetDisplayName(home, id, name string) error {
+	name = strings.TrimSpace(name)
+	if len([]rune(name)) > 40 || strings.ContainsAny(name, "\n\r\t") {
+		return valise.New("display_name_invalid", "名字最长 40 个字，不能换行", "")
+	}
+	d, err := dossierOf(home, id)
+	if err != nil {
+		return err
+	}
+	if d == nil {
+		return valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+id, "先运行 valise enroll <服务器> --accept")
+	}
+	d.Agent(id).DisplayName = name
+	return writeDossier(home, d)
 }
 
 // Refresh replaces the facts in rec that describe the server it lives on
