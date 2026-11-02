@@ -73,6 +73,8 @@ func (s *settingsScreen) help() string {
 		items = append(items, "p", "在线更新资料包", "f", "从文件安装资料包")
 	case ssAdvanced:
 		items = append(items, "u", "从这台服务器移除我的钥匙")
+	case ssAbout:
+		items = append(items, "g", "第一次使用")
 	}
 	return menu(items...)
 }
@@ -151,6 +153,8 @@ func (s *settingsScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		case (k == "right" || k == "enter") && s.hasList():
 			s.inBody = true
 			return nil, true
+		case s.section == ssAbout && k == "g":
+			// g opens the checklist here, not the list's top
 		default:
 			if c, moved := moveList(s.section, len(settingsSections), k); moved {
 				return s.go_(m, c), true
@@ -175,6 +179,9 @@ func (s *settingsScreen) action(m *Model, k string) (tea.Cmd, bool) {
 		host = s.hosts[s.cursor]
 	}
 	switch {
+	case s.section == ssAbout && k == "g":
+		hosts, _ := m.svc.Servers()
+		return m.push(newChecklist(hosts)), true
 	case s.section == ssKey && k == "b":
 		return m.push(newInput("把恢复套件导出到哪个文件夹？（建议放进 U 盘或密码管理器的附件，文件夹必须是空的或不存在）", "~/Desktop/valise-恢复套件", false,
 			func(m *Model, dir string) tea.Cmd {
@@ -257,7 +264,8 @@ func (s *settingsScreen) view(m *Model) string {
 		body = s.advancedView(m, w)
 	case ssAbout:
 		body = box("关于", kv("版本", m.svc.Version, "项目", "github.com/NazukiMio/Valise",
-			"不用 Valise 也能恢复", "金库格式公开：用 age、zstd 和仓库里的 tools/standalone-restore/ 即可，把它指向任一周期文件夹"), w)
+			"不用 Valise 也能恢复", "金库格式公开：用 age、zstd 和仓库里的 tools/standalone-restore/ 即可，把它指向任一周期文件夹",
+			"第一次使用", "上手清单与各功能的小引导：按 g 打开"), w)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(16).Render(strings.Join(side, "\n")), body)
 }

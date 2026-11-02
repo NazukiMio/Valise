@@ -65,7 +65,7 @@ func TestManageActions(t *testing.T) {
 	m, _ := world(t)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 44})
 	openInstance(t, m)
-	key(t, m, "2")
+	key(t, m, "3")
 	wantText(t, m, "动作 · 查看", "打招呼", "日常钥匙", "动作 · 常规管理", "重启演示", "动作 · 修改配置", "换令牌", "原生", "打开这台服务器的终端")
 	v := screenText(m)
 	if strings.Contains(v, "/bin/echo") {

@@ -119,7 +119,7 @@ func newInstallPage(host string, g installGroup) *instancePage {
 // newAgentPage is one agent of a multi-agent installation.
 func newAgentPage(host string, in enroll.InstanceSummary) *instancePage {
 	p := newInstancePage(host, in)
-	p.tabs = []tab{&overviewTab{}, &healthTab{}, newPodsTab(), &isetTab{}}
+	p.tabs = []tab{&overviewTab{}, &chatTab{}, &healthTab{}, newPodsTab(), &isetTab{}}
 	return p
 }
 

@@ -39,3 +39,28 @@ func TestEvalApproval(t *testing.T) {
 		}
 	}
 }
+
+// A bypass whose every scope still reads the harness's defaults is its
+// factory setting; one scope set by the user makes it not.
+func TestApprovalDefault(t *testing.T) {
+	c := &ApprovalCheck{Each: "effectivePolicy.scopes",
+		BypassWhen:  map[string]string{"security.effective": "full", "ask.effective": "off"},
+		DefaultWhen: []map[string]string{{"security.requestedSource": "OpenClaw default (full)", "ask.requestedSource": "OpenClaw default (off)"}}}
+	scope := func(src string) string {
+		return `{"security":{"effective":"full","requestedSource":"` + src + ` (full)"},"ask":{"effective":"off","requestedSource":"` + src + ` (off)"}}`
+	}
+	asking := `{"security":{"effective":"allowlist","requestedSource":"config"},"ask":{"effective":"on-miss","requestedSource":"config"}}`
+	for _, tc := range []struct {
+		out  string
+		want bool
+	}{
+		{`{"effectivePolicy":{"scopes":[` + scope("OpenClaw default") + `]}}`, true},
+		{`{"effectivePolicy":{"scopes":[` + scope("OpenClaw default") + `,` + asking + `]}}`, true},
+		{`{"effectivePolicy":{"scopes":[` + scope("OpenClaw default") + `,` + scope("tools.exec") + `]}}`, false},
+		{`{"effectivePolicy":{"scopes":[` + asking + `]}}`, false},
+	} {
+		if got := ApprovalDefault(c, []byte(tc.out)); got != tc.want {
+			t.Errorf("%s → %v, want %v", tc.out, got, tc.want)
+		}
+	}
+}

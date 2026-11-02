@@ -28,7 +28,7 @@ func (h *homeScreen) help() string {
 	if len(h.hosts) == 0 {
 		return menu("a", "添加服务器", "s", "设置")
 	}
-	return menu("↑↓", "选择", "enter", "进入服务器", "a", "添加服务器", "r", "刷新", "s", "设置")
+	return menu("↑↓", "选择", "enter", "进入服务器", "a", "添加服务器", "g", "第一次使用", "r", "刷新", "s", "设置")
 }
 
 func (h *homeScreen) flourish(m *Model) string { return flourishHome(len(h.hosts)) }
@@ -54,6 +54,9 @@ func (h *homeScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		return tea.Batch(cmds...), true
 	case tea.KeyPressMsg:
 		k := msg.String()
+		if k == "g" { // before moveList, where g jumps to the top
+			return m.push(newChecklist(h.hosts)), true
+		}
 		if c, ok := moveList(h.cursor, len(h.hosts), k); ok {
 			h.cursor = c
 			return nil, true
@@ -92,7 +95,12 @@ func (h *homeScreen) view(m *Model) string {
 	for i, host := range h.hosts {
 		cards = append(cards, serverCard(m, m.server(host), i == h.cursor, w))
 	}
-	return dimStyle.Render("你的服务器（"+itoa(len(h.hosts))+" 台）") + "\n\n" + vstack(cards, h.cursor, m.bodyHeight()-2)
+	head := dimStyle.Render("你的服务器（"+itoa(len(h.hosts))+" 台）") + "\n\n"
+	gc := guideCard(m, h.hosts, w)
+	if gc == "" {
+		return head + vstack(cards, h.cursor, m.bodyHeight()-2)
+	}
+	return head + vstack(cards, h.cursor, m.bodyHeight()-2-lipgloss.Height(gc)) + "\n" + gc
 }
 
 // vstack stacks cards, dropping whole cards above the selection until it

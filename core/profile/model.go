@@ -5,6 +5,7 @@ package profile
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -631,7 +632,10 @@ type ApprovalCheck struct {
 	Each       string              `yaml:"each" json:"each,omitempty"`
 	BypassWhen map[string]string   `yaml:"bypass_when" json:"bypass_when"`
 	AskWhen    []map[string]string `yaml:"ask_when" json:"ask_when,omitempty"`
-	Verify     string              `yaml:"verify" json:"verify,omitempty"`
+	// DefaultWhen marks a bypass that is the harness's factory setting:
+	// every bypass item matches one of these groups.
+	DefaultWhen []map[string]string `yaml:"default_when" json:"default_when,omitempty"`
+	Verify      string              `yaml:"verify" json:"verify,omitempty"`
 }
 
 // Approval modes read by ApprovalCheck.
@@ -669,6 +673,43 @@ func EvalApproval(c *ApprovalCheck, out []byte) (mode, detail string) {
 		}
 	}
 	return mode, detail
+}
+
+// ApprovalDefault reports whether a bypass is the harness's factory setting
+// (every bypass item matches a default_when group).
+func ApprovalDefault(c *ApprovalCheck, out []byte) bool {
+	var doc any
+	if len(c.DefaultWhen) == 0 || json.Unmarshal(out, &doc) != nil {
+		return false
+	}
+	items := []any{doc}
+	if c.Each != "" {
+		arr, ok := field(doc, c.Each).([]any)
+		if !ok {
+			return false
+		}
+		items = arr
+	}
+	bypass := false
+	for _, it := range items {
+		if m, _ := evalOne(c, it); m != ApprovalBypass {
+			continue
+		}
+		bypass = true
+		if !slices.ContainsFunc(c.DefaultWhen, func(w map[string]string) bool { return matches(it, w) }) {
+			return false
+		}
+	}
+	return bypass
+}
+
+func matches(it any, want map[string]string) bool {
+	for k, v := range want {
+		if fmt.Sprint(field(it, k)) != v {
+			return false
+		}
+	}
+	return true
 }
 
 func evalOne(c *ApprovalCheck, it any) (string, string) {

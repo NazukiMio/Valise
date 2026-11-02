@@ -167,7 +167,7 @@ func openInstance(t *testing.T, m *Model) {
 	key(t, m, "enter")
 	wantText(t, m, "demo", "Demo", "harness 资料未核实")
 	key(t, m, "enter")
-	wantText(t, m, "1 概览", "2 管理", "3 健康", "4 逃生舱", "5 设置")
+	wantText(t, m, "1 概览", "2 对话", "3 管理", "4 健康", "5 逃生舱", "6 设置")
 }
 
 func TestHomeServerInstanceAndSeal(t *testing.T) {
@@ -185,7 +185,7 @@ func TestHomeServerInstanceAndSeal(t *testing.T) {
 	if !strings.Contains(m.flash, "逃生舱已建立") || m.flashErr {
 		t.Fatalf("flash %q", m.flash)
 	}
-	key(t, m, "4")
+	key(t, m, "5")
 	wantText(t, m, "你手动建立", "升级前", "轻装", "共 2 个逃生舱")
 	// Search narrows the list.
 	key(t, m, "/")
@@ -205,7 +205,7 @@ func TestLandingRollback(t *testing.T) {
 	m, home := world(t)
 	openInstance(t, m)
 	os.WriteFile(filepath.Join(home, ".demo/memory/a.md"), []byte("changed after the seal"), 0o644)
-	key(t, m, "4")
+	key(t, m, "5")
 	key(t, m, "enter")
 	key(t, m, "l")
 	wantText(t, m, "逃生舱着陆", "原地着陆")
@@ -248,7 +248,7 @@ func TestLandingRollback(t *testing.T) {
 func TestHealthTab(t *testing.T) {
 	m, _ := world(t)
 	openInstance(t, m)
-	key(t, m, "3")
+	key(t, m, "4")
 	wantText(t, m, "逃生舱状态", "agent 健康", "都只在服务器上", "还没有测试过")
 	if v := screenText(m); strings.Contains(v, "着陆") || strings.Contains(v, "上云") {
 		t.Fatal("themed words on the health tab")
@@ -283,7 +283,7 @@ func TestLongListsScroll(t *testing.T) {
 		d.status.Snapshots = append(d.status.Snapshots, s)
 	}
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
-	key(t, m, "4")
+	key(t, m, "5")
 	for i := 0; i < 60; i++ {
 		key(t, m, "down")
 	}

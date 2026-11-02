@@ -122,6 +122,7 @@ func Approval(ctx context.Context, e *porterenroll.Env, c *profile.ApprovalCheck
 		res.Detail = "命令退出码 " + strconv.Itoa(out.Code)
 	default:
 		res.Mode, res.Detail = profile.EvalApproval(c, out.Stdout)
+		res.Default = res.Mode == profile.ApprovalBypass && profile.ApprovalDefault(c, out.Stdout)
 	}
 	return res, nil
 }

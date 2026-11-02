@@ -42,4 +42,6 @@ type ApprovalResult struct {
 	Mode     string `json:"mode,omitempty"` // profile.Approval*
 	Detail   string `json:"detail,omitempty"`
 	Pending  bool   `json:"pending,omitempty"`
+	// Default: the bypass is the harness's factory setting (default_when).
+	Default bool `json:"default,omitempty"`
 }

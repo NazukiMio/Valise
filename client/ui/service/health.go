@@ -295,6 +295,9 @@ func approvalItem(chk *action.ApprovalResult, d *agentkit.Declaration) HealthIte
 		switch chk.Mode {
 		case profile.ApprovalBypass:
 			it.Level, it.Text, it.Detail = HealthBad, "agent 执行风险命令无需批准（Bypass）（"+src+"）", bypassDetail
+			if chk.Default {
+				it.Detail = "这是 harness 的出厂设置，不是你改的。" + bypassDetail
+			}
 			if declared == agentkit.ApprovalAsk {
 				it.Text += "；agent 声称需要批准，与设置不符"
 			}

@@ -912,7 +912,7 @@ func (c *checker) checkApproval(a *ApprovalCheck) {
 	if len(a.BypassWhen) == 0 {
 		c.add("approval_check.bypass_when", "不能为空：哪些值同时成立时算无需批准")
 	}
-	for _, w := range append([]map[string]string{a.BypassWhen}, a.AskWhen...) {
+	for _, w := range append(append([]map[string]string{a.BypassWhen}, a.AskWhen...), a.DefaultWhen...) {
 		for k := range w {
 			if !fieldPathRe.MatchString(k) {
 				c.add("approval_check", "字段必须是点分路径：%q", k)
