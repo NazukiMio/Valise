@@ -111,6 +111,8 @@ type pickScreen struct {
 	choices []choice
 	cursor  int
 	pick    func(m *Model, value string) tea.Cmd
+	// detail: lines shown between the question and the choices.
+	detail []string
 }
 
 func pick(label string, choices []choice, f func(m *Model, value string) tea.Cmd) *pickScreen {
@@ -123,6 +125,12 @@ func (p *pickScreen) init(m *Model) tea.Cmd { return nil }
 func (p *pickScreen) view(m *Model) string {
 	var b strings.Builder
 	b.WriteString(p.label + "\n\n")
+	for _, d := range p.detail {
+		b.WriteString(d + "\n")
+	}
+	if len(p.detail) > 0 {
+		b.WriteString("\n")
+	}
 	var rows []string
 	for i, c := range p.choices {
 		row := cursorLine(i == p.cursor, c.label)

@@ -110,12 +110,17 @@ func (s *serverPage) install(m *Model) tea.Cmd {
 	}
 	host := s.host
 	return m.push(pick("选择要安装的 harness", cs, func(m *Model, id string) tea.Cmd {
-		return tea.Sequence(m.runCLI("install", host, "--profile", id), m.loadServer(host))
+		return gateThen(m, host, "", func(m *Model) tea.Cmd {
+			return tea.Sequence(m.runCLI("install", host, "--profile", id), m.loadServer(host))
+		})
 	}))
 }
 
 // pushMsg asks the root to push a screen (from a command chain).
 type pushMsg struct{ s screen }
+
+// contMsg continues on the update loop (a command finished off it).
+type contMsg struct{ then func(m *Model) tea.Cmd }
 
 // thenMsg carries a server's fresh data and continues on the update loop.
 type thenMsg struct {

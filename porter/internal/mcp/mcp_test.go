@@ -108,7 +108,7 @@ func TestProtocolAndTools(t *testing.T) {
 	}
 	c.in.Write([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n"))
 	tools := c.call("tools/list", nil)["tools"].([]any)
-	if len(tools) != 6 {
+	if len(tools) != 7 {
 		t.Fatalf("%d tools", len(tools))
 	}
 	for _, tl := range tools {
@@ -126,6 +126,20 @@ func TestProtocolAndTools(t *testing.T) {
 	}
 	if audit, _ := os.ReadFile(seal.Paths{Home: home}.Audit()); !strings.Contains(string(audit), "auto: first tool call (valise_status)") {
 		t.Fatalf("no safety-net seal: %s", audit)
+	}
+	// valise_declare: recorded as said, validated, rate limited.
+	if _, text, isErr := c.tool("valise_declare", map[string]any{"security_skills": []any{}, "approval_mode": "maybe"}); !isErr || !strings.Contains(text, "approval_mode") {
+		t.Fatalf("bad mode accepted: %s", text)
+	}
+	if _, text, isErr := c.tool("valise_declare", map[string]any{"security_skills": []any{map[string]any{"name": "guard\nrail", "purpose": "blocks rm -rf"}}, "approval_mode": "bypass"}); isErr {
+		t.Fatalf("%s", text)
+	}
+	if _, text, isErr := c.tool("valise_declare", map[string]any{"security_skills": []any{}, "approval_mode": "ask"}); !isErr || !strings.Contains(text, "10 分钟") {
+		t.Fatalf("declare not rate limited: %s", text)
+	}
+	st, _ := kit.LoadState(home, "demo")
+	if st.Declaration == nil || st.Declaration.ApprovalMode != "bypass" || st.Declaration.SecuritySkills[0].Name != "guard rail" {
+		t.Fatalf("%+v", st.Declaration)
 	}
 	*now = now.Add(11 * time.Minute)
 

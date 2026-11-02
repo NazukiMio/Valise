@@ -180,6 +180,8 @@ type StatusResult struct {
 	Snapshots  []vault.Meta  `json:"snapshots"`
 	Leaves     []LeafState   `json:"leaves"`
 	Targets    []TargetState `json:"targets"`
+	// Now is the server's clock, for the health page's clock check.
+	Now time.Time `json:"now,omitzero"`
 }
 
 // LeafState is one period vault on the server.

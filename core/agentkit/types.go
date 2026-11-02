@@ -184,6 +184,29 @@ type KitStatusResult struct {
 	Skills   []SkillState `json:"skills"`
 	LastMCP  *time.Time   `json:"last_mcp_call,omitempty"`
 	MCPCalls int          `json:"mcp_calls"`
+	// Declaration is the agent's latest valise_declare, never verified.
+	Declaration *Declaration `json:"declaration,omitempty"`
+}
+
+// Approval modes an agent declares (docs/AGENT_KIT.md section 3).
+const (
+	ApprovalAsk     = "ask"
+	ApprovalBypass  = "bypass"
+	ApprovalUnknown = "unknown"
+)
+
+// Declaration is what an agent says about its own safety: the security
+// skills it has and whether risky commands need the user's approval.
+type Declaration struct {
+	SecuritySkills []SecuritySkill `json:"security_skills"`
+	ApprovalMode   string          `json:"approval_mode"`
+	At             time.Time       `json:"at"`
+}
+
+// SecuritySkill is one declared security skill.
+type SecuritySkill struct {
+	Name    string `json:"name"`
+	Purpose string `json:"purpose"`
 }
 
 // KitUninstallParams removes installed skills. Only files equal to the

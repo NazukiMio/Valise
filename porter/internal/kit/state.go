@@ -25,6 +25,8 @@ type State struct {
 	LastCheckup  time.Time     `json:"last_checkup,omitzero"`
 	LastFindings []string      `json:"last_findings,omitempty"`
 	Handoff      *HandoffState `json:"handoff,omitempty"`
+	// Declaration is the agent's latest valise_declare.
+	Declaration *agentkit.Declaration `json:"declaration,omitempty"`
 }
 
 // HandoffState is recorded by valise_handoff_begin.

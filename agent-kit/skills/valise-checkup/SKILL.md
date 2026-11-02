@@ -31,6 +31,11 @@ own.
 3. Recommend options in this order: your harness's own documented options
    (`native_options_doc` in the result, when present), then the criteria below.
    **Never recommend a specific third-party plugin by name.**
+4. Keep your safety declaration current: call `valise_declare` with the
+   security skills you actually have and your approval mode (`ask` if you ask
+   the user before risky commands, `bypass` if you run them without asking,
+   `unknown` if you cannot tell). Declare what is true, not what sounds safe;
+   Valise shows it to the user as your unverified declaration.
 
 ## Changing memory
 

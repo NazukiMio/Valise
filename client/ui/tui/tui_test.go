@@ -167,7 +167,7 @@ func openInstance(t *testing.T, m *Model) {
 	key(t, m, "enter")
 	wantText(t, m, "demo", "Demo", "profile 未核实")
 	key(t, m, "enter")
-	wantText(t, m, "1 概览", "2 管理", "3 体检", "4 逃生舱", "5 设置")
+	wantText(t, m, "1 概览", "2 管理", "3 健康", "4 逃生舱", "5 设置")
 }
 
 func TestHomeServerInstanceAndSeal(t *testing.T) {
@@ -240,13 +240,20 @@ func TestLandingRollback(t *testing.T) {
 	}
 }
 
-// Regression: Esc on the archive suggestions with none pending panicked
-// (index out of range [-1]).
-func TestCheckupEscWithoutProposals(t *testing.T) {
+// The health tab (docs/UI.md 9.5): plain words, problems first, a restore
+// test in place. Regression kept: a/x with no proposals pending must not
+// panic, and esc goes back.
+func TestHealthTab(t *testing.T) {
 	m, _ := world(t)
 	openInstance(t, m)
 	key(t, m, "3")
-	wantText(t, m, "体检只读", "归档建议", "没有待处理的建议")
+	wantText(t, m, "逃生舱真的能用吗", "agent 正常吗", "都只在服务器上", "还没有测试过")
+	if v := screenText(m); strings.Contains(v, "着陆") || strings.Contains(v, "上云") {
+		t.Fatal("themed words on the health tab")
+	}
+	m.svc.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
+	key(t, m, "t")
+	wantText(t, m, "上次测试", "通过")
 	for _, k := range []string{"a", "x", "down", "up", "esc"} {
 		key(t, m, k)
 	}

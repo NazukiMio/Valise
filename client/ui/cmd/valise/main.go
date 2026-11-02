@@ -57,6 +57,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   old list <服务器> | old cleanup <服务器> <实例>  查看 / 清理被迁移或克隆取代的旧实例
   tui                                            终端界面：服务器、agent、逃生舱、体检、管理页、登录授权、设置
   checkup <服务器> <实例> [--json]                 体检：会话、记忆文件、记忆机制（只读）
+  health <服务器> <实例> [--json]                  健康：备份、恢复测试、服务、定时备份、审批（只读）
+  restore-test <服务器> <实例> [--snapshot id]     恢复测试：两边各解开一次逃生舱并核对，不切换，过后删除
   proposals <服务器> <实例> [--accept id,…|all] [--accept-demotion id,…] [--reject id,…|all]
                                                  查看 / 确认 agent 提出的归类提议
   kit install <服务器> <实例>                      安装逃生舱技能，并给出接入 MCP 的方法
@@ -169,6 +171,10 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.prev(ctx, args[1:])
 	case args[0] == "old" && len(args) > 1:
 		return c.old(ctx, args[1:])
+	case args[0] == "health":
+		return c.health(ctx, args[1:])
+	case args[0] == "restore-test":
+		return c.restoreTest(ctx, args[1:])
 	case args[0] == "checkup":
 		return c.checkup(ctx, args[1:])
 	case args[0] == "proposals":

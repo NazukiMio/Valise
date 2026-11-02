@@ -21,7 +21,7 @@ import (
 
 // Status describes the vault tree without any key.
 func Status(p Paths) (*vaultrpc.StatusResult, error) {
-	res := &vaultrpc.StatusResult{Snapshots: []vault.Meta{}, Leaves: []vaultrpc.LeafState{}, Targets: []vaultrpc.TargetState{}, Recipients: []string{}}
+	res := &vaultrpc.StatusResult{Snapshots: []vault.Meta{}, Leaves: []vaultrpc.LeafState{}, Targets: []vaultrpc.TargetState{}, Recipients: []string{}, Now: time.Now().UTC()}
 	rec, err := ReadRecipients(p)
 	if err != nil {
 		return nil, err

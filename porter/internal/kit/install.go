@@ -143,6 +143,9 @@ func Status(home string, p agentkit.KitStatusParams) (*agentkit.KitStatusResult,
 			}
 		}
 	}
+	if st, err := LoadState(home, p.InstanceID); err == nil {
+		res.Declaration = st.Declaration
+	}
 	return res, nil
 }
 

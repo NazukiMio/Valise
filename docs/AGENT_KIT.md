@@ -41,7 +41,7 @@ agent-kit 属于健康区，**不是灾难恢复工具**。推荐用法是：用
 | `valise_checkup` | 无 | 运行代码体检（见 ARCHITECTURE.md 第 9 节），返回各项指标和 finding id | 只读，最短间隔 10 分钟 |
 | `valise_seal` | `{ "reason": string }` | 封存一次 `soul` 档，返回快照 id | 只能封存 `soul` 档，最短间隔 10 分钟，`reason` 写入审计记录 |
 | `valise_propose_enrollment` | `{ "items": [{ "root", "path", "category", "reason" }] }` | 由代码校验路径确实存在、没有路径穿越、类别合法，然后以"待确认"状态保存；确认后写入该实例的 `local_overrides` | 不得提议 `secrets` 以外的类别去覆盖已有的 `secrets` 规则；把文件移出 `soul` 档的提议（改为 `ignore`、`cache`、`body`）标记为"降级"；所有提议都需要用户在客户端确认 |
-| `valise_declare`（2026-11-02 用户决定，随 M12 健康页实现） | `{ "security_skills": [{ "name", "purpose" }], "approval_mode": "ask" \| "bypass" \| "unknown" }` | agent 申报自己装了哪些安全类技能、执行风险命令是否需要用户批准；声明连同时间保存在服务器上，界面一律标"agent 声明（未经核实）"；profile 有 `approval_check` 时以核实结果为准 | 只写声明本身；最短间隔 10 分钟；逃生舱技能在体检时提醒 agent 更新 |
+| `valise_declare`（2026-11-02 用户决定，M12 实现） | `{ "security_skills": [{ "name", "purpose" }], "approval_mode": "ask" \| "bypass" \| "unknown" }` | agent 申报自己装了哪些安全类技能、执行风险命令是否需要用户批准；声明连同时间保存在服务器上，界面一律标"agent 声明（未经核实）"；profile 有 `approval_check` 时以核实结果为准 | 只写声明本身；最短间隔 10 分钟；逃生舱技能在体检时提醒 agent 更新 |
 | `valise_handoff_begin` | 无 | 先封存一次 `soul` 档（包含当前会话），再返回快照 id、当前会话的统计数据、profile 中的 `handoff.targets`、每个目标的行数上限，以及 `new_session_hint` | 每次交接只能调用一次 |
 | `valise_handoff_finish` | `{ "snapshot_id" }` | 由代码检查交接目标文件确实被修改、没有超过行数上限，并且只有指定的区段发生了变化；写入审计记录，返回给用户看的下一步提示 | 检查失败时返回具体原因，原文件可以从快照中恢复 |
 

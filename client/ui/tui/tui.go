@@ -247,6 +247,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshed:
 		m.flash, m.flashErr = msg.text, false
 		return m, m.loadServer(msg.host)
+	case contMsg:
+		return m, msg.then(m)
 	case thenMsg:
 		m.data[msg.loaded.d.host], m.flash, m.flashErr = msg.loaded.d, msg.text, false
 		return m, msg.then(m)

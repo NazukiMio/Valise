@@ -51,6 +51,15 @@ var toolList = []map[string]any{
 			"category": map[string]any{"type": "string"},
 			"reason":   map[string]any{"type": "string"},
 		}, "root", "path", "category", "reason")}}, "items")},
+	{"name": "valise_declare", "description": "Declare your own safety settings so the user sees them in Valise: the security skills you have, and whether you ask the user before running risky commands " +
+		"(approval_mode: ask = you ask first; bypass = you run them without asking, e.g. a full-access or auto-approve mode; unknown = you cannot tell). Shown to the user as your declaration, unverified. Update it when this changes. At most once every 10 minutes.",
+		"inputSchema": schema(map[string]any{
+			"security_skills": map[string]any{"type": "array", "items": schema(map[string]any{
+				"name":    map[string]any{"type": "string"},
+				"purpose": map[string]any{"type": "string", "description": "One sentence: what it protects against"},
+			}, "name", "purpose")},
+			"approval_mode": map[string]any{"type": "string", "enum": []string{"ask", "bypass", "unknown"}},
+		}, "security_skills", "approval_mode")},
 	{"name": "valise_handoff_begin", "description": "Start a handoff to a new session: seals the soul tier (including this session), then returns the snapshot id, current session statistics, the memory files to append the handoff to, their line limits and how the user starts a new session.",
 		"inputSchema": schema(map[string]any{})},
 	{"name": "valise_handoff_finish", "description": "Finish a handoff after appending one dated section to the handoff target(s). Code checks that only an appended section changed and the line limit holds.",
@@ -132,6 +141,20 @@ func (t *Tools) Call(ctx context.Context, name string, args json.RawMessage) (an
 			return nil, valise.New("invalid_arguments", "items 不能为空", "按工具说明传入 root、path、category、reason")
 		}
 		return t.propose(a.Items)
+	case "valise_declare":
+		var d agentkit.Declaration
+		if err := json.Unmarshal(args, &d); err != nil {
+			return nil, valise.New("invalid_arguments", "参数格式不对", "按工具说明传入 security_skills 与 approval_mode")
+		}
+		if _, _, err := t.load(); err != nil {
+			return nil, err
+		}
+		out, err := kit.Declare(t.Home, t.Instance, d, t.now())
+		if err != nil {
+			return nil, err
+		}
+		t.audit("declare", "ok", "", "approval_mode="+out.ApprovalMode)
+		return map[string]any{"recorded": out, "note": "已记录；Valise 向用户显示为 agent 的声明（未经核实）"}, nil
 	case "valise_handoff_begin":
 		return t.handoffBegin(ctx)
 	case "valise_handoff_finish":

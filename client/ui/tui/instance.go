@@ -36,11 +36,14 @@ type instancePage struct {
 	kit    *agentkit.KitStatusResult
 	check  *agentkit.CheckupResult
 	log    map[string]vaultrpc.SealLogEntry
+	health *service.HealthReport
+	// healthErr: the health report could not be read.
+	healthErr error
 }
 
 func newInstancePage(host string, in enroll.InstanceSummary) *instancePage {
 	p := &instancePage{host: host, inst: in, log: map[string]vaultrpc.SealLogEntry{}}
-	p.tabs = []tab{&overviewTab{}, &manageTab{}, &checkupTab{}, newPodsTab(), &isetTab{}}
+	p.tabs = []tab{&overviewTab{}, &manageTab{}, &healthTab{}, newPodsTab(), &isetTab{}}
 	return p
 }
 
@@ -88,6 +91,7 @@ func (p *instancePage) init(m *Model) tea.Cmd {
 		func() tea.Msg { k, _ := svc.KitStatus(ctx, host, inst); return kitLoaded{k} },
 		p.loadLog(m),
 		p.loadCheckup(m),
+		p.loadHealth(m),
 	}
 	return tea.Batch(append(cmds, p.tabs[p.active].load(m, p))...)
 }
@@ -95,6 +99,11 @@ func (p *instancePage) init(m *Model) tea.Cmd {
 func (p *instancePage) loadLog(m *Model) tea.Cmd {
 	svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
 	return func() tea.Msg { l, _ := svc.SealLog(ctx, host, inst); return logLoaded{l} }
+}
+
+func (p *instancePage) loadHealth(m *Model) tea.Cmd {
+	svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
+	return func() tea.Msg { r, err := svc.Health(ctx, host, inst); return healthLoaded{r, err} }
 }
 
 func (p *instancePage) loadCheckup(m *Model) tea.Cmd {
@@ -112,6 +121,8 @@ func (p *instancePage) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		if msg.err == nil {
 			p.check = msg.c
 		}
+	case healthLoaded:
+		p.health, p.healthErr = msg.r, msg.err
 	case sealDone:
 		return sealResult(m, p, msg), true
 	case logLoaded:
@@ -240,7 +251,7 @@ func (o *overviewTab) quicks(p *instancePage) []quick {
 	if p.target != nil && len(p.target.Profile.NativeCLI) > 0 {
 		pid := p.target.Profile.ID
 		qs = append(qs, quick{"原生界面（" + strings.Join(p.target.Profile.NativeCLI, " ") + "，高级）", func(m *Model, p *instancePage) tea.Cmd {
-			return m.runCLI("native", host, "--profile", pid)
+			return gatedCLI(m, host, "native", host, "--profile", pid)
 		}})
 	}
 	return append(qs, quick{"建立逃生舱", func(m *Model, p *instancePage) tea.Cmd { return startSeal(m, p) }})
@@ -290,6 +301,17 @@ func capMark(status string) string {
 func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 	d := m.server(p.host)
 	var b strings.Builder
+	// The health page's one or two most important items (docs/UI.md 9.5).
+	if top := topHealth(p, 2); len(top) > 0 {
+		for _, it := range top {
+			st := warnStyle
+			if it.Level == service.HealthBad {
+				st = errStyle
+			}
+			b.WriteString(st.Render(levelMarkPlain(it.Level)+" "+it.Title+"："+it.Text) + dimStyle.Render("  · 详见 3 健康") + "\n")
+		}
+		b.WriteString("\n")
+	}
 	attn := attention(m, d, p.inst)
 	if len(attn) == 0 {
 		b.WriteString(dimStyle.Render("需要处理：无") + "\n\n")

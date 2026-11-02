@@ -82,12 +82,12 @@ func (t *manageTab) rows(p *instancePage) []manageRow {
 	if prof != nil && len(prof.NativeCLI) > 0 {
 		pid := prof.ID
 		rows = append(rows, manageRow{group: "原生", label: "原生界面（" + strings.Join(prof.NativeCLI, " ") + "）", note: "独立的管理连接",
-			do: func(m *Model, p *instancePage) tea.Cmd { return m.runCLI("native", host, "--profile", pid) }})
+			do: func(m *Model, p *instancePage) tea.Cmd { return gatedCLI(m, host, "native", host, "--profile", pid) }})
 		rows = append(rows, manageRow{label: "打开这台服务器的终端", note: pid + " 的命令可以直接用",
-			do: func(m *Model, p *instancePage) tea.Cmd { return m.runCLI("shell", host, "--profile", pid) }})
+			do: func(m *Model, p *instancePage) tea.Cmd { return gatedCLI(m, host, "shell", host, "--profile", pid) }})
 	} else {
 		rows = append(rows, manageRow{group: "原生", label: "打开这台服务器的终端", note: "独立的管理连接",
-			do: func(m *Model, p *instancePage) tea.Cmd { return m.runCLI("shell", host) }})
+			do: func(m *Model, p *instancePage) tea.Cmd { return gatedCLI(m, host, "shell", host) }})
 	}
 	return rows
 }

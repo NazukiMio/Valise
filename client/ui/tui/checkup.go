@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
-
 	"valise/core/agentkit"
 	"valise/core/profile"
 )
@@ -38,152 +35,6 @@ func findingTitle(id string) string {
 }
 
 const agentAsk = "请用 valise-checkup 技能看一下体检结果，提出整理方案，等我确认后再做。"
-
-// checkupTab renders the checkup and the archive suggestions (docs/UI.md 9.4).
-type checkupTab struct {
-	proposals []agentkit.Proposal
-	loadedP   bool
-	cursor    int
-}
-
-type proposalsLoaded struct {
-	list []agentkit.Proposal
-	err  error
-}
-
-func (c *checkupTab) name() string { return "体检" }
-func (c *checkupTab) help(p *instancePage) string {
-	items := []string{"c", "重新体检", "y", "复制给 agent 的话"}
-	if len(c.proposals) > 0 {
-		items = append(items, "↑↓", "选建议", "a", "接受", "x", "拒绝")
-	}
-	return menu(items...)
-}
-
-func (c *checkupTab) load(m *Model, p *instancePage) tea.Cmd {
-	svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
-	return func() tea.Msg { l, err := svc.Proposals(ctx, host, inst); return proposalsLoaded{l, err} }
-}
-
-func (c *checkupTab) decide(m *Model, p *instancePage, d agentkit.DecideParams) tea.Cmd {
-	d.InstanceID = p.inst.InstanceID
-	svc, ctx, host, send := m.svc, m.ctx, p.host, m.send
-	return func() tea.Msg {
-		res, err := svc.DecideProposals(ctx, host, d)
-		if err != nil {
-			return failed(err)
-		}
-		send(flashMsg(fmt.Sprintf("已接受 %d 条、拒绝 %d 条；接受的规则从下一次建立逃生舱起生效", len(res.Accepted), len(res.Rejected))))
-		l, err := svc.Proposals(ctx, host, d.InstanceID)
-		return proposalsLoaded{l, err}
-	}
-}
-
-func (c *checkupTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case proposalsLoaded:
-		c.loadedP = true
-		if msg.err == nil {
-			c.proposals = msg.list
-		}
-		c.cursor = max(0, min(c.cursor, len(c.proposals)-1))
-		return nil, true
-	case tea.KeyPressMsg:
-		k := msg.String()
-		switch k {
-		case "c":
-			m.flash, m.flashErr = "正在体检…", false
-			return p.loadCheckup(m), true
-		case "y":
-			m.flash, m.flashErr = "已复制到剪贴板（终端支持时）："+agentAsk, false
-			return tea.SetClipboard(agentAsk), true
-		}
-		if len(c.proposals) == 0 {
-			return nil, false
-		}
-		if cur, moved := moveList(c.cursor, len(c.proposals), k); moved {
-			c.cursor = cur
-			return nil, true
-		}
-		pr := c.proposals[c.cursor]
-		switch k {
-		case "a":
-			if pr.Demotion {
-				return m.push(confirm("接受这条降级建议？", []string{
-					pr.Rule.Root + ":" + pr.Rule.Glob + " → " + categoryName(pr.Rule.Category),
-					"接受后这些文件不再装进轻装、标准、完整逃生舱（原样逃生舱仍包含它们）。",
-				}, func(m *Model) tea.Cmd { return c.decide(m, p, agentkit.DecideParams{AcceptDemotions: []string{pr.ID}}) })), true
-			}
-			return c.decide(m, p, agentkit.DecideParams{Accept: []string{pr.ID}}), true
-		case "x":
-			return c.decide(m, p, agentkit.DecideParams{Reject: []string{pr.ID}}), true
-		}
-	}
-	return nil, false
-}
-
-func (c *checkupTab) view(m *Model, p *instancePage, height int) string {
-	w := min(m.width-2, 100)
-	var b strings.Builder
-	ck := p.check
-	switch {
-	case ck == nil:
-		b.WriteString(dimStyle.Render("体检中…（只读，不会改动 agent 的任何文件）") + "\n")
-	case len(ck.Findings) == 0:
-		b.WriteString(box("", okStyle.Render("✓ 健康")+dimStyle.Render("　体检只读，不会改动 agent 的任何文件。上次体检："+ago(ck.At, m.now())), w) + "\n")
-	default:
-		b.WriteString(box("", warnStyle.Render("▲ "+itoa(len(ck.Findings))+" 个提醒")+dimStyle.Render("　体检只读，不会改动 agent 的任何文件。上次体检："+ago(ck.At, m.now())), w) + "\n")
-		var th *profile.Thresholds
-		var remedies map[string][]string
-		if m.prof != nil && m.prof.ByID[p.inst.ProfileID] != nil {
-			if cp := m.prof.ByID[p.inst.ProfileID].Effective.Checkup; cp != nil {
-				th, remedies = cp.Thresholds, cp.Remedies
-			}
-		}
-		for _, f := range ck.Findings {
-			b.WriteString(findingCard(ck, f, th, remedies, p, w) + "\n")
-		}
-	}
-	if ck != nil {
-		b.WriteString(box("", okNotes(ck), w) + "\n")
-	}
-	at := strings.Count(b.String(), "\n")
-	pv, from, to := c.proposalsView(w)
-	if from >= 0 {
-		p.setFocus(at+from, at+to)
-	}
-	b.WriteString(pv)
-	return b.String()
-}
-
-func harnessName(p *instancePage) string {
-	if p.target != nil && p.target.Profile.DisplayName != "" {
-		return p.target.Profile.DisplayName
-	}
-	return p.inst.ProfileID
-}
-
-func findingCard(ck *agentkit.CheckupResult, f agentkit.Finding, th *profile.Thresholds, remedies map[string][]string, p *instancePage, w int) string {
-	info := findingInfo[f.ID]
-	var b strings.Builder
-	b.WriteString(info.why + "\n")
-	if bars := findingBars(ck, f.ID, th); bars != "" {
-		b.WriteString(bars + "\n")
-	}
-	if f.Detail != "" {
-		b.WriteString(dimStyle.Render(f.Detail) + "\n")
-	}
-	b.WriteString("\n" + headStyle.Render("处理建议") + "\n")
-	harness := info.generic
-	if rs := remedies[f.ID]; len(rs) > 0 {
-		harness = strings.Join(rs, "；")
-	}
-	b.WriteString("1. " + dimStyle.Render(harnessName(p)+" 自己的做法：") + harness + "\n")
-	b.WriteString("2. " + dimStyle.Render("交给 agent：") + "\"" + agentAsk + "\"" + dimStyle.Render("（按 y 复制）") + "\n")
-	b.WriteString("3. " + dimStyle.Render("记忆整理技能：Valise 计划提供自己的 valise-memory 技能，帮 agent 整理、压缩、归档记忆，目前在规划中。"))
-	st := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cWarn).Padding(0, 1).Width(w)
-	return st.Render(warnStyle.Render("▲ "+info.title) + "\n" + b.String())
-}
 
 // findingBars draws the measured value against its threshold.
 func findingBars(ck *agentkit.CheckupResult, id string, th *profile.Thresholds) string {
@@ -265,24 +116,6 @@ func bar(label string, v, limit float64, value, note string) string {
 	return out
 }
 
-func okNotes(ck *agentkit.CheckupResult) string {
-	var parts []string
-	if ck.SessionsDeclared {
-		parts = append(parts, itoa(ck.SessionCount)+" 个会话，共 "+size(ck.TotalBytes))
-	}
-	for _, mf := range ck.Memory {
-		parts = append(parts, mf.Path+" "+itoa(mf.Lines)+" 行")
-	}
-	if ck.MemoryMechanism {
-		parts = append(parts, "有长期记忆")
-	}
-	s := dimStyle.Render("测到的：" + strings.Join(parts, " · "))
-	for _, n := range ck.Notes {
-		s += "\n" + dimStyle.Render("· "+n)
-	}
-	return s
-}
-
 var categoryNames = map[string]string{"identity": "人格", "memory": "记忆", "skills": "技能", "config": "配置", "sessions": "会话",
 	"state": "状态库", "body_patch": "身体补丁", "secrets": "凭据", "workspace": "工作区", "cache": "缓存", "ignore": "不备份", "body": "身体"}
 
@@ -291,36 +124,4 @@ func categoryName(c string) string {
 		return n
 	}
 	return c
-}
-
-// proposalsView also returns the selected proposal's lines within it
-// (-1 when there is none).
-func (c *checkupTab) proposalsView(w int) (string, int, int) {
-	if !c.loadedP {
-		return "", -1, -1
-	}
-	if len(c.proposals) == 0 {
-		return box("归档建议", dimStyle.Render("没有待处理的建议。agent 认为有文件应该装进逃生舱（或换一类）时，会出现在这里。"), w), -1, -1
-	}
-	var b strings.Builder
-	from, to := -1, -1
-	b.WriteString(dimStyle.Render("agent 认为这些文件也该装进逃生舱，或应该换一类：") + "\n")
-	for i, pr := range c.proposals {
-		if i == c.cursor {
-			from = 1 + lipgloss.Height(lipgloss.NewStyle().Width(w-4).Render(b.String())) - 1
-		}
-		line := pr.Rule.Root + ":" + pr.Rule.Glob + " → " + categoryName(pr.Rule.Category)
-		if pr.Demotion {
-			line += warnStyle.Render("  降级：不再进轻装逃生舱，需要单独确认")
-		}
-		b.WriteString(cursorLine(i == c.cursor, line) + "\n")
-		b.WriteString(dimStyle.Render("    理由（agent 提供）："+pr.Reason) + "\n")
-		if pr.Unclassified > 0 {
-			b.WriteString(warnStyle.Render(fmt.Sprintf("    其中 %d 个文件现在没有归类（按凭据对待），接受后会进入轻装逃生舱；请确认里面没有密钥", pr.Unclassified)) + "\n")
-		}
-		if i == c.cursor {
-			to = lipgloss.Height(lipgloss.NewStyle().Width(w - 4).Render(b.String()))
-		}
-	}
-	return box("归档建议", strings.TrimRight(b.String(), "\n"), w), from, to
 }

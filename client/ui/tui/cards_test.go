@@ -89,10 +89,10 @@ func TestManageActions(t *testing.T) {
 	key(t, m, "esc")
 	key(t, m, "down")
 	key(t, m, "enter")
-	// config needs an escape pod kept elsewhere (docs/INSTALL.md 4.2).
-	if !strings.Contains(m.flash, "放在别处") {
-		t.Fatalf("config action without an offsite pod: %q", m.flash)
-	}
+	// config needs a backup in a repository or on a station
+	// (docs/INSTALL.md 4.2); refused, it offers to back up there first.
+	wantText(t, m, "这一步要先在仓库或空间站里有一份能独立恢复的备份", "先去添加仓库或空间站")
+	key(t, m, "esc")
 	m.svc.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
 	if _, err := m.svc.RepoAdd("usb", filepath.Join(t.TempDir(), "usb")); err != nil {
 		t.Fatal(err)
@@ -100,9 +100,8 @@ func TestManageActions(t *testing.T) {
 	if err := m.svc.ServerNameSet(m.ctx, "box", "box"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.svc.RepoSync(m.ctx, "box", "usb"); err != nil {
-		t.Fatal(err)
-	}
+	key(t, m, "enter")
+	wantText(t, m, "备份并复制到仓库 usb（记忆与人格 + 凭据，推荐）")
 	key(t, m, "enter")
 	wantText(t, m, "能否撤销：无法撤销", "[x] 执行前先建立逃生舱")
 	key(t, m, "space")
