@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 14
+profile_version: 15
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -241,10 +241,10 @@ actions:
     output: none
     terminal: true
 
-# Whether exec asks before risky commands (docs/PROFILES.md 1). The bypass
-# rule was read on 2026.10.9 with default settings (security full, ask
-# off); the ask values are from OpenClaw's documented options and are not
-# yet seen on a target.
+# Whether exec asks before risky commands (docs/PROFILES.md 1). Read on
+# 2026.10.9 (debian-vm, gateway stopped while changing it): defaults are
+# full/off (bypass); presets cautious (allowlist/on-miss) and deny-all
+# (deny/off), allowlist/off and full/always all read as asking.
 approval_check:
   argv: [openclaw, exec-policy, show, --json]
   each: effectivePolicy.scopes
@@ -254,7 +254,6 @@ approval_check:
     - { ask.effective: on-miss }
     - { security.effective: deny }
     - { security.effective: allowlist }
-  verify: pending
 
 capabilities:
   install: { status: tested, versions: ["2026.10.9"], env: "Debian 13 arm64（全新虚拟机，完全访问模式装好 git 与 curl）；Debian 13 amd64（InstaBox，清空后）", note: "官方 install-cli.sh 本地前缀方案；Node 由脚本自带" }
