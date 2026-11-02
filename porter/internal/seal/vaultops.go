@@ -199,11 +199,11 @@ func SetTarget(p Paths, t vaultrpc.Target) error {
 		return valise.New("target_name_invalid", "同步目标名只能包含小写字母、数字和连字符", "例如 nas")
 	}
 	switch t.Kind {
-	case "rsync":
-	case "rclone", "sftp":
-		return valise.New("target_kind_unsupported", "这个版本只支持 rsync 同步", "改用 --rsync <主机:路径>")
+	case methodRsync, methodSFTP:
+	case "rclone":
+		return valise.New("target_kind_unsupported", "这个版本还不支持 rclone 同步", "改用 rsync 或 sftp")
 	default:
-		return valise.New("target_kind_invalid", "未知的同步方式："+t.Kind, "可选 rsync")
+		return valise.New("target_kind_invalid", "未知的同步方式："+t.Kind, "可选 rsync、sftp")
 	}
 	host, path, ok := strings.Cut(t.Dest, ":")
 	if !ok || host == "" || strings.HasPrefix(host, "-") || !strings.HasPrefix(path, "/") || strings.ContainsAny(t.Dest, " \t\n'\"`$\\") {
@@ -310,74 +310,38 @@ func syncLocked(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.T
 	res = &vaultrpc.SyncResult{Target: t.Name, Dest: strings.TrimRight(t.Dest, "/"), Leaves: []string{}, Snapshots: []string{}}
 	if hasTree {
 		res.Dest = treeDest(t, st.ServerName)
-		if err := rsyncFile(ctx, e, p, t, filepath.Join(p.Vaults(), vault.TreeFile), res.Dest+"/"+vault.TreeFile); err != nil {
-			return nil, err
-		}
 	}
-	for _, l := range st.Leaves {
-		if l.Deleting || l.VaultID == "" {
-			continue
-		}
-		dir, err := p.LeafDir(l.Leaf)
-		if err != nil {
-			return nil, err
-		}
-		dest := res.Dest + "/" + l.Leaf
-		if l.Leaf == vault.LegacyLeaf {
-			dest = strings.TrimRight(t.Dest, "/") + "/" + l.VaultID
-		}
-		if err := syncLeaf(ctx, e, p, t, dir, dest); err != nil {
-			return nil, err
-		}
-		res.Leaves = append(res.Leaves, l.Leaf)
-		res.Snapshots = append(res.Snapshots, l.Snapshots...)
-	}
-	return res, nil
-}
-
-const rsyncSSH = "ssh -o BatchMode=yes"
-
-func syncLeaf(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.Target, dir, dest string) error {
-	for _, step := range syncOrder {
-		src := filepath.Join(dir, step.dir)
-		if _, err := os.Stat(src); err != nil {
-			continue
-		}
-		args := []string{"rsync", "-rt", "--ignore-existing", "--mkpath", "--chmod=D700,F600", "-e", rsyncSSH,
-			"--exclude", "tmp-*", "--exclude", ".tmp-*"}
-		if step.include != "" {
-			args = append(args, "--include", "*/", "--include", step.include, "--exclude", "*")
-		}
-		args = append(args, src+"/", dest+"/"+step.dir+"/")
-		if err := runRsync(ctx, e, p, t, args); err != nil {
-			return err
-		}
-	}
-	for _, f := range []string{vault.PeriodFile, vault.DescriptorFile} {
-		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
-			if err := rsyncFile(ctx, e, p, t, filepath.Join(dir, f), dest+"/"+f); err != nil {
+	res.Method, res.Note, err = withRemote(ctx, e, p, t, func(r remote) error {
+		res.Leaves, res.Snapshots = []string{}, []string{}
+		if hasTree {
+			if err := r.putFile(ctx, filepath.Join(p.Vaults(), vault.TreeFile), res.Dest+"/"+vault.TreeFile); err != nil {
 				return err
 			}
 		}
-	}
-	return nil
-}
-
-func rsyncFile(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.Target, src, dst string) error {
-	return runRsync(ctx, e, p, t, []string{"rsync", "-t", "--ignore-existing", "--mkpath", "--chmod=F600", "-e", rsyncSSH, src, dst})
-}
-
-func runRsync(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.Target, args []string) error {
-	out, err := e.Run(ctx, syncTimeout, p.Home, args...)
+		for _, l := range st.Leaves {
+			if l.Deleting || l.VaultID == "" {
+				continue
+			}
+			dir, err := p.LeafDir(l.Leaf)
+			if err != nil {
+				return err
+			}
+			dest := res.Dest + "/" + l.Leaf
+			if l.Leaf == vault.LegacyLeaf {
+				dest = strings.TrimRight(t.Dest, "/") + "/" + l.VaultID
+			}
+			if err := r.syncLeaf(ctx, dir, dest); err != nil {
+				return err
+			}
+			res.Leaves = append(res.Leaves, l.Leaf)
+			res.Snapshots = append(res.Snapshots, l.Snapshots...)
+		}
+		return nil
+	})
 	if err != nil {
-		return valise.New("sync_failed", "无法运行 rsync", "确认服务器上安装了 rsync").WithDetail(err.Error())
+		return nil, err
 	}
-	if out.Code != 0 {
-		return valise.New("sync_failed", "同步到 "+t.Name+" 失败",
-			"确认服务器能用 SSH 登录 "+strings.SplitN(t.Dest, ":", 2)[0]+"（凭据由你在服务器上配置），然后重试；金库只追加，可以断点续传").
-			WithDetail(lastLines(string(out.Stderr), 5))
-	}
-	return nil
+	return res, nil
 }
 
 func lastLines(s string, n int) string {

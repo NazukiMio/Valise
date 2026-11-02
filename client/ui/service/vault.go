@@ -121,7 +121,7 @@ func (s *Service) PullAll(ctx context.Context, host, dir string) ([]*PullResult,
 		}
 		d := ""
 		if dir != "" {
-			d = filepath.Join(dir, filepath.FromSlash(strings.ReplaceAll(l.Leaf, vault.LegacyLeaf, "legacy")))
+			d = filepath.Join(dir, leafDirName(l.Leaf))
 		}
 		r, err := s.Pull(ctx, host, l.Leaf, d)
 		if r != nil {

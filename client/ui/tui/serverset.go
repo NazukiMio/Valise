@@ -72,7 +72,7 @@ func (s *serverSettings) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		case "n":
 			if st := m.server(host).status; st != nil && st.ServerName != "" {
 				return func() tea.Msg {
-					return flashMsg(host + " 已经叫 " + st.ServerName + "；云备份里的文件夹名依赖它，起好后不能修改")
+					return flashMsg(host + " 已经叫 " + st.ServerName + "；仓库和空间站里的文件夹名依赖它，起好后不能修改")
 				}, true
 			}
 			return nameServer(m, host, func(m *Model) tea.Cmd { return s.init(m) }), true
@@ -117,11 +117,11 @@ func (s *serverSettings) view(m *Model) string {
 		return dimStyle.Render("正在检查 " + s.host + " …")
 	}
 	d := m.server(s.host)
-	name := warnStyle.Render("还没有名字（云备份前需要起名）；按 n 起名")
+	name := warnStyle.Render("还没有名字（上云前需要起名）；按 n 起名")
 	keyState := dimStyle.Render("读取中…")
 	if d.status != nil {
 		if d.status.ServerName != "" {
-			name = d.status.ServerName + dimStyle.Render("（云备份里的文件夹名，不能修改）")
+			name = d.status.ServerName + dimStyle.Render("（仓库和空间站里的文件夹名，不能修改）")
 		}
 		keyState = warnStyle.Render("没有登记（这台服务器建立的逃生舱你打不开）；按 k 登记")
 		if info, err := m.svc.KeyShow(); err == nil && slices.Contains(d.status.Recipients, info.Fingerprint) {
@@ -156,7 +156,7 @@ func (s *serverSettings) view(m *Model) string {
 // nameServer asks for the server name (its cloud backup folder, set once)
 // and records it; then runs after it is saved.
 func nameServer(m *Model, host string, then func(m *Model) tea.Cmd) tea.Cmd {
-	return m.push(newInput("给 "+host+" 起名：云备份里的文件夹名，只能用小写字母、数字和连字符，起好后不能修改", host, false,
+	return m.push(newInput("给 "+host+" 起名：仓库和空间站里的文件夹名，只能用小写字母、数字和连字符，起好后不能修改", host, false,
 		func(m *Model, v string) tea.Cmd {
 			name := strings.TrimSpace(v)
 			if name == "" {

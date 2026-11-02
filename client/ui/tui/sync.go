@@ -1,70 +1,103 @@
 package tui
 
 import (
+	"context"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
-	"valise/core/vaultrpc"
+	"valise/ui/service"
 )
 
-// syncScreen sends a server's escape pods to a cloud backup location (the
-// vault is append-only: only what the location lacks is sent). The launch
-// scene waits on the pad while it runs and lifts off when it succeeds.
+// syncScreen sends a server's escape pods to repositories (local folders)
+// and stations (append-only: only what a place lacks is copied). The
+// launch scene waits on the pad while it runs and lifts off when it
+// succeeds.
 type syncScreen struct {
-	host, target string
-	running      bool
-	res          *vaultrpc.SyncResult
-	err          error
-	rocket       *rocketPlayer
-	prog         progressBox
-	m            *Model // for help(), which has no model
-	ended        time.Time
+	host    string
+	places  []place
+	running bool
+	results []string // one line per place
+	err     error
+	rocket  *rocketPlayer
+	prog    progressBox
+	m       *Model // for help(), which has no model
+	ended   time.Time
+}
+
+// place is a repository or a station.
+type place struct {
+	repo bool
+	name string
+}
+
+func (p place) label() string {
+	if p.repo {
+		return "仓库 " + p.name
+	}
+	return "空间站 " + p.name
 }
 
 type syncDone struct {
-	res *vaultrpc.SyncResult
-	err error
+	results []string
+	err     error
 }
 
-func newSync(host, target string) *syncScreen {
-	return &syncScreen{host: host, target: target, running: true}
+func newSync(host string, places ...place) *syncScreen {
+	return &syncScreen{host: host, places: places, running: true}
 }
 
-// startSync picks the location: none yet opens the cloud backup page, one
-// starts at once, several are chosen from. A server without a name is
-// named first (the name is its folder on the cloud).
-func startSync(m *Model, host string) tea.Cmd {
-	var names []string
-	if st := m.server(host).status; st != nil && st.ServerName == "" {
-		return nameServer(m, host, func(m *Model) tea.Cmd { return startSync(m, host) })
+// places lists host's repositories, then its stations.
+func places(m *Model, host string) []place {
+	var out []place
+	for _, r := range m.svc.Repos() {
+		out = append(out, place{repo: true, name: r.Name})
 	}
 	if st := m.server(host).status; st != nil {
 		for _, t := range st.Targets {
-			names = append(names, t.Name)
+			out = append(out, place{name: t.Name})
 		}
 	}
-	switch len(names) {
+	return out
+}
+
+// startSync picks the place: none yet opens the repositories and stations
+// page, one starts at once, several are chosen from (or all). A server
+// without a name is named first (the name is its folder).
+func startSync(m *Model, host string) tea.Cmd {
+	if st := m.server(host).status; st != nil && st.ServerName == "" {
+		return nameServer(m, host, func(m *Model) tea.Cmd { return startSync(m, host) })
+	}
+	ps := places(m, host)
+	switch len(ps) {
 	case 0:
-		m.flash, m.flashErr = "这台服务器还没有云备份位置；先在这里添加一个（按 +）。", false
+		m.flash, m.flashErr = "还没有仓库或空间站；先在这里添加一个（按 +）。", false
 		return m.push(newCloud(host))
 	case 1:
-		return m.push(newSync(host, names[0]))
+		return m.push(newSync(host, ps[0]))
 	}
-	var cs []choice
-	for _, n := range names {
-		cs = append(cs, choice{label: n, value: n})
+	cs := []choice{{label: "全部", value: "*", desc: itoa(len(ps)) + " 处，依次进行"}}
+	for i, p := range ps {
+		cs = append(cs, choice{label: p.label(), value: itoa(i)})
 	}
-	return m.push(pick("上云到哪个位置？", cs, func(m *Model, n string) tea.Cmd { return m.push(newSync(host, n)) }))
+	return m.push(pick("上云到哪里？", cs, func(m *Model, v string) tea.Cmd {
+		if v == "*" {
+			return m.push(newSync(host, ps...))
+		}
+		for i, p := range ps {
+			if itoa(i) == v {
+				return m.push(newSync(host, p))
+			}
+		}
+		return nil
+	}))
 }
 
 func (s *syncScreen) title() string    { return "上云" }
 func (s *syncScreen) hostName() string { return s.host }
 func (s *syncScreen) help() string {
-	switch {
-	case s.running:
-		return ""
-	case s.m != nil && !s.revealed(s.m):
+	if !s.running && s.m != nil && !s.revealed(s.m) {
 		return menu("enter", "跳过动画")
 	}
 	return ""
@@ -78,13 +111,42 @@ func (s *syncScreen) busy() string {
 
 func (s *syncScreen) init(m *Model) tea.Cmd {
 	s.rocket = newRocket(sceneLaunch, m.now())
-	svc, ctx, host, target := m.svc, m.ctx, s.host, s.target
-	return func() tea.Msg { r, err := svc.Sync(ctx, host, target); return syncDone{r, err} }
+	svc, host, places := m.svc, s.host, s.places
+	ctx := service.WithProgress(m.ctx, s.prog.set)
+	return func() tea.Msg {
+		var lines []string
+		for _, p := range places {
+			line, err := syncPlace(ctx, svc, host, p)
+			if err != nil {
+				return syncDone{lines, err}
+			}
+			lines = append(lines, line)
+		}
+		return syncDone{lines, nil}
+	}
 }
 
-func (s *syncScreen) animating(m *Model) bool {
-	return s.rocket != nil
+// syncPlace copies to one place and describes the result.
+func syncPlace(ctx context.Context, svc *service.Service, host string, p place) (string, error) {
+	if p.repo {
+		r, err := svc.RepoSync(ctx, host, p.name)
+		if err != nil {
+			return "", err
+		}
+		return p.label() + "：" + itoa(len(r.Snapshots)) + " 个逃生舱，新复制 " + size(r.Bytes) + "，校验通过 · " + r.Dir, nil
+	}
+	r, err := svc.Sync(ctx, host, p.name)
+	if err != nil {
+		return "", err
+	}
+	line := p.label() + "：" + itoa(len(r.Leaves)) + " 个周期、" + itoa(len(r.Snapshots)) + " 个逃生舱 · " + r.Dest
+	if r.Note != "" {
+		line += "\n  " + r.Note
+	}
+	return line, nil
 }
+
+func (s *syncScreen) animating(m *Model) bool { return s.rocket != nil }
 
 // revealed: the outcome may be shown (the rocket has left, was skipped,
 // or there is no scene to wait for).
@@ -95,7 +157,7 @@ func (s *syncScreen) revealed(m *Model) bool {
 func (s *syncScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case syncDone:
-		s.running, s.res, s.err, s.ended = false, msg.res, msg.err, m.now()
+		s.running, s.results, s.err, s.ended = false, msg.results, msg.err, m.now()
 		if s.err != nil {
 			return nil, true // the rocket stays on the pad
 		}
@@ -114,45 +176,49 @@ func (s *syncScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
+func (s *syncScreen) dest() string {
+	var names []string
+	for _, p := range s.places {
+		names = append(names, p.label())
+	}
+	return strings.Join(names, "、")
+}
+
 func (s *syncScreen) view(m *Model) string {
 	s.m = m
 	if hudFits(m.width, m.bodyHeight()) {
 		return s.hudView(m)
 	}
-	head := headStyle.Render("上云：" + s.host + " → " + s.target)
-	var text string
+	head := headStyle.Render("上云：" + s.host + " → " + s.dest())
 	switch {
 	case s.running:
-		text = head + "\n\n" + stepsView([]step{{"", "把还没上云的逃生舱传到 " + s.target}}, s.prog.get(), m.now(), s.rocket.start) +
-			"\n" + dimStyle.Render("  传输由服务器直接发往云端，逃生舱一直是加密的；云端只追加，不改动已有的文件。")
+		return head + "\n\n" + stepsView([]step{{"", "把还没上云的逃生舱复制过去"}}, s.prog.get(), m.now(), s.rocket.start) +
+			"\n" + dimStyle.Render("  逃生舱一直是加密的；只追加，不改动已有的文件。")
 	case s.err != nil:
-		text = head + "\n\n" + errStyle.Render(errText(s.err))
-	default:
-		text = head + "\n\n" + s.resultText()
+		return head + "\n\n" + strings.Join(s.results, "\n") + "\n" + errStyle.Render(errText(s.err))
 	}
-	return text
-}
-
-func (s *syncScreen) resultText() string {
-	return okStyle.Render("✓ 已上云") + "：" + itoa(len(s.res.Leaves)) + " 个周期、" + itoa(len(s.res.Snapshots)) + " 个逃生舱" +
-		"\n" + dimStyle.Render("  "+s.res.Dest)
+	return head + "\n\n" + okStyle.Render("✓ 已上云") + "\n" + strings.Join(s.results, "\n")
 }
 
 // hudView tells the upload as a launch (docs/UI.md section 8).
 func (s *syncScreen) hudView(m *Model) string {
 	now := m.now()
-	route := s.host + " → " + s.target
+	route := s.host + " → " + s.dest()
 	l := hudLayout{title: "发射遥测", captionStyle: hudBig,
-		telemetry: [][2]string{{"已用时", clock(upTo(now, s.ended).Sub(s.rocket.start))}, {"目的地", s.target}}}
+		telemetry: [][2]string{{"已用时", clock(upTo(now, s.ended).Sub(s.rocket.start))}, {"目的地", s.dest()}}}
 	switch {
 	case s.running:
-		l.caption, l.plain = "逃生舱等候发射…", "把还没上云的备份从 "+s.host+" 传到 "+s.target
-		l.body = hudDim.Render("备份一直是加密的；传输由服务器直接发往云端，云端只追加，不改动已有的文件。")
-		l.bottom = "上云  把还没上云的备份传到 " + s.target
-		l.meter = hudMeter(s.prog.get(), m.width-16, now, false)
+		l.caption, l.plain = "逃生舱等候发射…", "把还没上云的备份从 "+s.host+" 复制到 "+s.dest()
+		l.body = hudDim.Render("备份一直是加密的；只追加，不改动已有的文件。")
+		l.bottom = "上云  " + s.dest()
+		p := s.prog.get()
+		l.meter = hudMeter(p, m.width-16, now, false)
+		if p.Total > 0 {
+			l.amount = size(min(p.Done, p.Total)) + " / " + size(p.Total)
+		}
 	case s.err != nil:
 		l.caption, l.captionStyle, l.plain = "发射中止", hudBad, route
-		l.body = errStyle.Render(errText(s.err))
+		l.body = strings.Join(append(s.results, errStyle.Render(errText(s.err))), "\n")
 	case !s.revealed(m):
 		ph, _ := s.rocket.phase(now)
 		l.caption, l.plain = "正在进入轨道…", route
@@ -164,7 +230,7 @@ func (s *syncScreen) hudView(m *Model) string {
 		}
 	default:
 		l.caption, l.captionStyle = "逃生舱已接入空间站！", hudGood
-		l.body = hudRows([][2]string{{"传送", itoa(len(s.res.Leaves)) + " 个周期、" + itoa(len(s.res.Snapshots)) + " 个逃生舱"}, {"位置", s.res.Dest}}, 46)
+		l.body = strings.Join(s.results, "\n")
 		l.telemetry[0][0] = "用时"
 	}
 	h := m.bodyHeight()

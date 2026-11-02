@@ -22,7 +22,7 @@ type settingsScreen struct {
 	kits    map[string]*agentkit.KitStatusResult // host/instance
 }
 
-var settingsSections = []string{"加密钥匙", "服务器", "云备份", "导入导出", "更新", "高级", "关于"}
+var settingsSections = []string{"加密钥匙", "服务器", "仓库与空间站", "导入导出", "更新", "高级", "关于"}
 
 const (
 	ssKey = iota
@@ -66,7 +66,7 @@ func (s *settingsScreen) help() string {
 	case ssServers:
 		items = append(items, "a", "添加服务器", "x", "移除")
 	case ssCloud:
-		items = append(items, "enter", "打开云备份")
+		items = append(items, "enter", "打开仓库与空间站")
 	case ssConfig:
 		items = append(items, "e", "导出 Valise 配置", "i", "导入 Valise 配置")
 	case ssUpdate:
@@ -300,7 +300,7 @@ func (s *settingsScreen) cloudView(m *Model, w int) string {
 		state := dimStyle.Render("读取中")
 		if d.status != nil {
 			if len(d.status.Targets) == 0 {
-				state = warnStyle.Render("还没有云备份位置")
+				state = warnStyle.Render("还没有空间站")
 			} else {
 				var parts []string
 				for _, t := range d.status.Targets {
@@ -321,5 +321,14 @@ func (s *settingsScreen) cloudView(m *Model, w int) string {
 	if len(rows) == 0 {
 		rows = append(rows, dimStyle.Render("还没有服务器"))
 	}
-	return box("云备份", strings.Join(rows, "\n"), w) + "\n" + dimStyle.Render("云备份位置配置在每台服务器上；新 agent 的周期默认按月。")
+	repos := dimStyle.Render("还没有仓库")
+	if rs := m.svc.Repos(); len(rs) > 0 {
+		var parts []string
+		for _, r := range rs {
+			parts = append(parts, r.Name+" "+dimStyle.Render(r.Path))
+		}
+		repos = strings.Join(parts, "\n")
+	}
+	return box("仓库（本机文件夹，所有服务器共用）", repos, w) + "\n" + box("空间站", strings.Join(rows, "\n"), w) + "\n" +
+		dimStyle.Render("仓库在 Valise 打开时补齐；空间站配置在每台服务器上；新 agent 的周期默认按月。")
 }

@@ -33,7 +33,7 @@ var setupLabels = []struct{ step, label string }{
 	{service.SetupCheck, "检查服务器"},
 	{service.SetupDeploy, "部署 porter（服务器上的小程序，只在连接时运行，不常驻、不开端口）"},
 	{service.SetupRegister, "登记你的钥匙（服务器只拿到\"只能上锁\"的那一半）"},
-	{service.SetupName, "服务器名（云备份里的文件夹名）"},
+	{service.SetupName, "服务器名（仓库和空间站里的文件夹名）"},
 	{service.SetupRecord, "记录到这台电脑"},
 }
 
@@ -85,7 +85,7 @@ func (a *addServerScreen) chooseName(m *Model, alias string) tea.Cmd {
 		return nil
 	}
 	a.alias = alias
-	in := newInput("给服务器起个名字。它会成为云备份里的文件夹名（valise-vault/<名字>/…），起好后不能改。直接回车就用 "+alias, alias, false,
+	in := newInput("给服务器起个名字。它会成为仓库和空间站里的文件夹名（valise-vault/<名字>/…），起好后不能改。直接回车就用 "+alias, alias, false,
 		func(m *Model, v string) tea.Cmd {
 			a.name = strings.TrimSpace(v)
 			if a.name == "" {

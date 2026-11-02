@@ -98,7 +98,7 @@ func (c *cleanupScreen) items(m *Model) []cleanItem {
 				label = "分档之前的旧金库"
 			}
 			out = append(out, cleanItem{kind: "服务器上已结束的周期", label: label + dimStyle.Render("（"+itoa(len(l.Snapshots))+" 个逃生舱）"), bytes: l.Bytes,
-				what: "只删除服务器上的这一份；云备份上的副本不受影响。删除前会告诉你其他地方有没有完整副本。",
+				what: "只删除服务器上的这一份；仓库和空间站上的副本不受影响。删除前会告诉你其他地方有没有完整副本。",
 				act: func(m *Model) tea.Cmd {
 					return confirmLeafDelete(m, host, l.Leaf, "server", func(m *Model) tea.Cmd { return m.loadServer(host) })
 				}})

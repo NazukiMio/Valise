@@ -182,6 +182,10 @@ type SyncResult struct {
 	Dest      string   `json:"dest"`
 	Leaves    []string `json:"leaves"`
 	Snapshots []string `json:"snapshots"`
+	// Method is how the files went (rsync or sftp); Note explains a
+	// fallback to sftp.
+	Method string `json:"method,omitempty"`
+	Note   string `json:"note,omitempty"`
 }
 
 // ServerNameSetParams names the server (once).

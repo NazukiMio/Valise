@@ -267,6 +267,9 @@ func sealResult(m *Model, p *instancePage, msg sealDone) tea.Cmd {
 	if len(msg.rep.AutoSync) > 0 {
 		text += "；正在后台顺带同步到 " + strings.Join(msg.rep.AutoSync, "、")
 	}
+	if len(m.svc.Repos()) > 0 {
+		text += "；正在后台补到仓库"
+	}
 	m.flash, m.flashErr = text, false
-	return tea.Batch(m.loadServer(p.host), p.loadLog(m))
+	return tea.Batch(m.loadServer(p.host), p.loadLog(m), repoSyncAll(m, p.host))
 }

@@ -287,7 +287,7 @@ func TestCloudCleanupServerSettings(t *testing.T) {
 	drive(t, m, m.Init())
 	key(t, m, "enter")
 	key(t, m, "c")
-	wantText(t, m, "还没有云备份位置")
+	wantText(t, m, "还没有仓库或空间站")
 	key(t, m, "esc")
 	key(t, m, "k")
 	wantText(t, m, "没有可以清理的东西") // the only period is current
@@ -302,7 +302,7 @@ func TestSettingsSections(t *testing.T) {
 	key(t, m, "s")
 	wantText(t, m, "你的钥匙已创建", "备份钥匙", "只能上锁")
 	// The sidebar is vertical: ↓ moves through the sections.
-	for _, want := range []string{"box", "还没有云备份位置", "不包含", "harness 资料包", "能打开逃生舱的钥匙", "不用 Valise 也能恢复"} {
+	for _, want := range []string{"box", "还没有空间站", "不包含", "harness 资料包", "能打开逃生舱的钥匙", "不用 Valise 也能恢复"} {
 		key(t, m, "down")
 		wantText(t, m, want)
 	}
@@ -312,7 +312,7 @@ func TestSettingsSections(t *testing.T) {
 	wantText(t, m, "回到分栏")
 	key(t, m, "left")
 	key(t, m, "down")
-	wantText(t, m, "还没有云备份位置")
+	wantText(t, m, "还没有空间站")
 }
 
 func TestFirstRunGuide(t *testing.T) {

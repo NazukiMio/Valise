@@ -93,6 +93,7 @@ type Model struct {
 	flash    string
 	flashErr bool
 	data     map[string]*srvData
+	repoDone map[string]bool // servers already copied to the repositories this run
 	prof     *profiles.Set
 	now      func() time.Time
 	// send delivers a message from a background goroutine (the landing
@@ -235,6 +236,12 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash, m.flashErr = string(msg), false
 	case srvLoaded:
 		m.data[msg.d.host] = msg.d
+		if c := m.repoAuto(msg.d); c != nil {
+			cmd, _ := m.top().update(m, msg)
+			return m, tea.Batch(c, cmd)
+		}
+	case repoSynced:
+		m.handleRepoSynced(msg)
 	case pushMsg:
 		return m, m.push(msg.s)
 	case refreshed:

@@ -69,6 +69,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
          [--trust-fingerprint SHA256:…] [--name 名字] [--release 版本 | --local 文件]
                                                  手动添加服务器：确认身份 → 用密码登录一次装好日常钥匙 → 检查 → 部署 porter → 起名
   server rekey <服务器> [--admin-key]              在这台电脑上重新安装日常钥匙（导入配置后、换电脑后；需要用服务器密码登录一次）
+  repo add <名称> <文件夹> | repo list | repo remove <名称>    本机仓库（逃生舱另存到本机文件夹）
+  repo sync <服务器> [名称]                          把服务器上的逃生舱补到仓库（不指定名称时同步全部仓库）
   config export <文件> | config import <文件>       导出 / 导入 Valise 配置：服务器列表、主机指纹、设置（不含任何钥匙）
   server admin-key <服务器>                        创建管理钥匙（单独的管理口令；需要用服务器密码登录一次）
   server migrate <别名> [--admin-key]              把 ~/.ssh/config 中的服务器改用 Valise 日常钥匙
@@ -213,6 +215,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.target(ctx, args[1:])
 	case args[0] == "sync":
 		return c.sync(ctx, args[1:])
+	case args[0] == "repo" && len(args) > 1:
+		return c.repo(ctx, args[1:])
 	case args[0] == "pull":
 		return c.pull(ctx, args[1:])
 	case args[0] == "verify":

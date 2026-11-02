@@ -55,6 +55,13 @@ func (s *podScreen) view(m *Model) string {
 	e := s.page.log[s.snap.SnapshotID]
 	where := "服务器 " + okStyle.Render("✓")
 	if d.status != nil {
+		for _, r := range m.svc.RepoStatuses(s.page.host, d.status.ServerName) {
+			mark := warnStyle.Render("还没有")
+			if r.Has(s.snap.SnapshotID) {
+				mark = okStyle.Render("✓")
+			}
+			where += "　仓库 " + r.Name + " " + mark
+		}
 		for _, t := range d.status.Targets {
 			mark := warnStyle.Render("还没有")
 			for _, id := range t.LastSynced {
@@ -62,7 +69,7 @@ func (s *podScreen) view(m *Model) string {
 					mark = okStyle.Render("✓")
 				}
 			}
-			where += "　" + t.Name + " " + mark
+			where += "　空间站 " + t.Name + " " + mark
 		}
 	}
 	reason := reasonText(e)

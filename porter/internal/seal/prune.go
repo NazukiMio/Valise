@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -202,42 +201,23 @@ func TargetList(ctx context.Context, e *porterenroll.Env, p Paths, name string) 
 	return res, nil
 }
 
-type remoteEntry struct {
-	path string
-	size int64
+// listRemote lists a target's files under base, falling back to sftp.
+func listRemote(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.Target, base string) (entries []remoteEntry, err error) {
+	_, _, err = withRemote(ctx, e, p, t, func(r remote) error {
+		all, err := r.list(ctx, base)
+		entries = entries[:0]
+		for _, en := range all {
+			if !en.dir {
+				entries = append(entries, en)
+			}
+		}
+		return err
+	})
+	return entries, err
 }
 
-// listRemote lists regular files under base; a missing base is empty.
-func listRemote(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.Target, base string) ([]remoteEntry, error) {
-	out, err := e.Run(ctx, 10*time.Minute, p.Home, "rsync", "--list-only", "-r", "-e", rsyncSSH, base+"/")
-	if err != nil {
-		return nil, valise.New("target_list_failed", "无法运行 rsync", "确认服务器上安装了 rsync").WithDetail(err.Error())
-	}
-	if out.Code != 0 {
-		if strings.Contains(string(out.Stderr), "No such file or directory") {
-			return nil, nil
-		}
-		return nil, valise.New("target_list_failed", "无法列出 "+t.Name+" 上的内容",
-			"确认服务器能用 SSH 登录 "+strings.SplitN(t.Dest, ":", 2)[0]+" 后重试").WithDetail(lastLines(string(out.Stderr), 5))
-	}
-	var res []remoteEntry
-	for _, line := range strings.Split(string(out.Stdout), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 5 || !strings.HasPrefix(f[0], "-") {
-			continue
-		}
-		size, err := strconv.ParseInt(strings.ReplaceAll(strings.ReplaceAll(f[1], ",", ""), ".", ""), 10, 64)
-		if err != nil {
-			continue
-		}
-		res = append(res, remoteEntry{path: strings.Join(f[4:], " "), size: size})
-	}
-	return res, nil
-}
-
-// TargetLeafDelete deletes one leaf on a target with rsync alone: a DELETING
-// marker first, then two --delete passes from an empty directory, the
-// first keeping the marker. No command runs on the target host.
+// TargetLeafDelete deletes one leaf on a target: a DELETING marker first,
+// then its files, the marker last (remote.go).
 func TargetLeafDelete(ctx context.Context, e *porterenroll.Env, p Paths, name, leaf, initiator string) (err error) {
 	t, err := findTarget(p, name)
 	if err != nil {
@@ -275,35 +255,44 @@ func TargetLeafDelete(ctx context.Context, e *porterenroll.Env, p Paths, name, l
 		}
 		p.AppendAudit(ent)
 	}()
-	if err := os.MkdirAll(p.Tmp(), 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.MkdirTemp(p.Tmp(), "target-delete-")
+	_, _, err = withRemote(ctx, e, p, t, func(r remote) error { return r.deleteDir(ctx, parent, dirName) })
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmp)
-	empty := filepath.Join(tmp, "empty")
-	if err := os.Mkdir(empty, 0o700); err != nil {
-		return err
-	}
-	mark, _ := json.Marshal(deletingMark{Started: time.Now().UTC(), Initiator: initiator})
-	markFile := filepath.Join(tmp, vault.DeletingFile)
-	if err := os.WriteFile(markFile, append(mark, '\n'), 0o600); err != nil {
-		return err
-	}
-	if err := runRsync(ctx, e, p, t, []string{"rsync", "-t", "--chmod=F600", "-e", rsyncSSH, markFile, parent + "/" + dirName + "/" + vault.DeletingFile}); err != nil {
-		return err
-	}
-	for _, protect := range []bool{true, false} {
-		args := []string{"rsync", "-r", "--delete", "-e", rsyncSSH}
-		if protect {
-			args = append(args, "--filter", "P /"+dirName+"/"+vault.DeletingFile)
-		}
-		args = append(args, "--include", "/"+dirName+"/***", "--exclude", "*", empty+"/", parent+"/")
-		if err := runRsync(ctx, e, p, t, args); err != nil {
-			return err
-		}
-	}
+	forgetSynced(p, t.Name, leaf)
 	return nil
+}
+
+// forgetSynced drops a deleted leaf's escape pods from the target's sync
+// record, so they no longer count as backed up there.
+func forgetSynced(p Paths, target, leaf string) {
+	st, err := Status(p)
+	if err != nil {
+		return
+	}
+	gone := map[string]bool{}
+	for _, l := range st.Leaves {
+		if l.Leaf == leaf {
+			for _, id := range l.Snapshots {
+				gone[id] = true
+			}
+		}
+	}
+	b, err := os.ReadFile(p.SyncState(target))
+	if err != nil {
+		return
+	}
+	var state vaultrpc.TargetState
+	if json.Unmarshal(b, &state) != nil {
+		return
+	}
+	kept := state.LastSynced[:0]
+	for _, id := range state.LastSynced {
+		if !gone[id] {
+			kept = append(kept, id)
+		}
+	}
+	state.LastSynced = kept
+	out, _ := json.MarshalIndent(state, "", "  ")
+	writeAtomic(p.SyncState(target), out, 0o600)
 }

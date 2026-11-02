@@ -223,10 +223,12 @@
 
 - **收件人登记**：`valise key register <服务器>` 把本机密钥的公钥追加到服务器的 `recipients.txt`（每行一个 `age1…`，`#` 开头为注释）。收件人集合变化后，下一次封存新建 epoch。服务器上没有任何收件人时拒绝封存。`--label <说明>` 会在公钥上方写一行注释 `# <说明> (added <日期>)`，用来标明这把钥匙属于谁、用途是什么（例如测试钥匙）；注释不影响收件人集合和指纹。
 - **移除收件人**（`valise key unregister`，M4 实现）：从 `recipients.txt` 删除一把公钥，下一次封存会新建 epoch，此后的快照不再加密给它。**必须向用户如实说明**：已经写入金库的旧快照仍然可以被这把钥匙解开，加密无法追溯撤销；如果钥匙已经泄露，应当把旧快照视为已暴露。拒绝移除最后一把公钥。
+- **本机仓库**（2026-11-02 用户决定；"仓库"专指本机文件夹，区别于各种空间站）：用户在客户端选择一个或多个本机文件夹（普通目录、外接硬盘或网盘桌面客户端的同步文件夹），记在客户端 `config.json` 的 `repos`（`[{"name", "path"}]`），所有服务器共用。同步由客户端完成：对服务器上每个未在删除中的周期执行与"拉取"相同的只追加复制，写到 `<仓库>/<服务器名>/<实例>/<周期>/`，`<仓库>/<服务器名>/TREE` 不存在时按 VAULT_FORMAT.md 10 节写入一次；每个周期复制后做不需要私钥的校验。服务器名未设置时先请用户起名。客户端不常驻，因此只在用户手动上云、打开 Valise、在界面里建立逃生舱之后同步，界面写明"这一份只在 Valise 打开时更新"。同步记录（每台服务器每个仓库的最近成功时间与错误）保存在客户端数据目录的 `repo-state.json`。仓库里的目录结构与空间站相同，`tools/standalone-restore/` 可以直接使用。
 - **金库树**：每台服务器的本地金库按"实例 / 周期"分档，每个周期是一个独立的 `valise-vault/1` 金库（VAULT_FORMAT.md 第 10 节）。同步到空间站时目标上多一层服务器名：`<dest>/<server_name>/<instance_id>/<周期>/`。
 - **空间站**（界面原称云备份）由 `porter sync --target <name>` 完成，支持 rsync、rclone 和 sftp。目标配置写在 `targets.json` 中；rclone 使用用户自己的 remote 配置，Valise 不保存其中的凭据。
 - 同步按叶子逐个进行，叶子内的顺序固定为：pack → index → 快照 → 元数据 → epochs/keys → PERIOD → VAULT；带 `DELETING` 的叶子跳过。由于叶子内只追加，任何中断都可以安全续传。
-- **targets.json**：`{"targets": [{"name": "nas", "kind": "rsync", "dest": "nas-test:/mnt/test/nas/valise-vault/", "auto": {"every": "24h"}}]}`。`kind` 取值 `rsync`、`rclone`、`sftp`；目前只实现 `rsync`（经服务器自己的 SSH 配置，加 `--ignore-existing`）。界面上未实现的种类不渲染。同步结果写入审计记录，`porter status` 据此报告每个目标的最后同步时间。服务器登录目标所需的凭据由用户自己配置，Valise 不保存。
+- **targets.json**：`{"targets": [{"name": "nas", "kind": "rsync", "dest": "nas-test:/mnt/test/nas/valise-vault/", "auto": {"every": "24h"}}]}`。`kind` 取值 `rsync`、`rclone`、`sftp`；已实现 `rsync`（经服务器自己的 SSH 配置，加 `--ignore-existing`）与 `sftp`。
+- **协议回落**（2026-11-02 用户决定）：`kind: rsync` 的目标在服务器或目标上没有 rsync 时（本机找不到 rsync，或远端报 `command not found` 等），这一次操作自动改用 sftp，结果写明所用方式与原因（"rsync 不可用，改用 sftp，速度会慢一些"）；`kind: sftp` 直接用 sftp。sftp 只需要目标上 OpenSSH 自带的 sftp-server：经 `sftp -b -`（服务器自己的 SSH 配置、`BatchMode=yes`）先逐层列出目标上已有的文件，只上传缺少的，每个文件先传为同目录下的 `.part-<名字>` 再 `rename`，因此中断不会留下半个文件、云端只追加；列表跳过 `.part-*`。删除整个周期时先写 `DELETING` 标记，再按列表逐个删除文件、由深到浅删除目录，最后删除标记。界面上未实现的种类不渲染。同步结果写入审计记录，`porter status` 据此报告每个目标的最后同步时间。服务器登录目标所需的凭据由用户自己配置，Valise 不保存。
 - **云端列表**：客户端经 porter 列出目标上的金库树（rsync：`--list-only`，只读目录与文件名、大小），与服务器本地对照，展示每个周期"服务器有 / 云端有 / 两处都有"、逃生舱数量与大小。目标上的元数据文件（`*.meta.json`）可以按需拉取用于展示，不需要私钥。
 - **删除周期**：见 VAULT_FORMAT.md 10.4。RPC 只接受"实例 + 周期 + 位置（服务器或某个目标）"，不接受任意路径。
 - **自动同步到空间站**（2026-10-31 用户决定，两种方式并存）：

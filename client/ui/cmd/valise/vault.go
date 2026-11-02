@@ -251,6 +251,9 @@ func (c *cli) sync(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Fprintf(c.out, "已同步到 %s（%s），%d 个周期、%d 个逃生舱。\n", res.Target, res.Dest, len(res.Leaves), len(res.Snapshots))
+	if res.Note != "" {
+		fmt.Fprintln(c.out, res.Note+"。")
+	}
 	return nil
 }
 

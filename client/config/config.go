@@ -18,6 +18,15 @@ type Config struct {
 	// AdminWindowMinutes is how long an unlocked admin key stays usable
 	// (1–120, default 15; docs/ARCHITECTURE.md 2.1).
 	AdminWindowMinutes int `json:"admin_window_minutes,omitempty"`
+	// Repos are local folders escape pods are copied to (docs/
+	// ARCHITECTURE.md section 7, "本机仓库"), shared by all servers.
+	Repos []Repo `json:"repos,omitempty"`
+}
+
+// Repo is a local folder used as a repository.
+type Repo struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 // Default returns the default settings.
@@ -66,6 +75,14 @@ func Load(dir string) (Config, error) {
 // SetAdminWindow records admin_window_minutes in config.json, keeping the
 // file's other settings.
 func SetAdminWindow(dir string, minutes int) error {
+	return setKey(dir, "admin_window_minutes", minutes)
+}
+
+// SetRepos replaces the repository list in config.json.
+func SetRepos(dir string, repos []Repo) error { return setKey(dir, "repos", repos) }
+
+// setKey merges one key into config.json, keeping the others.
+func setKey(dir, key string, value any) error {
 	doc := map[string]any{}
 	b, err := os.ReadFile(filepath.Join(dir, ConfigFile))
 	switch {
@@ -76,7 +93,7 @@ func SetAdminWindow(dir string, minutes int) error {
 	case !errors.Is(err, os.ErrNotExist):
 		return err
 	}
-	doc["admin_window_minutes"] = minutes
+	doc[key] = value
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return err
