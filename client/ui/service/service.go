@@ -35,7 +35,7 @@ type Service struct {
 	NoTerminalLogin bool
 
 	agent adminAgent
-	full  fullAccess
+	full  advanced
 	owner ownerCache
 }
 

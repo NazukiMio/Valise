@@ -307,7 +307,7 @@ func init() {
 		switch op {
 		case "":
 			op = install.AuditInstall
-		case install.AuditInstall, install.AuditPortChange, install.AuditFullAccess:
+		case install.AuditInstall, install.AuditPortChange, install.AuditAdvanced:
 		default:
 			return nil, errInvalidParams
 		}

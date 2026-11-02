@@ -16,14 +16,14 @@ import (
 	"valise/ui/service"
 )
 
-// install: valise install <服务器> --profile <id> [--show-script] [--yes] [--full-access]
+// install: valise install <服务器> --profile <id> [--show-script] [--yes] [--advanced]
 // (docs/INSTALL.md section 3).
 func (c *cli) install(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("install", flag.ContinueOnError)
 	prof := fs.String("profile", "", "")
 	show := fs.Bool("show-script", false, "")
 	yes := fs.Bool("yes", false, "")
-	full := fs.Bool("full-access", false, "")
+	advanced := fs.Bool("advanced", false, "")
 	var with multiFlag
 	fs.Var(&with, "with", "")
 	pos, err := parseArgs(fs, args, 1)
@@ -36,18 +36,21 @@ func (c *cli) install(ctx context.Context, args []string) error {
 		return err
 	}
 	c.printInstallPlan(plan, *show)
-	if len(plan.Missing) > 0 && *full {
-		if plan, err = c.fullAccessRequirements(ctx, plan, *yes); err != nil {
+	if err := c.gate(ctx, host, "", *yes); err != nil {
+		return err
+	}
+	if len(plan.Missing) > 0 && *advanced {
+		if plan, err = c.advancedRequirements(ctx, plan, *yes); err != nil {
 			return err
 		}
 	} else if len(plan.Missing) > 0 {
 		hint := "自己在服务器上装好（valise shell " + host + "）或交给服务器管理员，装好后重新运行"
-		if len(plan.Unfixable) == 0 && c.svc.FullAccessReady(host) == nil {
-			hint += "；也可以加 --full-access 让 Valise 在完全访问模式下代为安装"
+		if len(plan.Unfixable) == 0 && c.svc.AdvancedReady(host) == nil {
+			hint += "；也可以加 --advanced 让 Valise 在高级模式下代为安装"
 		}
 		return valise.New("install_requirements", "服务器还缺少方案需要的程序，没有开始安装", hint)
-	} else if *full {
-		fmt.Fprintln(c.out, "依赖都已满足，不需要开启完全访问模式。")
+	} else if *advanced {
+		fmt.Fprintln(c.out, "依赖都已满足，不需要开启高级模式。")
 	}
 	if !*yes && !c.confirm("按上面的方案在 "+host+" 上安装？") {
 		return valise.New("cancelled", "已取消，服务器上没有任何改动", "")
@@ -104,7 +107,7 @@ func (c *cli) printInstallPlan(plan *service.InstallPlan, show bool) {
 		fmt.Fprintf(c.out, "  %s %s %s\n", mark, q.Binary, detail)
 	}
 	if len(plan.Fixes) > 0 {
-		fmt.Fprintln(c.out, "  profile 给出的安装命令（需要管理员权限；Valise 只在完全访问模式下代为执行，加 --full-access）：")
+		fmt.Fprintln(c.out, "  profile 给出的安装命令（需要管理员权限；Valise 只在高级模式下代为执行，加 --advanced）：")
 		for _, f := range plan.Fixes {
 			fmt.Fprintf(c.out, "    %s\n", strings.Join(f, " "))
 		}
@@ -152,6 +155,9 @@ func (c *cli) native(ctx context.Context, args []string) error {
 	pos, err := parseArgs(fs, args, 1)
 	if err != nil || *prof == "" {
 		return errUsage
+	}
+	if err := c.gate(ctx, pos[0], "", false); err != nil {
+		return err
 	}
 	cmd, done, err := c.svc.NativeCommand(ctx, pos[0], *prof)
 	if err != nil {

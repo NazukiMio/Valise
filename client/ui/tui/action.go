@@ -22,6 +22,10 @@ func startAction(m *Model, p *instancePage, a profile.Action) tea.Cmd {
 	if a.Risk == profile.RiskRead && !a.Terminal {
 		return m.push(newActionResult(m, p.host, p.inst.InstanceID, a, false))
 	}
+	if a.Risk == profile.RiskConfig || a.Risk == profile.RiskDanger {
+		host, inst := p.host, p.inst.InstanceID
+		return gateThen(m, host, inst, func() screen { return newActionConfirm(host, inst, a) })
+	}
 	return m.push(newActionConfirm(p.host, p.inst.InstanceID, a))
 }
 

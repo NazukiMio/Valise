@@ -253,7 +253,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case adminTick:
 		return m, m.tickAdmin()
 	case tea.KeyPressMsg:
-		if msg.String() == "L" && !m.typing() && m.accessState() != "" && m.svc.FullAccessHost() == "" {
+		if msg.String() == "L" && !m.typing() && m.accessState() != "" && m.svc.AdvancedHost() == "" {
 			if _, ok := m.svc.AdminRemaining(m.currentHost()); ok {
 				m.svc.LockAdmin()
 				m.flash, m.flashErr = "开发者模式已锁定；下一次开发者模式的操作会再询问管理口令", false

@@ -102,7 +102,7 @@ install:                         # 可选：官方方案（INSTALL.md 第 3 节�
   requires:
     - binary: node
       version: ">=22"
-      install:                   # 可选：只在完全访问模式下由 Valise 代为执行（INSTALL.md 4.1），按发行版区分
+      install:                   # 可选：只在高级模式下由 Valise 代为执行（INSTALL.md 4.1），按发行版区分
         - { os_id: [ubuntu, debian], argv: [sudo, apt-get, install, -y, nodejs] }
   steps:
     - { kind: npm_global, package: example, version: "1.2.3", integrity: "sha512-…" }

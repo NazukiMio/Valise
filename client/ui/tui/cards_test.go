@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -87,6 +88,21 @@ func TestManageActions(t *testing.T) {
 	wantText(t, m, "命令：退出码 0", "无法检查运行状态")
 	key(t, m, "esc")
 	key(t, m, "down")
+	key(t, m, "enter")
+	// config needs an escape pod kept elsewhere (docs/INSTALL.md 4.2).
+	if !strings.Contains(m.flash, "放在别处") {
+		t.Fatalf("config action without an offsite pod: %q", m.flash)
+	}
+	m.svc.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
+	if _, err := m.svc.RepoAdd("usb", filepath.Join(t.TempDir(), "usb")); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.svc.ServerNameSet(m.ctx, "box", "box"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.svc.RepoSync(m.ctx, "box", "usb"); err != nil {
+		t.Fatal(err)
+	}
 	key(t, m, "enter")
 	wantText(t, m, "能否撤销：无法撤销", "[x] 执行前先建立逃生舱")
 	key(t, m, "space")

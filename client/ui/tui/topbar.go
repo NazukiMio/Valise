@@ -24,10 +24,10 @@ func (m *Model) currentHost() string {
 // accessState is the top bar's right side (docs/UI.md section 8): full
 // access mode in red, or the admin window of the current server.
 func (m *Model) accessState() string {
-	if fa := m.svc.FullAccessHost(); fa != "" {
+	if fa := m.svc.AdvancedHost(); fa != "" {
 		left, _ := m.svc.AdminRemaining(fa)
 		return lipgloss.NewStyle().Background(cBad).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).
-			Render(" 完全访问模式 · " + fa + " · 剩余 " + minutes(left) + " ")
+			Render(" 高级模式 · " + fa + " · 剩余 " + minutes(left) + " ")
 	}
 	host := m.currentHost()
 	if host == "" || !m.svc.HasAdminKey(host) {
@@ -54,7 +54,7 @@ func topBar(left, right string, width int) string {
 // admin window on purpose, instead of waiting for an admin action to ask.
 func (m *Model) unlockAdmin() tea.Cmd {
 	host := m.currentHost()
-	if host == "" || m.svc.FullAccessHost() != "" {
+	if host == "" || m.svc.AdvancedHost() != "" {
 		return nil
 	}
 	if !m.svc.Tiered(host) {

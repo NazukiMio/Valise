@@ -66,10 +66,10 @@ type InstallPlan struct {
 	Check          install.CheckResult `json:"check"`
 	Steps          []PlanStep          `json:"steps"`
 	// Missing are requirements that are not met; the plan cannot run until
-	// they are (by the user, the server's admin, or full access mode).
+	// they are (by the user, the server's admin, or advanced mode).
 	Missing []install.Requirement `json:"missing,omitempty"`
 	// Fixes are the profile's commands for Missing on this distribution,
-	// run only in full access mode.
+	// run only in advanced mode.
 	Fixes [][]string `json:"fixes,omitempty"`
 	// Unfixable are missing requirements without a command for this
 	// distribution.
@@ -204,7 +204,10 @@ type InstallResult struct {
 func (s *Service) RunInstall(ctx context.Context, plan *InstallPlan, tio InstallIO) (*InstallResult, error) {
 	if len(plan.Missing) > 0 {
 		return nil, valise.New("install_requirements", "服务器还缺少方案需要的程序："+plan.Missing[0].Reason,
-			"先装好这些程序（自己在原生界面里装、交给服务器管理员，或开启完全访问模式）")
+			"先装好这些程序（自己在原生界面里装、交给服务器管理员，或开启高级模式）")
+	}
+	if err := s.RequireGate(ctx, plan.Host, ""); err != nil {
+		return nil, err
 	}
 	t, done, err := s.adminTransport(ctx, plan.Host)
 	if err != nil {
@@ -368,6 +371,9 @@ func (s *Service) NativeCommand(ctx context.Context, host, profileID string) (*e
 	lp := set.ByID[profileID]
 	if lp == nil || len(lp.Effective.NativeCLI) == 0 {
 		return nil, nil, valise.New("native_cli_none", "profile "+profileID+" 没有声明原生界面", "改用 valise shell 打开服务器终端")
+	}
+	if err := s.RequireGate(ctx, host, ""); err != nil {
+		return nil, nil, err
 	}
 	t, done, err := s.adminTransport(ctx, host)
 	if err != nil {

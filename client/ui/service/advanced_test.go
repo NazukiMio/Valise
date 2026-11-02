@@ -8,23 +8,23 @@ import (
 	"valise/core/valise"
 )
 
-// Servers from ~/.ssh/config get no full access mode (no special cases).
-func TestFullAccessOnlyValiseServers(t *testing.T) {
+// Servers from ~/.ssh/config get no advanced mode (no special cases).
+func TestAdvancedOnlyValiseServers(t *testing.T) {
 	s, _ := loginWorld(t)
-	ue, ok := valise.As(s.FullAccessReady("box"))
-	if !ok || ue.Code != "full_access_unsupported" {
+	ue, ok := valise.As(s.AdvancedReady("box"))
+	if !ok || ue.Code != "advanced_unsupported" {
 		t.Fatalf("%v", ue)
 	}
-	err := s.EnableFullAccess(context.Background(), "box", "x", "y", FullAccessConsent)
-	if ue, ok := valise.As(err); !ok || ue.Code != "full_access_unsupported" {
+	err := s.EnableAdvanced(context.Background(), "box", "x", "y", AdvancedConsent)
+	if ue, ok := valise.As(err); !ok || ue.Code != "advanced_unsupported" {
 		t.Fatalf("%v", err)
 	}
-	if s.FullAccess(context.Background()) != nil {
+	if s.Advanced(context.Background()) != nil {
 		t.Fatal("enabled")
 	}
 	plan := &InstallPlan{Host: "box", Fixes: [][]string{{"sudo", "apt-get", "install", "-y", "git"}}}
 	if _, err := s.RunRequirements(context.Background(), plan, CheckRequirements(plan), InstallIO{}); err == nil {
-		t.Fatal("ran without full access mode")
+		t.Fatal("ran without advanced mode")
 	}
 }
 

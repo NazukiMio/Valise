@@ -219,7 +219,7 @@ type Install struct {
 }
 
 // Require is a program the plan needs, with an optional minimum version and
-// how to install it (run only in full access mode, docs/INSTALL.md 4.1).
+// how to install it (run only in advanced mode, docs/INSTALL.md 4.1).
 type Require struct {
 	Binary  string           `yaml:"binary" json:"binary"`
 	Version string           `yaml:"version" json:"version,omitempty"` // ">=x.y.z"

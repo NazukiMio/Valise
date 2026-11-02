@@ -250,6 +250,9 @@ func (c *cli) shell(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := c.gate(ctx, pos[0], "", false); err != nil {
+		return err
+	}
 	cmd, done, err := c.svc.ShellCommand(ctx, pos[0], *prof)
 	if err != nil {
 		return err

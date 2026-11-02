@@ -20,14 +20,14 @@ const (
 const (
 	AuditInstall    = "install"
 	AuditPortChange = "port_change"
-	AuditFullAccess = "full_access"
+	AuditAdvanced   = "advanced"
 )
 
 // AuditParams record one install attempt in the server's audit log:
 // commands and exit codes only, never terminal output.
 type AuditParams struct {
 	// Op is the audit operation: AuditInstall (default), AuditPortChange
-	// or AuditFullAccess.
+	// or AuditAdvanced.
 	Op             string      `json:"op,omitempty"`
 	PlanID         string      `json:"plan_id"`
 	ProfileID      string      `json:"profile_id"`

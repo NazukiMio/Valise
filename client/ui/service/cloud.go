@@ -107,7 +107,7 @@ func (s *Service) LeafCopies(ctx context.Context, host, leaf string) (copies []C
 	}
 	errs = map[string]error{}
 	for _, t := range st.Targets {
-		list, err := s.TargetList(ctx, host, t.Name)
+		list, err := s.listPlace(ctx, host, t.Name)
 		if err != nil {
 			errs[t.Name] = err
 			continue
@@ -156,6 +156,9 @@ func (s *Service) ShellCommand(ctx context.Context, host, profileID string) (cmd
 		if lp.Effective.Detect != nil {
 			dirs = lp.Effective.Detect.BinDirs
 		}
+	}
+	if err := s.RequireGate(ctx, host, ""); err != nil {
+		return nil, nil, err
 	}
 	t, done, err := s.adminTransport(ctx, host)
 	if err != nil {

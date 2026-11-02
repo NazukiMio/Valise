@@ -24,7 +24,7 @@ var version = "0.0.0-dev"
 const usage = `用法：valise [--config-dir 目录] [-v] <命令>
 
   doctor <服务器> [--json]                       检查服务器：架构、porter 版本、可用工具
-  install <服务器> --profile <id> [--show-script] [--yes] [--full-access] [--with <可选步骤 id>]...
+  install <服务器> --profile <id> [--show-script] [--yes] [--advanced] [--with <可选步骤 id>]...
                                                  按官方方案安装 harness：先检测依赖、核对脚本哈希并展示，确认后在交互终端里执行
   native <服务器> --profile <id>                   打开 harness 自己的原生界面（独立的管理连接）
   enroll <服务器> [--profile id] [--id 实例] [--assign root:glob=类别]... [--report-json] [--accept]

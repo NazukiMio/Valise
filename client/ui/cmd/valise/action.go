@@ -53,6 +53,11 @@ func (c *cli) action(ctx context.Context, args []string) error {
 			fmt.Fprintln(c.out, "  ⚠ 已选择不建逃生舱：出了问题时没有改动之前的状态可以着陆。")
 		}
 	}
+	if a.Risk == profile.RiskConfig || a.Risk == profile.RiskDanger {
+		if err := c.gate(ctx, host, instance, *yes); err != nil {
+			return err
+		}
+	}
 	if a.Risk != profile.RiskRead && !*yes && !c.confirm("执行「"+a.Name+"」？") {
 		return valise.New("cancelled", "已取消，服务器上没有任何改动", "")
 	}
