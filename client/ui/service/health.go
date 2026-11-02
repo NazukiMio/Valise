@@ -128,10 +128,11 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 		it := HealthItem{ID: "timer", Group: HealthAgent, Title: "定时备份"}
 		switch {
 		case !ts.Enabled:
-			it.Level, it.Text = HealthInfo, "没有开启（在设置里开启）"
+			it.Level, it.Text, it.Key = HealthInfo, "没有开启", "s"
+			it.Detail = "定时建立逃生舱让备份不靠你记得。按 s 打开这个 agent 的设置，在「定时建立逃生舱」里开启。"
 		case !ts.Linger:
 			it.Level, it.Text, it.Key = HealthWarn, "每 "+everyText(ts.Every)+"一次，但 linger 没有开启：你登出或服务器重启后会停下", "k"
-			it.Detail = "linger 让服务器在你没有登录时也运行你的定时任务。按 k 打开 Kit 工具开启它（专家级，需要高级模式），或在服务器终端里运行 sudo loginctl enable-linger $USER。"
+			it.Detail = "linger 让服务器在你没有登录时也运行你的定时任务。按 k 打开 Kit 工具，在那里开启（专家级，需要高级模式）；也可以自己在服务器终端里运行 sudo loginctl enable-linger $USER。"
 		default:
 			it.Level, it.Text = HealthOK, "每 "+everyText(ts.Every)+"一次，登出后也会运行"
 		}
@@ -154,8 +155,9 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 			}
 		}
 		if stale > 0 {
-			add(HealthItem{ID: "skills", Group: HealthAgent, Level: HealthInfo, Title: "逃生舱技能",
-				Text: strconv.Itoa(stale) + " 个不是这个版本的（未安装或被改过），在设置里重新安装"})
+			add(HealthItem{ID: "skills", Group: HealthAgent, Level: HealthInfo, Title: "逃生舱技能", Key: "s",
+				Text:   strconv.Itoa(stale) + " 个不是这个版本的（未安装或被改过）",
+				Detail: "按 s 打开这个 agent 的设置，在「逃生舱技能」里重新安装。"})
 		}
 	}
 	if !st.Now.IsZero() {
@@ -223,13 +225,13 @@ func (s *Service) backupItem(host, instance, server string, metas []vault.Meta, 
 		}
 		if age > staleAfter {
 			it.Level = HealthWarn
-			it.Detail = "服务器出问题时，只能用仓库或空间站里的备份恢复：会丢掉这 " + agoPlain(age) + "的记忆、会话与配置改动。按 u 把还没同步的逃生舱复制过去（只追加，不改动已有的文件）。"
+			it.Detail = "服务器出问题时，只能用仓库或空间站里的备份恢复：会丢掉这 " + agoPlain(age) + "的记忆、会话与配置改动。按 u 打开「仓库与空间站」，在那里复制过去（只追加，不改动已有的文件）。"
 		}
 		return it
 	}
 	it.Level, it.Key = HealthWarn, "u"
 	it.Text = newest + "，但都只在服务器上"
-	it.Detail = "服务器坏了或被删光时，只在服务器上的逃生舱会一起丢失。按 u 复制到仓库或空间站；还没有时先在「仓库与空间站」里添加一个（本机文件夹就可以）。"
+	it.Detail = "服务器坏了或被删光时，只在服务器上的逃生舱会一起丢失。按 u 打开「仓库与空间站」：还没有就先添加一个（本机文件夹就可以），然后复制过去。"
 	return it
 }
 
@@ -280,6 +282,17 @@ func serviceItem(svc []enroll.ServiceState, entries []enroll.EntryState) HealthI
 		return it
 	}
 	it.Text = strings.Join(parts, " · ")
+	var down []string
+	for _, u := range svc {
+		if u.Exists() && u.Active != "active" {
+			down = append(down, u.Unit)
+		}
+	}
+	if len(down) > 0 {
+		// The agent's own service: Valise says how, the user does it.
+		it.Detail = "可以在「管理」里用 harness 资料登记的重启动作，或在服务器终端里运行：systemctl --user restart " + strings.Join(down, " ") +
+			"；还起不来时看日志：journalctl --user -u " + down[0] + " -n 50"
+	}
 	return it
 }
 

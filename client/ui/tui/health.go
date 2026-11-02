@@ -47,7 +47,7 @@ type testProgress struct{}
 
 func (c *healthTab) name() string { return "健康" }
 func (c *healthTab) help(p *instancePage) string {
-	items := []string{"↑↓", "选择", "t", "测试恢复", "u", "同步", "i", "忽略", "y", "复制给 agent 的话", "r", "刷新"}
+	items := []string{"↑↓", "选择", "t", "测试恢复", "u", "仓库与空间站", "s", "设置", "i", "忽略", "y", "复制给 agent 的话", "r", "刷新"}
 	if len(c.proposals) > 0 && c.cursor >= c.nrows {
 		items = append(items, "a", "接受", "x", "拒绝")
 	}
@@ -150,7 +150,20 @@ func (c *healthTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 		case "t":
 			return c.runTest(m, p), true
 		case "u":
-			return startSync(m, p.host), true
+			return m.push(newCloud(p.host)), true
+		case "s":
+			// Valise's own findings jump to where they are fixed.
+			cur := isKit
+			if c.cursor < len(rows) && rows[c.cursor].ID == "timer" {
+				cur = isTimer
+			}
+			for i, t := range p.tabs {
+				if st, ok := t.(*isetTab); ok {
+					st.cursor = cur
+					return p.switchTo(m, i), true
+				}
+			}
+			return nil, true
 		case "k":
 			return m.push(newKitTools(p.host)), true
 		case "y":
