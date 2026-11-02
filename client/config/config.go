@@ -24,6 +24,9 @@ type Config struct {
 	// StationCertHours is how long a server's station certificate lasts
 	// (1–720, default 168; renewed when Valise opens).
 	StationCertHours int `json:"station_cert_hours,omitempty"`
+	// RedDismissDays is how long a dismissed red health item stays off the
+	// overview and home (30–365, default 30; docs/UI.md 9.5).
+	RedDismissDays int `json:"red_dismiss_days,omitempty"`
 }
 
 // Repo is a local folder used as a repository.
@@ -83,6 +86,9 @@ func SetAdminWindow(dir string, minutes int) error {
 
 // SetRepos replaces the repository list in config.json.
 func SetRepos(dir string, repos []Repo) error { return setKey(dir, "repos", repos) }
+
+// SetRedDismissDays records how long a red dismissal lasts.
+func SetRedDismissDays(dir string, days int) error { return setKey(dir, "red_dismiss_days", days) }
 
 // setKey merges one key into config.json, keeping the others.
 func setKey(dir, key string, value any) error {

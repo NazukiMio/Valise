@@ -637,7 +637,10 @@ type ApprovalCheck struct {
 	// DefaultWhen marks a bypass that is the harness's factory setting:
 	// every bypass item matches one of these groups.
 	DefaultWhen []map[string]string `yaml:"default_when" json:"default_when,omitempty"`
-	Verify      string              `yaml:"verify" json:"verify,omitempty"`
+	// Remedy are the steps the user takes to turn approval on, shown as
+	// text; Valise never runs them (docs/UI.md 9.5).
+	Remedy []string `yaml:"remedy" json:"remedy,omitempty"`
+	Verify string   `yaml:"verify" json:"verify,omitempty"`
 }
 
 // Identity reads agent names from a read-only command's JSON output: Each

@@ -255,7 +255,7 @@ func TestHealthTab(t *testing.T) {
 	}
 	// i dismisses the selected warn (the first problem: the backup).
 	key(t, m, "i")
-	wantText(t, m, "已忽略，7 天后恢复提醒")
+	wantText(t, m, "已忽略；按 i 恢复提醒")
 	key(t, m, "i")
 	if strings.Contains(screenText(m), "已忽略") {
 		t.Fatal("dismissal not lifted")

@@ -41,7 +41,7 @@ func approvalNow(p *instancePage) string {
 		}
 		switch it.Level {
 		case service.HealthBad:
-			return "它现在执行风险命令" + errStyle.Render("不需要你批准") + "（Bypass）。"
+			return "它现在处于 " + errStyle.Render("yolo 状态") + "：执行风险命令" + errStyle.Render("不需要你批准") + "（Bypass），你在这里说的话它可能直接照做。"
 		case service.HealthOK:
 			return "它现在执行风险命令前需要你批准。"
 		}

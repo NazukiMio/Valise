@@ -79,6 +79,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   repo add <名称> <文件夹> | repo list | repo remove <名称>    本机仓库（逃生舱另存到本机文件夹）
   repo sync <服务器> [名称]                          把服务器上的逃生舱补到仓库（不指定名称时同步全部仓库）
   config export <文件> | config import <文件>       导出 / 导入 Valise 配置：服务器列表、主机指纹、设置（不含任何钥匙）
+  config red-dismiss-days <天数>                  忽略红色健康提醒后多久再在主页提醒（30–365，默认 30）
   server admin-key <服务器> [--remove]             创建管理钥匙（单独的管理口令；需要用服务器密码登录一次），或移除它
   server migrate <别名> [--admin-key]              把 ~/.ssh/config 中的服务器改用 Valise 日常钥匙
   admin passphrase                               修改管理口令（重新加密所有管理钥匙）

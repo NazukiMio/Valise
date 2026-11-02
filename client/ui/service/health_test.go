@@ -73,8 +73,9 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-// Dismissing: a warn stops counting; a bad stays bad on the health page
-// but leaves the overview; both expire; a worse item is not dismissed.
+// Dismissing: a warn stops counting, for good; a bad stays bad on the
+// health page but leaves the overview for 30 days (longer when set); a
+// worse item is not dismissed.
 func TestHealthDismiss(t *testing.T) {
 	s, _, _, _ := sealedWorld(t)
 	ctx := context.Background()
@@ -85,7 +86,7 @@ func TestHealthDismiss(t *testing.T) {
 		t.Fatal(on, err)
 	}
 	r, _ = s.Health(ctx, "box", "demo")
-	if rt := healthItem(t, r, "restore_test"); rt.Dismissed == nil || rt.Counts() || !rt.Quiet() || r.Problems() != before-1 {
+	if rt := healthItem(t, r, "restore_test"); rt.Dismissed == nil || !rt.Dismissed.IsZero() || rt.Counts() || !rt.Quiet() || r.Problems() != before-1 {
 		t.Fatalf("%+v %d", rt, r.Problems())
 	}
 	// A dismissed warn that turns red is shown again.
@@ -101,6 +102,15 @@ func TestHealthDismiss(t *testing.T) {
 	s.MarkDismissed("box", "demo", items)
 	if items[0].Dismissed == nil || !items[0].Counts() || !items[0].Quiet() {
 		t.Fatalf("%+v", items[0])
+	}
+	if days := time.Until(*items[0].Dismissed).Hours() / 24; days < 29.9 || days > 30 {
+		t.Fatalf("red dismissed for %.1f days", days)
+	}
+	if err := s.SetRedDismissDays(10); err == nil {
+		t.Fatal("shorter than 30 days accepted")
+	}
+	if err := s.SetRedDismissDays(90); err != nil || s.RedDismissDays() != 90 {
+		t.Fatal(err)
 	}
 	// Toggling again lifts it; an expired one is gone.
 	rt = healthItem(t, r, "restore_test")

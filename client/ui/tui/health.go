@@ -173,9 +173,9 @@ func (c *healthTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 			case it.Level != service.HealthWarn && it.Level != service.HealthBad:
 				m.flash, m.flashErr = "只有要留意的项可以忽略", false
 			case on && it.Level == service.HealthBad:
-				m.flash, m.flashErr = "主页不再提醒「"+it.Title+"」，7 天后恢复；红色的项在健康页里照常显示", false
+				m.flash, m.flashErr = "主页不再提醒「"+it.Title+"」，"+itoa(m.svc.RedDismissDays())+" 天后恢复；红色的项在健康页里照常显示（时长可在 设置 › 高级 里改）", false
 			case on:
-				m.flash, m.flashErr = "已忽略「"+it.Title+"」，7 天后恢复提醒", false
+				m.flash, m.flashErr = "已忽略「"+it.Title+"」；再按 i 恢复提醒", false
 			default:
 				m.flash, m.flashErr = "已恢复提醒「"+it.Title+"」", false
 			}
@@ -277,13 +277,13 @@ func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 			}
 		}
 		mk := levelMark(it.Level)
-		if it.Dismissed != nil {
+		switch {
+		case it.Dismissed == nil:
+		case it.Dismissed.IsZero():
+			mk, text = dimStyle.Render("!"), dimStyle.Render(text+"（已忽略；按 i 恢复提醒）")
+		default:
 			days := itoa(max(1, int(time.Until(*it.Dismissed).Hours()/24+0.5)))
-			if it.Level == service.HealthBad {
-				text += dimStyle.Render("（主页不再提醒，" + days + " 天后恢复）")
-			} else {
-				mk, text = dimStyle.Render("!"), dimStyle.Render(text+"（已忽略，"+days+" 天后恢复提醒）")
-			}
+			text += dimStyle.Render("（主页不再提醒，" + days + " 天后恢复）")
 		}
 		line := mk + " " + padRight(it.Title, 14) + text
 		if it.Key != "" && i == c.cursor {

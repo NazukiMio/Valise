@@ -275,6 +275,12 @@ approval_check:
   # read "OpenClaw default (full)" and "OpenClaw default (off)".
   default_when:
     - { security.requestedSource: "OpenClaw default (full)", ask.requestedSource: "OpenClaw default (off)" }
+  # The steps used on debian-vm (2026.10.9) to switch presets; shown to the
+  # user, never run by Valise.
+  remedy:
+    - "在服务器终端里（valise shell <服务器>）先停止网关：openclaw gateway stop"
+    - "改为执行前询问：openclaw exec-policy preset cautious（只放行白名单里的命令，其余先问你）"
+    - "再启动网关：openclaw gateway start，然后回到健康页刷新"
 
 # The names OpenClaw gives the agents in a state directory (UI.md 9.5
 # "名字"). OBS (2026-11-02, oracle, 2026.10.9): `agents list --json` is an

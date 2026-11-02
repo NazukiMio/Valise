@@ -44,7 +44,8 @@ type HealthItem struct {
 	Text   string `json:"text"`
 	Key    string `json:"key,omitempty"` // the one key that acts on it
 	Detail string `json:"detail,omitempty"`
-	// Dismissed is set while the user has dismissed it (until then).
+	// Dismissed is set while the user has dismissed it: until then, or
+	// the zero time for a yellow item dismissed for good.
 	Dismissed *time.Time `json:"dismissed_until,omitempty"`
 }
 
@@ -114,10 +115,12 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 	add(s.backupItem(host, instance, st.ServerName, st.Snapshots, st.Targets, now))
 	add(s.restoreTestItem(host, instance, now))
 
+	profileID := ""
 	if insts, err := s.Instances(ctx, host); err == nil {
 		for _, in := range insts {
 			if in.InstanceID == instance {
 				add(serviceItem(in.Service, in.Entries))
+				profileID = in.ProfileID
 			}
 		}
 	}
@@ -139,7 +142,11 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 		if err := s.call(ctx, host, action.MethodApproval, action.ApprovalParams{InstanceID: instance}, &chk); err != nil {
 			chk = action.ApprovalResult{}
 		}
-		add(approvalItem(&chk, k.Declaration))
+		it := approvalItem(&chk, k.Declaration)
+		if it.Level == HealthBad {
+			it.Detail += s.approvalRemedy(profileID)
+		}
+		add(it)
 		stale := 0
 		for _, sk := range k.Skills {
 			if sk.State != agentkit.SkillCurrent {
@@ -281,7 +288,7 @@ func serviceItem(svc []enroll.ServiceState, entries []enroll.EntryState) HealthI
 // is shown against the settings when they disagree.
 func approvalItem(chk *action.ApprovalResult, d *agentkit.Declaration) HealthItem {
 	it := HealthItem{ID: "approval", Group: HealthAgent, Title: "审批"}
-	bypassDetail := "agent 可以不经你同意删除文件、改配置或运行命令；被注入的指令也会直接执行。在 harness 的设置里改为执行前询问，然后让 agent 重新声明。"
+	bypassDetail := "agent 可以不经你同意删除文件、改配置或运行命令；被注入的指令也会直接执行。要改的话，在 harness 的设置里自己改为执行前询问（Valise 不替你改），然后让 agent 重新声明；不改也可以按 i 忽略。"
 	declared := ""
 	if d != nil {
 		declared = d.ApprovalMode
@@ -360,4 +367,18 @@ func everyText(every string) string {
 		}
 	}
 	return every + " "
+}
+
+// approvalRemedy is the harness profile's own steps to turn approval on, for
+// the user to follow (Valise never changes the setting itself).
+func (s *Service) approvalRemedy(profileID string) string {
+	set, err := s.Profiles()
+	if err != nil || set.ByID[profileID] == nil {
+		return ""
+	}
+	c := set.ByID[profileID].Effective.ApprovalCheck
+	if c == nil || len(c.Remedy) == 0 {
+		return ""
+	}
+	return "\n怎么改（" + set.ByID[profileID].Effective.DisplayName + "）：\n  " + strings.Join(c.Remedy, "\n  ")
 }

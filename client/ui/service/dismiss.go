@@ -5,22 +5,50 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"valise/client/config"
+	"valise/core/valise"
 )
 
-// Dismissing a health item (docs/UI.md 9.5): a yellow one stops counting
-// and leaves the overview and home; a red one only leaves the overview and
-// home and stays red on the health page. Either expires on its own, and a
-// dismissal no longer applies once the item gets worse.
+// Dismissing a health item (docs/UI.md 9.5, 2026-11-02): a yellow one is
+// dismissed for good (until the user lifts it); a red one only leaves the
+// overview and home, stays red on the health page, and comes back after
+// RedDismissDays. A dismissal no longer applies once the item gets worse.
+// Valise only says how to fix an item; it never fixes it for the user.
 
 const (
-	dismissFile     = "health-dismissed.json"
-	DismissDuration = 7 * 24 * time.Hour
+	dismissFile = "health-dismissed.json"
+	// Red dismissals last 30 days by default, at most a year.
+	RedDismissMin, RedDismissMax = 30, 365
 )
 
-// Dismissal is one dismissed health item.
+// Dismissal is one dismissed health item; Forever for a yellow one.
 type Dismissal struct {
-	Level string    `json:"level"` // the level when dismissed
-	Until time.Time `json:"until"`
+	Level   string    `json:"level"` // the level when dismissed
+	Until   time.Time `json:"until,omitempty"`
+	Forever bool      `json:"forever,omitempty"`
+}
+
+// RedDismissDays is how long a red dismissal lasts.
+func (s *Service) RedDismissDays() int {
+	d := s.Config.RedDismissDays
+	if d == 0 {
+		return RedDismissMin
+	}
+	return max(RedDismissMin, min(RedDismissMax, d))
+}
+
+// SetRedDismissDays changes how long a red dismissal lasts (advanced
+// settings); it applies to the next dismissal.
+func (s *Service) SetRedDismissDays(days int) error {
+	if days < RedDismissMin || days > RedDismissMax {
+		return valise.New("red_dismiss_days_invalid", "红色提醒的忽略时长要在 30 到 365 天之间", "")
+	}
+	if err := config.SetRedDismissDays(s.Dirs.Data, days); err != nil {
+		return err
+	}
+	s.Config.RedDismissDays = days
+	return nil
 }
 
 type dismissals map[string]map[string]map[string]Dismissal // host → instance → item id
@@ -38,7 +66,7 @@ func (s *Service) saveDismissals(d dismissals) error {
 	for h, insts := range d {
 		for i, items := range insts {
 			for id, x := range items {
-				if now.After(x.Until) {
+				if !x.Forever && now.After(x.Until) {
 					delete(items, id)
 				}
 			}
@@ -54,8 +82,9 @@ func (s *Service) saveDismissals(d dismissals) error {
 	return os.WriteFile(filepath.Join(s.Dirs.Data, dismissFile), append(b, '\n'), 0o600)
 }
 
-// ToggleDismiss dismisses a warn or bad item for DismissDuration, or
-// lifts the dismissal; it reports whether the item is now dismissed.
+// ToggleDismiss dismisses a warn item for good or a bad one for
+// RedDismissDays, or lifts the dismissal; it reports whether the item is
+// now dismissed.
 func (s *Service) ToggleDismiss(host, instance string, it HealthItem) (bool, error) {
 	if it.Level != HealthWarn && it.Level != HealthBad {
 		return false, nil
@@ -71,7 +100,11 @@ func (s *Service) ToggleDismiss(host, instance string, it HealthItem) (bool, err
 		delete(d[host][instance], it.ID)
 		return false, s.saveDismissals(d)
 	}
-	d[host][instance][it.ID] = Dismissal{Level: it.Level, Until: time.Now().Add(DismissDuration)}
+	x := Dismissal{Level: it.Level, Forever: it.Level == HealthWarn}
+	if !x.Forever {
+		x.Until = time.Now().Add(time.Duration(s.RedDismissDays()) * 24 * time.Hour)
+	}
+	d[host][instance][it.ID] = x
 	return true, s.saveDismissals(d)
 }
 
@@ -83,10 +116,10 @@ func (s *Service) MarkDismissed(host, instance string, list []HealthItem) {
 	for i := range list {
 		list[i].Dismissed = nil
 		x, ok := items[list[i].ID]
-		if !ok || now.After(x.Until) || Rank(list[i].Level) < Rank(x.Level) {
+		if !ok || (!x.Forever && now.After(x.Until)) || Rank(list[i].Level) < Rank(x.Level) {
 			continue // none, expired, or worse than when dismissed
 		}
-		until := x.Until
+		until := x.Until // zero when forever
 		list[i].Dismissed = &until
 	}
 }

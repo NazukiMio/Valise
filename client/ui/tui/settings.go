@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -72,7 +73,7 @@ func (s *settingsScreen) help() string {
 	case ssUpdate:
 		items = append(items, "p", "在线更新资料包", "f", "从文件安装资料包")
 	case ssAdvanced:
-		items = append(items, "u", "从这台服务器移除我的钥匙")
+		items = append(items, "u", "从这台服务器移除我的钥匙", "d", "忽略红色提醒的时长")
 	case ssAbout:
 		items = append(items, "g", "第一次使用")
 	}
@@ -216,6 +217,18 @@ func (s *settingsScreen) action(m *Model, k string) (tea.Cmd, bool) {
 			svc := m.svc
 			p = expandHome(m, strings.TrimSpace(p))
 			return func() tea.Msg { f, err := svc.ReadPackFile(p); return packFetched{f, err} }
+		})), true
+	case s.section == ssAdvanced && k == "d":
+		return m.push(newInput("忽略红色提醒后，多少天再在主页提醒（30–365）", itoa(m.svc.RedDismissDays()), false, func(m *Model, v string) tea.Cmd {
+			n, err := strconv.Atoi(strings.TrimSpace(v))
+			if err == nil {
+				err = m.svc.SetRedDismissDays(n)
+			}
+			if err != nil {
+				return func() tea.Msg { return failed(err) }
+			}
+			m.flash, m.flashErr = "已改为 "+itoa(n)+" 天，下次忽略时生效", false
+			return nil
 		})), true
 	case s.section == ssAdvanced && k == "u" && host != "":
 		return m.runCLI("key", "unregister", host), true

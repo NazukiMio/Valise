@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"valise/client/config"
@@ -14,6 +15,16 @@ import (
 // configCmd: valise config export|import <文件> (docs/ARCHITECTURE.md 3.1).
 func (c *cli) configCmd(op, path string) error {
 	switch op {
+	case "red-dismiss-days":
+		n, err := strconv.Atoi(path)
+		if err != nil {
+			return errUsage
+		}
+		if err := c.svc.SetRedDismissDays(n); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.out, "以后忽略红色提醒时，主页 %d 天后再提醒（健康页里照常显示红色）。\n", n)
+		return nil
 	case "export":
 		r, err := c.svc.ExportConfig(path)
 		if err != nil {

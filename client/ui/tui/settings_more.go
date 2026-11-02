@@ -106,7 +106,8 @@ func (s *settingsScreen) advancedView(m *Model, w int) string {
 	}
 	b.WriteString(box("每台服务器上能打开逃生舱的钥匙（指纹）", strings.Join(rows, "\n"), w) + "\n")
 	b.WriteString(dimStyle.Render("从服务器移除一把钥匙后，以后的逃生舱不再给它；以前的逃生舱它仍然能打开，加密没法追溯撤销。最后一把钥匙不能移除。") + "\n\n")
-	b.WriteString(box("生成一把新钥匙", dimStyle.Render("只在钥匙泄露时使用。旧钥匙仍然是打开以前逃生舱的唯一方式，请先备份。需要时在终端运行 valise key init（会先要求处理现有钥匙）。"), w))
+	b.WriteString(box("生成一把新钥匙", dimStyle.Render("只在钥匙泄露时使用。旧钥匙仍然是打开以前逃生舱的唯一方式，请先备份。需要时在终端运行 valise key init（会先要求处理现有钥匙）。"), w) + "\n")
+	b.WriteString(box("忽略红色提醒的时长", itoa(m.svc.RedDismissDays())+" 天"+dimStyle.Render("　黄色提醒忽略后不再出现；红色的忽略后只是主页不提醒，到期再提醒，健康页里一直显示。按 d 修改（30–365 天）"), w))
 	return b.String()
 }
 
