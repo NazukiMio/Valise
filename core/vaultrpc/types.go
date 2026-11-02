@@ -338,3 +338,12 @@ type SealLogEntry struct {
 type SealLogResult struct {
 	Entries []SealLogEntry `json:"entries"`
 }
+
+// Progress stages of a seal (rpc.MethodProgress): scan has no measure;
+// pack counts the bytes read, encrypted and written; commit writes the
+// snapshot's metadata.
+const (
+	SealStageScan   = "scan"
+	SealStagePack   = "pack"
+	SealStageCommit = "commit"
+)

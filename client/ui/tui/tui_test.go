@@ -180,6 +180,8 @@ func TestHomeServerInstanceAndSeal(t *testing.T) {
 	key(t, m, "enter")
 	typeText(t, m, "升级前")
 	key(t, m, "enter")
+	wantText(t, m, "逃生舱建好了", "轻装")
+	key(t, m, "enter")
 	if !strings.Contains(m.flash, "逃生舱已建立") || m.flashErr {
 		t.Fatalf("flash %q", m.flash)
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"valise/client/ssh"
+	"valise/core/rpc"
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
@@ -34,8 +35,9 @@ func (s *Service) KeyRegister(ctx context.Context, host, label string) (*vaultrp
 // Seal seals an enrolled instance on host.
 func (s *Service) Seal(ctx context.Context, host string, p vaultrpc.SealParams) (*vaultrpc.SealReport, error) {
 	var rep vaultrpc.SealReport
+	rctx := rpc.WithProgress(ctx, func(stage string, done, total int64) { report(ctx, "seal_"+stage, done, total) })
 	err := s.withSession(ctx, host, func(c caller) error {
-		return c.Call(ctx, vaultrpc.MethodSeal, p, &rep)
+		return c.Call(rctx, vaultrpc.MethodSeal, p, &rep)
 	})
 	return &rep, err
 }

@@ -29,10 +29,12 @@ type RPCClient struct {
 	mu      sync.Mutex
 	nextID  int64
 	pending map[string]chan rpc.Response
-	err     error // set once the stream is gone
-	done    chan struct{}
-	waited  chan struct{}
-	exitErr error
+	// progress receives the progress notifications of pending calls.
+	progress map[string]rpc.ProgressFunc
+	err      error // set once the stream is gone
+	done     chan struct{}
+	waited   chan struct{}
+	exitErr  error
 }
 
 // Dial starts the RPC session and performs hello, refusing a porter with a
@@ -70,8 +72,8 @@ func DialEnv(ctx context.Context, t *Transport, porterPath, clientVersion string
 	}
 	c := &RPCClient{
 		t: t, cmd: cmd, stdin: stdin, stderr: &lockedBuffer{},
-		pending: map[string]chan rpc.Response{},
-		done:    make(chan struct{}), waited: make(chan struct{}),
+		pending: map[string]chan rpc.Response{}, progress: map[string]rpc.ProgressFunc{},
+		done: make(chan struct{}), waited: make(chan struct{}),
 	}
 	cmd.Stderr = c.stderr
 	c.conn = rpc.NewConn(stdout, stdin)
@@ -111,6 +113,10 @@ func (c *RPCClient) readLoop() {
 			err = errors.New("porter 返回了无法解析的数据")
 			break
 		}
+		if len(resp.ID) == 0 || string(resp.ID) == "null" {
+			c.notified(line)
+			continue
+		}
 		c.mu.Lock()
 		ch := c.pending[string(resp.ID)]
 		delete(c.pending, string(resp.ID))
@@ -120,6 +126,21 @@ func (c *RPCClient) readLoop() {
 		}
 	}
 	c.fail(err)
+}
+
+// notified passes a progress notification to its call.
+func (c *RPCClient) notified(line []byte) {
+	var n rpc.Request
+	var p rpc.ProgressParams
+	if json.Unmarshal(line, &n) != nil || n.Method != rpc.MethodProgress || json.Unmarshal(n.Params, &p) != nil {
+		return
+	}
+	c.mu.Lock()
+	fn := c.progress[string(p.ID)]
+	c.mu.Unlock()
+	if fn != nil {
+		fn(p.Stage, p.Done, p.Total)
+	}
 }
 
 // fail ends the session and wakes every pending call.
@@ -154,6 +175,10 @@ func (c *RPCClient) Call(ctx context.Context, method string, params, result any)
 	id := json.RawMessage(strconv.FormatInt(c.nextID, 10))
 	ch := make(chan rpc.Response, 1)
 	c.pending[string(id)] = ch
+	if fn := rpc.ProgressOf(ctx); fn != nil {
+		c.progress[string(id)] = fn
+		defer func() { c.mu.Lock(); delete(c.progress, string(id)); c.mu.Unlock() }()
+	}
 	c.mu.Unlock()
 
 	if err := c.conn.Write(rpc.Request{JSONRPC: rpc.JSONRPCVersion, ID: id, Method: method, Params: p}); err != nil {

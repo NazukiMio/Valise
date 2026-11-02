@@ -36,7 +36,21 @@ func TestSealPullVerifyOverFakeSSH(t *testing.T) {
 	if err != nil || rep.Categories["secrets"].Files != 0 || rep.Categories["memory"].Files != 1 {
 		t.Fatalf("%+v %v", rep, err)
 	}
-	rep2, err := s.Seal(ctx, "box", vaultrpc.SealParams{InstanceID: "demo", Tier: vault.TierSoulSecrets})
+	// Progress arrives as porter notifications while the seal runs.
+	var stages []string
+	var packDone, packTotal int64
+	pctx := WithProgress(ctx, func(p Progress) {
+		if len(stages) == 0 || stages[len(stages)-1] != p.Stage {
+			stages = append(stages, p.Stage)
+		}
+		if p.Stage == StageSealPack {
+			packDone, packTotal = p.Done, p.Total
+		}
+	})
+	rep2, err := s.Seal(pctx, "box", vaultrpc.SealParams{InstanceID: "demo", Tier: vault.TierSoulSecrets})
+	if strings.Join(stages, ",") != StageSealScan+","+StageSealPack+","+StageSealCommit || packTotal == 0 || packDone != packTotal {
+		t.Fatalf("progress %v %d/%d", stages, packDone, packTotal)
+	}
 	if err != nil || rep2.Categories["secrets"].Files != 1 {
 		t.Fatalf("%+v %v", rep2, err)
 	}

@@ -23,6 +23,13 @@ const (
 	StageSwap    = "swap"    // stop, swap, start, health check
 )
 
+// Stages reported by Seal (porter's vaultrpc.SealStage*, prefixed).
+const (
+	StageSealScan   = "seal_scan"   // listing and classifying the files
+	StageSealPack   = "seal_pack"   // reading, encrypting and writing (bytes)
+	StageSealCommit = "seal_commit" // writing the snapshot's metadata
+)
+
 type progressKey struct{}
 
 // WithProgress returns a context whose long operations report to fn. fn is

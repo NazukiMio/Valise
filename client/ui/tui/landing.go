@@ -314,7 +314,7 @@ func planText(rp *service.RevivePlan) string {
 		origin = "本地，未经审核"
 	}
 	fmt.Fprintf(&b, "操作 %s：%s，目标 %s（%s）上的实例 %s\n", p.OpID, modeNames[p.Mode], rp.Target, rp.TargetArch, p.InstanceID)
-	fmt.Fprintf(&b, "profile %s v%d（%s）\n", p.Profile.ID, p.Profile.ProfileVersion, origin)
+	fmt.Fprintf(&b, "harness 资料 %s v%d（%s）\n", p.Profile.ID, p.Profile.ProfileVersion, origin)
 	for _, root := range p.Roots {
 		fmt.Fprintf(&b, "  目录 %-10s → %s\n", root.ID, root.Path)
 	}

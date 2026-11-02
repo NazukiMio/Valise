@@ -198,7 +198,7 @@ vaults/
 <dest>/<server_name>/<instance_id>/<周期>/…
 ```
 
-`TREE` 的内容：`{"format": "valise-vault-tree/1", "server_name": "ubuntu-vm", "created_at": "…"}`。`server_name` 由用户在添加服务器时确定（默认是 SSH 别名，规则同实例 id），保存在服务器的 `~/.config/valise/server.json`，之后不可修改。
+`TREE` 的内容：`{"format": "valise-vault-tree/1", "server_name": "ubuntu-vm", "created_at": "…"}`。`server_name` 由用户在添加服务器时确定（默认是 SSH 别名，规则同实例 id），保存在服务器的 `~/.config/valise/server.json`。用户改名时（ARCHITECTURE.md 第 3 节），目录随之改名，`TREE` 里的 `server_name` 改写为新名字，并加 `"renamed_from": ["旧名"]`。
 
 `PERIOD` 的内容：
 

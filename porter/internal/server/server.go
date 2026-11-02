@@ -78,7 +78,11 @@ func Serve(ctx context.Context, r io.Reader, w io.Writer, cfg Config) error {
 		case !helloed:
 			resp = errorResponse(req.ID, rpc.CodeHelloRequired, "first request must be hello", nil)
 		default:
-			resp = s.call(ctx, req)
+			id := req.ID
+			resp = s.call(rpc.WithProgress(ctx, func(stage string, done, total int64) {
+				p, _ := json.Marshal(rpc.ProgressParams{ID: id, Stage: stage, Done: done, Total: total})
+				_ = conn.Write(rpc.Request{JSONRPC: rpc.JSONRPCVersion, Method: rpc.MethodProgress, Params: p})
+			}), req)
 		}
 		if err := conn.Write(resp); err != nil {
 			return err

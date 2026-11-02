@@ -11,6 +11,7 @@ import (
 
 	"valise/core/enroll"
 	"valise/core/profile"
+	"valise/core/rpc"
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
@@ -76,6 +77,7 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		p.AppendAudit(ent)
 	}()
 
+	rpc.Report(ctx, vaultrpc.SealStageScan, 0, 0)
 	roots := make([]enroll.Root, 0, len(rec.Roots))
 	for id, path := range rec.Roots {
 		st, err := os.Stat(path)
@@ -110,8 +112,13 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 
 	// Preflight: room for the SQLite copies.
 	var dbBytes uint64
+	var packTotal int64
 	for _, it := range items {
-		if it.SQLite != nil && vault.InTier(params.Tier, it.Match.Category) {
+		if it.Symlink || !vault.InTier(params.Tier, it.Match.Category) {
+			continue
+		}
+		packTotal += it.Info.Size()
+		if it.SQLite != nil {
 			dbBytes += uint64(it.Info.Size())
 		}
 	}
@@ -142,6 +149,16 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		t.Bytes += n
 		rep.Categories[cat] = t
 	}
+	var packed int64
+	var reported time.Time
+	pack := func(n int64, last bool) {
+		packed += n
+		if last || time.Since(reported) > 200*time.Millisecond {
+			reported = time.Now()
+			rpc.Report(ctx, vaultrpc.SealStagePack, min(packed, packTotal), packTotal)
+		}
+	}
+	pack(0, true)
 	for _, it := range items {
 		if it.Symlink {
 			// Symlinks are classified like files: only those whose
@@ -181,7 +198,9 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		}
 		files.Files = append(files.Files, *f)
 		tally(f.Category, f.Size)
+		pack(it.Info.Size(), false)
 	}
+	pack(0, true)
 
 	if rec.Provenance.Git != nil && rec.Provenance.Git.Path != "" {
 		patch, perr := gitPatch(ctx, e, rec.Provenance.Git.Path)
@@ -200,6 +219,7 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		}
 	}
 
+	rpc.Report(ctx, vaultrpc.SealStageCommit, 0, 0)
 	now := time.Now().UTC()
 	snap := vault.Snapshot{InstanceID: rec.InstanceID, Tier: params.Tier, CreatedAt: now,
 		Profile:    vault.ProfileRef{ID: prof.ID, Version: prof.ProfileVersion, Status: prof.Status},

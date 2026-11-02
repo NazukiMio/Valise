@@ -248,12 +248,8 @@ type sealDone struct {
 func startSeal(m *Model, p *instancePage) tea.Cmd {
 	return m.push(pick("建立逃生舱 · 装什么？", tierChoices, func(m *Model, tier string) tea.Cmd {
 		return m.push(newInput("原因（可选，以后在列表里能看到，例如\"升级前\"）", "", false, func(m *Model, reason string) tea.Cmd {
-			svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
-			m.flash, m.flashErr = "正在建立逃生舱…", false
-			return func() tea.Msg {
-				rep, err := svc.Seal(ctx, host, vaultrpc.SealParams{InstanceID: inst, Tier: tier, Reason: strings.TrimSpace(reason)})
-				return sealDone{rep, err}
-			}
+			sc := newSealScreen(m, p.host, p.inst.InstanceID, tier)
+			return tea.Batch(m.push(sc), sc.run(m, reason))
 		}))
 	}))
 }
