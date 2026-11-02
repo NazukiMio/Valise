@@ -85,6 +85,7 @@ var conditionalMethods = map[string]bool{
 // where backups go: the daily key plus the owner proof.
 var ownerMethods = map[string]bool{
 	"instance_write":   true,
+	"server_rename":    true,
 	"target_set":       true,
 	"period_set":       true,
 	"timer_set":        true,

@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 17
+profile_version: 18
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -174,6 +174,12 @@ exclusive_secrets:
 install:
   id: install-cli-user-prefix
   summary: "安装 OpenClaw 2026.10.9 和它自带的 Node 24.22.1 到 ~/.openclaw，并安装网关的用户服务；不需要管理员权限"
+  where: "~/.openclaw（程序、Node 与数据都在这里），网关作为你的 systemd 用户服务运行"
+  takes: "3～5 分钟，脚本会自己下载 Node 与 OpenClaw"
+  notes:
+    # OBS (2026-11-02, oracle, 2026.10.9): `openclaw exec-policy show` reports
+    # security "OpenClaw default (full)" and ask "OpenClaw default (off)".
+    - "OpenClaw 出厂时允许 agent 不经你同意执行命令（Bypass）。装好后健康页会提醒，并告诉你怎么改为执行前询问。"
   requires:
     - { binary: git, why: "安装脚本用 git；缺少时它会自己调用 sudo apt-get，所以先装好", install: [ { os_id: [debian, ubuntu], argv: [sudo, apt-get, install, -y, git] } ] }
     - { binary: curl, why: "安装脚本用它下载 Node 与 OpenClaw", install: [ { os_id: [debian, ubuntu], argv: [sudo, apt-get, install, -y, curl] } ] }

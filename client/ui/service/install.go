@@ -78,6 +78,13 @@ type InstallPlan struct {
 	NativeCLI []string `json:"native_cli,omitempty"`
 	// BinDirs are put on PATH for the steps (detect.bin_dirs).
 	BinDirs []string `json:"bin_dirs,omitempty"`
+	// Where, Takes and Notes complete the short summary (docs/UI.md 9.6).
+	Where string   `json:"where,omitempty"`
+	Takes string   `json:"takes,omitempty"`
+	Notes []string `json:"notes,omitempty"`
+	// Existing is this harness's default agent already on the server: the
+	// install would take over its data, so the user decides first.
+	Existing *DetectedInstance `json:"existing,omitempty"`
 }
 
 // PlanInstall checks profileID's official plan against host and downloads
@@ -102,7 +109,15 @@ func (s *Service) PlanInstall(ctx context.Context, host, profileID string) (*Ins
 	var id [6]byte
 	_, _ = rand.Read(id[:])
 	plan := &InstallPlan{ID: "inst_" + hex.EncodeToString(id[:]), Host: host, ProfileID: prof.ID, ProfileVersion: prof.ProfileVersion,
-		ProfileLocal: lp.Local, Capability: prof.CapabilityStatus("install"), Summary: prof.Install.Summary, NativeCLI: prof.NativeCLI}
+		ProfileLocal: lp.Local, Capability: prof.CapabilityStatus("install"), Summary: prof.Install.Summary, NativeCLI: prof.NativeCLI,
+		Where: prof.Install.Where, Takes: prof.Install.Takes, Notes: prof.Install.Notes}
+	if found, err := s.DetectInstances(ctx, host); err == nil {
+		for i := range found {
+			if found[i].ProfileID == prof.ID && found[i].Name == "" {
+				plan.Existing = &found[i]
+			}
+		}
+	}
 	if prof.Detect != nil {
 		plan.BinDirs = prof.Detect.BinDirs
 	}

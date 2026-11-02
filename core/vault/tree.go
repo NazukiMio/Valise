@@ -31,6 +31,8 @@ type TreeDesc struct {
 	Format     string    `json:"format"`
 	ServerName string    `json:"server_name"`
 	CreatedAt  time.Time `json:"created_at"`
+	// RenamedFrom lists the server's earlier names, oldest first.
+	RenamedFrom []string `json:"renamed_from,omitempty"`
 }
 
 // Period is the PERIOD file of a leaf. Start and End are dates in TZ,

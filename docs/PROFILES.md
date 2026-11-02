@@ -39,6 +39,7 @@ capabilities:
 - **审批状态检查**（2026-11-02 用户决定）：profile 可以声明 `approval_check`，用一条只读命令或一个配置键读出 harness 执行风险命令时是否需要用户批准，结果为"需要批准"或"无需批准（Bypass）"；与其他条目一样，未在靶机上核实时标 `verify: pending`。没有声明时，退回到 agent 经 MCP `valise_declare` 的申报（AGENT_KIT.md 第 3 节），界面标"未经核实"。
   - **schema**（M12 实现，2026-11-02 用户同意）：`approval_check: { argv, each, bypass_when, ask_when, verify }`。`argv` 是一条只读命令（只能引用 `${HOME}`），输出 JSON，由 porter 按服务器上保存的 profile 副本执行，走日常钥匙；`each` 可选，指向一个数组，逐项判断、取最差的结果；`bypass_when` 是"字段路径: 值"，全部相等才算无需批准；`ask_when` 是若干组条件，任一组全部相等就算需要批准；都不匹配为"不确定"。只做相等比较，不是解释器。读配置键的方式（不运行命令）留待需要时再加。
   - **出厂设置**（2026-11-02 用户决定）：`default_when` 可选，形式同 `ask_when`（若干组"字段路径: 值"）；Bypass 结果命中时，界面注明"这是 harness 的出厂设置，不是你改的"。改回"执行前询问"由 profile 的 `config` 风险管理动作完成（固定 argv，确认后执行），在靶机上核实后才登记。
+- **安装摘要**（2026-11-02 用户决定）：`install` 可以写 `where`（装到哪里）、`takes`（大概多久）与 `notes`（装之前要知道的事，例如 harness 出厂即为 Bypass），与 `summary` 一起组成方案开头的摘要（UI.md 9.6）。
 - **agent 的名字**（2026-11-02 用户决定）：profile 可以声明 `identity: { argv, path, verify }`：一条只读命令（只能引用 `${HOME}` 与 `${STATE_DIR}`）输出 JSON，`path` 指向 harness 里给 agent 起的名字（例如 OpenClaw 的 `identity.name`）。只读这一项，不扫描、不解析其他文件内容。界面上的显示名优先用用户在 Valise 里起的（记在实例档案的 agent 条目 `display_name`），其次用这里读出的名字，都没有时只显示实例 id；实例 id 不随名字改变（UI.md 9 节"名字"）。
 - **一个状态目录里的多个 agent**（2026-11-02 用户决定）：有的 harness 在一个状态目录里放多个 agent（OpenClaw 的 `agents.entries`，共用设置与网关）。暂时仍以一个状态目录为一个 Valise agent 备份与恢复，界面只列出其中的 agent 名单；是否拆开，等在靶机上研究清楚再定。
   - **与声明对照**：核实结果优先；agent 的声明与设置不符时两者都显示（设置为 Bypass 时红色，设置为需要批准而 agent 声称无需批准时黄色）。

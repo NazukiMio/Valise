@@ -142,9 +142,21 @@ func hasFingerprint(keys []service.HostKey, fp string) bool {
 
 // serverAdminKey: valise server admin-key <服务器>
 func (c *cli) serverAdminKey(ctx context.Context, args []string) error {
-	pos, err := parseArgs(flag.NewFlagSet("server admin-key", flag.ContinueOnError), args, 1)
+	fs := flag.NewFlagSet("server admin-key", flag.ContinueOnError)
+	remove := fs.Bool("remove", false, "")
+	pos, err := parseArgs(fs, args, 1)
 	if err != nil {
 		return err
+	}
+	if *remove {
+		if !c.confirm("移除 " + pos[0] + " 的管理钥匙？之后每次管理操作都要输入服务器密码，随时可以重新创建") {
+			return valise.New("cancelled", "已取消，没有任何改动", "")
+		}
+		if err := c.svc.RemoveAdminKey(ctx, pos[0]); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.out, "已移除 %s 的管理钥匙（服务器上和这台电脑上都删掉了）。\n", pos[0])
+		return nil
 	}
 	pass, err := c.newAdminPassphrase()
 	if err != nil {

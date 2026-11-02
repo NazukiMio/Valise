@@ -1,0 +1,229 @@
+
+
+// ascii-kit: runtime + helpers for animated ASCII pieces.
+// Part of ascii-motion (MIT License, Copyright (c) 2026 ascii-motion contributors).
+// mount(), halftone(), hash() and noise() are adapted from ascii.rest by bas3line
+// (https://github.com/bas3line/ascii), used under this license:
+//
+//   MIT License
+//
+//   Copyright (c) 2026 bas3line (https://github.com/bas3line)
+//
+//   Permission is hereby granted, free of charge, to any person obtaining a copy
+//   of this software and associated documentation files (the "Software"), to deal
+//   in the Software without restriction, including without limitation the rights
+//   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//   copies of the Software, and to permit persons to whom the Software is
+//   furnished to do so, subject to the following conditions:
+//
+//   The above copyright notice and this permission notice shall be included in all
+//   copies or substantial portions of the Software.
+//
+//   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+//   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+//   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+//   SOFTWARE.
+//
+// Piece contract (compatible with ascii.rest, MIT):
+//   export const meta = { name, note, cols, rows, fps, cell?, palette?, ground?, options? }
+//   export default (options) => (t, { paper, color }) => string   // rows joined by "\n"
+//   Coloured pieces write a palette index per cell into color[y*cols+x].
+
+// ---------- math ----------
+const clamp = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const smooth = (a, b, v) => { const k = clamp((v - a) / (b - a)); return k * k * (3 - 2 * k); };
+const mix = (a, b, k) => a + (b - a) * k;
+const ease = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+function hash(x, y) {
+  let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+// value noise; wraps every `period` lattice cells in x when period > 0 (for endless drift)
+function noise(x, y, period = 0) {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
+  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  let x0 = xi, x1 = xi + 1;
+  if (period) { x0 = ((xi % period) + period) % period; x1 = (x0 + 1) % period; }
+  const a = hash(x0, yi), b = hash(x1, yi), c = hash(x0, yi + 1), d = hash(x1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(x, y, oct = 4, period = 0) {
+  let s = 0, n = 0, amp = 0.5, f = 1;
+  for (let i = 0; i < oct; i++) { s += amp * noise(x * f, y * f, period * f); n += amp; amp *= 0.5; f *= 2; }
+  return s / n;
+}
+
+// ---------- halftone scenes (cell: 1, ~200×100, " ·•●") ----------
+const DOTS = " ·•●", COVER = [0, 0.3, 0.6, 1];
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => v / 16 - 0.47);
+const hex = (s) => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16) / 255);
+// shade(s, x, y, t, col, row): set s.r s.g s.b (linear-ish 0..1+), optionally s.floor (min dot level), s.fade.
+function halftone(meta, shade) {
+  const W = meta.cols, H = meta.rows, P = meta.palette.map(hex);
+  const lut = new Uint8Array(32768).fill(255);
+  const nearest = (r, g, b) => {
+    const k = (Math.min(31, (r * 31.99) | 0) << 10) | (Math.min(31, (g * 31.99) | 0) << 5) | Math.min(31, (b * 31.99) | 0);
+    if (lut[k] !== 255) return lut[k];
+    let best = 0, bd = 1e9;
+    for (let i = 0; i < P.length; i++) {
+      const dr = P[i][0] - r, dg = P[i][1] - g, db = P[i][2] - b, d = 0.3 * dr * dr + 0.5 * dg * dg + 0.2 * db * db;
+      if (d < bd) (bd = d), (best = i);
+    }
+    return (lut[k] = best);
+  };
+  const out = new Array(W), lines = new Array(H), s = { r: 0, g: 0, b: 0, floor: 0.3, fade: 1 };
+  return (t, { color } = {}) => {
+    for (let r = 0; r < H; r++) {
+      for (let x = 0; x < W; x++) {
+        s.r = s.g = s.b = 0; s.floor = 0.3; s.fade = 1;
+        shade(s, x + 0.5, r + 0.5, t, x, r);
+        // dot size from brightness, dithered; colour makes up what dot size could not
+        const peak = Math.max(s.r, s.g, s.b, 1e-4);
+        const level = clamp(s.floor + (1 - s.floor) * Math.pow(peak, 0.85) * 0.95) * s.fade;
+        const step = Math.max(0, Math.min(3, Math.round(level * 3 + BAYER[(r & 3) * 4 + (x & 3)])));
+        out[x] = DOTS[step];
+        if (color) {
+          const want = step ? Math.min(1, (level + 0.06) / COVER[step]) : 0, k = (0.3 + 0.7 * want) / peak;
+          color[r * W + x] = nearest(clamp(s.r * k), clamp(s.g * k), clamp(s.b * k));
+        }
+      }
+      lines[r] = out.join("");
+    }
+    return lines.join("\n");
+  };
+}
+
+// ---------- mono ramp fields (cell: 2, text cells are ~2× taller than wide) ----------
+// field(x, y, t) → 0..1 brightness, or -1 for empty. x,y in cell widths from centre (y already ×2).
+function ramp(meta, field, RAMP = ".,-~:;=!*#$@") {
+  const { cols, rows } = meta, N = RAMP.length, out = new Array(cols), lines = new Array(rows);
+  return (t, { paper = false } = {}) => {
+    for (let r = 0; r < rows; r++) {
+      const y = (r + 0.5 - rows / 2) * 2;
+      for (let c = 0; c < cols; c++) {
+        const v = field(c + 0.5 - cols / 2, y, t);
+        if (v < 0) { out[c] = " "; continue; }
+        const i = Math.min(N - 1, Math.floor(clamp(v) * N));
+        out[c] = RAMP[paper ? N - 1 - i : i]; // light page: dense ink = dark, so flip
+      }
+      lines[r] = out.join("");
+    }
+    return lines.join("\n");
+  };
+}
+
+// ---------- sprites ----------
+const FLIP = { "/": "\\", "\\": "/", "(": ")", ")": "(", "<": ">", ">": "<", "[": "]", "]": "[", "{": "}", "}": "{", "`": "'", "'": "`" };
+const mirror = (half, w = Math.max(...half.map((l) => l.length))) =>
+  half.map((l) => { l = l.padEnd(w); return l + [...l.slice(0, w - 1)].reverse().map((c) => FLIP[c] || c).join(""); });
+function grid(cols, rows) {
+  const g = Array.from({ length: rows }, () => new Array(cols).fill(" "));
+  return {
+    g,
+    put(x, y, s, transparent = true) { if (y < 0 || y >= rows) return; for (let i = 0; i < s.length; i++) { const X = x + i; if (X >= 0 && X < cols && !(transparent && s[i] === " ")) g[y][X] = s[i]; } },
+    clear() { for (const row of g) row.fill(" "); },
+    text() { return g.map((r) => r.join("")).join("\n"); },
+  };
+}
+
+// ---------- runtime ----------
+const rgb = (css) => (css[0] === "#" ? [1, 3, 5].map((i) => parseInt(css.slice(i, i + 2), 16)) : (css.match(/[\d.]+/g) || []).map(Number));
+const isDark = (css) => { const c = rgb(css); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] < 128; };
+function mount(el, piece, options = {}) {
+  const meta = piece.meta, { fps = meta.fps ?? 30, motion = false, ...rest } = { ...meta.options, ...options };
+  const frame = piece.default(rest);
+  const { cols, rows, palette, ground, cell = 2 } = meta;
+  const canvas = el instanceof HTMLCanvasElement ? el : null;
+  const color = palette && canvas ? new Uint8Array(cols * rows) : undefined;
+  let t = 0, draw, ro;
+  if (!canvas) {
+    draw = () => { el.textContent = frame(t, { paper: isDark(getComputedStyle(el).color) }); };
+  } else {
+    const ctx = canvas.getContext("2d");
+    let w = 0, h = 0;
+    canvas.style.display ||= "block"; canvas.style.width ||= "100%";
+    canvas.style.aspectRatio = `${cols} / ${rows * cell}`;
+    const size = () => {
+      w = (canvas.clientWidth * (devicePixelRatio || 1)) / cols; h = w * cell;
+      canvas.width = Math.round(w * cols); canvas.height = Math.round(h * rows);
+    };
+    const buckets = new Map();
+    draw = () => {
+      const ink = getComputedStyle(canvas).color;
+      const text = frame(t, { paper: ground ? !isDark(ground) : isDark(ink), color });
+      if (ground) { ctx.fillStyle = ground; ctx.fillRect(0, 0, canvas.width, canvas.height); } else ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = `${w / 0.6}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      buckets.forEach((a) => (a.length = 0));
+      for (let k = 0, x = 0, y = 0; k < text.length; k++) {
+        const c = text.charCodeAt(k);
+        if (c === 10) { x = 0; y++; continue; }
+        if (c !== 32) { const ci = color ? color[y * cols + x] : 0; let a = buckets.get(ci); if (!a) buckets.set(ci, (a = [])); a.push(c, x, y); }
+        x++;
+      }
+      buckets.forEach((a, ci) => {
+        if (!a.length) return;
+        ctx.fillStyle = palette ? palette[ci] : ink; // one fillStyle per colour
+        for (let i = 0; i < a.length; i += 3) ctx.fillText(String.fromCharCode(a[i]), (a[i + 1] + 0.5) * w, (a[i + 2] + 0.5) * h);
+      });
+    };
+    size();
+    ro = new ResizeObserver(() => { size(); draw(); }); ro.observe(canvas);
+  }
+  draw();
+  if (!fps) return () => ro?.disconnect();
+  const still = matchMedia("(prefers-reduced-motion: reduce)");
+  let raf = 0, last = 0, seen = false;
+  const tick = (now) => { raf = requestAnimationFrame(tick); const dt = now - last; if (dt < 1000 / fps - 2) return; last = now; t += Math.min(dt, 100) / 1000; draw(); };
+  const run = () => {
+    const go = seen && !document.hidden && (motion || !still.matches);
+    if (go && !raf) { last = performance.now(); raf = requestAnimationFrame(tick); } else if (!go && raf) { cancelAnimationFrame(raf); raf = 0; }
+  };
+  const io = new IntersectionObserver((e) => { seen = e[e.length - 1].isIntersecting; run(); }); io.observe(el);
+  document.addEventListener("visibilitychange", run); still.addEventListener("change", run);
+  return () => { io.disconnect(); ro?.disconnect(); cancelAnimationFrame(raf); raf = 0; document.removeEventListener("visibilitychange", run); still.removeEventListener("change", run); };
+}
+
+
+
+const meta={name:'总装车间',note:'机械臂依次安装发动机、箭体、尾翼、头罩与侧面模块，随后焊接并扫描检查。',cols:120,rows:34,cell:2,fps:18,ground:'#080e24',palette:['#24334b','#536480','#a9c5cf','#ede7d3','#dc7259','#f4bb54','#5aa59f','#889aad']};
+function make(){return(t,{color})=>{const W=240,H=136,g=new Uint8Array(W*H),ink=new Uint8Array(W*H);const dot=(x,y,k)=>{x=Math.round(x);y=Math.round(y);if(x>=0&&x<W&&y>=0&&y<H){g[y*W+x]=1;ink[y*W+x]=k;}};const line=(x,y,a,b,k)=>{const n=Math.max(Math.abs(a-x),Math.abs(b-y),1);for(let i=0;i<=n;i++)dot(x+(a-x)*i/n,y+(b-y)*i/n,k);};const rect=(x,y,w,h,k,fill=false)=>{for(let j=0;j<h;j++)for(let i=0;i<w;i++)if(fill||i===0||j===0||i===w-1||j===h-1)dot(x+i,y+j,k);};const ellipse=(x,y,rx,ry,k,fill=true)=>{for(let j=-ry;j<=ry;j++)for(let i=-rx;i<=rx;i++){const d=i*i/(rx*rx)+j*j/(ry*ry);if(d<=1&&(fill||d>.65))dot(x+i,y+j,k);}};const clamp=v=>Math.max(0,Math.min(1,v)),ease=v=>{v=clamp(v);return v*v*(3-2*v);};
+// Warehouse structure: trusses, shelves, inspection platform.
+for(let x=12;x<240;x+=43){line(x,15,x,119,0);line(x,15,x+21,3,0);line(x+21,3,x+43,15,0);}line(4,15,235,15,1);line(4,20,235,20,0);line(0,120,239,120,1);
+for(let x=20;x<230;x+=65){rect(x,24,19,2,t> x/90?3:0,true);}
+for(let y=80;y<=112;y+=16){line(9,y,52,y,1);rect(13,y-10,12,10,0);rect(32,y-7,16,7,1);}rect(205,86,24,32,0);for(let y=92;y<117;y+=8)line(209,y,225,y,1);
+line(155,83,180,83,1);line(160,83,160,119,1);line(179,83,179,119,1);for(let y=89;y<119;y+=6)line(160,y,179,y,0);
+ellipse(215,44,9,9,1,false);for(let a=0;a<3;a++){let q=t*.8+a*2.094;line(215,44,215+7*Math.cos(q),44+7*Math.sin(q),1);}
+rect(102,116,38,4,2,true);
+// Main fuselage descends, then the nose cap follows on the same hoist.
+const bodyY=26+35*ease((t-7)/6),cx=121;const capY=-30+70*ease((t-21)/5),wings=ease((t-15)/5);
+// Engine arrives first on a lower manipulator.
+const engineX=75+46*ease((t-3)/4);if(t>2){rect(engineX-7,112,15,3,1,true);line(engineX-5,115,engineX-8,119,2);line(engineX+5,115,engineX+8,119,2);line(engineX-8,119,engineX+8,119,2);}
+if(t>7){
+for(let y=bodyY;y<bodyY+53;y++)for(let x=111;x<=131;x++){let k=(Math.floor((y-bodyY)/12)+Math.floor((x-111)/10))%2?4:3;dot(x,y,k);}ellipse(cx,bodyY+21,6,6,4);ellipse(cx,bodyY+21,4,4,0);dot(cx-2,bodyY+19,3);rect(115,bodyY+53,13,3,1,true);
+}
+if(t>=21){for(let y=0;y<21;y++){let w=11*Math.sqrt(Math.max(0,1-((y-21)/21)**2));line(cx-w,capY+y,cx+w,capY+y,y<14?4:3);}}
+if(t>14)for(let side of [-1,1]){let wx=cx+side*(28-14*wings);for(let y=0;y<17;y++)line(wx,bodyY+39+y,wx+side*(7-y*.35),bodyY+39+y,4);}
+// Hoist brings the body and later the nose; the cap ends exactly above bodyY.
+const hook=t<14?bodyY-3:t<21?18:t<27?capY-3:capY-3-(t-27)*6;
+rect(cx-8,17,16,7,5,true);line(cx,24,cx,hook,1);line(cx,hook,cx-4,hook+4,2);
+// Articulated manipulators. Staggered tasks keep each action readable.
+function arm(baseX,baseY,elbowX,elbowY,tipX,tipY,open=false){rect(baseX-7,baseY-3,14,5,1,true);line(baseX,baseY,elbowX,elbowY,5);line(baseX+1,baseY,elbowX+1,elbowY,5);ellipse(elbowX,elbowY,3,3,2);line(elbowX,elbowY,tipX,tipY,5);line(elbowX+1,elbowY,tipX+1,tipY,5);ellipse(tipX,tipY,2,2,1);line(tipX,tipY,tipX-3,tipY+(open?5:2),2);line(tipX,tipY,tipX+3,tipY+(open?5:2),2);}
+let lX=76,lY=96,rX=169,rY=96;
+if(t>3&&t<7){lX=engineX;lY=109;}
+if(t>14&&t<21){lX=93+14*wings;lY=101;rX=149-14*wings;rY=101;}
+if(t>27&&t<32){const q=ease((t-27)/4);lX=86+24*q;lY=81;rX=157-24*q;rY=81;rect(lX-2,80,4,11,2,true);rect(rX-2,80,4,11,2,true);}
+if(t>=32&&t<36){lX=109;lY=64+(t-32)*11;rX=134;rY=64+(t-32)*11;}
+arm(69,118,79,86,lX,lY,t>36);arm(175,118,161,86,rX,rY,t>36);
+if(t>=32){rect(108,80,4,11,2,true);rect(132,80,4,11,2,true);}
+// A few local welding sparks, followed by a quiet inspection light.
+if(t>32&&t<36){for(let i=0;i<8;i++){let a=i*.79+t*5,r=2+4*hash(i,Math.floor(t*9));line(134,rY,134+Math.cos(a)*r,rY+Math.sin(a)*r,5);}}
+rect(188,101,10,16,1);ellipse(193,106,2,2,t>40?6:5);if(t>37&&t<40){let yy=114-(t-37)*22;line(110,yy,132,yy,6);}
+for(let i=0;i<12;i++){let x=20+hash(i,17)*200,y=30+((hash(i,3)*75+t*.7)%75);if(hash(i,9)>.5)dot(x,y,1);}
+let rows=[];for(let r=0;r<34;r++){let row='';for(let c=0;c<120;c++){let bits=0,k=0;for(let dy=0;dy<4;dy++)for(let dx=0;dx<2;dx++){let idx=(r*4+dy)*W+c*2+dx;if(g[idx]&&(t>2||hash(c,r)<t/2)){bits|=1<<[[0,3],[1,4],[2,5],[6,7]][dy][dx];k=ink[idx];}}row+=String.fromCharCode(0x2800+bits);color[r*120+c]=k;}rows.push(row);}return rows.join('\n');};}
+
+for(const t of [0,4,9,14,19,23,27,33,39,42]){const rows=make()(t,{color:new Uint8Array(4080)}).split('\n');if(rows.length!==34||rows.some(r=>r.length!==120))throw Error('Invalid frame '+rows.length);}console.log('Assembly frames validated');

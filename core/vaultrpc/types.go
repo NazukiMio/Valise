@@ -20,6 +20,7 @@ const (
 	// Vault tree and cloud backup (docs/VAULT_FORMAT.md section 10,
 	// docs/ARCHITECTURE.md section 7).
 	MethodServerNameSet = "server_name_set"
+	MethodServerRename  = "server_rename"
 	MethodPeriodSet     = "period_set"
 	MethodLeafDelete    = "leaf_delete"
 	MethodTargetList    = "target_list"
@@ -252,6 +253,16 @@ type SyncResult struct {
 // ServerNameSetParams names the server (once).
 type ServerNameSetParams struct {
 	Name string `json:"name"`
+}
+
+// ServerRenameParams renames a named server (docs/ARCHITECTURE.md 3).
+type ServerRenameParams struct {
+	Name string `json:"name"`
+}
+
+// ServerRenameResult is the name before.
+type ServerRenameResult struct {
+	Old string `json:"old"`
 }
 
 // PeriodSetParams sets an instance's period unit and time zone.

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -389,6 +390,33 @@ func (s *Service) CreateAdminKey(ctx context.Context, host, passphrase string) e
 		return err
 	}
 	return s.loadAdmin(ctx, host, passphrase)
+}
+
+// RemoveAdminKey takes host's admin key off the server (over a developer
+// mode login, which may be the key itself) and deletes it here; admin
+// operations then ask for the server password each time.
+func (s *Service) RemoveAdminKey(ctx context.Context, host string) error {
+	if !s.HasAdminKey(host) {
+		return valise.New("admin_key_none", host+" 没有管理钥匙", "")
+	}
+	t, done, err := s.adminTransport(ctx, host)
+	if err != nil {
+		return err
+	}
+	err = s.uninstallKeys(ctx, t, host, adminKeyName)
+	done()
+	if err != nil {
+		return valise.New("admin_key_remove_failed", "没能从服务器上移除管理钥匙", "稍后重试；这台电脑上的钥匙还在").WithDetail(err.Error())
+	}
+	s.LockAdmin()
+	p := s.keyPath(host, adminKeyName)
+	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Remove(p + ".pub"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // MigrateServer moves a server from ~/.ssh/config to Valise's own keys: the

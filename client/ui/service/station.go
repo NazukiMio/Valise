@@ -322,6 +322,9 @@ type StationSyncResult struct {
 // SyncStation copies host's escape pods to a station: directly from the
 // server, else relayed through a repository or a temporary folder.
 func (s *Service) SyncStation(ctx context.Context, host, name string) (*StationSyncResult, error) {
+	if err := s.finishRename(ctx, host, name); err != nil {
+		return nil, err
+	}
 	st, err := s.station(name)
 	if err != nil {
 		return nil, err

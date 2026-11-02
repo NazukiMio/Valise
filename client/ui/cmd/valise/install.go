@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -13,6 +14,8 @@ import (
 
 	"valise/client/ssh"
 	"valise/core/valise"
+	"valise/core/vault"
+	"valise/core/vaultrpc"
 	"valise/ui/service"
 )
 
@@ -35,7 +38,13 @@ func (c *cli) install(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	c.printInstallPlan(plan, *show)
+	c.printInstallSummary(plan)
+	if *show {
+		c.printInstallPlan(plan, true)
+	}
+	if err := c.existingAgent(ctx, plan, *yes); err != nil {
+		return err
+	}
 	if err := c.gate(ctx, host, "", *yes); err != nil {
 		return err
 	}
@@ -52,7 +61,7 @@ func (c *cli) install(ctx context.Context, args []string) error {
 	} else if *advanced {
 		fmt.Fprintln(c.out, "依赖都已满足，不需要开启高级模式。")
 	}
-	if !*yes && !c.confirm("按上面的方案在 "+host+" 上安装？") {
+	if !*yes && !c.confirmOrDetails("按上面的方案在 "+host+" 上安装？", plan) {
 		return valise.New("cancelled", "已取消，服务器上没有任何改动", "")
 	}
 	if err := c.chooseOptional(plan, with, *yes); err != nil {
@@ -83,11 +92,154 @@ func (c *cli) install(ctx context.Context, args []string) error {
 		v = "版本未知"
 	}
 	fmt.Fprintf(c.out, "安装完成：在 %s 找到 %s（%s）。\n", res.Found.StateDir, plan.ProfileID, v)
+	for _, n := range plan.Notes {
+		fmt.Fprintln(c.out, "  "+n)
+	}
+	// Installed by Valise: offer to connect it right away (docs/UI.md 9.6).
+	if !*yes {
+		ask := "现在接入 Valise？接入只读取和记录，不改动 agent 的任何文件。先显示接入报告"
+		if plan.Existing != nil && plan.Existing.Enrolled != "" {
+			ask = "它之前已经接入 Valise。现在重新检测，把新版本记进实例档案？先显示与档案的差异"
+		}
+		fmt.Fprintln(c.out)
+		if c.confirm(ask) {
+			if err := c.enroll(ctx, []string{host, "--profile", plan.ProfileID}); err != nil {
+				return err
+			}
+			if c.confirm("接受上面的接入报告，把它接入 Valise？") {
+				return c.enroll(ctx, []string{host, "--profile", plan.ProfileID, "--accept"})
+			}
+		}
+	}
 	fmt.Fprintf(c.out, "下一步：\n  接入 Valise：valise enroll %s --profile %s --accept\n  打开管理页：valise open %s %s\n", host, plan.ProfileID, host, plan.ProfileID)
 	if len(plan.NativeCLI) > 0 {
 		fmt.Fprintf(c.out, "  模型和渠道等设置在管理页里填写，或用原生界面：valise native %s --profile %s\n", host, plan.ProfileID)
 	}
 	return nil
+}
+
+// printInstallSummary is the plan in four lines (docs/UI.md 9.6); the
+// commands, scripts and hashes are the details.
+func (c *cli) printInstallSummary(plan *service.InstallPlan) {
+	fmt.Fprintf(c.out, "安装 %s 到 %s\n\n", plan.ProfileID, plan.Host)
+	row := func(k, v string) {
+		if v != "" {
+			fmt.Fprintf(c.out, "  %-6s  %s\n", k, v)
+		}
+	}
+	row("装什么", plan.Summary)
+	row("装到哪里", plan.Where)
+	row("大概多久", plan.Takes)
+	need := "只用你的用户权限，不需要管理员；会用管理登录在服务器上开一个终端来执行"
+	if len(plan.Missing) > 0 {
+		var names []string
+		for _, q := range plan.Missing {
+			names = append(names, q.Binary)
+		}
+		need = "服务器还缺 " + strings.Join(names, "、") + "，要先用管理员权限装上（见下）"
+	}
+	row("需要什么", need)
+	switch {
+	case plan.ProfileLocal:
+		fmt.Fprintln(c.out, "\n  ⚠ 这是本地 harness 资料，未经审核。")
+	case plan.Capability != "tested":
+		fmt.Fprintln(c.out, "\n  ⚠ 这个安装方案在当前版本上尚未完整测试（"+plan.Capability+"）。")
+	}
+	if len(plan.Missing) > 0 {
+		fmt.Fprintln(c.out)
+		for _, q := range plan.Check.Requirement {
+			if !q.OK {
+				fmt.Fprintf(c.out, "  ✗ %s %s\n", q.Binary, q.Reason)
+			}
+		}
+		for _, f := range plan.Fixes {
+			fmt.Fprintf(c.out, "    安装命令（Valise 只在高级模式下代为执行，加 --advanced）：%s\n", strings.Join(f, " "))
+		}
+	}
+	if len(plan.Notes) > 0 {
+		fmt.Fprintln(c.out)
+		for _, n := range plan.Notes {
+			fmt.Fprintln(c.out, "  "+n)
+		}
+	}
+	fmt.Fprintln(c.out)
+}
+
+// confirmOrDetails asks to go on; v shows the commands, scripts and hashes
+// first.
+func (c *cli) confirmOrDetails(prompt string, plan *service.InstallPlan) bool {
+	for {
+		fmt.Fprint(c.errOut, prompt+" [y/N，v 查看实际命令、脚本与哈希] ")
+		if c.lines == nil {
+			c.lines = bufio.NewReader(c.in)
+		}
+		line, _ := c.lines.ReadString('\n')
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes", "是":
+			return true
+		case "v":
+			c.printInstallPlan(plan, false)
+			fmt.Fprintln(c.out)
+			continue
+		}
+		return false
+	}
+}
+
+// existingAgent stops when the harness already has data on the server:
+// the install would take it over (docs/UI.md 9.6).
+func (c *cli) existingAgent(ctx context.Context, plan *service.InstallPlan, yes bool) error {
+	ex := plan.Existing
+	if ex == nil {
+		return nil
+	}
+	v := ex.Version
+	if v == "" {
+		v = "版本未知"
+	}
+	fmt.Fprintf(c.out, "⚠ 服务器上已经有 %s 的数据：%s（%s）。直接安装，新装的程序会接管这份数据。\n", plan.ProfileID, ex.StateDir, v)
+	if ex.Enrolled != "" {
+		fmt.Fprintf(c.out, "  它已经接入 Valise（实例 %s）。\n", ex.Enrolled)
+	}
+	if yes {
+		return valise.New("install_existing", "服务器上已经有 "+plan.ProfileID+" 的数据，没有开始安装",
+			"不带 --yes 运行，选择先给旧数据建逃生舱，或确认让新程序接管")
+	}
+	fmt.Fprintln(c.out, "\n  1  先给旧数据建一个逃生舱（标准档位），再安装")
+	fmt.Fprintln(c.out, "  2  直接安装，新程序接管这份数据")
+	fmt.Fprintln(c.out, "  3  取消")
+	fmt.Fprint(c.errOut, "选择 [1/2/3] ")
+	if c.lines == nil {
+		c.lines = bufio.NewReader(c.in)
+	}
+	line, _ := c.lines.ReadString('\n')
+	switch strings.TrimSpace(line) {
+	case "1":
+		inst := ex.Enrolled
+		if inst == "" {
+			if err := c.enroll(ctx, []string{plan.Host, "--profile", plan.ProfileID}); err != nil {
+				return err
+			}
+			if !c.confirm("先把旧数据接入 Valise（只读取和记录），然后建逃生舱？") {
+				return valise.New("cancelled", "已取消，服务器上没有任何改动", "")
+			}
+			if err := c.enroll(ctx, []string{plan.Host, "--profile", plan.ProfileID, "--accept"}); err != nil {
+				return err
+			}
+			inst = ex.ID
+			ex.Enrolled = inst
+		}
+		fmt.Fprintln(c.out, "正在建立逃生舱…")
+		rep, err := c.svc.Seal(ctx, plan.Host, vaultrpc.SealParams{InstanceID: inst, Tier: vault.TierSoulSecrets, Reason: "安装前"})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(c.out, "逃生舱已建立：%d 个文件，%s。\n\n", rep.Files, size(rep.PlainBytes))
+		return nil
+	case "2":
+		return nil
+	}
+	return valise.New("cancelled", "已取消，服务器上没有任何改动", "")
 }
 
 func (c *cli) printInstallPlan(plan *service.InstallPlan, show bool) {

@@ -78,12 +78,13 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   repo add <名称> <文件夹> | repo list | repo remove <名称>    本机仓库（逃生舱另存到本机文件夹）
   repo sync <服务器> [名称]                          把服务器上的逃生舱补到仓库（不指定名称时同步全部仓库）
   config export <文件> | config import <文件>       导出 / 导入 Valise 配置：服务器列表、主机指纹、设置（不含任何钥匙）
-  server admin-key <服务器>                        创建管理钥匙（单独的管理口令；需要用服务器密码登录一次）
+  server admin-key <服务器> [--remove]             创建管理钥匙（单独的管理口令；需要用服务器密码登录一次），或移除它
   server migrate <别名> [--admin-key]              把 ~/.ssh/config 中的服务器改用 Valise 日常钥匙
   admin passphrase                               修改管理口令（重新加密所有管理钥匙）
   server setup <别名> [--name 名字] [--release 版本 | --local 文件]
                                                  用你自己的 SSH 设置添加服务器：检查 → 部署 porter（缺少时）→ 登记钥匙 → 起名 → 记录
-  server name <别名> <名字>                       给服务器起名（空间站文件夹名，只能设一次）
+  server name <别名> <名字>                       给服务器起名（仓库与空间站里的文件夹名）
+  server rename <别名> <新名字> [--yes]            改服务器名：仓库与空间站里的文件夹一并改名
   server list | add <别名>… | remove <别名> | import [<别名>…]
                                                  已记录服务器（add/import 记录 ~/.ssh/config 中的别名）
   login <服务器> <实例> [--method id]              登录授权：在本机浏览器中完成服务器上 agent 的登录

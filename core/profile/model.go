@@ -280,8 +280,14 @@ type PortChange struct {
 // Install is an official install plan: what must already be there, and the
 // steps. Only verified versions and methods belong here.
 type Install struct {
-	ID       string        `yaml:"id" json:"id"`
-	Summary  string        `yaml:"summary" json:"summary"`
+	ID      string `yaml:"id" json:"id"`
+	Summary string `yaml:"summary" json:"summary"`
+	// Where, Takes and Notes make the plan's short summary (docs/UI.md
+	// 9.6): where it installs, about how long it takes, and what the user
+	// should know before (e.g. the harness's default approval setting).
+	Where    string        `yaml:"where" json:"where,omitempty"`
+	Takes    string        `yaml:"takes" json:"takes,omitempty"`
+	Notes    []string      `yaml:"notes" json:"notes,omitempty"`
 	Requires []Require     `yaml:"requires" json:"requires,omitempty"`
 	Steps    []InstallStep `yaml:"steps" json:"steps"`
 }

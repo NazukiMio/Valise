@@ -159,6 +159,14 @@ func init() {
 		}
 		return seal.Files(paths(s), p.Leaf)
 	}
+	methods[vaultrpc.MethodServerRename] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.ServerRenameParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		old, err := seal.RenameServer(paths(s), p.Name)
+		return vaultrpc.ServerRenameResult{Old: old}, err
+	}
 	methods[vaultrpc.MethodServerNameSet] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.ServerNameSetParams
 		if err := json.Unmarshal(raw, &p); err != nil {

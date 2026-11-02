@@ -81,13 +81,47 @@ func SetServerName(p Paths, name string) error {
 		return nil
 	}
 	if cur != "" {
-		return valise.New("server_name_set", "这台服务器已经叫 "+cur+"，服务器名起好后不能修改", "云备份里的文件夹名依赖它；继续使用 "+cur)
+		return valise.New("server_name_set", "这台服务器已经叫 "+cur, "要改名请用 valise server rename（会一并改仓库与空间站里的文件夹）")
 	}
 	b, _ := json.MarshalIndent(ServerInfo{Name: name}, "", "  ")
 	if err := writeAtomic(p.ServerFile(), append(b, '\n'), 0o600); err != nil {
 		return err
 	}
 	return ensureTree(p)
+}
+
+// RenameServer renames a named server: server.json, and TREE records the
+// old name (docs/VAULT_FORMAT.md 10). Copies elsewhere are the client's.
+func RenameServer(p Paths, name string) (string, error) {
+	if err := enroll.ValidInstanceID(name); err != nil {
+		return "", valise.New("server_name_invalid", "服务器名只能包含小写字母、数字和连字符（最长 64 个字符）", "例如 home-vps")
+	}
+	cur, err := ReadServerName(p)
+	switch {
+	case err != nil:
+		return "", err
+	case cur == "":
+		return "", valise.New("server_name_unset", "这台服务器还没有名字", "先起名：valise server name <服务器> <名字>")
+	case cur == name:
+		return cur, nil
+	}
+	b, _ := json.MarshalIndent(ServerInfo{Name: name}, "", "  ")
+	if err := writeAtomic(p.ServerFile(), append(b, '\n'), 0o600); err != nil {
+		return "", err
+	}
+	path := filepath.Join(p.Vaults(), vault.TreeFile)
+	d := vault.TreeDesc{Format: vault.TreeFormat, CreatedAt: time.Now().UTC()}
+	if old, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(old, &d)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	d.ServerName, d.RenamedFrom = name, append(d.RenamedFrom, cur)
+	if err := os.MkdirAll(p.Vaults(), 0o700); err != nil {
+		return "", err
+	}
+	tb, _ := json.MarshalIndent(d, "", "  ")
+	return cur, writeAtomic(path, append(tb, '\n'), 0o600)
 }
 
 // ensureTree writes TREE once the server has a name.
