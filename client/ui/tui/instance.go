@@ -302,7 +302,7 @@ func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 	d := m.server(p.host)
 	var b strings.Builder
 	// The health page's one or two most important items (docs/UI.md 9.5).
-	if top := topHealth(p, 2); len(top) > 0 {
+	if top := topHealth(m, p, 2); len(top) > 0 {
 		for _, it := range top {
 			st := warnStyle
 			if it.Level == service.HealthBad {

@@ -247,9 +247,16 @@ func TestHealthTab(t *testing.T) {
 	m, _ := world(t)
 	openInstance(t, m)
 	key(t, m, "3")
-	wantText(t, m, "逃生舱真的能用吗", "agent 正常吗", "都只在服务器上", "还没有测试过")
+	wantText(t, m, "逃生舱状态", "agent 健康", "都只在服务器上", "还没有测试过")
 	if v := screenText(m); strings.Contains(v, "着陆") || strings.Contains(v, "上云") {
 		t.Fatal("themed words on the health tab")
+	}
+	// i dismisses the selected warn (the first problem: the backup).
+	key(t, m, "i")
+	wantText(t, m, "已忽略，7 天后恢复提醒")
+	key(t, m, "i")
+	if strings.Contains(screenText(m), "已忽略") {
+		t.Fatal("dismissal not lifted")
 	}
 	m.svc.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
 	key(t, m, "t")

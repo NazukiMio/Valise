@@ -21,6 +21,11 @@ import (
 // station's own listing). Copies only on the server do not count. There
 // is no bypass.
 
+// StaleAcceptedEnv is set by the terminal UI when it runs a CLI command
+// after the user accepted a stale-backup warning there, so the CLI does
+// not ask again. It never skips the precondition itself.
+const StaleAcceptedEnv = "VALISE_STALE_BACKUP_ACCEPTED"
+
 // GateCode is the error code when the precondition is not met.
 const GateCode = "offsite_pod_required"
 

@@ -111,7 +111,7 @@ func (s *serverPage) install(m *Model) tea.Cmd {
 	host := s.host
 	return m.push(pick("选择要安装的 harness", cs, func(m *Model, id string) tea.Cmd {
 		return gateThen(m, host, "", func(m *Model) tea.Cmd {
-			return tea.Sequence(m.runCLI("install", host, "--profile", id), m.loadServer(host))
+			return tea.Sequence(m.runCLIAccepted("install", host, "--profile", id), m.loadServer(host))
 		})
 	}))
 }

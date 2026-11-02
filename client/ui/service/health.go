@@ -29,8 +29,8 @@ const (
 
 // Health groups.
 const (
-	HealthPods  = "pods"  // 逃生舱真的能用吗
-	HealthAgent = "agent" // agent 正常吗
+	HealthPods  = "pods"  // 逃生舱状态
+	HealthAgent = "agent" // agent 健康
 )
 
 // HealthItem is one line of the health page.
@@ -42,6 +42,8 @@ type HealthItem struct {
 	Text   string `json:"text"`
 	Key    string `json:"key,omitempty"` // the one key that acts on it
 	Detail string `json:"detail,omitempty"`
+	// Dismissed is set while the user has dismissed it (until then).
+	Dismissed *time.Time `json:"dismissed_until,omitempty"`
 }
 
 // HealthReport is one agent's health.
@@ -68,7 +70,7 @@ func Rank(level string) int {
 func (r *HealthReport) Problems() int {
 	n := 0
 	for _, it := range r.Items {
-		if it.Level == HealthWarn || it.Level == HealthBad {
+		if it.Counts() {
 			n++
 		}
 	}
@@ -82,8 +84,16 @@ func (r *HealthReport) Sort() {
 		if a.Group != b.Group {
 			return a.Group == HealthPods
 		}
-		return Rank(a.Level) < Rank(b.Level)
+		return sortRank(a) < sortRank(b)
 	})
+}
+
+// sortRank puts a dismissed warn after the plain items.
+func sortRank(it HealthItem) int {
+	if it.Level == HealthWarn && it.Dismissed != nil {
+		return 4
+	}
+	return Rank(it.Level)
 }
 
 const clockSkewLimit = 5 * time.Minute
@@ -145,6 +155,7 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 				Detail: "时钟偏差会让空间站的短期证书失效，也会让逃生舱的时间显示不准。在服务器上开启时间同步（如 chrony 或 systemd-timesyncd）。"})
 		}
 	}
+	s.MarkDismissed(host, instance, r.Items)
 	r.Sort()
 	return r, nil
 }

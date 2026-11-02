@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"valise/core/valise"
+	"valise/ui/service"
 )
 
 // gate checks that an advanced feature may run (docs/INSTALL.md 4.2): an
@@ -20,7 +22,7 @@ func (c *cli) gate(ctx context.Context, host, instance string, yes bool) error {
 	}
 	if w := g.Warning(); w != "" {
 		fmt.Fprintln(c.out, "⚠ "+w)
-		if !yes && !c.confirm("知道这个风险，仍然继续？") {
+		if !yes && os.Getenv(service.StaleAcceptedEnv) != "1" && !c.confirm("知道这个风险，仍然继续？") {
 			return valise.New("cancelled", "已取消，服务器上没有任何改动", "先建立逃生舱再放进仓库或空间站")
 		}
 	}

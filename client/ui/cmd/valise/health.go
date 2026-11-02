@@ -33,9 +33,9 @@ func (c *cli) health(ctx context.Context, args []string) error {
 		if it.Group != group {
 			group = it.Group
 			if group == service.HealthPods {
-				fmt.Fprintln(c.out, "\n逃生舱真的能用吗")
+				fmt.Fprintln(c.out, "\n逃生舱状态")
 			} else {
-				fmt.Fprintln(c.out, "\nagent 正常吗")
+				fmt.Fprintln(c.out, "\nagent 健康")
 			}
 		}
 		mark := map[string]string{service.HealthOK: "✓", service.HealthWarn: "!", service.HealthBad: "✗"}[it.Level]

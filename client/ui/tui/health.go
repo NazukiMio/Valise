@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -21,6 +22,7 @@ type healthTab struct {
 	proposals []agentkit.Proposal
 	loadedP   bool
 	cursor    int // over rows(), then proposals
+	nrows     int // len(rows()) at the last view, for help()
 
 	testing bool
 	prog    progressBox
@@ -45,8 +47,8 @@ type testProgress struct{}
 
 func (c *healthTab) name() string { return "健康" }
 func (c *healthTab) help(p *instancePage) string {
-	items := []string{"↑↓", "选择", "t", "测试恢复", "u", "同步", "y", "复制给 agent 的话", "r", "刷新"}
-	if c.onProposal(p) {
+	items := []string{"↑↓", "选择", "t", "测试恢复", "u", "同步", "i", "忽略", "y", "复制给 agent 的话", "r", "刷新"}
+	if len(c.proposals) > 0 && c.cursor >= c.nrows {
 		items = append(items, "a", "接受", "x", "拒绝")
 	}
 	return menu(items...)
@@ -62,7 +64,7 @@ func (c *healthTab) load(m *Model, p *instancePage) tea.Cmd {
 
 // rows are the health items with the checkup findings added to the agent
 // group, problems first.
-func (c *healthTab) rows(p *instancePage) []service.HealthItem {
+func (c *healthTab) rows(m *Model, p *instancePage) []service.HealthItem {
 	if p.health == nil {
 		return nil
 	}
@@ -74,6 +76,7 @@ func (c *healthTab) rows(p *instancePage) []service.HealthItem {
 				Title: "会话与记忆", Text: info.title + detailNumber(f), Key: "y"})
 		}
 	}
+	m.svc.MarkDismissed(p.host, p.inst.InstanceID, r.Items)
 	r.Sort()
 	return r.Items
 }
@@ -85,8 +88,8 @@ func detailNumber(f agentkit.Finding) string {
 	return "：" + f.Detail
 }
 
-func (c *healthTab) onProposal(p *instancePage) bool {
-	return len(c.proposals) > 0 && c.cursor >= len(c.rows(p))
+func (c *healthTab) onProposal(m *Model, p *instancePage) bool {
+	return len(c.proposals) > 0 && c.cursor >= len(c.rows(m, p))
 }
 
 func (c *healthTab) decide(m *Model, p *instancePage, d agentkit.DecideParams) tea.Cmd {
@@ -138,7 +141,7 @@ func (c *healthTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 		return c.load(m, p), true
 	case tea.KeyPressMsg:
 		k := msg.String()
-		rows := c.rows(p)
+		rows := c.rows(m, p)
 		if cur, moved := moveList(c.cursor, len(rows)+len(c.proposals), k); moved {
 			c.cursor = cur
 			return nil, true
@@ -151,11 +154,35 @@ func (c *healthTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 		case "y":
 			m.flash, m.flashErr = "已复制到剪贴板（终端支持时）："+agentAsk, false
 			return tea.SetClipboard(agentAsk), true
+		case "i":
+			if c.cursor >= len(rows) {
+				return nil, true
+			}
+			it := rows[c.cursor]
+			on, err := m.svc.ToggleDismiss(p.host, p.inst.InstanceID, it)
+			for i, r := range c.rows(m, p) { // the cursor follows the item
+				if r.ID == it.ID {
+					c.cursor = i
+				}
+			}
+			switch {
+			case err != nil:
+				m.flash, m.flashErr = errText(err), true
+			case it.Level != service.HealthWarn && it.Level != service.HealthBad:
+				m.flash, m.flashErr = "只有要留意的项可以忽略", false
+			case on && it.Level == service.HealthBad:
+				m.flash, m.flashErr = "主页不再提醒「"+it.Title+"」，7 天后恢复；红色的项在健康页里照常显示", false
+			case on:
+				m.flash, m.flashErr = "已忽略「"+it.Title+"」，7 天后恢复提醒", false
+			default:
+				m.flash, m.flashErr = "已恢复提醒「"+it.Title+"」", false
+			}
+			return nil, true
 		case "r":
 			m.flash, m.flashErr = "正在刷新…", false
 			return tea.Batch(c.load(m, p), p.loadCheckup(m)), true
 		}
-		if !c.onProposal(p) {
+		if !c.onProposal(m, p) {
 			return nil, false
 		}
 		pr := c.proposals[c.cursor-len(rows)]
@@ -176,10 +203,10 @@ func (c *healthTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 }
 
 // topHealth is the n most important problems, bad first.
-func topHealth(p *instancePage, n int) []service.HealthItem {
+func topHealth(m *Model, p *instancePage, n int) []service.HealthItem {
 	var out []service.HealthItem
-	for _, it := range (&healthTab{}).rows(p) {
-		if it.Level == service.HealthBad || it.Level == service.HealthWarn {
+	for _, it := range (&healthTab{}).rows(m, p) {
+		if (it.Level == service.HealthBad || it.Level == service.HealthWarn) && !it.Quiet() {
 			out = append(out, it)
 		}
 	}
@@ -214,11 +241,12 @@ func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 		}
 		return dimStyle.Render("读取中…（只读，不会改动 agent 的任何文件）")
 	}
-	rows := c.rows(p)
+	rows := c.rows(m, p)
+	c.nrows = len(rows)
 	c.cursor = min(c.cursor, max(0, len(rows)+len(c.proposals)-1))
 	problems := 0
 	for _, it := range rows {
-		if it.Level == service.HealthWarn || it.Level == service.HealthBad {
+		if it.Counts() {
 			problems++
 		}
 	}
@@ -232,9 +260,9 @@ func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 	for i, it := range rows {
 		if it.Group != group {
 			group = it.Group
-			title := "逃生舱真的能用吗"
+			title := "逃生舱状态"
 			if group == service.HealthAgent {
-				title = "agent 正常吗"
+				title = "agent 健康"
 			}
 			b.WriteString("\n" + dimStyle.Render(title) + "\n")
 		}
@@ -246,7 +274,16 @@ func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 				text += "  " + size(min(pr.Done, pr.Total)) + " / " + size(pr.Total)
 			}
 		}
-		line := levelMark(it.Level) + " " + padRight(it.Title, 14) + text
+		mk := levelMark(it.Level)
+		if it.Dismissed != nil {
+			days := itoa(max(1, int(time.Until(*it.Dismissed).Hours()/24+0.5)))
+			if it.Level == service.HealthBad {
+				text += dimStyle.Render("（主页不再提醒，" + days + " 天后恢复）")
+			} else {
+				mk, text = dimStyle.Render("!"), dimStyle.Render(text+"（已忽略，"+days+" 天后恢复提醒）")
+			}
+		}
+		line := mk + " " + padRight(it.Title, 14) + text
 		if it.Key != "" && i == c.cursor {
 			line += "  " + keyStyle.Render(it.Key)
 		}

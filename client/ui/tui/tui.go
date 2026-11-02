@@ -370,6 +370,18 @@ func (m *Model) runCLI(args ...string) tea.Cmd {
 	return tea.Exec(&pausedStep{cmd: m.opt.Command(args...)}, func(err error) tea.Msg { return execDone{err} })
 }
 
+// runCLIAccepted is runCLI after the user accepted a stale-backup warning
+// here: the CLI shows it again but does not ask a second time (the gate
+// itself still runs there).
+func (m *Model) runCLIAccepted(args ...string) tea.Cmd {
+	if m.opt.Command == nil {
+		return m.runCLI(args...)
+	}
+	cmd := m.opt.Command(args...)
+	cmd.Env = append(cmd.Environ(), service.StaleAcceptedEnv+"=1")
+	return tea.Exec(&pausedStep{cmd: cmd}, func(err error) tea.Msg { return execDone{err} })
+}
+
 // pausedStep runs a CLI command on the real terminal and holds its output
 // on screen until Enter.
 type pausedStep struct {

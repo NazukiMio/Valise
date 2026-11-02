@@ -89,5 +89,5 @@ func backupToRepo(m *Model, host string, instances []string, tier, repo string, 
 // gatedCLI runs a CLI command that opens an advanced feature on host (a
 // terminal or the native UI) once the gate lets it.
 func gatedCLI(m *Model, host string, args ...string) tea.Cmd {
-	return gateThen(m, host, "", func(m *Model) tea.Cmd { return m.runCLI(args...) })
+	return gateThen(m, host, "", func(m *Model) tea.Cmd { return m.runCLIAccepted(args...) })
 }
