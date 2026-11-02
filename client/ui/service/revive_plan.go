@@ -222,7 +222,9 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if len(facts.PendingOps) > 0 {
 		rp.block("op_pending", "目标服务器上有未完成的操作："+strings.Join(facts.PendingOps, "、"), "先用 valise revive resume 处理")
 	}
-	rp.Nested = facts.Nested
+	if len(facts.Nested) > 0 && !facts.NestedShared {
+		rp.Nested = facts.Nested
+	}
 	if o.Mode == revive.ModeRollback {
 		if facts.Record == nil {
 			rp.block("not_enrolled", "目标服务器上没有接入 Valise 的实例 "+instance, "原地着陆针对已接入的实例；跨服务器请用 migrate")
@@ -274,6 +276,19 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 
 	planBody(rp, &plan, head, facts, prof, o.Mode)
 	planService(rp, &plan, facts, prof)
+	// Named instances of this profile nested inside the target run under
+	// the same service: stopped with it, their directories are carried
+	// into the new live directory (docs/PROFILES.md 1.3).
+	if facts.NestedShared {
+		if plan.Unit == "" {
+			rp.Nested = facts.Nested
+		} else {
+			for _, rel := range facts.NestedRel {
+				plan.Keep = append(plan.Keep, profile.StateRoot+"/"+rel)
+			}
+			rp.Warnings = append(rp.Warnings, fmt.Sprintf("目录里还有 %d 个共用服务 %s 的 agent（%s）：交换时它们会一起短暂停下，目录原样搬进新状态，不会被替换", len(facts.NestedRel), plan.Unit, strings.Join(facts.NestedRel, "、")))
+		}
+	}
 	if o.Mode == revive.ModeMigrate && plan.Unit != "" {
 		rp.StopSource = plan.Unit
 		rp.Warnings = append(rp.Warnings, "目标启动前会停止原服务器上的 "+plan.Unit+"（原实例的文件不动）；复活失败时会重新启动它")

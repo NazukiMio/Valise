@@ -94,6 +94,16 @@ func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.Inspect
 	for _, rp := range p.Roots {
 		if rp.ID == profile.StateRoot {
 			res.Nested = porterenroll.NestedInstances(e, &p.Profile, p.InstanceID, rp.Path)
+			res.NestedShared = len(res.Nested) > 0 && p.Profile.NamedSharesService() && allNamed(e, &p.Profile, res.Nested)
+			base := rp.Path
+			if r, err := filepath.EvalSymlinks(base); err == nil {
+				base = r
+			}
+			for _, n := range res.Nested {
+				if rel, err := filepath.Rel(base, n); err == nil {
+					res.NestedRel = append(res.NestedRel, filepath.ToSlash(rel))
+				}
+			}
 		}
 	}
 	pend, err := s.Pending()
@@ -456,4 +466,21 @@ func overlapping(home, self string, roots []revive.RootPlan) []string {
 func within(path, dir string) bool {
 	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
+}
+
+// allNamed reports whether every dir is a named instance of p.
+func allNamed(e *porterenroll.Env, p *profile.Profile, dirs []string) bool {
+	named := map[string]bool{}
+	for _, d := range porterenroll.NamedDirs(e, p) {
+		if r, err := filepath.EvalSymlinks(d); err == nil {
+			d = r
+		}
+		named[d] = true
+	}
+	for _, d := range dirs {
+		if !named[d] {
+			return false
+		}
+	}
+	return true
 }

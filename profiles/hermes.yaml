@@ -10,7 +10,7 @@
 schema: valise-profile/1
 id: hermes
 display_name: Hermes Agent
-profile_version: 9
+profile_version: 10
 status: draft
 harness_versions_tested: ["0.22.5"]
 docs: https://hermes-agent.nousresearch.com
@@ -31,10 +31,14 @@ detect:
   # Each bot is a profile, a whole Hermes home of its own under
   # <root>/profiles/<name> (OBS v0.22.5 ubuntu-vm: `hermes profile create`
   # made config.yaml, .env, SOUL.md, memories, sessions, state.db, skills
-  # there). Bots inside the default home are left out of its pods.
+  # there). Bots inside the default home are left out of its pods. All
+  # bots run in the one gateway of the default profile (OBS: `hermes
+  # gateway list` shows one PID for default and the bot; `hermes -p <bot>
+  # gateway status` says "running via the default-profile multiplexer";
+  # installing a gateway for a bot is refused), so they share its unit.
   named:
-    - { glob: "${env:HERMES_HOME}/profiles/*", env: { HERMES_HOME: "${STATE_DIR}" } }
-    - { glob: "${HOME}/.hermes/profiles/*", env: { HERMES_HOME: "${STATE_DIR}" } }
+    - { glob: "${env:HERMES_HOME}/profiles/*", env: { HERMES_HOME: "${STATE_DIR}" }, service: shared }
+    - { glob: "${HOME}/.hermes/profiles/*", env: { HERMES_HOME: "${STATE_DIR}" }, service: shared }
 
 roots: []
 

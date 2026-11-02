@@ -114,6 +114,12 @@ type InspectResult struct {
 	// instances, other enrolled instances). A swap would carry them off,
 	// so it is refused while there are any.
 	Nested []string `json:"nested,omitempty"`
+	// NestedShared: every nested agent is a named instance of this profile
+	// running under the same service, so stopping that service stops them
+	// and a swap may carry their directories over (Plan.Keep).
+	NestedShared bool `json:"nested_shared,omitempty"`
+	// NestedRel are Nested relative to the (resolved) state dir.
+	NestedRel []string `json:"nested_rel,omitempty"`
 }
 
 // BodyAction is how the body is handled.
@@ -146,6 +152,10 @@ type Plan struct {
 	// Carry copies live content outside the tier into the stage (rollback).
 	Carry bool     `json:"carry"`
 	Body  BodyPlan `json:"body"`
+	// Keep are other agents' directories inside a root ("<root>/<rel>"):
+	// moved into the new live directory in the swap window like body
+	// directories, never copied or replaced (InspectResult.NestedShared).
+	Keep []string `json:"keep,omitempty"`
 	// Unit is the service unit to stop/start ("" for foreground harnesses).
 	Unit string `json:"unit,omitempty"`
 	// InstallService runs profile.service.install_argv after the body.
@@ -161,6 +171,8 @@ type BodyMove struct {
 	Root  string `json:"root"`
 	Rel   string `json:"rel"`
 	Moved bool   `json:"moved"`
+	// Keep marks another agent's directory (Plan.Keep), not the body.
+	Keep bool `json:"keep,omitempty"`
 }
 
 // JournalRoot are the paths of one swapped root.

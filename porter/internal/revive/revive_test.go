@@ -459,3 +459,38 @@ func TestSwapRefusesNestedInstance(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Named instances running under the same service are carried over: their
+// directories move into the new live directory and back on a rollback.
+func TestSwapCarriesNestedSharedInstance(t *testing.T) {
+	for _, broken := range []bool{false, true} {
+		w := newWorld(t)
+		w.p.Detect = &profile.Detect{StateDirCandidates: []string{"${HOME}/.demo"}, MarkersAny: []string{"SOUL.md"},
+			Named: []profile.Named{{Glob: "${HOME}/.demo/profiles/*", Env: map[string]string{"DEMO_HOME": "${STATE_DIR}"}, Service: "shared"}}}
+		write(t, filepath.Join(w.state, "profiles/bot/SOUL.md"), "another agent", 0o644)
+		write(t, filepath.Join(w.state, "profiles/bot/memory/m.md"), "its memory", 0o644)
+		if broken {
+			write(t, filepath.Join(w.home, "unit-broken"), "", 0o644)
+		}
+		p := w.plan()
+		p.Keep = []string{"state/profiles/bot"}
+		w.stage(t, p, snapshot)
+		res, err := w.r.Swap(context.Background(), p.OpID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "old soul"
+		if broken {
+			want = "current soul"
+			if res.State != revive.StateRolledBack {
+				t.Fatalf("%+v", res)
+			}
+		}
+		if read(t, filepath.Join(w.state, "SOUL.md")) != want {
+			t.Fatalf("broken=%v: soul %q", broken, read(t, filepath.Join(w.state, "SOUL.md")))
+		}
+		if read(t, filepath.Join(w.state, "profiles/bot/SOUL.md")) != "another agent" || read(t, filepath.Join(w.state, "profiles/bot/memory/m.md")) != "its memory" {
+			t.Fatalf("broken=%v: the nested agent was not carried over", broken)
+		}
+	}
+}

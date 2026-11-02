@@ -92,7 +92,11 @@ func (s *Service) Enroll(ctx context.Context, host string, opts EnrollOptions) (
 	rep.Pending = pendingOf(set, eff)
 	rep.Warnings = append(cand.Warnings, rep.Warnings...)
 	if cand.Name != "" {
-		rep.Warnings = append(rep.Warnings, "这是命名实例 "+cand.Name+"：它的服务与管理页尚未在靶机上核实，Valise 不控制它的服务（恢复时也不会停止或启动任何服务）")
+		if prof.Service != nil {
+			rep.Warnings = append(rep.Warnings, "这是命名实例 "+cand.Name+"：它和默认实例共用同一个服务，恢复它时会短暂停止这个服务（同一安装里的所有 agent 一起停下）")
+		} else {
+			rep.Warnings = append(rep.Warnings, "这是命名实例 "+cand.Name+"：它的服务与管理页尚未在靶机上核实，Valise 不控制它的服务（恢复时也不会停止或启动任何服务）")
+		}
 		rep.Provenance.Warnings = []string{"命名实例与默认实例共用同一份安装，Valise 不单独记录它的身体来源"}
 	}
 	res.Report = &rep
@@ -227,7 +231,10 @@ type DetectedInstance struct {
 // default instance's), so Valise neither shows nor controls them.
 func instanceProfile(p profile.Profile, name string) profile.Profile {
 	if name != "" {
-		p.Service, p.Entries, p.Body, p.Provenance = nil, nil, nil, nil
+		if !p.NamedSharesService() {
+			p.Service = nil
+		}
+		p.Entries, p.Body, p.Provenance = nil, nil, nil
 	}
 	return p
 }

@@ -106,6 +106,23 @@ type Named struct {
 	// Env selects the instance for the harness's own commands: values
 	// may use ${NAME} (what the * matched) and ${STATE_DIR}.
 	Env map[string]string `yaml:"env" json:"env,omitempty"`
+	// Service "shared": the instance runs under the default instance's
+	// service (one gateway for all); "" means its service is unknown.
+	Service string `yaml:"service" json:"service,omitempty"`
+}
+
+// NamedSharesService reports whether p's named instances run under the
+// default instance's service.
+func (p *Profile) NamedSharesService() bool {
+	if p.Detect == nil || len(p.Detect.Named) == 0 {
+		return false
+	}
+	for _, n := range p.Detect.Named {
+		if n.Service != "shared" {
+			return false
+		}
+	}
+	return true
 }
 
 // Root is an additional root besides state.

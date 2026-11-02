@@ -252,6 +252,9 @@ func (c *checker) checkTop(p *Profile) {
 			} else if err := validateBaseTemplate(strings.TrimSuffix(dir, "/"), VarHome); err != nil {
 				c.add(f, "%v", err)
 			}
+			if n.Service != "" && n.Service != "shared" {
+				c.add(fmt.Sprintf("detect.named[%d].service", i), "只能是 shared 或不写")
+			}
 			if len(n.Env) == 0 {
 				c.add(fmt.Sprintf("detect.named[%d].env", i), "必须写明怎样让 harness 的命令针对这个实例（如 OPENCLAW_PROFILE: ${NAME}）")
 			}

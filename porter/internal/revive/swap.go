@@ -46,11 +46,32 @@ func (r *Runner) Swap(ctx context.Context, op string) (*revive.SwapResult, error
 		if jr.ID != profile.StateRoot {
 			continue
 		}
-		if nested := porterenroll.NestedInstances(r.Env.For(&j.Plan.Profile), &j.Plan.Profile, j.Plan.InstanceID, jr.Live); len(nested) > 0 {
+		if nested := uncovered(porterenroll.NestedInstances(r.Env.For(&j.Plan.Profile), &j.Plan.Profile, j.Plan.InstanceID, jr.Live), jr, j.Plan.Keep); len(nested) > 0 {
 			return nil, nestedRefusal(nested)
 		}
 	}
 	return r.advance(ctx, j)
+}
+
+// uncovered are the nested dirs the plan does not carry over (Keep).
+func uncovered(nested []string, jr revive.JournalRoot, keep []string) []string {
+	live := jr.Live
+	if r, err := filepath.EvalSymlinks(live); err == nil {
+		live = r
+	}
+	kept := map[string]bool{}
+	for _, k := range keep {
+		if root, rel, _ := strings.Cut(k, "/"); root == jr.ID {
+			kept[filepath.Join(live, filepath.FromSlash(rel))] = true
+		}
+	}
+	var out []string
+	for _, n := range nested {
+		if !kept[n] {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // nestedRefusal: other agents live inside the state dir; swapping it would
@@ -387,39 +408,51 @@ func exists(p string) bool {
 	return err == nil
 }
 
-// switchBody keeps, moves or installs the body.
+// switchBody keeps, moves or installs the body, and carries the kept
+// directories of other agents (Plan.Keep) into the new live directory.
 func (r *Runner) switchBody(ctx context.Context, j *revive.Journal) error {
 	b := j.Plan.Body
-	switch b.Action {
-	case revive.BodyKeep, "":
-		return nil
-	case revive.BodyMoveDirs:
-		if len(j.BodyMoves) == 0 {
+	if len(j.BodyMoves) == 0 && (b.Action == revive.BodyMoveDirs || len(j.Plan.Keep) > 0) {
+		if b.Action == revive.BodyMoveDirs {
 			for _, d := range b.Dirs {
 				root, rel, _ := strings.Cut(d, "/")
 				j.BodyMoves = append(j.BodyMoves, revive.BodyMove{Root: root, Rel: rel})
 			}
 		}
-		for i, m := range j.BodyMoves {
-			if m.Moved {
-				continue
-			}
-			jr := journalRoot(j, m.Root)
-			from, to := filepath.Join(jr.Prev, m.Rel), filepath.Join(jr.Live, m.Rel)
-			if !exists(from) {
-				return valise.New("body_missing", "交换前的状态中没有身体目录 "+m.Rel, "身体不在原位，无法保持不变")
-			}
-			if exists(to) {
-				continue // the snapshot (raw tier) brought its own body
-			}
-			if err := os.Rename(from, to); err != nil {
-				return err
-			}
-			j.BodyMoves[i].Moved = true
-			if err := r.Store.Save(j); err != nil {
-				return err
-			}
+		for _, d := range j.Plan.Keep {
+			root, rel, _ := strings.Cut(d, "/")
+			j.BodyMoves = append(j.BodyMoves, revive.BodyMove{Root: root, Rel: rel, Keep: true})
 		}
+	}
+	for i, m := range j.BodyMoves {
+		if m.Moved {
+			continue
+		}
+		jr := journalRoot(j, m.Root)
+		from, to := filepath.Join(jr.Prev, m.Rel), filepath.Join(jr.Live, m.Rel)
+		switch {
+		case !exists(from) && m.Keep:
+			continue // that agent's directory is gone; nothing to carry
+		case !exists(from):
+			return valise.New("body_missing", "交换前的状态中没有身体目录 "+m.Rel, "身体不在原位，无法保持不变")
+		case exists(to) && m.Keep:
+			return valise.New("keep_conflict", "新状态里已经有 "+m.Rel+"，不能把另一个 agent 的目录搬进去", "检查这个逃生舱是否装进了别的 agent")
+		case exists(to):
+			continue // the snapshot (raw tier) brought its own body
+		}
+		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+			return err
+		}
+		if err := os.Rename(from, to); err != nil {
+			return err
+		}
+		j.BodyMoves[i].Moved = true
+		if err := r.Store.Save(j); err != nil {
+			return err
+		}
+	}
+	switch b.Action {
+	case revive.BodyKeep, "", revive.BodyMoveDirs:
 		return nil
 	case revive.BodyNPMInstall:
 		if !j.NPMInstalled {
@@ -507,7 +540,7 @@ func (r *Runner) carry(j *revive.Journal) (int, error) {
 			continue
 		}
 		var bodyDirs []string
-		for _, d := range j.Plan.Body.Dirs {
+		for _, d := range append(append([]string{}, j.Plan.Body.Dirs...), j.Plan.Keep...) {
 			if root, rel, _ := strings.Cut(d, "/"); root == jr.ID {
 				bodyDirs = append(bodyDirs, filepath.Join(jr.Live, filepath.FromSlash(rel)))
 			}
