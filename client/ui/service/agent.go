@@ -319,7 +319,8 @@ func (s *Service) Close() {
 // daily key is restricted to the porter's daily tier and loopback
 // forwarding (docs/ARCHITECTURE.md 2.1). "port-forwarding" re-enables -R
 // too; permitlisten has no "none", so it allows only privileged port 1,
-// which the user's sshd process cannot bind.
+// which the user's sshd process cannot bind. "pty" lets login relay run
+// login-run in a terminal; the forced command still decides what runs.
 func authorizedKeyLine(name, pub string) string {
 	pub = strings.TrimSpace(pub)
 	f := strings.Fields(pub)
@@ -327,7 +328,7 @@ func authorizedKeyLine(name, pub string) string {
 		pub = f[0] + " " + f[1] + " valise-" + name + "@" + localName()
 	}
 	if name == dailyKeyName {
-		return `restrict,port-forwarding,permitlisten="127.0.0.1:1",permitopen="127.0.0.1:*",permitopen="[::1]:*",command="` + dailyPorterPath + ` serve --tier daily" ` + pub
+		return `restrict,pty,port-forwarding,permitlisten="127.0.0.1:1",permitopen="127.0.0.1:*",permitopen="[::1]:*",command="` + dailyPorterPath + ` serve --tier daily" ` + pub
 	}
 	return pub
 }

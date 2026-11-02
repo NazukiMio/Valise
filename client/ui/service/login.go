@@ -122,21 +122,24 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Login relay changes the harness's credentials: an admin operation.
-	t, done, err := s.adminTransport(ctx, host)
+	// Login relay is an owner operation (docs/ARCHITECTURE.md 2.2): on the
+	// daily key once its authorized_keys line allows a terminal, else on a
+	// full login.
+	t, porterPath, done, err := s.loginTransport(ctx, host)
 	if err != nil {
 		return nil, err
 	}
 	defer done()
-	found, err := porter.Probe(ctx, t)
-	if err != nil {
-		return nil, err
-	}
-	c, _, err := ssh.Dial(ctx, t, found.Path, s.Version)
+	c, _, err := ssh.Dial(ctx, t, porterPath, s.Version)
 	if err != nil {
 		return nil, err
 	}
 	defer c.Close()
+	if s.Tiered(host) && s.server(host).DailyTTY {
+		if err := s.proveOwner(ctx, c, host); err != nil {
+			return nil, err
+		}
+	}
 	var prep login.PrepareResult
 	if err := c.Call(ctx, login.MethodPrepare, login.PrepareParams{InstanceID: instance, Login: *m}, &prep); err != nil {
 		return nil, err
@@ -158,9 +161,12 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 	if err != nil {
 		return nil, err
 	}
-	remote := ssh.Quote(found.Path) + " login-run " + prep.Session
+	remote := ssh.Quote(porterPath) + " login-run " + prep.Session
 	if lio.Cols > 0 && lio.Rows > 0 {
 		remote += " " + strconv.Itoa(lio.Cols) + " " + strconv.Itoa(lio.Rows)
+	}
+	if prep.Grant != "" {
+		remote += " --grant " + prep.Grant
 	}
 	cmd := exec.CommandContext(ctx, t.Binary(), t.TTYArgs(remote)...)
 	out := io.MultiWriter(lio.Stdout, scan)
@@ -330,4 +336,31 @@ func exitCode(cmd *exec.Cmd, err error) int {
 		return -1
 	}
 	return 0
+}
+
+// DailyTTY reports whether host's daily key may open a terminal, so login
+// relay needs no developer mode.
+func (s *Service) DailyTTY(host string) bool { return s.server(host).DailyTTY }
+
+// loginTransport is where login relay runs: the daily key when it may
+// open a terminal, a full login otherwise (keys installed before the
+// daily line allowed a pty, or servers on the user's own SSH settings).
+func (s *Service) loginTransport(ctx context.Context, host string) (*ssh.Transport, string, func(), error) {
+	if s.Tiered(host) && s.server(host).DailyTTY {
+		o, err := s.ownerPorter(ctx, host)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		return o.t, o.path, func() {}, nil
+	}
+	t, done, err := s.adminTransport(ctx, host)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	found, err := porter.Probe(ctx, t)
+	if err != nil {
+		done()
+		return nil, "", nil, err
+	}
+	return t, found.Path, done, nil
 }

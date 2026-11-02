@@ -237,7 +237,22 @@ func (s *Service) installKeys(ctx context.Context, t *ssh.Transport, host string
 		return valise.New("install_keys_failed", "没能把钥匙写进服务器的 ~/.ssh/authorized_keys", "检查服务器上 ~/.ssh 的权限与磁盘空间").
 			WithDetail(strings.TrimSpace(string(res.Stderr)))
 	}
+	if slices.Contains(names, dailyKeyName) {
+		s.markDailyTTY(host)
+	}
 	return nil
+}
+
+// markDailyTTY records that host's daily key line now allows a terminal.
+func (s *Service) markDailyTTY(host string) {
+	list, err := config.LoadServerList(s.Dirs.Data)
+	if err != nil {
+		return
+	}
+	if i := slices.IndexFunc(list, func(x config.Server) bool { return x.Name == host }); i >= 0 && !list[i].DailyTTY {
+		list[i].DailyTTY = true
+		_ = config.SaveServerList(s.Dirs.Data, list)
+	}
 }
 
 // Steps of adding a server by hand, in addition to the setup steps.
@@ -440,6 +455,7 @@ func (s *Service) MigrateServer(ctx context.Context, host, adminPassphrase strin
 		return err
 	}
 	list := slices.Clone(old)
+	n.DailyTTY = true
 	if i := slices.IndexFunc(list, func(x config.Server) bool { return x.Name == host }); i >= 0 {
 		list[i] = n
 	} else {

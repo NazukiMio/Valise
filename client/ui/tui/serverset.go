@@ -145,6 +145,8 @@ func (s *serverSettings) view(m *Model) string {
 		daily = dimStyle.Render("用你自己的 SSH 设置连接")
 	case !m.svc.HasDailyKey(s.host):
 		daily = warnStyle.Render("这台电脑还没有日常钥匙；按 K 装上（需要服务器密码登录一次）")
+	case !m.svc.DailyTTY(s.host):
+		daily = warnStyle.Render("日常钥匙是旧格式：登录授权仍需开发者模式；按 K 用服务器密码重新装一次即可")
 	}
 	body := kv("服务器名", name, "SSH 别名", s.host, "系统", s.doc.Platform.String(), "porter", porter,
 		"可用工具", strings.Join(tools, "  "), "日常钥匙", daily, "你的钥匙", keyState)

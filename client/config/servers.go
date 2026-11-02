@@ -51,6 +51,10 @@ type Server struct {
 	// the user's own private key file (path only).
 	Login    string `json:"login,omitempty"`
 	LoginKey string `json:"login_key,omitempty"`
+	// DailyTTY: the daily key's authorized_keys line allows a terminal
+	// (pty), so login relay runs on it (docs/ARCHITECTURE.md 2.1). Keys
+	// installed before 2026-11-02 lack it until reinstalled.
+	DailyTTY bool `json:"daily_tty,omitempty"`
 }
 
 var (
