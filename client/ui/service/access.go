@@ -128,7 +128,7 @@ func (s *Service) adminTransport(ctx context.Context, host string) (t *ssh.Trans
 			// terminal (an expired window is re-unlocked by ensureAdmin).
 			o.Identity, o.IdentityAgent, o.BatchMode = s.keyPath(host, adminKeyName), sock, true
 		case srv.Login == config.LoginKey:
-			o.Identity, o.IdentityAgent, o.BatchMode = srv.LoginKey, "none", s.NoTerminalLogin
+			o.Identity, o.IdentityAgent, o.BatchMode = srv.LoginKey, srv.LoginAgentOption(), s.NoTerminalLogin
 		case s.NoTerminalLogin:
 			return nil, nil, valise.New("admin_needs_password", "这一步需要服务器密码，终端界面里还不能输入它（"+host+"）",
 				"创建管理钥匙（valise server admin-key "+host+"）后在这里输入管理口令即可；或者在命令行里执行这一步")

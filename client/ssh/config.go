@@ -23,6 +23,7 @@ type HostConfig struct {
 	Port          int      `json:"port,omitempty"`
 	ProxyJump     string   `json:"proxy_jump,omitempty"`
 	IdentityFiles []string `json:"identity_files,omitempty"`
+	IdentityAgent string   `json:"identity_agent,omitempty"`
 	ControlMaster string   `json:"control_master,omitempty"`
 	ControlPath   string   `json:"control_path,omitempty"`
 }
@@ -236,6 +237,10 @@ func (c *Config) Lookup(alias string) HostConfig {
 				}
 			case "identityfile":
 				h.IdentityFiles = append(h.IdentityFiles, c.expandTilde(v))
+			case "identityagent":
+				if h.IdentityAgent == "" {
+					h.IdentityAgent = c.expandTilde(v)
+				}
 			case "controlmaster":
 				if h.ControlMaster == "" {
 					h.ControlMaster = v

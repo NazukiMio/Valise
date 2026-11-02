@@ -172,10 +172,14 @@ func (c *cli) serverMigrate(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	if err := c.svc.MigrateServer(ctx, pos[0], pass); err != nil {
+	missing, err := c.svc.MigrateServer(ctx, pos[0], pass)
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(c.out, "%s 已改用 Valise 日常钥匙：日常操作拿不到 shell，管理操作需要管理口令或服务器密码。你自己的 ~/.ssh/config 没有改动。\n", pos[0])
+	if missing {
+		fmt.Fprintf(c.out, "下一步：部署 porter，valise server setup %s --release <版本>（或 --local <文件>）\n", pos[0])
+	}
 	return nil
 }
 

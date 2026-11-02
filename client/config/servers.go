@@ -48,9 +48,13 @@ type Server struct {
 	Port     int    `json:"port,omitempty"`
 	User     string `json:"user,omitempty"`
 	// Login is how a temporary admin login authenticates; LoginKey names
-	// the user's own private key file (path only).
-	Login    string `json:"login,omitempty"`
-	LoginKey string `json:"login_key,omitempty"`
+	// the user's own private key file (path only). When it names a public
+	// key, the private half is in the user's agent: LoginAgent is that
+	// agent's socket as their ~/.ssh/config gives it ("SSH_AUTH_SOCK" for
+	// the environment's), used only for these admin logins.
+	Login      string `json:"login,omitempty"`
+	LoginKey   string `json:"login_key,omitempty"`
+	LoginAgent string `json:"login_agent,omitempty"`
 	// DailyTTY: the daily key's authorized_keys line allows a terminal
 	// (pty), so login relay runs on it (docs/ARCHITECTURE.md 2.1). Keys
 	// installed before 2026-11-02 lack it until reinstalled.
@@ -81,6 +85,8 @@ func (s Server) Validate() error {
 		return fmt.Errorf("登录方式只能是密码或私钥文件")
 	case s.Login == LoginKey && !filepath.IsAbs(s.LoginKey):
 		return fmt.Errorf("私钥文件要写完整路径")
+	case s.LoginAgent != "" && s.LoginAgent != "SSH_AUTH_SOCK" && (!filepath.IsAbs(s.LoginAgent) || strings.ContainsAny(s.LoginAgent, "\"\n")):
+		return fmt.Errorf("SSH agent 的位置无效：%q", s.LoginAgent)
 	}
 	return nil
 }
@@ -232,4 +238,16 @@ func writeAtomic(dir, name string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), filepath.Join(dir, name))
+}
+
+// LoginAgentOption is the IdentityAgent value for an admin login with the
+// user's own key: their agent when the key lives there, else none.
+func (s Server) LoginAgentOption() string {
+	switch {
+	case s.Login != LoginKey || s.LoginAgent == "":
+		return "none"
+	case s.LoginAgent == "SSH_AUTH_SOCK":
+		return s.LoginAgent
+	}
+	return `"` + s.LoginAgent + `"`
 }

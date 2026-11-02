@@ -50,8 +50,9 @@ func TestOldRsyncFallsBack(t *testing.T) {
 }
 
 func TestWhyNoRsync(t *testing.T) {
-	old := &errNoRsync{failure(Station{Host: "h"}, "x", "rsync: unrecognized option `--mkpath'\nusage: rsync [-0468]")}
-	if got := whyNoRsync(old); got != "这里的 rsync 版本太旧" {
+	// macOS openrsync: the reason comes first, then many lines of usage.
+	out := "rsync: unrecognized option `--mkpath'\nusage: rsync [-0468B]\n\t[-f filter]\n\t[--backup-dir=dir]\n\t[--checksum-seed=NUM]\n\t[--compare-dest=dir]\n\t[--read-batch=file] [--remove-source-files] [--rsync-path=program]\n"
+	if got := whyNoRsync(out); got != "这里的 rsync 版本太旧" {
 		t.Fatal(got)
 	}
 }

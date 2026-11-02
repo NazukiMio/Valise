@@ -29,6 +29,7 @@ Match host ubuntu-vm
 Host *
   User fallback
   IdentityFile ~/.ssh/id_rsa
+  IdentityAgent "~/Library/Group Containers/agent.sock"
   ControlPath none
 `
 
@@ -39,7 +40,7 @@ func TestLookup(t *testing.T) {
 	}
 	got := c.Lookup("ubuntu-vm")
 	want := HostConfig{Alias: "ubuntu-vm", HostName: "10.211.55.5", User: "parallels",
-		IdentityFiles: []string{"/home/u/.ssh/id_ed25519", "/home/u/.ssh/id_rsa"}, ControlPath: "none"}
+		IdentityFiles: []string{"/home/u/.ssh/id_ed25519", "/home/u/.ssh/id_rsa"}, IdentityAgent: "/home/u/Library/Group Containers/agent.sock", ControlPath: "none"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)
 	}

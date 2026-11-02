@@ -143,7 +143,7 @@ func (s *Service) hostKeyKnown(ctx context.Context, srv config.Server) bool {
 // its admin key): password or the user's own key file, never Valise keys.
 func (s *Service) bootstrapTransport(srv config.Server) (*ssh.Transport, error) {
 	o := s.valiseOptions(srv)
-	o.IdentityAgent = "none"
+	o.IdentityAgent = srv.LoginAgentOption()
 	if srv.Login == config.LoginKey {
 		o.Identity = srv.LoginKey
 	} else {
@@ -395,18 +395,18 @@ func (s *Service) CreateAdminKey(ctx context.Context, host, passphrase string) e
 // daily key (and the admin key if a passphrase is given) is installed over
 // the user's existing login, and the host key already trusted in
 // ~/.ssh/known_hosts is copied. Hosts behind ProxyJump are refused.
-func (s *Service) MigrateServer(ctx context.Context, host, adminPassphrase string) error {
+func (s *Service) MigrateServer(ctx context.Context, host, adminPassphrase string) (porterMissing bool, err error) {
 	srv := s.server(host)
 	if srv.Valise() {
-		return valise.New("already_migrated", host+" 已经在用 Valise 日常钥匙", "")
+		return false, valise.New("already_migrated", host+" 已经在用 Valise 日常钥匙", "")
 	}
 	c, err := s.SSHConfig()
 	if err != nil {
-		return err
+		return false, err
 	}
 	hc := c.Lookup(host)
 	if hc.ProxyJump != "" {
-		return valise.New("migrate_proxyjump", host+" 经跳板机连接，暂时不能迁移", "继续使用你自己的 SSH 设置")
+		return false, valise.New("migrate_proxyjump", host+" 经跳板机连接，暂时不能迁移", "继续使用你自己的 SSH 设置")
 	}
 	n := config.Server{Name: host, Source: config.SourceValise, HostName: hc.HostName, Port: hc.Port, User: hc.User, Login: config.LoginPassword}
 	if n.HostName == "" {
@@ -415,11 +415,16 @@ func (s *Service) MigrateServer(ctx context.Context, host, adminPassphrase strin
 	for _, f := range hc.IdentityFiles {
 		if filepath.IsAbs(f) && fileExists(f) {
 			n.Login, n.LoginKey = config.LoginKey, f
+			// A public key names a key held by the user's agent (as
+			// password managers set it up): keep using that agent.
+			if strings.HasSuffix(f, ".pub") {
+				n.LoginAgent = loginAgent(hc.IdentityAgent)
+			}
 			break
 		}
 	}
 	if err := n.Validate(); err != nil {
-		return valise.New("server_invalid", err.Error(), "检查 ~/.ssh/config 中的设置")
+		return false, valise.New("server_invalid", err.Error(), "检查 ~/.ssh/config 中的设置")
 	}
 	field := knownHostsField(n.HostName, n.Port)
 	out, _ := exec.CommandContext(ctx, s.toolPath("ssh-keygen"), "-F", field, "-f", filepath.Join(s.Home, ".ssh", "known_hosts")).Output()
@@ -430,35 +435,35 @@ func (s *Service) MigrateServer(ctx context.Context, host, adminPassphrase strin
 		}
 	}
 	if len(lines) == 0 {
-		return valise.New("migrate_no_host_key", "在 ~/.ssh/known_hosts 里找不到 "+field+" 的身份记录", "先用 ssh 登录一次这台服务器")
+		return false, valise.New("migrate_no_host_key", "在 ~/.ssh/known_hosts 里找不到 "+field+" 的身份记录", "先用 ssh 登录一次这台服务器")
 	}
 	if err := s.writeKnownHosts(field, lines); err != nil {
-		return err
+		return false, err
 	}
 	if err := s.refuseNoAuth(ctx, n); err != nil {
-		return err
+		return false, err
 	}
 	keys := []string{dailyKeyName}
 	if err := s.ensureDailyKey(ctx, host); err != nil {
-		return err
+		return false, err
 	}
 	if adminPassphrase != "" {
 		if err := s.createAdminKey(ctx, host, adminPassphrase); err != nil {
-			return err
+			return false, err
 		}
 		keys = append(keys, adminKeyName)
 	}
 	t, done, err := s.adminTransport(ctx, host)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer done()
 	if err := s.installKeys(ctx, t, host, keys...); err != nil {
-		return err
+		return false, err
 	}
 	old, err := config.LoadServerList(s.Dirs.Data)
 	if err != nil {
-		return err
+		return false, err
 	}
 	list := slices.Clone(old)
 	n.DailyTTY = true
@@ -468,15 +473,28 @@ func (s *Service) MigrateServer(ctx context.Context, host, adminPassphrase strin
 		list = append(list, n)
 	}
 	if err := config.SaveServerList(s.Dirs.Data, list); err != nil {
-		return err
+		return false, err
 	}
 	if err := s.verifyRestricted(ctx, host); err != nil {
 		_ = s.uninstallKeys(ctx, t, host, keys...)
 		_ = config.SaveServerList(s.Dirs.Data, old)
-		return err
+		return false, err
 	}
 	if adminPassphrase != "" {
 		_ = s.loadAdmin(ctx, host, adminPassphrase)
 	}
-	return s.checkDaily(ctx, host, func(SetupStep) {})
+	// Not deployed yet is the expected next step, not a failure.
+	if doc, err := s.Doctor(ctx, host); err == nil && doc.Problem != nil && doc.Problem.Code == "porter_not_found" {
+		return true, nil
+	}
+	return false, s.checkDaily(ctx, host, func(SetupStep) {})
+}
+
+// loginAgent is the agent a migrated key login keeps using: the one the
+// user's ~/.ssh/config names, or the environment's.
+func loginAgent(configured string) string {
+	if configured == "" || strings.EqualFold(configured, "none") {
+		return "SSH_AUTH_SOCK"
+	}
+	return strings.Trim(configured, `"`)
 }

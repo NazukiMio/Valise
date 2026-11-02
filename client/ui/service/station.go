@@ -341,7 +341,7 @@ func (s *Service) SyncStation(ctx context.Context, host, name string) (*StationS
 	if directErr == nil {
 		r, err := s.Sync(ctx, host, name)
 		if err == nil {
-			res.Path, res.Method, res.Note, res.Leaves, res.Snapshots = PathDirect, r.Method, r.Note, r.Leaves, r.Snapshots
+			res.Path, res.Method, res.Note, res.Leaves, res.Snapshots = PathDirect, r.Method, strings.ReplaceAll(r.Note, "这里", "服务器上"), r.Leaves, r.Snapshots
 			res.Dest = st.Address + ":" + strings.TrimRight(st.Path, "/") + "/" + status.ServerName
 			return res, nil
 		}
@@ -428,7 +428,7 @@ func (s *Service) relay(ctx context.Context, host string, st config.Station, sta
 	if err != nil {
 		return nil, err
 	}
-	res.Method, res.Note = method, note
+	res.Method, res.Note = method, strings.ReplaceAll(note, "这里", "本机")
 	// The server's sync record learns what the station now holds.
 	if attached(status, st) || s.IsStation(st.Name) {
 		_ = s.call(ctx, host, vaultrpc.MethodSyncRecord, vaultrpc.SyncRecordParams{Target: st.Name, Snapshots: res.Snapshots}, nil)
@@ -440,9 +440,9 @@ func (s *Service) relay(ctx context.Context, host string, st config.Station, sta
 func (r *StationSyncResult) PathText() string {
 	switch r.Path {
 	case PathRepo:
-		return "经本机仓库 " + r.Repo + " 中转（服务器连不上空间站：" + r.Direct + "）"
+		return "经本机仓库 " + r.Repo + " 中转（" + r.Direct + "）"
 	case PathTemp:
-		return "经这台电脑临时中转，临时文件已删除（服务器连不上空间站：" + r.Direct + "）"
+		return "经这台电脑临时中转，临时文件已删除（" + r.Direct + "）"
 	}
 	return "服务器直传"
 }

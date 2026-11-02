@@ -97,7 +97,10 @@ const UnreachableCode = "station_unreachable"
 
 // errNoRsync marks an rsync run that failed because rsync is missing here
 // or on the station.
-type errNoRsync struct{ err error }
+type errNoRsync struct {
+	err error
+	why string // in a few words, from the full output
+}
 
 func (e *errNoRsync) Error() string { return e.err.Error() }
 func (e *errNoRsync) Unwrap() error { return e.err }
@@ -115,18 +118,14 @@ func With(ctx context.Context, run Runner, st Station, op func(Remote) error) (m
 	}
 	if st.Kind == MethodRRsync {
 		// The station only takes rrsync from this key: no sftp fallback.
-		return MethodRsync, "", valise.New(UnreachableCode, "这里没有可用的 rsync，而空间站只接受 rsync", "经这台电脑中转").WithDetail(firstLine(missing.err))
+		return MethodRsync, "", valise.New(UnreachableCode, "这里没有可用的 rsync，而空间站只接受 rsync", "经这台电脑中转").WithDetail(missing.why)
 	}
-	note = "rsync 不可用（" + whyNoRsync(missing.err) + "），改用 sftp，速度会慢一些"
+	note = "rsync 不可用（" + missing.why + "），改用 sftp，速度会慢一些"
 	return MethodSFTP, note, op(&sftpRemote{run: run, st: st})
 }
 
 // whyNoRsync says in a few words why rsync could not be used.
-func whyNoRsync(err error) string {
-	detail := err.Error()
-	if ue, ok := valise.As(err); ok {
-		detail = ue.Detail
-	}
+func whyNoRsync(detail string) string {
 	switch {
 	case strings.Contains(detail, "unrecognized option"), strings.Contains(detail, "unknown option"), strings.Contains(detail, "usage: rsync"):
 		return "这里的 rsync 版本太旧"
@@ -135,22 +134,7 @@ func whyNoRsync(err error) string {
 	case strings.Contains(detail, "not found"):
 		return "对方没有安装 rsync"
 	}
-	return firstLine(err)
-}
-
-func firstLine(err error) string {
-	s := err.Error()
-	if ue, ok := valise.As(err); ok && ue.Detail != "" {
-		s = ue.Detail
-	}
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	if len(s) > 120 {
-		s = s[:120]
-	}
-	return s
+	return lastLines(detail, 1)
 }
 
 func destPath(dest string) string {
@@ -260,12 +244,12 @@ func (r *rsyncRemote) PutFile(ctx context.Context, src, dst string) error {
 func (r *rsyncRemote) exec(ctx context.Context, args []string, what string) error {
 	code, _, stderr, err := r.run.Run(ctx, Timeout, args...)
 	if err != nil {
-		return &errNoRsync{valise.New("sync_failed", "无法运行 rsync", "安装 rsync，或改用 sftp").WithDetail(err.Error())}
+		return &errNoRsync{valise.New("sync_failed", "无法运行 rsync", "安装 rsync，或改用 sftp").WithDetail(err.Error()), whyNoRsync(err.Error())}
 	}
 	if code != 0 {
 		ue := failure(r.st, what, string(stderr))
 		if rsyncMissing(code, string(stderr)) {
-			return &errNoRsync{ue}
+			return &errNoRsync{ue, whyNoRsync(string(stderr))}
 		}
 		return ue
 	}
@@ -283,7 +267,7 @@ func rsyncMissing(code int, stderr string) bool {
 func (r *rsyncRemote) List(ctx context.Context, base string) ([]Entry, error) {
 	code, stdout, stderr, err := r.run.Run(ctx, 10*time.Minute, "rsync", "--list-only", "-r", "-e", r.shell(), base+"/")
 	if err != nil {
-		return nil, &errNoRsync{valise.New("target_list_failed", "无法运行 rsync", "安装 rsync，或改用 sftp").WithDetail(err.Error())}
+		return nil, &errNoRsync{valise.New("target_list_failed", "无法运行 rsync", "安装 rsync，或改用 sftp").WithDetail(err.Error()), whyNoRsync(err.Error())}
 	}
 	if code != 0 {
 		if strings.Contains(string(stderr), "No such file or directory") {
@@ -291,7 +275,7 @@ func (r *rsyncRemote) List(ctx context.Context, base string) ([]Entry, error) {
 		}
 		ue := failure(r.st, "无法列出 "+r.st.Name+" 上的内容", string(stderr))
 		if rsyncMissing(code, string(stderr)) {
-			return nil, &errNoRsync{ue}
+			return nil, &errNoRsync{ue, whyNoRsync(string(stderr))}
 		}
 		return nil, ue
 	}
