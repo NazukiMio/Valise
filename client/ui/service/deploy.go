@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"valise/client/porter"
 	"valise/client/ssh"
@@ -69,6 +71,12 @@ func (s *Service) deployOn(ctx context.Context, t *ssh.Transport, src DeploySour
 }
 
 func readLocal(path string) ([]byte, error) {
+	// A path typed into the TUI or quoted in a shell keeps its "~".
+	if rest, ok := strings.CutPrefix(path, "~/"); ok {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, rest)
+		}
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, valise.New("local_porter_unreadable", "无法读取本地 porter 文件 "+path, "确认路径正确，并且是 valise-porter 的构建产物").WithDetail(err.Error())
