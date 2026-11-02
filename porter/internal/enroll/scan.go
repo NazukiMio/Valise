@@ -40,7 +40,8 @@ func (e *Env) ExpandArgv(argv []string, vars map[string]string) ([]string, bool)
 // Scan resolves roots, classifies every file, and records provenance,
 // services and entries. It only reads; nothing on the server is modified.
 func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enroll.Record) (*enroll.Report, error) {
-	p := &params.Profile
+	ap := params.Profile.ForAgent(params.Name)
+	p := &ap
 	e = e.For(p).With(params.Env)
 	previous.ApplyEntryPorts(p)
 	if err := enroll.ValidInstanceID(params.InstanceID); err != nil {

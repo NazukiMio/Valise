@@ -58,6 +58,8 @@ type Profile struct {
 	NativeHints []string `yaml:"native_hints" json:"native_hints,omitempty"`
 	// Actions are managed actions (docs/INSTALL.md section 5).
 	Actions []Action `yaml:"actions" json:"actions,omitempty"`
+	// Terms are the harness's own words, shown instead of Valise's.
+	Terms *Terms `yaml:"terms" json:"terms,omitempty"`
 	// ApprovalCheck reads whether the harness asks before risky commands
 	// (docs/PROFILES.md 1, 审批状态检查).
 	ApprovalCheck *ApprovalCheck `yaml:"approval_check" json:"approval_check,omitempty"`
@@ -109,6 +111,30 @@ type Named struct {
 	// Service "shared": the instance runs under the default instance's
 	// service (one gateway for all); "" means its service is unknown.
 	Service string `yaml:"service" json:"service,omitempty"`
+}
+
+// ForAgent is the effective profile of one agent of an installation
+// (docs/ARCHITECTURE.md 4.1): a named agent shares the installation (no
+// body or provenance of its own) and has no verified entries; its service
+// is kept only when named instances share the default's.
+func (p Profile) ForAgent(name string) Profile {
+	if name == "" {
+		return p
+	}
+	if !p.NamedSharesService() {
+		p.Service = nil
+	}
+	p.Entries, p.Body, p.Provenance = nil, nil, nil
+	return p
+}
+
+// AgentTerm is what the harness calls one agent, "" when the profile does
+// not say (docs/PROFILES.md 1.3).
+func (p *Profile) AgentTerm() string {
+	if p.Terms == nil {
+		return ""
+	}
+	return p.Terms.Agent
 }
 
 // NamedSharesService reports whether p's named instances run under the
@@ -677,4 +703,10 @@ func field(v any, path string) any {
 		v = m[k]
 	}
 	return v
+}
+
+// Terms are the harness's own words for Valise's concepts.
+type Terms struct {
+	// Agent is what the harness calls one agent (Hermes: profile).
+	Agent string `yaml:"agent" json:"agent,omitempty"`
 }

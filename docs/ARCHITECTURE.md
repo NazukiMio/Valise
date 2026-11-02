@@ -18,8 +18,9 @@
               ▼
 [ 服务器：valise-porter（按需唤起，不监听任何端口）]
   ├─ ~/.ssh/authorized_keys                          日常钥匙（带强制命令）一行、可选的管理钥匙一行，注释 valise-daily@<本机名> / valise-admin@<本机名>
-  ├─ ~/.config/valise/instances/<instance_id>.json   实例记录
-  ├─ ~/.config/valise/instances/<instance_id>.profile.json  登记时生效的 profile（离线封存用）
+  ├─ ~/.config/valise/dossiers/<install_id>.json     实例档案（4.1 节；一个 harness 安装一份）
+  ├─ ~/.config/valise/dossiers/<install_id>.profile.json  通用 profile 的原样副本
+  ├─ ~/.config/valise/instances/<instance_id>.*.json 各 agent 的状态（提议、定时器等；旧版实例记录迁移后保留）
   ├─ ~/.config/valise/recipients.txt                 age 收件人公钥
   ├─ ~/.config/valise/dedupe/<vault_id>.key          去重密钥（0600）
   ├─ ~/.config/valise/instances/<instance_id>.vault.json    金库周期设置（VAULT_FORMAT.md 10.2）
@@ -142,7 +143,18 @@
 5. **登记报告**：客户端展示各类别的文件数量与大小、未分类文件、凭据文件清单（只列路径）、身体与来源、服务、入口、哪些 profile 条目未核实。用户确认，并对未分类文件做出处理决定后，才写入实例记录。
 6. **agent 补充**（可选）：agent 通过 MCP 提议额外的路径和类别，这些提议以"待确认"状态保存。用户在客户端确认后，才合入实例记录的 `local_overrides`。
 
-实例记录包含：`instance_id`、`profile_id`、`profile_version`、`roots`（解析后的绝对路径）、`provenance`、`service`、`entries`、`local_overrides`、`enrolled_at`，以及被取代时的 `superseded`（见 8.2.1）。harness 升级后再次登记时，展示与上次的差异。
+实例记录包含：`instance_id`、`profile_id`、`profile_version`、`roots`（解析后的绝对路径）、`provenance`、`service`、`entries`、`local_overrides`、`enrolled_at`，以及被取代时的 `superseded`（见 8.2.1）。harness 升级后再次登记时，展示与上次的差异。实例记录现在是实例档案里一个 agent 的视图（4.1 节）。
+
+### 4.1 实例档案（dossier，2026-11-02 用户决定）
+
+两套资料协作：**通用 profile** 写规则（按官方文档编写、在靶机上核实、随签名资料包分发）；**实例档案**写这台机器上一个 harness 安装的事实（porter 按 profile 的规则检测生成，用户确认后保存，不随任何包分发）。冲突时规则听 profile，事实听档案。
+
+- **文件**：服务器上 `~/.config/valise/dossiers/<install_id>.json`（schema `valise-dossier/1`，0600），旁边 `<install_id>.profile.json` 是登记时通用 profile 的原样副本（不按 agent 改动）。`install_id` 目前等于 profile id（一台服务器上一个 harness 一个安装）。不含任何凭据。
+- **内容**：`profile`（id 与版本）、`updated_at`；安装级事实：`provenance`（程序与来源）、`service`、`entries`（以默认 agent 的检测为准）；`agents[]`：每个 agent 的 `instance_id`、`name`、`env`（多实例，PROFILES.md 1.3）、`roots`、`local_overrides`、`entry_ports`、`enrolled_at`、`superseded`，以及之后加入的 `evidence`（在这里成功过的操作，PROFILES.md 1 的核实证据）与读到的审批状态。
+- **按 agent 的有效 profile**：由通用 profile 与档案现算（`profile.ForAgent`）：命名 agent 不带 `entries`、`body`、`provenance`，服务只在 `named[].service: shared` 时保留。封存、管理动作、审批检查、登录、恢复都用它。
+- **迁移**：porter 读档案时，发现 `instances/<id>.json`（旧实例记录）里有档案中没有的 agent，就按 profile 合并进对应的档案并写回；旧文件保留不删。
+- **重新检测**：结果与保存的档案不同时，客户端列出差异（版本、新出现的 agent、审批状态等），用户确认后才保存（UI.md 9.x）。
+- **显示名**：profile 的 `terms.agent` 是 harness 自己对一个 agent 的叫法（如 Hermes、OpenClaw 都叫 profile）；界面按它显示，内部统一称 agent。
 
 实现细节（M2 确定）：
 
@@ -201,7 +213,7 @@
 
 实现细节（M3 确定）：
 
-- **profile 来源**：`enroll --accept` 时，客户端把当时生效的 profile（已合并子 profile）连同实例记录一起写到服务器的 `instances/<id>.profile.json`。封存一律使用这份 profile，因此定时封存和 MCP 封存不需要客户端在线。profile 升级后需要重新登记。
+- **profile 来源**：`enroll --accept` 时，客户端把当时生效的 profile（已合并子 profile）连同实例记录一起写到服务器的实例档案（`dossiers/<install_id>.profile.json`，4.1 节）。封存一律使用这份 profile，因此定时封存和 MCP 封存不需要客户端在线。profile 升级后需要重新登记。
 - **档位**：见第 5 节的表格。`local_overrides` 参与分类。
 - **body_patch**：git 来源且工作树 dirty 时，封存当时的 `git diff HEAD --binary` 作为虚拟文件 `valise:body.patch`。
 - **互斥**：同一台服务器同一时刻只允许一个封存或同步，用 `~/.local/state/valise/vault.lock`（flock）保证。

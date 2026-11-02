@@ -424,7 +424,7 @@ func TestCloneSupersedesOverlappingInstance(t *testing.T) {
 		t.Fatal("cleanup of a live instance accepted")
 	}
 	removed, err := OldCleanup(w.r.Store, "old")
-	if err != nil || len(removed) != 3 {
+	if err != nil || len(removed) != 2 {
 		t.Fatalf("%v %v", removed, err)
 	}
 	if _, err := os.Stat(res.Prev[0]); !os.IsNotExist(err) {

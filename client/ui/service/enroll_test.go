@@ -54,7 +54,7 @@ func TestEnrollReportThenAccept(t *testing.T) {
 		r.Unclassified.Files != 1 || len(r.Pending) != 1 || r.Provenance.Binary == nil || res.Written != "" {
 		t.Fatalf("%+v\n%+v", res, r)
 	}
-	record := filepath.Join(home, ".config/valise/instances/demo.json")
+	record := filepath.Join(home, ".config/valise/dossiers/demo.json")
 	if _, err := os.Stat(record); !os.IsNotExist(err) {
 		t.Fatal("report-only enrollment wrote a record")
 	}

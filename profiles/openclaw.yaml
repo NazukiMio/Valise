@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 16
+profile_version: 17
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -302,3 +302,6 @@ agent_kit:
   mcp_config_doc: null             # verify: pending
   mcp_remove_argv: [openclaw, config, unset, mcp.servers.valise]   # OBS (M6 cleanup): `openclaw mcp` has no remove; applies without a gateway restart
   mcp_add_argv: [openclaw, mcp, add, valise, --command, "${PORTER}", --arg=mcp, --arg=--instance, "--arg=${INSTANCE}"]   # OBS: `openclaw mcp add --help`; verify: pending
+
+# What the harness calls one agent: `openclaw --profile <name>` (CLI help).
+terms: { agent: profile }

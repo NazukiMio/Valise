@@ -2,11 +2,10 @@ package enroll
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
+	"sort"
+	"time"
 
 	"valise/core/enroll"
 	"valise/core/profile"
@@ -18,51 +17,37 @@ func InstancesDir(home string) string {
 	return filepath.Join(home, ".config", "valise", "instances")
 }
 
-// ReadRecord returns nil when the instance is not enrolled.
+// ReadRecord returns nil when the instance is not enrolled. It is a view
+// of the agent in its instance dossier (docs/ARCHITECTURE.md 4.1).
 func ReadRecord(home, id string) (*enroll.Record, error) {
 	if err := enroll.ValidInstanceID(id); err != nil {
 		return nil, valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
 	}
-	b, err := os.ReadFile(filepath.Join(InstancesDir(home), id+".json"))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+	d, err := dossierOf(home, id)
+	if err != nil || d == nil {
+		return nil, err
 	}
+	return d.Record(id), nil
+}
+
+// ReadProfile returns the agent's effective profile: the general profile
+// stored at enrollment, made for this agent (profile.ForAgent) with its
+// entry ports.
+func ReadProfile(home, id string) (*profile.Profile, error) {
+	d, err := dossierOf(home, id)
 	if err != nil {
 		return nil, err
 	}
-	var r enroll.Record
-	if err := json.Unmarshal(b, &r); err != nil {
-		return nil, valise.New("instance_record_corrupt", "服务器上的实例记录无法解析："+id, "重新接入以覆盖它").WithDetail(err.Error())
-	}
-	return &r, nil
-}
-
-// RecordPath is instances/<id>.json.
-func RecordPath(home, id string) string {
-	return filepath.Join(InstancesDir(home), id+".json")
-}
-
-// ProfilePath is instances/<id>.profile.json.
-func ProfilePath(home, id string) string {
-	return filepath.Join(InstancesDir(home), id+".profile.json")
-}
-
-// ReadProfile returns the profile stored at enrollment.
-func ReadProfile(home, id string) (*profile.Profile, error) {
-	b, err := os.ReadFile(ProfilePath(home, id))
-	if errors.Is(err, os.ErrNotExist) {
+	if d == nil {
 		return nil, valise.New("instance_profile_missing", "服务器上没有实例 "+id+" 接入时的 profile", "重新接入：valise enroll <服务器> --accept")
 	}
+	g, err := readDossierProfile(home, d.InstallID)
 	if err != nil {
 		return nil, err
 	}
-	var p profile.Profile
-	if err := json.Unmarshal(b, &p); err != nil {
-		return nil, valise.New("instance_profile_corrupt", "服务器上的 profile 副本无法解析："+id, "重新接入以覆盖它")
-	}
-	if rec, err := ReadRecord(home, id); err == nil {
-		rec.ApplyEntryPorts(&p)
-	}
+	rec := d.Record(id)
+	p := g.ForAgent(rec.Name)
+	rec.ApplyEntryPorts(&p)
 	return &p, nil
 }
 
@@ -73,23 +58,20 @@ func SetEntryPort(home, id, entry string, port int) (map[string]int, error) {
 	if port < 1 || port > 65535 {
 		return nil, valise.New("entry_port_invalid", "端口必须在 1 到 65535 之间", "")
 	}
-	rec, err := ReadRecord(home, id)
+	d, err := dossierOf(home, id)
 	if err != nil {
 		return nil, err
 	}
-	if rec == nil {
+	if d == nil {
 		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+id, "先运行 valise enroll <服务器> --accept")
 	}
-	b, err := os.ReadFile(ProfilePath(home, id))
+	g, err := readDossierProfile(home, d.InstallID)
 	if err != nil {
-		return nil, valise.New("instance_profile_missing", "服务器上没有实例 "+id+" 接入时的 profile", "重新接入：valise enroll <服务器> --accept")
+		return nil, err
 	}
-	var p profile.Profile
-	if err := json.Unmarshal(b, &p); err != nil {
-		return nil, valise.New("instance_profile_corrupt", "服务器上的 profile 副本无法解析："+id, "重新接入以覆盖它")
-	}
+	a := d.Agent(id)
 	def := 0
-	for _, e := range p.Entries {
+	for _, e := range g.ForAgent(a.Name).Entries {
 		if e.ID == entry {
 			def = e.Port
 		}
@@ -97,24 +79,20 @@ func SetEntryPort(home, id, entry string, port int) (map[string]int, error) {
 	if def == 0 {
 		return nil, valise.New("entry_unknown", "实例 "+id+" 没有入口 "+entry, "")
 	}
-	if rec.EntryPorts == nil {
-		rec.EntryPorts = map[string]int{}
+	if a.EntryPorts == nil {
+		a.EntryPorts = map[string]int{}
 	}
-	rec.EntryPorts[entry] = port
+	a.EntryPorts[entry] = port
 	if port == def {
-		delete(rec.EntryPorts, entry)
+		delete(a.EntryPorts, entry)
 	}
-	out, err := json.MarshalIndent(rec, "", "  ")
-	if err != nil {
+	if err := writeDossier(home, d); err != nil {
 		return nil, err
 	}
-	if err := writeFile0600(InstancesDir(home), RecordPath(home, id), out); err != nil {
-		return nil, err
+	if a.EntryPorts == nil {
+		a.EntryPorts = map[string]int{}
 	}
-	if rec.EntryPorts == nil {
-		rec.EntryPorts = map[string]int{}
-	}
-	return rec.EntryPorts, nil
+	return a.EntryPorts, nil
 }
 
 // Refresh replaces the facts in rec that describe the server it lives on
@@ -144,31 +122,44 @@ func Live(ctx context.Context, e *Env, p *profile.Profile) ([]enroll.ServiceStat
 	return services(ctx, e, p, &warns), entries(p)
 }
 
-// WriteRecord writes the record and the profile atomically with mode 0600.
+// WriteRecord stores the agent's record and the general profile in the
+// installation's dossier (written atomically, 0600). It returns the
+// dossier's path.
 func WriteRecord(home string, r enroll.Record, p profile.Profile) (string, error) {
 	if err := enroll.ValidInstanceID(r.InstanceID); err != nil {
 		return "", valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
 	}
-	dir := InstancesDir(home)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	if p.ID == "" || p.ProfileVersion != r.ProfileVersion {
+	if p.ID == "" || p.ProfileVersion != r.ProfileVersion || p.ID != r.ProfileID {
 		return "", valise.New("instance_profile_mismatch", "实例记录与 profile 版本不一致", "重新接入")
 	}
-	pb, err := json.MarshalIndent(p, "", "  ")
+	d, err := dossierOf(home, r.InstanceID)
 	if err != nil {
 		return "", err
 	}
-	if err := writeFile0600(dir, ProfilePath(home, r.InstanceID), pb); err != nil {
+	if d != nil && d.InstallID != p.ID {
+		// The agent now belongs to another installation.
+		if !d.Remove(r.InstanceID) {
+			if err := removeDossier(home, d.InstallID); err != nil {
+				return "", err
+			}
+		} else if err := writeDossier(home, d); err != nil {
+			return "", err
+		}
+		d = nil
+	}
+	if d == nil {
+		if d, err = readDossier(home, p.ID); err != nil {
+			return "", err
+		}
+		if d == nil {
+			d = &enroll.Dossier{InstallID: p.ID}
+		}
+	}
+	d.Put(r, time.Now())
+	if err := writeDossierProfile(home, d.InstallID, p); err != nil {
 		return "", err
 	}
-	b, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	final := filepath.Join(dir, r.InstanceID+".json")
-	return final, writeFile0600(dir, final, b)
+	return DossierPath(home, d.InstallID), writeDossier(home, d)
 }
 
 func writeFile0600(dir, final string, b []byte) error {
@@ -195,54 +186,47 @@ func writeFile0600(dir, final string, b []byte) error {
 	return os.Rename(tmp.Name(), final)
 }
 
-// ListRecords returns every instance record on this server, sorted by id.
-// Unreadable records are skipped.
+// ListRecords returns every agent's record on this server, sorted by id.
+// Unreadable dossiers are skipped.
 func ListRecords(home string) ([]enroll.Record, error) {
-	ents, err := os.ReadDir(InstancesDir(home))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
+	ds, err := allDossiers(home)
 	if err != nil {
 		return nil, err
 	}
 	var out []enroll.Record
-	for _, e := range ents {
-		name := e.Name()
-		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".profile.json") {
-			continue
-		}
-		if r, err := ReadRecord(home, strings.TrimSuffix(name, ".json")); err == nil && r != nil {
-			out = append(out, *r)
+	for _, d := range ds {
+		for _, a := range d.Agents {
+			out = append(out, *d.Record(a.InstanceID))
 		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].InstanceID < out[j].InstanceID })
 	return out, nil
 }
 
 // MarkSuperseded records that an operation replaced the instance's
-// directories. The record is kept; only `valise old cleanup` removes it.
+// directories. The agent is kept; only `valise old cleanup` removes it.
 func MarkSuperseded(home, id string, s enroll.Supersession) error {
-	r, err := ReadRecord(home, id)
-	if err != nil || r == nil {
+	d, err := dossierOf(home, id)
+	if err != nil || d == nil {
 		return err
 	}
-	r.Superseded = &s
-	b, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeFile0600(InstancesDir(home), RecordPath(home, id), b)
+	d.Agent(id).Superseded = &s
+	return writeDossier(home, d)
 }
 
-// RemoveRecord deletes the record and profile copy of an instance. It runs
-// only on the user's explicit `valise old cleanup`.
+// RemoveRecord removes an agent from its dossier (the dossier and its
+// profile copy go with the last agent). It runs only on the user's
+// explicit `valise old cleanup`.
 func RemoveRecord(home, id string) error {
 	if err := enroll.ValidInstanceID(id); err != nil {
 		return valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
 	}
-	for _, p := range []string{RecordPath(home, id), ProfilePath(home, id)} {
-		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
+	d, err := dossierOf(home, id)
+	if err != nil || d == nil {
+		return err
 	}
-	return nil
+	if !d.Remove(id) {
+		return removeDossier(home, d.InstallID)
+	}
+	return writeDossier(home, d)
 }

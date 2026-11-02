@@ -84,15 +84,16 @@ func (s *Service) Enroll(ctx context.Context, host string, opts EnrollOptions) (
 	}
 
 	var rep enroll.Report
-	prof := instanceProfile(*loaded.Effective, cand.Name)
-	params := enroll.ScanParams{Profile: prof, StateDir: cand.StateDir, InstanceID: id, Overrides: overrides, Name: cand.Name, Env: cand.Env}
+	// The general profile goes to porter unchanged; the agent's effective
+	// profile (ForAgent) is worked out there and from the dossier.
+	params := enroll.ScanParams{Profile: *loaded.Effective, StateDir: cand.StateDir, InstanceID: id, Overrides: overrides, Name: cand.Name, Env: cand.Env}
 	if err := c.Call(ctx, enroll.MethodScan, params, &rep); err != nil {
 		return res, err
 	}
 	rep.Pending = pendingOf(set, eff)
 	rep.Warnings = append(cand.Warnings, rep.Warnings...)
 	if cand.Name != "" {
-		if prof.Service != nil {
+		if loaded.Effective.ForAgent(cand.Name).Service != nil {
 			rep.Warnings = append(rep.Warnings, "这是命名实例 "+cand.Name+"：它和默认实例共用同一个服务，恢复它时会短暂停止这个服务（同一安装里的所有 agent 一起停下）")
 		} else {
 			rep.Warnings = append(rep.Warnings, "这是命名实例 "+cand.Name+"：它的服务与管理页尚未在靶机上核实，Valise 不控制它的服务（恢复时也不会停止或启动任何服务）")
@@ -104,7 +105,7 @@ func (s *Service) Enroll(ctx context.Context, host string, opts EnrollOptions) (
 	if opts.Accept {
 		var w enroll.InstanceWriteResult
 		rec := enroll.RecordFrom(&rep, time.Now())
-		if err := c.Call(ctx, enroll.MethodInstanceWrite, enroll.InstanceWriteParams{Record: rec, Profile: prof}, &w); err != nil {
+		if err := c.Call(ctx, enroll.MethodInstanceWrite, enroll.InstanceWriteParams{Record: rec, Profile: *loaded.Effective}, &w); err != nil {
 			return res, err
 		}
 		res.Written = w.Path
@@ -223,18 +224,4 @@ type DetectedInstance struct {
 	// enrolled for this state dir.
 	ID       string `json:"id"`
 	Enrolled string `json:"enrolled,omitempty"`
-}
-
-// instanceProfile is the profile stored for an instance. A named instance
-// shares the installation (body and provenance) with the default one, and
-// its service units and entries are not verified (the profile's are the
-// default instance's), so Valise neither shows nor controls them.
-func instanceProfile(p profile.Profile, name string) profile.Profile {
-	if name != "" {
-		if !p.NamedSharesService() {
-			p.Service = nil
-		}
-		p.Entries, p.Body, p.Provenance = nil, nil, nil
-	}
-	return p
 }

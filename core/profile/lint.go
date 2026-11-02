@@ -424,6 +424,9 @@ func (c *checker) checkTop(p *Profile) {
 	}
 	c.checkActions(p.Actions)
 	c.checkApproval(p.ApprovalCheck)
+	if p.Terms != nil && (strings.TrimSpace(p.Terms.Agent) == "" || len([]rune(p.Terms.Agent)) > 20) {
+		c.add("terms.agent", "要写 harness 自己对一个 agent 的叫法（不超过 20 个字）")
+	}
 	c.checkInstall(p.Install)
 	c.checkCapabilities(p)
 }

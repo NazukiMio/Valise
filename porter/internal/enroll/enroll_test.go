@@ -281,7 +281,7 @@ func TestInstanceRecordRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	st, _ := os.Stat(path)
-	if st.Mode().Perm() != 0o600 || path != filepath.Join(home, ".config/valise/instances/demo.json") {
+	if st.Mode().Perm() != 0o600 || path != filepath.Join(home, ".config/valise/dossiers/demo.json") {
 		t.Fatalf("%s %v", path, st.Mode())
 	}
 	got, err := ReadRecord(home, "demo")

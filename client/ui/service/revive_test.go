@@ -139,7 +139,7 @@ func TestCloneToAnotherServer(t *testing.T) {
 	if err != nil || res.State != revive.StateRestored {
 		t.Fatalf("%+v %v", res, err)
 	}
-	cloneRec := readFile(t, filepath.Join(home2, ".config/valise/instances/demo-clone.json"))
+	cloneRec := readFile(t, filepath.Join(home2, ".config/valise/dossiers/demo.json"))
 	if readFile(t, filepath.Join(home2, ".demo/.env")) != "K=v" || !strings.Contains(cloneRec, home2) {
 		t.Fatal("clone not in place or record missing")
 	}
@@ -169,7 +169,7 @@ func TestCloneToAnotherServer(t *testing.T) {
 		t.Fatal("sealed a superseded instance")
 	}
 	removed, err := s.OldCleanup(ctx, "box2", "demo-clone")
-	if err != nil || len(removed) != 3 {
+	if err != nil || len(removed) != 2 {
 		t.Fatalf("%v %v", removed, err)
 	}
 	if old, _ := s.OldList(ctx, "box2"); len(old.Entries) != 0 {

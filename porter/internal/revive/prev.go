@@ -105,7 +105,7 @@ func OldCleanup(s Store, id string) ([]string, error) {
 	if err := porterenroll.RemoveRecord(s.Home, id); err != nil {
 		return removed, err
 	}
-	return append(removed, porterenroll.RecordPath(s.Home, id), porterenroll.ProfilePath(s.Home, id)), nil
+	return append(removed, "实例档案中的 "+id), nil
 }
 
 // Finished returns when a finished operation ended (its leftovers were

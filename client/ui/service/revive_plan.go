@@ -165,8 +165,8 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 			"升级客户端，或用当前 profile 重新接入并建立逃生舱后再着陆")
 	}
 	// A named instance's service and entries are not verified: never
-	// stopped, started or shown (see instanceProfile).
-	prof = instanceProfile(prof, head.Name)
+	// stopped, started or shown (profile.ForAgent).
+	prof = prof.ForAgent(head.Name)
 	if head.Name != "" && o.Mode != revive.ModeRollback && o.Roots[profile.StateRoot] == "" {
 		return nil, valise.New("named_needs_root", "这是命名实例 "+head.Name+" 的逃生舱，迁移或克隆时 Valise 不猜目标目录（默认目录属于另一个 agent）",
 			"用 --root state=<路径> 指定目标目录")
