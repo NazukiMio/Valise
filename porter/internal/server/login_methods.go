@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"time"
+	"valise/porter/internal/forced"
 
 	"valise/core/login"
 	"valise/core/vaultrpc"
@@ -18,7 +19,13 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		return porterlogin.Prepare(s.loginEnv(ctx), p)
+		res, err := porterlogin.Prepare(s.loginEnv(ctx), p)
+		if err != nil || !s.daily() {
+			return res, err
+		}
+		// The daily key runs login-run only with this one-time grant.
+		res.Grant, err = forced.Mint(s.cfg.Home, "login-run", res.Session)
+		return res, err
 	}
 	methods[login.MethodEntryAuth] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[login.EntryAuthParams](raw)

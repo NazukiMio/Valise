@@ -24,6 +24,9 @@ type Service struct {
 	Release       porter.Release
 	// AdminAuth is set by the frontend to ask for the admin passphrase.
 	AdminAuth AdminAuth
+	// OwnerAuth is set by the frontend to ask for the Valise passphrase
+	// (the owner proof, owner.go).
+	OwnerAuth OwnerAuth
 	// Keyscan replaces ssh-keyscan in tests.
 	Keyscan Keyscan
 	// NoTerminalLogin is set by full-screen frontends: a temporary admin
@@ -33,6 +36,7 @@ type Service struct {
 
 	agent adminAgent
 	full  fullAccess
+	owner ownerCache
 }
 
 // New loads config.json from dirs.Data.

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"valise/client/config"
 	"valise/core/revive"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
@@ -204,5 +205,65 @@ func TestReviveWithProfileFromSnapshot(t *testing.T) {
 	res, err := s.ExecuteRevive(ctx, rp, "", func(*revive.StageVerifyResult) bool { return true })
 	if err != nil || res.State != revive.StateRestored || readFile(t, filepath.Join(home, ".demo/memory/a.md")) != "m" {
 		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+// A landing on a server with tiers runs on the daily key: the passphrase
+// given for the plan proves the owner, stage-write runs with porter's
+// one-time grant, and no admin login is needed (docs/ARCHITECTURE.md 2.2).
+func TestRollbackOnDailyKey(t *testing.T) {
+	s, _, home := addVPS(t, "")
+	ctx := context.Background()
+	for rel, body := range map[string]string{
+		".demo/demo.json": "{}", ".demo/.env": "K=v", ".demo/memory/a.md": "m", ".demo/notes/x.md": "n",
+		".local/bin/demo": "#!/bin/sh\necho demo 1.0\n",
+	} {
+		p := filepath.Join(home, rel)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(body), 0o755)
+	}
+	os.MkdirAll(filepath.Join(s.Dirs.Data, "profiles"), 0o755)
+	// Still a draft (a pending rule), but its landing was tested: no
+	// consent needed (docs/PROFILES.md 1.2).
+	tested := demoProfile + "capabilities:\n  restore: { status: tested, versions: [\"1.0\"], env: \"fake host\" }\n"
+	os.WriteFile(filepath.Join(s.Dirs.Data, "profiles", "demo.yaml"), []byte(tested), 0o644)
+	if _, err := s.KeyInit(pass); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.KeyRegister(ctx, "vps", "test"); err != nil {
+		t.Fatal(err)
+	}
+	s.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
+	if _, err := s.Enroll(ctx, "vps", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := s.Seal(ctx, "vps", vaultrpc.SealParams{InstanceID: "demo", Tier: vault.TierSoul})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// From here any admin login fails, and the owner is only proved by
+	// the plan's passphrase.
+	list, _ := config.LoadServerList(s.Dirs.Data)
+	list[0].Login, list[0].LoginKey = config.LoginKey, s.keyPath("vps", "nonexistent")
+	config.SaveServerList(s.Dirs.Data, list)
+	s.ForgetOwner()
+	s.OwnerAuth.Passphrase = nil
+	os.WriteFile(filepath.Join(home, ".demo/memory/a.md"), []byte("changed after seal"), 0o644)
+
+	rp, err := s.PlanRevive(ctx, ReviveOptions{Target: "vps", SnapshotID: snap.SnapshotID, Mode: revive.ModeRollback}, pass)
+	if err != nil || len(rp.Blockers) > 0 {
+		t.Fatalf("%+v %v", rp.Blockers, err)
+	}
+	res, err := s.ExecuteRevive(ctx, rp, "", func(*revive.StageVerifyResult) bool { return true })
+	if err != nil || res.State != revive.StateRestored {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if readFile(t, filepath.Join(home, ".demo/memory/a.md")) != "m" {
+		t.Fatal("memory not rolled back")
+	}
+	// A week-old leftover may go at the owner tier; a fresh one needs
+	// developer mode (here: the failing admin login).
+	if _, err := s.PrevDrop(ctx, "vps", res.OpID); err == nil {
+		t.Fatal("fresh leftovers dropped without developer mode")
 	}
 }

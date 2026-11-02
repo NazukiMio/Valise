@@ -26,7 +26,7 @@ func (c *cli) changePort(ctx context.Context, host, instance, entry string, to i
 	if p.Draft {
 		fmt.Fprintln(c.out, "⚠ 这个 profile 未核实，改端口的命令可能不准确。")
 	}
-	fmt.Fprintln(c.out, "将在服务器上运行 harness 自己的命令（需要管理权限）：")
+	fmt.Fprintln(c.out, "将在服务器上运行 harness 自己的命令（需要开发者模式）：")
 	for _, st := range p.Steps {
 		fmt.Fprintf(c.out, "  %s\n", strings.Join(st, " "))
 	}

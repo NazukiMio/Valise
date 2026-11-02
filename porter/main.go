@@ -295,6 +295,15 @@ func serveForced(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err.Error()+"；需要管理权限的操作请用管理钥匙或服务器密码登录。")
 		return 126
 	}
+	if at, ok := forced.GrantSubcommands[words[0]]; ok {
+		args, token, has := forced.TakeGrant(words)
+		home, err := os.UserHomeDir()
+		if !has || err != nil || len(args) <= at || forced.Consume(home, token, args[0], args[at]) != nil {
+			fmt.Fprintln(stderr, forced.ErrGrant)
+			return 126
+		}
+		return run(args, stdin, stdout, stderr)
+	}
 	if words[0] == "rpc" {
 		if len(words) != 1 {
 			fmt.Fprintln(stderr, usage)

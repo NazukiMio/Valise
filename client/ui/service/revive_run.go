@@ -6,21 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"valise/client/porter"
 	"valise/client/ssh"
 	"valise/core/revive"
 	"valise/core/valise"
 )
-
-// callOn runs one RPC on a fresh porter session (env: fault injection).
-func (s *Service) callOn(ctx context.Context, t *ssh.Transport, porterPath string, env []string, method string, params, result any) error {
-	c, _, err := ssh.DialEnv(ctx, t, porterPath, s.Version, env)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-	return c.Call(ctx, method, params, result)
-}
 
 func faultEnv(fault string) []string {
 	if fault == "" {
@@ -47,20 +36,19 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 		return nil, &rp.Blockers[0]
 	}
 	plan := rp.Plan
-	// The user may have read the plan longer than the admin window: unlock
-	// again through the frontend before the plan's connection is reused.
-	if err := s.ensureAdmin(ctx, rp.Target); err != nil {
-		return nil, err
+	// A daily key gets a one-time grant to run stage-write for this op.
+	var begun struct {
+		Grant string `json:"grant"`
 	}
-	if err := s.callOn(ctx, rp.target, rp.porterP, nil, revive.MethodStageBegin, revive.StageBeginParams{Plan: plan}, nil); err != nil {
+	if err := s.callOwner(ctx, rp.target, nil, revive.MethodStageBegin, revive.StageBeginParams{Plan: plan}, &begun); err != nil {
 		return nil, err
 	}
 	back := func(why error) (*revive.SwapResult, error) {
 		var res revive.SwapResult
-		s.callOn(ctx, rp.target, rp.porterP, nil, revive.MethodResume, revive.ResumeParams{OpID: plan.OpID, Action: "back"}, &res)
+		s.callOwner(ctx, rp.target, nil, revive.MethodResume, revive.ResumeParams{OpID: plan.OpID, Action: "back"}, &res)
 		return &res, why
 	}
-	if err := s.streamStage(ctx, rp); err != nil {
+	if err := s.streamStage(ctx, rp, begun.Grant); err != nil {
 		return back(err)
 	}
 	var man []revive.ManifestEntry
@@ -70,7 +58,7 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 	}
 	report(ctx, StageVerify, 0, 0)
 	var ver revive.StageVerifyResult
-	if err := s.callOn(ctx, rp.target, rp.porterP, nil, revive.MethodStageVerify, revive.StageVerifyParams{OpID: plan.OpID, Manifest: man}, &ver); err != nil {
+	if err := s.callOwner(ctx, rp.target, nil, revive.MethodStageVerify, revive.StageVerifyParams{OpID: plan.OpID, Manifest: man}, &ver); err != nil {
 		return back(err)
 	}
 	if len(ver.Problems) > 0 {
@@ -80,25 +68,16 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 	if !confirm(&ver) {
 		return back(valise.New("cancelled", "已取消，活动目录未改动", "暂存目录保留，可用 valise prev drop 清理"))
 	}
-	if err := s.ensureAdmin(ctx, rp.Target); err != nil {
-		return back(err)
-	}
 	// From here on nothing may interrupt the swap (docs/UI.md section 6):
 	// a cancelled caller (Ctrl-C, a closed window) no longer cancels it.
 	ctx = context.WithoutCancel(ctx)
 	stopped := false
-	var source *ssh.Transport
-	var sourcePorter string
+	var source *ownerPorter
 	if rp.StopSource != "" {
-		// Stopping the source's service is an admin operation on the source.
-		t, done, err := s.adminTransport(ctx, rp.From)
-		if err == nil {
-			defer done()
-			var src *porter.Found
-			if src, err = porter.Probe(ctx, t); err == nil {
-				source, sourcePorter = t, src.Path
-				err = s.callOn(ctx, source, sourcePorter, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "stop"}, nil)
-			}
+		// Stopping the source's service is an owner operation there.
+		var err error
+		if source, err = s.ownerPorter(ctx, rp.From); err == nil {
+			err = s.callOwner(ctx, source, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "stop"}, nil)
 		}
 		if err != nil {
 			return back(valise.New("source_stop_failed", "无法停止原服务器上的 "+rp.StopSource, "手动停止后重试；独占凭据不能两边同时使用").WithDetail(err.Error()))
@@ -107,9 +86,9 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 	}
 	report(ctx, StageSwap, 0, 0)
 	var res revive.SwapResult
-	err := s.callOn(ctx, rp.target, rp.porterP, faultEnv(fault), revive.MethodSwap, revive.OpParams{OpID: plan.OpID}, &res)
+	err := s.callOwner(ctx, rp.target, faultEnv(fault), revive.MethodSwap, revive.OpParams{OpID: plan.OpID}, &res)
 	if stopped && (err != nil || res.State == revive.StateRolledBack) {
-		if s.callOn(ctx, source, sourcePorter, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "start"}, nil) == nil {
+		if s.callOwner(ctx, source, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "start"}, nil) == nil {
 			res.Message += "；已重新启动原服务器上的 " + rp.StopSource
 		}
 	}
@@ -119,8 +98,12 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 // streamStage decrypts the snapshot in memory and streams it as tar into
 // `porter stage-write`. Plaintext exists only in this process and in the
 // target's stage directory.
-func (s *Service) streamStage(ctx context.Context, rp *RevivePlan) error {
-	cmd, err := rp.target.Command(ssh.Quote(rp.porterP) + " stage-write --op " + rp.Plan.OpID)
+func (s *Service) streamStage(ctx context.Context, rp *RevivePlan, grant string) error {
+	remote := ssh.Quote(rp.target.path) + " stage-write --op " + rp.Plan.OpID
+	if grant != "" {
+		remote += " --grant " + grant
+	}
+	cmd, err := rp.target.t.Command(remote)
 	if err != nil {
 		return err
 	}
@@ -163,17 +146,12 @@ func (s *Service) streamStage(ctx context.Context, rp *RevivePlan) error {
 
 // ReviveResume continues or backs out an unfinished operation.
 func (s *Service) ReviveResume(ctx context.Context, host, op, action, fault string) (*revive.SwapResult, error) {
-	t, done, err := s.adminTransport(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-	defer done()
-	found, err := porter.Probe(ctx, t)
+	o, err := s.ownerPorter(ctx, host)
 	if err != nil {
 		return nil, err
 	}
 	var res revive.SwapResult
-	err = s.callOn(ctx, t, found.Path, faultEnv(fault), revive.MethodResume, revive.ResumeParams{OpID: op, Action: action}, &res)
+	err = s.callOwner(ctx, o, faultEnv(fault), revive.MethodResume, revive.ResumeParams{OpID: op, Action: action}, &res)
 	return &res, err
 }
 

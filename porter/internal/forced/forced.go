@@ -79,7 +79,14 @@ func Daily(cmdline string) ([]string, error) {
 	if err != nil {
 		return nil, ErrNotAllowed
 	}
-	if len(words) < 2 || path.Base(words[0]) != "valise-porter" || !DailySubcommands[words[1]] {
+	if len(words) < 2 || path.Base(words[0]) != "valise-porter" {
+		return nil, ErrNotAllowed
+	}
+	if _, granted := GrantSubcommands[words[1]]; granted {
+		if _, _, ok := TakeGrant(words[1:]); !ok {
+			return nil, ErrNotAllowed
+		}
+	} else if !DailySubcommands[words[1]] {
 		return nil, ErrNotAllowed
 	}
 	return words[1:], nil

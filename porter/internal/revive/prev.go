@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"valise/core/revive"
 	"valise/core/valise"
@@ -105,6 +106,19 @@ func OldCleanup(s Store, id string) ([]string, error) {
 		return removed, err
 	}
 	return append(removed, porterenroll.RecordPath(s.Home, id), porterenroll.ProfilePath(s.Home, id)), nil
+}
+
+// Finished returns when a finished operation ended (its leftovers were
+// made then).
+func Finished(s Store, op string) (time.Time, error) {
+	j, err := s.Load(op)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if !revive.Final(j.State) || len(j.History) == 0 {
+		return time.Time{}, valise.New("op_unfinished", "操作 "+op+" 还没有结束", "先用 valise revive resume 处理")
+	}
+	return j.History[len(j.History)-1].At, nil
 }
 
 // PrevDrop deletes the leftovers of one finished operation. It runs only on

@@ -33,8 +33,19 @@ func (c *cli) printStep(s service.SetupStep) {
 func (c *cli) adminPassphrase(host string) (string, error) {
 	p, err := c.passphrase(host + " 的管理口令：")
 	if err != nil {
-		return "", valise.New("admin_locked", "这一步需要管理权限，但没有读到 "+host+" 的管理口令",
+		return "", valise.New("admin_locked", "这一步需要开发者模式，但没有读到 "+host+" 的管理口令",
 			"在终端里运行并按提示输入；脚本中可以从标准输入传入管理口令")
+	}
+	return p, nil
+}
+
+// ownerPassphrase reads the Valise passphrase that proves the owner
+// (docs/ARCHITECTURE.md 2.2).
+func (c *cli) ownerPassphrase(host string) (string, error) {
+	p, err := c.passphrase("Valise 口令（确认是你本人，" + host + "）：")
+	if err != nil {
+		return "", valise.New("owner_locked", "这一步需要确认是你本人，但没有读到 Valise 口令",
+			"在终端里运行并按提示输入；脚本中可以从标准输入传入")
 	}
 	return p, nil
 }
@@ -111,7 +122,7 @@ func (c *cli) serverAddByHand(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.out, "已添加 %s。日常操作用日常钥匙；需要管理权限时，", srv.Name)
+	fmt.Fprintf(c.out, "已添加 %s。日常操作用日常钥匙；需要开发者模式时，", srv.Name)
 	if *adminKey {
 		fmt.Fprintln(c.out, "Valise 会询问管理口令。")
 	} else {
@@ -143,7 +154,7 @@ func (c *cli) serverAdminKey(ctx context.Context, args []string) error {
 	if err := c.svc.CreateAdminKey(ctx, pos[0], pass); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.out, "已为 %s 创建管理钥匙。以后需要管理权限时输入管理口令，%d 分钟内不再询问（仅限同一个 Valise 进程）。\n", pos[0], int(c.svc.AdminWindow().Minutes()))
+	fmt.Fprintf(c.out, "已为 %s 创建管理钥匙。以后需要开发者模式时输入管理口令，%d 分钟内不再询问（仅限同一个 Valise 进程）。\n", pos[0], int(c.svc.AdminWindow().Minutes()))
 	return nil
 }
 

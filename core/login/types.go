@@ -45,6 +45,9 @@ type PrepareParams struct {
 type PrepareResult struct {
 	Session string   `json:"session"`
 	Argv    []string `json:"argv"`
+	// Grant lets the daily key run login-run for this session once
+	// (docs/ARCHITECTURE.md 2.2); empty on a full login.
+	Grant string `json:"grant,omitempty"`
 }
 
 // SessionParams names a session.

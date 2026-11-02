@@ -11,6 +11,7 @@ import (
 
 	"valise/client/config"
 	"valise/client/ssh"
+	"valise/core/install"
 	"valise/core/rpc"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
@@ -112,6 +113,8 @@ func TestAddServerByHand(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = c.Call(ctx, vaultrpc.MethodPeriodSet, vaultrpc.PeriodSetParams{InstanceID: "x", Setting: vault.PeriodSetting{Unit: vault.UnitWeek, TZ: "UTC"}}, nil)
+	wantCode(t, err, rpc.OwnerRequiredCode)
+	err = c.Call(ctx, install.MethodCheck, install.CheckParams{}, nil)
 	c.Close()
 	wantCode(t, err, rpc.AdminRequiredCode)
 	res, err := tr.Run(ctx, "id", nil)
@@ -121,8 +124,31 @@ func TestAddServerByHand(t *testing.T) {
 
 	// An admin method opens its own temporary login (no admin key: the
 	// password, which the fake host accepts).
-	if err := s.PeriodSet(ctx, "vps", "x", vault.PeriodSetting{Unit: vault.UnitWeek, TZ: "UTC"}); err != nil {
+	if err := s.call(ctx, "vps", install.MethodCheck, install.CheckParams{}, nil); err != nil {
 		t.Fatal(err)
+	}
+	// An owner method stays on the daily key once the Valise passphrase
+	// opens porter's challenge (docs/ARCHITECTURE.md 2.2).
+	if _, err := s.KeyInit(pass); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.KeyRegister(ctx, "vps", "laptop"); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, s.PeriodSet(ctx, "vps", "x", vault.PeriodSetting{Unit: vault.UnitWeek, TZ: "UTC"}), "owner_locked")
+	s.OwnerAuth.Passphrase = func(string) (string, error) { return "wrong passphrase!!", nil }
+	if err := s.PeriodSet(ctx, "vps", "x", vault.PeriodSetting{Unit: vault.UnitWeek, TZ: "UTC"}); err == nil {
+		t.Fatal("wrong Valise passphrase accepted")
+	}
+	asked := 0
+	s.OwnerAuth.Passphrase = func(string) (string, error) { asked++; return pass, nil }
+	for range 2 {
+		if err := s.PeriodSet(ctx, "vps", "x", vault.PeriodSetting{Unit: vault.UnitWeek, TZ: "UTC"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if asked != 1 {
+		t.Fatalf("asked %d times", asked)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".config", "valise", "instances", "x.vault.json")); err != nil {
 		t.Fatal(err)
@@ -140,8 +166,8 @@ func TestAdminKey(t *testing.T) {
 	if !s.HasAdminKey("vps") || !s.AdminUnlocked(ctx, "vps") {
 		t.Fatal("admin key should be created and unlocked")
 	}
-	setting := vault.PeriodSetting{Unit: vault.UnitWeek, TZ: "UTC"}
-	if err := s.PeriodSet(ctx, "vps", "x", setting); err != nil {
+	admin := func() error { return s.call(ctx, "vps", install.MethodCheck, install.CheckParams{}, nil) }
+	if err := admin(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -150,16 +176,16 @@ func TestAdminKey(t *testing.T) {
 	if s.AdminUnlocked(ctx, "vps") {
 		t.Fatal("still unlocked")
 	}
-	wantCode(t, s.PeriodSet(ctx, "vps", "x", setting), "admin_locked")
+	wantCode(t, admin(), "admin_locked")
 	// A wrong passphrase does not unlock.
 	s.AdminAuth.Passphrase = func(string) (string, error) { return "wrong passphrase!!", nil }
-	wantCode(t, s.PeriodSet(ctx, "vps", "x", setting), "admin_passphrase_wrong")
+	wantCode(t, admin(), "admin_passphrase_wrong")
 	asked := 0
 	s.AdminAuth.Passphrase = func(string) (string, error) { asked++; return adminPass, nil }
-	if err := s.PeriodSet(ctx, "vps", "x", setting); err != nil {
+	if err := admin(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PeriodSet(ctx, "vps", "x", setting); err != nil || asked != 1 {
+	if err := admin(); err != nil || asked != 1 {
 		t.Fatalf("asked %d times: %v", asked, err)
 	}
 	s.AdminAuth.Passphrase = func(string) (string, error) { return "", errors.New("cancelled") }
@@ -176,7 +202,7 @@ func TestAdminKey(t *testing.T) {
 		t.Fatalf("%d %v", n, err)
 	}
 	s.AdminAuth.Passphrase = func(string) (string, error) { return "new admin passphrase", nil }
-	if err := s.PeriodSet(ctx, "vps", "x", setting); err != nil {
+	if err := admin(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -217,9 +243,14 @@ func TestFirstRecipientOnDailyKey(t *testing.T) {
 	if b, _ := os.ReadFile(recipients); !strings.Contains(string(b), "age1") {
 		t.Fatalf("recipients: %s", b)
 	}
-	// A second registration needs an admin login, which now fails.
+	// A second registration needs the owner: the daily key plus the
+	// Valise passphrase, no admin login.
 	_, _, err := s.KeyRegister(ctx, "vps", "laptop")
-	wantCode(t, err, "ssh_auth_failed")
+	wantCode(t, err, "owner_locked")
+	s.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
+	if _, _, err := s.KeyRegister(ctx, "vps", "laptop"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestInstallKeysKeepsOtherClients(t *testing.T) {

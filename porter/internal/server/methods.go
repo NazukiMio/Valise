@@ -23,6 +23,10 @@ import (
 type session struct {
 	cfg Config
 	env *porterenroll.Env
+	// challenge is the pending owner nonce; owner is set once it was
+	// returned (owner.go).
+	challenge []byte
+	owner     bool
 }
 
 // daily reports whether this connection came in on the daily key.
@@ -119,7 +123,9 @@ func init() {
 				return nil, err
 			}
 			if len(have) > 0 {
-				return nil, rpc.AdminRequired(vaultrpc.MethodRecipientAdd)
+				if err := s.require(rpc.TierOwner, vaultrpc.MethodRecipientAdd); err != nil {
+					return nil, err
+				}
 			}
 		}
 		added, all, err := seal.AddRecipient(paths(s), p.Recipient, p.Label)
@@ -171,6 +177,17 @@ func init() {
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
 		}
+		st, err := seal.Status(paths(s))
+		if err != nil {
+			return nil, err
+		}
+		tier := rpc.TierAdmin
+		if leafFoundElsewhere(st, p.Leaf) {
+			tier = rpc.TierOwner
+		}
+		if err := s.require(tier, vaultrpc.MethodLeafDelete); err != nil {
+			return nil, err
+		}
 		return seal.DeleteLeaf(paths(s), p.Leaf, vaultrpc.InitiatorClient)
 	}
 	methods[vaultrpc.MethodTimerSet] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
@@ -205,6 +222,17 @@ func init() {
 		var p vaultrpc.TargetLeafDeleteParams
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
+		}
+		st, err := seal.Status(paths(s))
+		if err != nil {
+			return nil, err
+		}
+		tier := rpc.TierAdmin
+		if leafOnServer(st, p.Leaf) {
+			tier = rpc.TierOwner
+		}
+		if err := s.require(tier, vaultrpc.MethodTargetLeafDel); err != nil {
+			return nil, err
 		}
 		return struct{}{}, seal.TargetLeafDelete(ctx, s.loginEnv(ctx), paths(s), p.Target, p.Leaf, vaultrpc.InitiatorClient)
 	}
@@ -263,8 +291,8 @@ func (s *session) call(ctx context.Context, req rpc.Request) rpc.Response {
 	if !ok {
 		return errorResponse(req.ID, rpc.CodeMethodNotFound, "method not found: "+req.Method, nil)
 	}
-	if s.daily() && rpc.TierOf(req.Method) != rpc.TierDaily {
-		ue := rpc.AdminRequired(req.Method)
+	if err := s.require(rpc.TierOf(req.Method), req.Method); err != nil {
+		ue := err.(*valise.UserError)
 		return errorResponse(req.ID, rpc.CodeUserError, ue.Code, ue)
 	}
 	res, err := h(s, ctx, req.Params)

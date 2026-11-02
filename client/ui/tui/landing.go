@@ -77,7 +77,7 @@ func (r *reviveScreen) title() string { return "逃生舱着陆" }
 func (r *reviveScreen) help() string {
 	switch r.step {
 	case rvOptions:
-		return menu("m", "着陆方式", "t", "目标服务器", "d", "允许未核实 profile", "s", "允许快照里的 profile", "enter", "输入口令并出计划")
+		return menu("m", "着陆方式", "t", "目标服务器", "d", "允许着陆未测试的 profile", "s", "允许快照里的 profile", "enter", "输入口令并出计划")
 	case rvPlan:
 		if len(r.plan.Blockers) > 0 {
 			return errStyle.Render("计划无法执行") + "   " + menu("b", "返回修改选项")
@@ -252,7 +252,7 @@ func (r *reviveScreen) view(m *Model) string {
 		r.snap.CreatedAt.Local().Format("2006-01-02 15:04"), tierNames[r.snap.Tier], r.from)
 	fmt.Fprintf(&b, "着陆方式：%s  ·  目标服务器：%s", accStyle.Render(modeNames[r.opts.Mode]), r.opts.Target)
 	if r.opts.AllowDraft {
-		b.WriteString("  ·  " + warnStyle.Render("允许未核实 profile"))
+		b.WriteString("  ·  " + warnStyle.Render("允许着陆未测试的 profile"))
 	}
 	if r.opts.AllowSnapshotProfile {
 		b.WriteString("  ·  " + warnStyle.Render("允许快照里的 profile"))
@@ -345,7 +345,7 @@ func planText(rp *service.RevivePlan) string {
 	for _, w := range rp.Warnings {
 		b.WriteString(warnStyle.Render("· "+w) + "\n")
 	}
-	tuiHint := map[string]string{"profile_draft": "按 b 返回，按 d 允许未核实 profile 后重新出计划",
+	tuiHint := map[string]string{"profile_draft": "按 b 返回，按 d 允许着陆未测试的 profile 后重新出计划",
 		"profile_from_snapshot": "按 b 返回，按 s 允许使用逃生舱里保存的 profile 后重新出计划"}
 	for _, bl := range rp.Blockers {
 		hint := bl.Suggestion

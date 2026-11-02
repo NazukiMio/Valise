@@ -307,9 +307,24 @@ type SecretPick struct {
 	URLParam  string `yaml:"url_param" json:"url_param,omitempty"`
 }
 
-// NeedsAdmin reports whether running a needs an admin login.
+// NeedsAdmin reports whether running a needs more than the daily key.
 func (a Action) NeedsAdmin() bool {
-	return a.Risk != RiskRead || a.Output == OutputSecret || a.Terminal
+	return a.AccessTier() != "daily"
+}
+
+// AccessTier is the access level running a needs (docs/ARCHITECTURE.md
+// 2.2; the values of core/rpc's Tier): read actions without secret output
+// run on the daily key, manage actions and secret reads need the owner
+// proof, config and danger actions and anything in a terminal need
+// developer mode.
+func (a Action) AccessTier() string {
+	switch {
+	case a.Terminal || a.Risk == RiskConfig || a.Risk == RiskDanger:
+		return "admin"
+	case a.Risk == RiskManage || a.Output == OutputSecret:
+		return "owner"
+	}
+	return "daily"
 }
 
 // FindAction returns the action with id, or nil.

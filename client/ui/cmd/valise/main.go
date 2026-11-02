@@ -142,6 +142,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	}
 	if err == nil {
 		c.svc.AdminAuth.Passphrase = c.adminPassphrase
+		c.svc.OwnerAuth.Passphrase = c.ownerPassphrase
 		err = c.dispatch(ctx, args)
 		c.svc.Close()
 	}

@@ -11,9 +11,29 @@ const (
 	// admin methods.
 	TierDaily Tier = "daily"
 	// TierAdmin is a full login (admin key, temporary login, or the user's
-	// own key).
+	// own key): developer mode.
 	TierAdmin Tier = "admin"
+	// TierOwner is a method class, not a connection: a daily session runs
+	// it after proving the Valise passphrase (owner_challenge, owner_prove).
+	TierOwner Tier = "owner"
 )
+
+// Owner proof methods (docs/ARCHITECTURE.md 2.2).
+const (
+	MethodOwnerChallenge = "owner_challenge"
+	MethodOwnerProve     = "owner_prove"
+)
+
+// OwnerChallengeResult is a random nonce encrypted with age to the
+// server's recipients.
+type OwnerChallengeResult struct {
+	Ciphertext []byte `json:"ciphertext"`
+}
+
+// OwnerProveParams returns the decrypted nonce.
+type OwnerProveParams struct {
+	Nonce []byte `json:"nonce"`
+}
 
 // dailyMethods are allowed on the daily tier: reads, sealing and syncing.
 var dailyMethods = map[string]bool{
@@ -40,54 +60,65 @@ var dailyMethods = map[string]bool{
 	// Appending an audit entry after an admin operation must not need the
 	// admin window again; it changes nothing protected.
 	"install_audit": true,
-}
-
-// conditionalMethods are allowed on the daily tier only in a state the
-// handler checks: recipient_add while the server has no recipient yet,
-// action_run for read actions without secret output.
-var conditionalMethods = map[string]bool{
-	"recipient_add": true,
-	// Read actions without secret output run on the daily tier; the
-	// handler refuses the others (docs/INSTALL.md section 5).
-	"action_run": true,
-}
-
-// adminMethods change what is protected, where it goes, or the harness
-// itself. Listed explicitly so a new method has to be classified.
-var adminMethods = map[string]bool{
-	"instance_write":     true,
-	"entry_port_set":     true,
-	"recipient_remove":   true,
-	"target_set":         true,
-	"target_leaf_delete": true,
-	"leaf_delete":        true,
+	// Naming is allowed once; porter refuses to rename.
 	"server_name_set":    true,
-	"period_set":         true,
-	"timer_set":          true,
-	"proposals_decide":   true,
-	"kit_install":        true,
-	"kit_uninstall":      true,
-	"login_prepare":      true,
-	"login_urls":         true,
-	"login_end":          true,
-	"entry_auth":         true,
-	"revive_inspect":     true,
-	"stage_begin":        true,
-	"stage_verify":       true,
-	"swap":               true,
-	"revive_resume":      true,
+	MethodOwnerChallenge: true,
+	MethodOwnerProve:     true,
+}
+
+// conditionalMethods reach their handler on the daily tier, which picks the
+// tier from the request and server state (session.require): recipient_add
+// (the first recipient is daily, more need the owner), action_run (by the
+// action's risk, docs/INSTALL.md section 5) and the deletions (owner when
+// what is deleted can still be found elsewhere, developer mode otherwise).
+var conditionalMethods = map[string]bool{
+	"recipient_add":      true,
+	"action_run":         true,
+	"leaf_delete":        true,
+	"target_leaf_delete": true,
 	"prev_drop":          true,
-	"old_cleanup":        true,
-	"service_control":    true,
-	"install_check":      true,
+}
+
+// ownerMethods are basic operations that write into the agent or change
+// where backups go: the daily key plus the owner proof.
+var ownerMethods = map[string]bool{
+	"instance_write":   true,
+	"target_set":       true,
+	"period_set":       true,
+	"timer_set":        true,
+	"proposals_decide": true,
+	"kit_install":      true,
+	"kit_uninstall":    true,
+	"login_prepare":    true,
+	"login_urls":       true,
+	"login_end":        true,
+	"entry_auth":       true,
+	"revive_inspect":   true,
+	"stage_begin":      true,
+	"stage_verify":     true,
+	"swap":             true,
+	"revive_resume":    true,
+	"service_control":  true,
+}
+
+// adminMethods carry security risks: developer mode. Listed explicitly so
+// a new method has to be classified.
+var adminMethods = map[string]bool{
+	"entry_port_set":   true,
+	"recipient_remove": true,
+	"old_cleanup":      true,
+	"install_check":    true,
 }
 
 // TierOf returns the tier a method needs. Conditional methods report
 // TierDaily; their handler refuses when the condition does not hold.
 // Unclassified methods need TierAdmin.
 func TierOf(method string) Tier {
-	if dailyMethods[method] || conditionalMethods[method] {
+	switch {
+	case dailyMethods[method] || conditionalMethods[method]:
 		return TierDaily
+	case ownerMethods[method]:
+		return TierOwner
 	}
 	return TierAdmin
 }
@@ -98,15 +129,25 @@ func Conditional(method string) bool { return conditionalMethods[method] }
 
 // Classified reports whether a method is listed in one of the tiers.
 func Classified(method string) bool {
-	return dailyMethods[method] || conditionalMethods[method] || adminMethods[method]
+	return dailyMethods[method] || conditionalMethods[method] || ownerMethods[method] || adminMethods[method]
 }
 
 // AdminRequiredCode is the UserError code for a method refused on the daily
 // tier.
 const AdminRequiredCode = "admin_required"
 
+// OwnerRequiredCode is the UserError code for an owner method on a daily
+// session that has not proved the Valise passphrase.
+const OwnerRequiredCode = "owner_required"
+
+// OwnerRequired is the error for an owner method without the proof.
+func OwnerRequired(method string) *valise.UserError {
+	return valise.New(OwnerRequiredCode, "这一步需要确认是你本人（"+method+"）",
+		"输入 Valise 口令后重试；Valise 会在需要时询问")
+}
+
 // AdminRequired is the error a daily porter returns for an admin method.
 func AdminRequired(method string) *valise.UserError {
-	return valise.New(AdminRequiredCode, "这一步需要管理权限（"+method+"）",
+	return valise.New(AdminRequiredCode, "这一步需要开发者模式（"+method+"）",
 		"用管理钥匙或服务器密码登录后重试；Valise 会在需要时询问")
 }

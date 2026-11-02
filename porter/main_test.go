@@ -1,16 +1,20 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+
+	"filippo.io/age"
 
 	"valise/core/enroll"
 	"valise/core/profile"
@@ -69,13 +73,21 @@ func TestServeDaily(t *testing.T) {
 	code, out, _ := call(`'$HOME/.local/bin/valise-porter' rpc`, hello+
 		`{"jsonrpc":"2.0","id":2,"method":"vault_status","params":{}}`+"\n"+
 		`{"jsonrpc":"2.0","id":3,"method":"timer_set","params":{}}`+"\n"+
-		`{"jsonrpc":"2.0","id":4,"method":"made_up","params":{}}`+"\n")
+		`{"jsonrpc":"2.0","id":4,"method":"made_up","params":{}}`+"\n"+
+		`{"jsonrpc":"2.0","id":5,"method":"old_cleanup","params":{}}`+"\n")
 	if code != 0 {
 		t.Fatalf("exit %d", code)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 4 || strings.Contains(lines[1], rpc.AdminRequiredCode) || !strings.Contains(lines[2], rpc.AdminRequiredCode) || !strings.Contains(lines[3], "method not found") {
+	if len(lines) != 5 || strings.Contains(lines[1], "error") || !strings.Contains(lines[2], rpc.OwnerRequiredCode) ||
+		!strings.Contains(lines[3], "method not found") || !strings.Contains(lines[4], rpc.AdminRequiredCode) {
 		t.Fatalf("%q", lines)
+	}
+	if code, _, _ := call("valise-porter stage-write --op x", ""); code != 126 {
+		t.Fatalf("stage-write without a grant: %d", code)
+	}
+	if code, _, errs := call("valise-porter stage-write --op x --grant "+strings.Repeat("ab", 24), ""); code != 126 || !strings.Contains(errs, "许可") {
+		t.Fatalf("stage-write with a made-up grant: %d %q", code, errs)
 	}
 	if code, _, errs := call("sh -c id", ""); code != 126 || !strings.Contains(errs, "日常操作") {
 		t.Fatalf("shell: %d %q", code, errs)
@@ -105,7 +117,7 @@ func TestDailyFirstRecipientOnly(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 3 || !strings.Contains(lines[1], `"added":true`) || !strings.Contains(lines[2], rpc.AdminRequiredCode) {
+	if len(lines) != 3 || !strings.Contains(lines[1], `"added":true`) || !strings.Contains(lines[2], rpc.OwnerRequiredCode) {
 		t.Fatalf("%q", lines)
 	}
 }
@@ -119,6 +131,7 @@ func TestActionTiers(t *testing.T) {
 		{ID: "hello", Name: "h", Explain: "e", Risk: profile.RiskRead, Argv: profile.Argv{"/bin/echo", "hi"}, Output: profile.OutputText},
 		{ID: "token", Name: "t", Explain: "e", Risk: profile.RiskRead, Argv: profile.Argv{"/bin/echo", "tok-1"}, Output: profile.OutputSecret, Secret: &profile.SecretPick{}},
 		{ID: "restart", Name: "r", Explain: "e", Risk: profile.RiskManage, Argv: profile.Argv{"/bin/echo", "x"}, Output: profile.OutputNone},
+		{ID: "reset", Name: "x", Explain: "e", Risk: profile.RiskDanger, Argv: profile.Argv{"/bin/echo", "x"}, Output: profile.OutputNone},
 	}}
 	if _, err := porterenroll.WriteRecord(home, enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1}, p); err != nil {
 		t.Fatal(err)
@@ -126,15 +139,16 @@ func TestActionTiers(t *testing.T) {
 	call := func(id int, action string) string {
 		return `{"jsonrpc":"2.0","id":` + strconv.Itoa(id) + `,"method":"action_run","params":{"instance_id":"demo","action_id":"` + action + `"}}` + "\n"
 	}
-	in := `{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol":"1.2"}}` + "\n" + call(2, "hello") + call(3, "token") + call(4, "restart") + call(5, "nope")
+	in := `{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol":"1.2"}}` + "\n" + call(2, "hello") + call(3, "token") + call(4, "restart") + call(5, "nope") + call(6, "reset")
 	var out, errb bytes.Buffer
 	t.Setenv("SSH_ORIGINAL_COMMAND", "valise-porter rpc")
 	if code := run([]string{"serve", "--tier", "daily"}, strings.NewReader(in), &out, &errb); code != 0 {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 5 || !strings.Contains(lines[1], `"output":"hi"`) || !strings.Contains(lines[2], rpc.AdminRequiredCode) ||
-		!strings.Contains(lines[3], rpc.AdminRequiredCode) || !strings.Contains(lines[4], "action_unknown") || strings.Contains(out.String(), "tok-1") {
+	if len(lines) != 6 || !strings.Contains(lines[1], `"output":"hi"`) || !strings.Contains(lines[2], rpc.OwnerRequiredCode) ||
+		!strings.Contains(lines[3], rpc.OwnerRequiredCode) || !strings.Contains(lines[4], "action_unknown") ||
+		!strings.Contains(lines[5], rpc.AdminRequiredCode) || strings.Contains(out.String(), "tok-1") {
 		t.Fatalf("daily: %q", lines)
 	}
 	out.Reset()
@@ -146,7 +160,60 @@ func TestActionTiers(t *testing.T) {
 		t.Fatalf("admin: %q", lines)
 	}
 	audit, _ := os.ReadFile(filepath.Join(home, ".local/state/valise/audit.jsonl"))
-	if strings.Contains(string(audit), "tok-1") || strings.Count(string(audit), `"op":"action"`) != 4 {
+	if strings.Contains(string(audit), "tok-1") || strings.Count(string(audit), `"op":"action"`) != 5 {
 		t.Fatalf("audit: %s", audit)
+	}
+}
+
+// The owner proof: a daily session that opens the age-encrypted nonce may
+// run owner methods; a wrong answer does not (docs/ARCHITECTURE.md 2.2).
+func TestOwnerProof(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SSH_ORIGINAL_COMMAND", "valise-porter rpc")
+	id, _ := age.GenerateX25519Identity()
+	os.MkdirAll(filepath.Join(home, ".config/valise"), 0o700)
+	os.WriteFile(filepath.Join(home, ".config/valise/recipients.txt"), []byte(id.Recipient().String()+"\n"), 0o600)
+
+	session := func(answer func(ct []byte) []byte) []string {
+		inR, inW := io.Pipe()
+		outR, outW := io.Pipe()
+		go func() {
+			run([]string{"serve", "--tier", "daily"}, inR, outW, io.Discard)
+			outW.Close()
+		}()
+		lines := bufio.NewScanner(outR)
+		lines.Buffer(nil, 1<<20)
+		send := func(l string) string {
+			io.WriteString(inW, l+"\n")
+			lines.Scan()
+			return lines.Text()
+		}
+		send(`{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol":"1.2"}}`)
+		var ch struct {
+			Result rpc.OwnerChallengeResult `json:"result"`
+		}
+		json.Unmarshal([]byte(send(`{"jsonrpc":"2.0","id":2,"method":"owner_challenge","params":{}}`)), &ch)
+		nonce, _ := json.Marshal(rpc.OwnerProveParams{Nonce: answer(ch.Result.Ciphertext)})
+		out := []string{send(`{"jsonrpc":"2.0","id":3,"method":"owner_prove","params":` + string(nonce) + `}`),
+			send(`{"jsonrpc":"2.0","id":4,"method":"period_set","params":{"instance_id":"demo","setting":{"unit":"month","tz":"UTC"}}}`),
+			send(`{"jsonrpc":"2.0","id":5,"method":"old_cleanup","params":{"instance_id":"demo"}}`)}
+		inW.Close()
+		return out
+	}
+	good := session(func(ct []byte) []byte {
+		r, err := age.Decrypt(bytes.NewReader(ct), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(r)
+		return b
+	})
+	if strings.Contains(good[0], "error") || strings.Contains(good[1], rpc.OwnerRequiredCode) || !strings.Contains(good[2], rpc.AdminRequiredCode) {
+		t.Fatalf("proved: %q", good)
+	}
+	bad := session(func([]byte) []byte { return make([]byte, 32) })
+	if !strings.Contains(bad[0], "owner_proof_wrong") || !strings.Contains(bad[1], rpc.OwnerRequiredCode) {
+		t.Fatalf("wrong answer: %q", bad)
 	}
 }

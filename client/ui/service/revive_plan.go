@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"filippo.io/age"
 
-	"valise/client/porter"
-	"valise/client/ssh"
 	"valise/core/enroll"
 	"valise/core/profile"
 	"valise/core/revive"
@@ -56,14 +55,12 @@ type RevivePlan struct {
 	Warnings            []string           `json:"warnings,omitempty"`
 	Blockers            []valise.UserError `json:"blockers,omitempty"`
 
-	files   []vault.File
-	links   []vault.Symlink
-	sqlite  map[string]bool
-	vault   *vault.Vault
-	ident   age.Identity
-	target  *ssh.Transport
-	done    func()
-	porterP string
+	files  []vault.File
+	links  []vault.Symlink
+	sqlite map[string]bool
+	vault  *vault.Vault
+	ident  age.Identity
+	target *ownerPorter
 }
 
 func (p *RevivePlan) block(code, reason, suggestion string) {
@@ -76,14 +73,9 @@ func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase st
 	return s.planRevive(ctx, o, passphrase)
 }
 
-// Close ends the plan's admin connection to the target. Call it once the
-// plan is executed or abandoned.
-func (p *RevivePlan) Close() {
-	if p.done != nil {
-		p.done()
-		p.done = nil
-	}
-}
+// Close releases the plan. Call it once the plan is executed or
+// abandoned.
+func (p *RevivePlan) Close() {}
 
 func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase string) (rp *RevivePlan, err error) {
 	if o.From == "" {
@@ -126,6 +118,9 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if err != nil {
 		return nil, err
 	}
+	// The passphrase just given also proves the owner for the landing
+	// (docs/ARCHITECTURE.md 2.2): no second prompt.
+	s.rememberOwner(id)
 	v, err := vault.Open(pull.Dir)
 	if err != nil {
 		return nil, err
@@ -159,8 +154,11 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		return nil, valise.New("profile_version", fmt.Sprintf("快照使用 profile %s v%d，客户端中没有同一版本，快照里也没有保存副本", head.Profile.ID, head.Profile.Version),
 			"升级客户端，或用当前 profile 重新接入并建立逃生舱后再着陆")
 	}
-	if prof.Status != profile.StatusVerified && !o.AllowDraft {
-		rp.block("profile_draft", "profile "+prof.ID+" 仍是 draft（未核实），复活需要显式同意", "确认风险后加上 --allow-draft-profile")
+	// Landing is judged by the restore capability alone (docs/PROFILES.md
+	// 1.2), not by the profile's overall draft status.
+	if st := prof.CapabilityStatus("restore"); st != "tested" && !o.AllowDraft {
+		rp.block("profile_draft", "profile "+prof.ID+" v"+strconv.Itoa(prof.ProfileVersion)+" 的着陆尚未在此版本测试（"+st+"），复活需要显式同意",
+			"确认风险后加上 --allow-draft-profile")
 	}
 
 	instance := head.InstanceID
@@ -175,24 +173,13 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	}
 
 	// Target facts, first to resolve the state dir on the target. Landing
-	// is an admin operation: one admin connection for the whole plan.
+	// is an owner operation: the daily key plus the owner proof.
 	report(ctx, StageInspect, 0, 0)
-	if rp.target, rp.done, err = s.adminTransport(ctx, o.Target); err != nil {
+	if rp.target, err = s.ownerPorter(ctx, o.Target); err != nil {
 		return nil, err
 	}
-	opened := rp
-	defer func() {
-		if err != nil {
-			opened.Close()
-		}
-	}()
-	found, err := porter.Probe(ctx, rp.target)
-	if err != nil {
-		return nil, err
-	}
-	rp.porterP = found.Path
 	var first revive.InspectResult
-	if err := s.callOn(ctx, rp.target, rp.porterP, nil, revive.MethodInspect, revive.InspectParams{Profile: prof, InstanceID: instance}, &first); err != nil {
+	if err := s.callOwner(ctx, rp.target, nil, revive.MethodInspect, revive.InspectParams{Profile: prof, InstanceID: instance}, &first); err != nil {
 		return nil, err
 	}
 	roots, err := mapRoots(o, head, first, prof)
@@ -200,7 +187,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		return nil, err
 	}
 	var facts revive.InspectResult
-	if err := s.callOn(ctx, rp.target, rp.porterP, nil, revive.MethodInspect,
+	if err := s.callOwner(ctx, rp.target, nil, revive.MethodInspect,
 		revive.InspectParams{Profile: prof, InstanceID: instance, Roots: roots, Provenance: head.Provenance, PlainBytes: rp.Snapshot.PlainBytes}, &facts); err != nil {
 		return nil, err
 	}

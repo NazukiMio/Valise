@@ -128,6 +128,7 @@ func Run(ctx context.Context, opt Options) error {
 	// TUI owns the terminal.
 	opt.Service.NoTerminalLogin = true
 	opt.Service.AdminAuth.Passphrase = func(host string) (string, error) { return askAdminPassphrase(m.send, host) }
+	opt.Service.OwnerAuth.Passphrase = func(host string) (string, error) { return askOwnerPassphrase(m.send, host) }
 	defer opt.Service.Close()
 	_, err := p.Run()
 	return err
@@ -248,7 +249,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "L" && !m.typing() && m.accessState() != "" && m.svc.FullAccessHost() == "" {
 			if _, ok := m.svc.AdminRemaining(m.currentHost()); ok {
 				m.svc.LockAdmin()
-				m.flash, m.flashErr = "管理权限已锁定；下一次管理操作会再询问管理口令", false
+				m.flash, m.flashErr = "开发者模式已锁定；下一次开发者模式的操作会再询问管理口令", false
 				return m, nil
 			}
 		}

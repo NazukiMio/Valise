@@ -39,7 +39,7 @@ type AdminAuth struct {
 // ErrAdminLocked is returned when an admin key must be unlocked and no
 // frontend can ask for the passphrase.
 func errAdminLocked(host string) *valise.UserError {
-	return valise.New("admin_locked", "这一步需要管理权限，管理钥匙还没有解锁（"+host+"）",
+	return valise.New("admin_locked", "这一步需要开发者模式，管理钥匙还没有解锁（"+host+"）",
 		"在界面里输入管理口令，或在终端运行同一条命令时按提示输入")
 }
 
@@ -169,7 +169,7 @@ func (s *Service) ensureAdmin(ctx context.Context, host string) error {
 func (s *Service) UnlockAdmin(ctx context.Context, host string) error {
 	if !s.HasAdminKey(host) {
 		return valise.New("admin_key_none", host+" 没有管理钥匙，管理操作每次用服务器密码临时登录",
-			"需要持续一段时间的管理权限时，先创建管理钥匙：valise server admin-key "+host)
+			"需要持续一段时间的开发者模式时，先创建管理钥匙：valise server admin-key "+host)
 	}
 	return s.ensureAdmin(ctx, host)
 }
@@ -222,6 +222,7 @@ type porterSession struct {
 	host   string
 	tiered bool
 	daily  *ssh.RPCClient
+	owner  bool // the daily session proved the owner
 	admin  *ssh.RPCClient
 	done   func()
 }
@@ -258,17 +259,49 @@ func (p *porterSession) Call(ctx context.Context, method string, params, result 
 	if !p.tiered {
 		return p.daily.Call(ctx, method, params, result)
 	}
-	if rpc.TierOf(method) == rpc.TierDaily {
+	switch rpc.TierOf(method) {
+	case rpc.TierDaily:
 		err := p.daily.Call(ctx, method, params, result)
-		if ue, ok := valise.As(err); !ok || ue.Code != rpc.AdminRequiredCode || !rpc.Conditional(method) {
+		ue, ok := valise.As(err)
+		if !ok || !rpc.Conditional(method) {
 			return err
 		}
+		switch ue.Code {
+		case rpc.OwnerRequiredCode:
+			// The handler asked for the owner (docs/ARCHITECTURE.md 2.2).
+			return p.ownerCall(ctx, method, params, result)
+		case rpc.AdminRequiredCode:
+		default:
+			return err
+		}
+	case rpc.TierOwner:
+		return p.ownerCall(ctx, method, params, result)
 	}
 	c, err := p.adminClient(ctx)
 	if err != nil {
 		return err
 	}
 	return c.Call(ctx, method, params, result)
+}
+
+// ownerCall proves the owner on the daily session once, then calls; a
+// conditional method may still ask for developer mode.
+func (p *porterSession) ownerCall(ctx context.Context, method string, params, result any) error {
+	if !p.owner {
+		if err := p.s.proveOwner(ctx, p.daily, p.host); err != nil {
+			return err
+		}
+		p.owner = true
+	}
+	err := p.daily.Call(ctx, method, params, result)
+	if ue, ok := valise.As(err); ok && ue.Code == rpc.AdminRequiredCode && rpc.Conditional(method) {
+		c, aerr := p.adminClient(ctx)
+		if aerr != nil {
+			return aerr
+		}
+		return c.Call(ctx, method, params, result)
+	}
+	return err
 }
 
 func (p *porterSession) adminClient(ctx context.Context) (*ssh.RPCClient, error) {

@@ -34,7 +34,7 @@ capabilities:
 - 能力项：`install`（官方方案）、`manage`（发现、状态、管理页、动作）、`backup`（登记与建立逃生舱）、`restore`（着陆）、`login`（登录授权）、`checkup`（体检）、`kit`（逃生舱技能）。状态：`tested` / `partial` / `untested` / `failed`；`tested` 必须写 `versions` 与 `env`。
 - 官方列表区分"可安装"与"可管理"；列表用概览等级，详情按能力展示，例如"管理页连接测试通过""备份已测试""着陆尚未演练"。不因存在 YAML 就宣称全面支持。
 - 用户本地 profile 不用笼统的"未验证"制造压力：展示来源（本地、未经审核）、已测试与未测试的能力、失败项及具体影响。
-- **着陆保护保留**：`restore` 不是 `tested`（或 profile 为 `status: draft`）时，复活仍必须显式传入 `--allow-draft-profile`；界面写明"着陆尚未在此版本测试"与可能的影响，而不是只写"未核实"。旧 profile 没有 `capabilities` 时，按 `status` 推断：`verified` 视为全部 `tested`，`draft` 视为全部 `untested`。
+- **着陆保护按能力判断**（2026-11-02 用户决定）：只看 `capabilities.restore`。它是 `tested` 时直接着陆，不因整份 profile 仍是 `status: draft`（例如体检条目还有 `verify: pending`）而拦截；不是 `tested` 时，复活必须显式传入 `--allow-draft-profile`；技能安装同理只看 `kit`，且属于主人操作（ARCHITECTURE.md 2.2）。核实证据的细化（官方测试、在用户这里成功过、用户标记通过）另行讨论；界面写明"着陆尚未在此版本测试"与可能的影响，而不是只写"未核实"。旧 profile 没有 `capabilities` 时，按 `status` 推断：`verified` 视为全部 `tested`，`draft` 视为全部 `untested`。
 
 ## 2. Schema
 

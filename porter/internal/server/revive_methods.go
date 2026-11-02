@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"valise/core/revive"
+	"valise/core/rpc"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
+	"valise/porter/internal/forced"
 	porterrevive "valise/porter/internal/revive"
 	"valise/porter/internal/seal"
 )
@@ -42,7 +44,16 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		return porterrevive.StageBegin(ctx, s.loginEnv(ctx), store(s), p.Plan)
+		j, err := porterrevive.StageBegin(ctx, s.loginEnv(ctx), store(s), p.Plan)
+		if err != nil || !s.daily() {
+			return j, err
+		}
+		// The daily key runs stage-write only with this one-time grant.
+		grant, err := forced.Mint(s.cfg.Home, "stage-write", j.Plan.OpID)
+		return struct {
+			*revive.Journal
+			Grant string `json:"grant"`
+		}{j, grant}, err
 	}
 	methods[revive.MethodStageVerify] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[revive.StageVerifyParams](raw)
@@ -79,6 +90,13 @@ func init() {
 	methods[revive.MethodPrevDrop] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[revive.OpParams](raw)
 		if err != nil {
+			return nil, err
+		}
+		tier := rpc.TierAdmin
+		if made, err := porterrevive.Finished(store(s), p.OpID); err == nil && time.Since(made) >= sensitiveAge {
+			tier = rpc.TierOwner
+		}
+		if err := s.require(tier, revive.MethodPrevDrop); err != nil {
 			return nil, err
 		}
 		removed, err := porterrevive.PrevDrop(store(s), p.OpID)
