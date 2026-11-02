@@ -246,6 +246,17 @@ func (c *cli) sync(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if c.svc.IsStation(pos[1]) {
+		r, err := c.svc.SyncStation(ctx, pos[0], pos[1])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(c.out, "已同步到 %s（%s），%d 个周期、%d 个逃生舱；%s。\n", r.Station, r.Dest, len(r.Leaves), len(r.Snapshots), r.PathText())
+		if r.Note != "" {
+			fmt.Fprintln(c.out, r.Note+"。")
+		}
+		return nil
+	}
 	res, err := c.svc.Sync(ctx, pos[0], pos[1])
 	if err != nil {
 		return err

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"valise/core/stationsync"
 
 	"valise/core/valise"
 	"valise/core/vault"
@@ -172,7 +173,11 @@ func OpenVaultFile(p Paths, leaf, rel string) (*os.File, error) {
 	return os.Open(filepath.Join(dir, filepath.FromSlash(rel)))
 }
 
-var targetNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+var (
+	targetNameRe  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	stationAddrRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$`)
+	stationUserRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,31}$`)
+)
 
 type targetsFile struct {
 	Targets []vaultrpc.Target `json:"targets"`
@@ -199,11 +204,22 @@ func SetTarget(p Paths, t vaultrpc.Target) error {
 		return valise.New("target_name_invalid", "同步目标名只能包含小写字母、数字和连字符", "例如 nas")
 	}
 	switch t.Kind {
-	case methodRsync, methodSFTP:
+	case stationsync.MethodRsync, stationsync.MethodSFTP:
 	case "rclone":
 		return valise.New("target_kind_unsupported", "这个版本还不支持 rclone 同步", "改用 rsync 或 sftp")
 	default:
 		return valise.New("target_kind_invalid", "未知的同步方式："+t.Kind, "可选 rsync、sftp")
+	}
+	if c := t.Station; c != nil {
+		if !stationAddrRe.MatchString(c.Address) || c.Port < 1 || c.Port > 65535 || !stationUserRe.MatchString(c.User) || len(c.KnownHosts) == 0 ||
+			!strings.HasPrefix(t.Dest, c.Address+":") {
+			return valise.New("station_invalid", "空间站的连接信息无效", "在 Valise 里重新添加这个空间站")
+		}
+		for _, l := range c.KnownHosts {
+			if strings.ContainsAny(l, "\n\r") || len(strings.Fields(l)) < 3 {
+				return valise.New("station_invalid", "空间站的指纹记录无效", "在 Valise 里重新核对指纹")
+			}
+		}
 	}
 	host, path, ok := strings.Cut(t.Dest, ":")
 	if !ok || host == "" || strings.HasPrefix(host, "-") || !strings.HasPrefix(path, "/") || strings.ContainsAny(t.Dest, " \t\n'\"`$\\") {
@@ -227,17 +243,6 @@ func SetTarget(p Paths, t vaultrpc.Target) error {
 }
 
 const syncTimeout = 6 * time.Hour
-
-// syncOrder follows docs/ARCHITECTURE.md section 7: data before the files
-// that reference it, so an interrupted sync never leaves a dangling meta.
-var syncOrder = []struct{ dir, include string }{
-	{vault.PacksDir, ""},
-	{vault.IndexDir, ""},
-	{vault.SnapshotsDir, "*.age"},
-	{vault.SnapshotsDir, "*.meta.json"},
-	{vault.EpochsDir, ""},
-	{vault.KeysDir, ""},
-}
 
 // Sync copies the vault tree to a target with rsync, skipping existing
 // files: leaves go to <dest>/<server_name>/<instance>/<period>/, the legacy
@@ -311,10 +316,10 @@ func syncLocked(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.T
 	if hasTree {
 		res.Dest = treeDest(t, st.ServerName)
 	}
-	res.Method, res.Note, err = withRemote(ctx, e, p, t, func(r remote) error {
+	res.Method, res.Note, err = withRemote(ctx, e, p, t, func(r stationsync.Remote) error {
 		res.Leaves, res.Snapshots = []string{}, []string{}
 		if hasTree {
-			if err := r.putFile(ctx, filepath.Join(p.Vaults(), vault.TreeFile), res.Dest+"/"+vault.TreeFile); err != nil {
+			if err := r.PutFile(ctx, filepath.Join(p.Vaults(), vault.TreeFile), res.Dest+"/"+vault.TreeFile); err != nil {
 				return err
 			}
 		}
@@ -330,7 +335,7 @@ func syncLocked(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.T
 			if l.Leaf == vault.LegacyLeaf {
 				dest = strings.TrimRight(t.Dest, "/") + "/" + l.VaultID
 			}
-			if err := r.syncLeaf(ctx, dir, dest); err != nil {
+			if err := r.SyncLeaf(ctx, dir, dest); err != nil {
 				return err
 			}
 			res.Leaves = append(res.Leaves, l.Leaf)
@@ -342,12 +347,4 @@ func syncLocked(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.T
 		return nil, err
 	}
 	return res, nil
-}
-
-func lastLines(s string, n int) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return strings.Join(lines, "\n")
 }

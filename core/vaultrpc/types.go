@@ -91,8 +91,43 @@ type Target struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
 	Dest string `json:"dest"`
+	// Station is set for a station Valise manages (docs/ARCHITECTURE.md
+	// section 7): porter connects with these and its own station key, not
+	// the server's SSH configuration. Dest is then "<address>:<path>".
+	Station *StationConn `json:"station,omitempty"`
 	// Auto turns on syncing after seals, at most once per Every.
 	Auto *AutoSync `json:"auto,omitempty"`
+}
+
+// StationConn is how porter reaches a Valise-managed station; no secrets.
+type StationConn struct {
+	Address string `json:"address"`
+	Port    int    `json:"port"`
+	User    string `json:"user"`
+	// KnownHosts are the confirmed known_hosts lines of the station.
+	KnownHosts []string `json:"known_hosts"`
+}
+
+// Station key and record methods (owner tier).
+const (
+	MethodStationKey = "station_key"
+	MethodSyncRecord = "sync_record"
+)
+
+// StationKeyParams names the station whose key porter makes or shows.
+type StationKeyParams struct {
+	Name string `json:"name"`
+}
+
+// StationKeyResult is the public key of the server's station key.
+type StationKeyResult struct {
+	PublicKey string `json:"public_key"`
+}
+
+// SyncRecordParams records a relayed copy in the target's sync record.
+type SyncRecordParams struct {
+	Target    string   `json:"target"`
+	Snapshots []string `json:"snapshots"`
 }
 
 // AutoSync is a target's automatic backup setting.

@@ -26,10 +26,12 @@ type syncScreen struct {
 	ended   time.Time
 }
 
-// place is a repository or a station.
+// place is a repository, a station Valise manages, or a target the server
+// set up with its own SSH configuration.
 type place struct {
-	repo bool
-	name string
+	repo    bool
+	station bool
+	name    string
 }
 
 func (p place) label() string {
@@ -48,15 +50,23 @@ func newSync(host string, places ...place) *syncScreen {
 	return &syncScreen{host: host, places: places, running: true}
 }
 
-// places lists host's repositories, then its stations.
+// places lists the repositories, the stations Valise manages, then the
+// targets only host knows.
 func places(m *Model, host string) []place {
 	var out []place
 	for _, r := range m.svc.Repos() {
 		out = append(out, place{repo: true, name: r.Name})
 	}
+	managed := map[string]bool{}
+	for _, st := range m.svc.Stations() {
+		out = append(out, place{station: true, name: st.Name})
+		managed[st.Name] = true
+	}
 	if st := m.server(host).status; st != nil {
 		for _, t := range st.Targets {
-			out = append(out, place{name: t.Name})
+			if !managed[t.Name] {
+				out = append(out, place{name: t.Name})
+			}
 		}
 	}
 	return out
@@ -134,6 +144,17 @@ func syncPlace(ctx context.Context, svc *service.Service, host string, p place) 
 			return "", err
 		}
 		return p.label() + "：" + itoa(len(r.Snapshots)) + " 个逃生舱，新复制 " + size(r.Bytes) + "，校验通过 · " + r.Dir, nil
+	}
+	if p.station {
+		r, err := svc.SyncStation(ctx, host, p.name)
+		if err != nil {
+			return "", err
+		}
+		line := p.label() + "：" + itoa(len(r.Leaves)) + " 个周期、" + itoa(len(r.Snapshots)) + " 个逃生舱 · " + r.Dest + "\n  " + r.PathText()
+		if r.Note != "" {
+			line += "\n  " + r.Note
+		}
+		return line, nil
 	}
 	r, err := svc.Sync(ctx, host, p.name)
 	if err != nil {

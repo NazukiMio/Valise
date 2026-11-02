@@ -243,6 +243,22 @@ func init() {
 		}
 		return struct{}{}, seal.SetTarget(paths(s), p.Target)
 	}
+	methods[vaultrpc.MethodStationKey] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.StationKeyParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		name, _ := seal.ReadServerName(paths(s))
+		pub, err := seal.StationKeyFor(ctx, s.loginEnv(ctx), paths(s), p.Name, "valise-station@"+name)
+		return vaultrpc.StationKeyResult{PublicKey: pub}, err
+	}
+	methods[vaultrpc.MethodSyncRecord] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.SyncRecordParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return struct{}{}, seal.RecordSynced(paths(s), p.Target, p.Snapshots)
+	}
 	methods[vaultrpc.MethodSync] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.SyncParams
 		if err := json.Unmarshal(raw, &p); err != nil {

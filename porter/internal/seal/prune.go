@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"valise/core/stationsync"
 
 	"valise/core/valise"
 	"valise/core/vault"
@@ -175,7 +176,7 @@ func TargetList(ctx context.Context, e *porterenroll.Env, p Paths, name string) 
 			return nil, err
 		}
 		for _, en := range entries {
-			parts := strings.SplitN(en.path, "/", 3)
+			parts := strings.SplitN(en.Path, "/", 3)
 			if len(parts) < 3 {
 				continue
 			}
@@ -183,7 +184,7 @@ func TargetList(ctx context.Context, e *porterenroll.Env, p Paths, name string) 
 			if _, _, ok := vault.SplitLeaf(leaf); !ok || leaf == vault.LegacyLeaf {
 				continue
 			}
-			add(leaf, parts[2], en.size)
+			add(leaf, parts[2], en.Size)
 		}
 	}
 	if legacy != "" {
@@ -192,7 +193,7 @@ func TargetList(ctx context.Context, e *porterenroll.Env, p Paths, name string) 
 			return nil, err
 		}
 		for _, en := range entries {
-			add(vault.LegacyLeaf, en.path, en.size)
+			add(vault.LegacyLeaf, en.Path, en.Size)
 		}
 	}
 	for _, leaf := range order {
@@ -202,12 +203,12 @@ func TargetList(ctx context.Context, e *porterenroll.Env, p Paths, name string) 
 }
 
 // listRemote lists a target's files under base, falling back to sftp.
-func listRemote(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.Target, base string) (entries []remoteEntry, err error) {
-	_, _, err = withRemote(ctx, e, p, t, func(r remote) error {
-		all, err := r.list(ctx, base)
+func listRemote(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.Target, base string) (entries []stationsync.Entry, err error) {
+	_, _, err = withRemote(ctx, e, p, t, func(r stationsync.Remote) error {
+		all, err := r.List(ctx, base)
 		entries = entries[:0]
 		for _, en := range all {
-			if !en.dir {
+			if !en.Dir {
 				entries = append(entries, en)
 			}
 		}
@@ -255,7 +256,7 @@ func TargetLeafDelete(ctx context.Context, e *porterenroll.Env, p Paths, name, l
 		}
 		p.AppendAudit(ent)
 	}()
-	_, _, err = withRemote(ctx, e, p, t, func(r remote) error { return r.deleteDir(ctx, parent, dirName) })
+	_, _, err = withRemote(ctx, e, p, t, func(r stationsync.Remote) error { return r.DeleteDir(ctx, parent, dirName) })
 	if err != nil {
 		return err
 	}
@@ -295,4 +296,41 @@ func forgetSynced(p Paths, target, leaf string) {
 	state.LastSynced = kept
 	out, _ := json.MarshalIndent(state, "", "  ")
 	writeAtomic(p.SyncState(target), out, 0o600)
+}
+
+// RecordSynced adds escape pods the client relayed to a target to its sync
+// record (docs/ARCHITECTURE.md section 7); only ids this server holds count.
+func RecordSynced(p Paths, target string, ids []string) error {
+	t, err := findTarget(p, target)
+	if err != nil {
+		return err
+	}
+	st, err := Status(p)
+	if err != nil {
+		return err
+	}
+	known := map[string]bool{}
+	for _, m := range st.Snapshots {
+		known[m.SnapshotID] = true
+	}
+	state := vaultrpc.TargetState{Target: *t}
+	if b, err := os.ReadFile(p.SyncState(target)); err == nil {
+		json.Unmarshal(b, &state)
+		state.Target = *t
+	}
+	have := map[string]bool{}
+	for _, id := range state.LastSynced {
+		have[id] = true
+	}
+	for _, id := range ids {
+		if known[id] && !have[id] {
+			state.LastSynced = append(state.LastSynced, id)
+			have[id] = true
+		}
+	}
+	now := time.Now().UTC()
+	state.LastOK, state.LastError = &now, ""
+	out, _ := json.MarshalIndent(state, "", "  ")
+	p.AppendAudit(AuditEntry{Time: now, Op: "sync", Initiator: vaultrpc.InitiatorClient, Target: target, Result: "ok", Reason: "relayed by the client"})
+	return writeAtomic(p.SyncState(target), out, 0o600)
 }

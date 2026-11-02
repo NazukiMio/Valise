@@ -90,14 +90,19 @@ func (c *cloudScreen) init(m *Model) tea.Cmd {
 	}
 	c.repos = m.svc.RepoStatuses(c.host, name)
 	var cmds []tea.Cmd
-	for _, t := range c.targets(m) {
-		cmds = append(cmds, c.list(m, t.Name))
+	for _, p := range places(m, c.host) {
+		if !p.repo {
+			cmds = append(cmds, c.list(m, p.name))
+		}
 	}
 	return tea.Batch(cmds...)
 }
 
 func (c *cloudScreen) list(m *Model, name string) tea.Cmd {
 	svc, ctx, host := m.svc, m.ctx, c.host
+	if svc.IsStation(name) {
+		return func() tea.Msg { l, err := svc.StationList(ctx, host, name); return targetListed{name, l, err} }
+	}
 	return func() tea.Msg { l, err := svc.TargetList(ctx, host, name); return targetListed{name, l, err} }
 }
 
@@ -186,6 +191,11 @@ func (c *cloudScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			if t := c.station(m, p.name); t != nil && !p.repo {
 				return c.chooseAuto(m, t.Target), true
 			}
+			if p.station {
+				return func() tea.Msg {
+					return flashMsg("先上云一次：Valise 会让这台服务器认识这个空间站，之后才能设置自动同步")
+				}, true
+			}
 			return func() tea.Msg {
 				return flashMsg("仓库在 Valise 打开时自动补齐，没有单独的自动同步设置")
 			}, true
@@ -239,53 +249,6 @@ func (c *cloudScreen) chooseAuto(m *Model, t vaultrpc.Target) tea.Cmd {
 	}))
 }
 
-func (c *cloudScreen) addPlace(m *Model) tea.Cmd {
-	return m.push(pick("添加哪一种？", []choice{
-		{label: "仓库 · 本机文件夹", value: "repo", desc: "这台电脑上的文件夹、外接硬盘或网盘的同步文件夹；只在 Valise 打开时更新"},
-		{label: "空间站 · 另一台机器", value: "station", desc: "NAS 或 VPS，由服务器经 SSH 直接传过去（rsync，没有时改用 sftp）"},
-	}, func(m *Model, kind string) tea.Cmd {
-		if kind == "repo" {
-			return c.addRepo(m)
-		}
-		return c.addTarget(m)
-	}))
-}
-
-func (c *cloudScreen) addRepo(m *Model) tea.Cmd {
-	return m.push(newInput("仓库的名字（小写字母、数字、连字符，例如 usb）", "usb", false, func(m *Model, name string) tea.Cmd {
-		name = strings.TrimSpace(name)
-		return m.push(newInput("文件夹的完整路径（不存在会自动创建）", "~/Valise", false, func(m *Model, path string) tea.Cmd {
-			r, err := m.svc.RepoAdd(name, path)
-			if err != nil {
-				return func() tea.Msg { return failed(err) }
-			}
-			m.pop()
-			m.pop()
-			c.repos = m.svc.RepoStatuses(c.host, m.server(c.host).status.ServerName)
-			return func() tea.Msg {
-				return flashMsg("已添加仓库 " + r.Name + "（" + r.Path + "）；按 s 把逃生舱补过去")
-			}
-		}))
-	}))
-}
-
-func (c *cloudScreen) addTarget(m *Model) tea.Cmd {
-	return m.push(newInput("空间站的名字（小写字母、数字、连字符，例如 nas）", "nas", false, func(m *Model, name string) tea.Cmd {
-		name = strings.TrimSpace(name)
-		return m.push(newInput("位置：服务器能用 SSH 登录的 <主机>:<绝对路径>（登录凭据在服务器上由你配置）", "nas:/volume1/valise-vault/", false,
-			func(m *Model, dest string) tea.Cmd {
-				svc, ctx, host := m.svc, m.ctx, c.host
-				t := vaultrpc.Target{Name: name, Kind: "rsync", Dest: strings.TrimSpace(dest)}
-				return func() tea.Msg {
-					if err := svc.TargetSet(ctx, host, t); err != nil {
-						return failed(err)
-					}
-					return srvRefresh(host, "已添加空间站 "+name)
-				}
-			}))
-	}))
-}
-
 // refreshed reports a finished change; the root reloads the server.
 type refreshed struct{ host, text string }
 
@@ -333,8 +296,9 @@ func (c *cloudScreen) view(m *Model) string {
 		if last != "" {
 			head += "\n" + last
 		}
+	} else if t := c.station(m, p.name); t == nil {
+		head = c.stationHead(m, p, w)
 	} else {
-		t := c.station(m, p.name)
 		auto := "关"
 		if t.Auto != nil {
 			auto = okStyle.Render("开") + " · 每 " + t.Auto.Every + " 最多一次"
@@ -350,7 +314,11 @@ func (c *cloudScreen) view(m *Model) string {
 		if name := m.server(c.host).status.ServerName; name != "" {
 			dest = strings.TrimRight(t.Dest, "/") + "/" + name + "/"
 		}
-		head = box(p.label(), kv("位置", dest, "自动同步", auto, "上次同步", last), w)
+		how := dimStyle.Render("服务器自己配置的 SSH 主机")
+		if p.station {
+			how = dimStyle.Render("Valise 管理：服务器直传，连不上时经这台电脑中转")
+		}
+		head = box(p.label(), kv("位置", dest, "方式", how, "自动同步", auto, "上次同步", last), w)
 		if e := c.errs[p.name]; e != nil {
 			head += "\n" + errStyle.Render("无法列出 "+p.name+" 上的内容："+firstLine(errText(e)))
 		}

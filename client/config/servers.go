@@ -211,6 +211,7 @@ func RenderSSHConfig(dir string, servers []Server) string {
 		}
 		fmt.Fprintf(&b, "  UserKnownHostsFile %q\n  StrictHostKeyChecking yes\n  UpdateHostKeys no\n", filepath.Join(dir, KnownHostsFile))
 	}
+	renderStations(&b, dir)
 	return b.String()
 }
 

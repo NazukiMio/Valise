@@ -228,7 +228,14 @@
 - **空间站**（界面原称云备份）由 `porter sync --target <name>` 完成，支持 rsync、rclone 和 sftp。目标配置写在 `targets.json` 中；rclone 使用用户自己的 remote 配置，Valise 不保存其中的凭据。
 - 同步按叶子逐个进行，叶子内的顺序固定为：pack → index → 快照 → 元数据 → epochs/keys → PERIOD → VAULT；带 `DELETING` 的叶子跳过。由于叶子内只追加，任何中断都可以安全续传。
 - **targets.json**：`{"targets": [{"name": "nas", "kind": "rsync", "dest": "nas-test:/mnt/test/nas/valise-vault/", "auto": {"every": "24h"}}]}`。`kind` 取值 `rsync`、`rclone`、`sftp`；已实现 `rsync`（经服务器自己的 SSH 配置，加 `--ignore-existing`）与 `sftp`。
-- **协议回落**（2026-11-02 用户决定）：`kind: rsync` 的目标在服务器或目标上没有 rsync 时（本机找不到 rsync，或远端报 `command not found` 等），这一次操作自动改用 sftp，结果写明所用方式与原因（"rsync 不可用，改用 sftp，速度会慢一些"）；`kind: sftp` 直接用 sftp。sftp 只需要目标上 OpenSSH 自带的 sftp-server：经 `sftp -b -`（服务器自己的 SSH 配置、`BatchMode=yes`）先逐层列出目标上已有的文件，只上传缺少的，每个文件先传为同目录下的 `.part-<名字>` 再 `rename`，因此中断不会留下半个文件、云端只追加；列表跳过 `.part-*`。删除整个周期时先写 `DELETING` 标记，再按列表逐个删除文件、由深到浅删除目录，最后删除标记。界面上未实现的种类不渲染。同步结果写入审计记录，`porter status` 据此报告每个目标的最后同步时间。服务器登录目标所需的凭据由用户自己配置，Valise 不保存。
+- **协议回落**（2026-11-02 用户决定）：`kind: rsync` 的目标在服务器或目标上没有 rsync 时（本机找不到 rsync，或远端报 `command not found` 等），这一次操作自动改用 sftp，结果写明所用方式与原因（"rsync 不可用，改用 sftp，速度会慢一些"）；`kind: sftp` 直接用 sftp。sftp 只需要目标上 OpenSSH 自带的 sftp-server：经 `sftp -b -`（服务器自己的 SSH 配置、`BatchMode=yes`）先逐层列出目标上已有的文件，只上传缺少的，每个文件先传为同目录下的 `.part-<名字>` 再 `rename`，因此中断不会留下半个文件、云端只追加；列表跳过 `.part-*`。删除整个周期时先写 `DELETING` 标记，再按列表逐个删除文件、由深到浅删除目录，最后删除标记。界面上未实现的种类不渲染。同步结果写入审计记录，`porter status` 据此报告每个目标的最后同步时间。早期的目标由用户在服务器上自己配置 SSH（"服务器自己配置的空间站"），仍然可用；新的空间站由 Valise 管理（下一条）。
+- **Valise 管理的空间站**（2026-11-02 用户决定）：服务器在公网、NAS 在家里内网是常态，空间站的连接信息因此归 Valise 管，不要求用户去改服务器的 SSH 配置。
+  - **记录**：客户端数据目录的 `stations.json`（`[{"name", "address", "port", "user", "path"}]`），主机指纹写入 Valise 的 `known_hosts`（与服务器相同的确认流程）。建议用户在 NAS 上为 Valise 开一个**专用用户**并只给它一个目录，界面在添加时说明原因。
+  - **钥匙**：客户端一把 `keys/stations/<名字>/client`（用于中转）；每台服务器一把，由 porter 在服务器上用 `ssh-keygen` 生成于 `~/.config/valise/station-keys/<名字>`（私钥不离开服务器）。两把公钥都由客户端写进 NAS 的 `authorized_keys`，前面加 `restrict`（不能开终端、不能转发）。第一次登录 NAS 用密码或用户自己的私钥（与添加服务器相同，Valise 不保存密码）。
+  - **服务器端记录**：客户端把地址、端口、用户与指纹（known_hosts 行）写进服务器的 `targets.json`（`station` 字段，不含秘密）；porter 用 `-o UserKnownHostsFile=<临时文件> -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -i <空间站钥匙> -p <端口> -l <用户>` 连接，不读服务器的 SSH 配置。服务器端的自动同步因此照常工作（服务器能连到时）。
+  - **三条路径，依次回落**：① **直传**：服务器 → 空间站（rsync，缺 rsync 时 sftp）。② **经本机仓库中转**：已有本机仓库时，先把服务器上的逃生舱补到仓库，再由客户端从仓库传到空间站。③ **临时中转**：没有仓库时，取回到客户端缓存目录下的临时目录，传到空间站，完成或失败都删除临时目录；开始前检查本机空间。直传因网络或登录原因失败（不认识主机名、连不上、拒绝登录、指纹未确认），或服务器尚未配置这个空间站时，自动改走中转；结果写明用了哪条路径。中转期间 Valise 要保持打开，界面写明。
+  - **同步记录**：中转成功后，客户端调用 porter 的 `sync_record`（主人操作）把这些逃生舱记进服务器上该空间站的同步记录，删除分级与"已上云"显示因此一致。
+  - 云端列表与删除整个周期同样先直连、失败时由客户端连接。服务器自己配置的空间站在客户端的 SSH 配置里也有同名主机时，同样可以中转。
 - **云端列表**：客户端经 porter 列出目标上的金库树（rsync：`--list-only`，只读目录与文件名、大小），与服务器本地对照，展示每个周期"服务器有 / 云端有 / 两处都有"、逃生舱数量与大小。目标上的元数据文件（`*.meta.json`）可以按需拉取用于展示，不需要私钥。
 - **删除周期**：见 VAULT_FORMAT.md 10.4。RPC 只接受"实例 + 周期 + 位置（服务器或某个目标）"，不接受任意路径。
 - **自动同步到空间站**（2026-10-31 用户决定，两种方式并存）：

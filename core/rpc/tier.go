@@ -99,6 +99,8 @@ var ownerMethods = map[string]bool{
 	"swap":             true,
 	"revive_resume":    true,
 	"service_control":  true,
+	"station_key":      true,
+	"sync_record":      true,
 }
 
 // adminMethods carry security risks: developer mode. Listed explicitly so

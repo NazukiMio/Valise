@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"valise/core/stationsync"
 
 	"valise/core/vault"
 	"valise/core/vaultrpc"
@@ -66,7 +67,7 @@ func TestSyncFallsBackToSFTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Method != methodSFTP || !strings.Contains(res.Note, "改用 sftp") {
+	if res.Method != stationsync.MethodSFTP || !strings.Contains(res.Note, "改用 sftp") {
 		t.Fatalf("%+v", res)
 	}
 	leafDir := filepath.Join(cloud, "box", first.Leaf)
@@ -89,7 +90,7 @@ func TestSyncFallsBackToSFTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	filepath.WalkDir(cloud, func(p string, d os.DirEntry, err error) error {
-		if err == nil && strings.HasPrefix(d.Name(), partPrefix) {
+		if err == nil && strings.HasPrefix(d.Name(), ".part-") {
 			t.Fatalf("part file left: %s", p)
 		}
 		return nil
@@ -100,24 +101,13 @@ func TestSyncFallsBackToSFTP(t *testing.T) {
 		t.Fatalf("%+v %v", list, err)
 	}
 	// Deleting a directory: marker first, everything gone at the end.
-	r := &sftpRemote{e: w.env, p: w.p, t: &vaultrpc.Target{Name: "nas", Kind: "sftp", Dest: "nas:" + cloud + "/"}}
-	if err := r.deleteDir(ctx, "nas:"+filepath.Join(cloud, "box"), "demo"); err != nil {
+	tg := &vaultrpc.Target{Name: "nas", Kind: "sftp", Dest: "nas:" + cloud + "/"}
+	if _, _, err := withRemote(ctx, w.env, w.p, tg, func(r stationsync.Remote) error {
+		return r.DeleteDir(ctx, "nas:"+filepath.Join(cloud, "box"), "demo")
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(cloud, "box", "demo")); !os.IsNotExist(err) {
 		t.Fatalf("not deleted: %v", err)
-	}
-}
-
-func TestSSHFailureNamesTheCause(t *testing.T) {
-	tg := &vaultrpc.Target{Name: "nas", Dest: "nas-test:/x/"}
-	for stderr, want := range map[string]string{
-		"ssh: Could not resolve hostname nas-test: Name or service not known": "不认识主机名 nas-test",
-		"nas@1.2.3.4: Permission denied (publickey).":                         "拒绝了服务器的登录",
-		"Host key verification failed.":                                       "还没有确认过 nas-test",
-	} {
-		if ue := sshFailure(tg, "同步到 nas 失败", stderr); !strings.Contains(ue.Reason, want) {
-			t.Errorf("%q → %q", stderr, ue.Reason)
-		}
 	}
 }
