@@ -39,7 +39,28 @@
 | Model Context Protocol | https://modelcontextprotocol.io | `valise-porter mcp` 遵循的协议 |
 | ascii-motion / ascii.rest | https://github.com/bas3line/ascii | 火箭字符画动画的运行时与 `hash()`（MIT）；场景由用户创作，在 `assets/TUI/rocket`（文件内保留 ascii.rest 的许可声明），移植到 `client/ui/tui/rocket.go` |
 
-## 四、认知层面的参考（只用于体检解读与选择标准的措辞，不引入任何依赖）
+## 四、设计参考：magpie（2026-11-02 用户决定）
+
+https://github.com/yetone/magpie （MIT，阅读时的提交 `4d55a0a`，2026-11-02）。多 agent 的本地模型切换工具，在用户电脑上识别各种 harness。代码量大，**只读下表"可以学"的部分，按需读、不通读**；MIT 允许复制，但优先按 Valise 自己的结构重写小块逻辑，确需复制时保留其许可声明并记入此处。它对 harness 路径的说法是线索，写进 profile 前仍按 PROFILES.md 在靶机上核实。
+
+| 状态 | 部分 | 学什么 | 用在 |
+| :--- | :--- | :--- | :--- |
+| 可以学 | `internal/agent/*`（openclaw.go、hermes.go、dsh.go 等） | 路径按环境变量的优先级解析（如 OpenClaw：`OPENCLAW_CONFIG_PATH` → `OPENCLAW_STATE_DIR` → `OPENCLAW_PROFILE` 的 `~/.openclaw-<名字>` → `~/.openclaw`，`OPENCLAW_HOME` 改变 `~`；Hermes：`HERMES_HOME`），注释中给出的 harness 源码出处 | profile 发现规则（M12 健康页之后的"多实例"一步） |
+| 可以学 | 同上：Hermes 的多 bot profile、OpenClaw 的命名 profile | 一个安装里有多个 agent | 接入时识别为多个实例 |
+| 可以学 | `internal/agent/agent.go`（Detected、agentDir、Taken）与版本管理器路径解析（cliupdate_shim.go） | 防误判：技能安装工具留下的只有 `skills/` 的目录、同名的其他程序、mise / asdf / volta 的垫片 | 接入扫描与版本读取 |
+| 可以学 | `internal/proc`（进程列表、端口由哪个进程监听） | 判断 agent 是否在运行 | 健康页与首页的"运行中 · 最近活动" |
+| 可以学 | `internal/sessions` | 只读解析会话记录得到真实 token 数；大文件按路径缓存解析结果 | 健康页（替换按字节估算） |
+| 可以学 | `internal/library` | 按各 harness 自己的格式写入技能与 MCP，卸载时只拿回自己写的部分 | Valise Kit 的安装与卸载 |
+| 可以学 | `LESSONS.md`、`docs/code-standards.md` | 核实、对待用户文件、测试与发布的经验 | 开发习惯 |
+| 以后再看 | `internal/davsync`（WebDAV、S3 兼容、ETag 条件写入） | 不靠 rclone 的空间站种类 | M13 空间站，需要时再读 |
+| 以后再看 | `lastgood`、`steady`、`filelock` | 状态文件抗损坏、多进程互斥写入 | 客户端与 porter 的状态文件 |
+| 以后再看 | `internal/edit`、`claudelock`、`internal/update`（packaged.go）、`internal/uninstall`、`docs/session-relocation.md`、`agentenv`、`dirent`、`netguard` | 保留格式改配置、遵守 harness 的锁、识别包管理器安装的程序、完整撤销、绑定文件状态的确认令牌、测试沙箱、符号链接、下载地址限制 | 遇到对应问题时再读 |
+| 不要碰 | `gateway`、`provider`、路由相关 | 代管模型凭据，违反"不代管模型凭据" | — |
+| 不要碰 | `redact`、`pii`、`masking` | 扫描内容找密钥，违反"禁止扫描文件内容找 API Key" | — |
+| 不要碰 | `plugin`、`pluginrt`、`agentplug` | 插件运行时，属于禁止实现的插件解释器 | — |
+| 不要碰 | `mcpauth`、`oidc`、`claudebridge`、`stats` | 替人保管令牌、订阅桥接、使用统计 | — |
+
+## 五、认知层面的参考（只用于体检解读与选择标准的措辞，不引入任何依赖）
 
 - Letta（原 MemGPT）：分层记忆，以及让 agent 显式编辑自己的记忆。https://github.com/letta-ai/letta
 - Mem0：长期记忆的提取与去重。https://github.com/mem0ai/mem0
