@@ -30,7 +30,9 @@ type Runner interface {
 type Station struct {
 	// Name names it in messages ("nas").
 	Name string
-	// Kind is "rsync" (falls back to sftp) or "sftp".
+	// Kind is "rsync" (falls back to sftp), "sftp", or "rrsync": the
+	// station forces rrsync for this key, so only rsync works and a missing
+	// rsync means the station cannot be used from here.
 	Kind string
 	// Host is the SSH host: an alias of the caller's SSH configuration or
 	// an address used with SSH below.
@@ -84,8 +86,9 @@ type Entry struct {
 
 // Methods reported to the user.
 const (
-	MethodRsync = "rsync"
-	MethodSFTP  = "sftp"
+	MethodRsync  = "rsync"
+	MethodSFTP   = "sftp"
+	MethodRRsync = "rrsync"
 )
 
 // UnreachableCode marks a failure to reach or log in to a station; the
@@ -109,6 +112,10 @@ func With(ctx context.Context, run Runner, st Station, op func(Remote) error) (m
 	var missing *errNoRsync
 	if !errors.As(err, &missing) {
 		return MethodRsync, "", err
+	}
+	if st.Kind == MethodRRsync {
+		// The station only takes rrsync from this key: no sftp fallback.
+		return MethodRsync, "", valise.New(UnreachableCode, "这里没有可用的 rsync，而空间站只接受 rsync", "经这台电脑中转").WithDetail(firstLine(missing.err))
 	}
 	note = "rsync 不可用（" + firstLine(missing.err) + "），改用 sftp，速度会慢一些"
 	return MethodSFTP, note, op(&sftpRemote{run: run, st: st})

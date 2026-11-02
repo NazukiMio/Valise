@@ -264,6 +264,18 @@ func TargetLeafDelete(ctx context.Context, e *porterenroll.Env, p Paths, name, l
 	return nil
 }
 
+// ForgetSynced is forgetSynced for a period the client deleted.
+func ForgetSynced(p Paths, target, leaf string) error {
+	if _, _, ok := vault.SplitLeaf(leaf); !ok {
+		return valise.New("leaf_invalid", "无效的周期："+leaf, "")
+	}
+	if _, err := findTarget(p, target); err != nil {
+		return err
+	}
+	forgetSynced(p, target, leaf)
+	return nil
+}
+
 // forgetSynced drops a deleted leaf's escape pods from the target's sync
 // record, so they no longer count as backed up there.
 func forgetSynced(p Paths, target, leaf string) {

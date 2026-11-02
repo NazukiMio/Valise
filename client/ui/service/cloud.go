@@ -47,6 +47,9 @@ func (s *Service) TargetList(ctx context.Context, host, target string) (*vaultrp
 
 // TargetLeafDelete deletes one whole period on a cloud backup.
 func (s *Service) TargetLeafDelete(ctx context.Context, host, target, leaf string) error {
+	if s.IsStation(target) {
+		return s.stationLeafDelete(ctx, host, target, leaf)
+	}
 	return s.call(ctx, host, vaultrpc.MethodTargetLeafDel, vaultrpc.TargetLeafDeleteParams{Target: target, Leaf: leaf}, nil)
 }
 

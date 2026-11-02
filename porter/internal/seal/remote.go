@@ -40,23 +40,82 @@ func (p Paths) StationKey(name string) string {
 
 // withRemote runs op on the target, falling back from rsync to sftp.
 func withRemote(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.Target, op func(stationsync.Remote) error) (method, note string, err error) {
-	st := stationsync.Station{Name: t.Name, Kind: t.Kind, Host: strings.SplitN(t.Dest, ":", 2)[0], Tmp: p.Tmp()}
-	if c := t.Station; c != nil {
-		if err := os.MkdirAll(p.Tmp(), 0o700); err != nil {
-			return "", "", err
-		}
-		kh, err := os.CreateTemp(p.Tmp(), "known-hosts-")
-		if err != nil {
-			return "", "", err
-		}
-		defer os.Remove(kh.Name())
-		kh.WriteString(strings.Join(c.KnownHosts, "\n") + "\n")
-		kh.Close()
-		st.Host = c.Address
-		st.SSH = []string{"-o", "UserKnownHostsFile=" + kh.Name(), "-o", "StrictHostKeyChecking=yes", "-o", "IdentitiesOnly=yes",
-			"-o", "IdentityAgent=none", "-i", p.StationKey(t.Name), "-p", strconv.Itoa(c.Port), "-l", c.User}
+	st, done, err := stationOf(p, t)
+	if err != nil {
+		return "", "", err
 	}
+	defer done()
 	return stationsync.With(ctx, envRunner{e, p.Home}, st, op)
+}
+
+// stationOf is how porter reaches a target: a managed station with its
+// recorded host keys and the server's station key (and certificate,
+// <key>-cert.pub, which ssh loads by itself).
+func stationOf(p Paths, t *vaultrpc.Target) (stationsync.Station, func(), error) {
+	st := stationsync.Station{Name: t.Name, Kind: t.Kind, Host: strings.SplitN(t.Dest, ":", 2)[0], Tmp: p.Tmp()}
+	c := t.Station
+	if c == nil {
+		return st, func() {}, nil
+	}
+	if err := os.MkdirAll(p.Tmp(), 0o700); err != nil {
+		return st, nil, err
+	}
+	kh, err := os.CreateTemp(p.Tmp(), "known-hosts-")
+	if err != nil {
+		return st, nil, err
+	}
+	kh.WriteString(strings.Join(c.KnownHosts, "\n") + "\n")
+	kh.Close()
+	st.Host = c.Address
+	st.SSH = []string{"-o", "UserKnownHostsFile=" + kh.Name(), "-o", "StrictHostKeyChecking=yes", "-o", "IdentitiesOnly=yes",
+		"-o", "IdentityAgent=none", "-i", p.StationKey(t.Name), "-p", strconv.Itoa(c.Port), "-l", c.User}
+	return st, func() { os.Remove(kh.Name()) }, nil
+}
+
+// SetStationCert installs the client-signed certificate of the server's
+// station key.
+func SetStationCert(p Paths, name, cert string) error {
+	f := strings.Fields(cert)
+	if !stationNameRe.MatchString(name) || len(f) < 2 || !strings.HasSuffix(f[0], "-cert-v01@openssh.com") || strings.ContainsAny(cert, "\r") {
+		return valise.New("station_cert_invalid", "空间站证书格式不对", "在 Valise 里重新上云一次")
+	}
+	return writeAtomic(p.StationKey(name)+"-cert.pub", []byte(strings.TrimSpace(cert)+"\n"), 0o600)
+}
+
+// StationProbe connects to a managed station with the current
+// certificate and returns what its forced command printed (the address
+// the station sees, during attach).
+func StationProbe(ctx context.Context, e *porterenroll.Env, p Paths, name string) (string, error) {
+	t, err := findTarget(p, name)
+	if err != nil {
+		return "", err
+	}
+	if t.Station == nil {
+		return "", valise.New("station_unmanaged", name+" 不是 Valise 管理的空间站", "")
+	}
+	st, done, err := stationOf(p, t)
+	if err != nil {
+		return "", err
+	}
+	defer done()
+	argv := append(append([]string{"ssh", "-o", "BatchMode=yes"}, st.SSH...), st.Host, "true")
+	out, err := e.Run(ctx, time.Minute, p.Home, argv...)
+	if err != nil {
+		return "", err
+	}
+	if out.Code != 0 {
+		return "", valise.New("station_probe_failed", "服务器连不上空间站 "+name, "经这台电脑中转").WithDetail(lastLine(string(out.Stderr)))
+	}
+	s := strings.TrimSpace(string(out.Stdout))
+	if len(s) > 200 {
+		s = s[:200]
+	}
+	return s, nil
+}
+
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	return lines[len(lines)-1]
 }
 
 var stationNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)

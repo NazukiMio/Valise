@@ -252,10 +252,28 @@ func init() {
 		pub, err := seal.StationKeyFor(ctx, s.loginEnv(ctx), paths(s), p.Name, "valise-station@"+name)
 		return vaultrpc.StationKeyResult{PublicKey: pub}, err
 	}
+	methods[vaultrpc.MethodStationCert] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.StationCertParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return struct{}{}, seal.SetStationCert(paths(s), p.Name, p.Cert)
+	}
+	methods[vaultrpc.MethodStationProbe] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.StationKeyParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		out, err := seal.StationProbe(ctx, s.loginEnv(ctx), paths(s), p.Name)
+		return vaultrpc.StationProbeResult{Output: out}, err
+	}
 	methods[vaultrpc.MethodSyncRecord] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.SyncRecordParams
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
+		}
+		if p.Forget != "" {
+			return struct{}{}, seal.ForgetSynced(paths(s), p.Target, p.Forget)
 		}
 		return struct{}{}, seal.RecordSynced(paths(s), p.Target, p.Snapshots)
 	}

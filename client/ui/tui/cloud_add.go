@@ -47,7 +47,15 @@ func (c *cloudScreen) addStation(m *Model) tea.Cmd {
 					for range 4 {
 						m.pop()
 					}
-					return tea.Sequence(m.runCLI(args...), func() tea.Msg { return srvRefresh(c.host, "") })
+					return m.push(pick("服务器给空间站的证书要限定来源地址吗？", []choice{
+						{label: "限定（推荐）", value: "fixed", desc: "钥匙被拷到别处也用不了；服务器地址固定时选这个"},
+						{label: "不限定", value: "any", desc: "服务器的地址会变（家宽、动态地址）时选这个"},
+					}, func(m *Model, v string) tea.Cmd {
+						if v == "any" {
+							args = append(args, "--any-source")
+						}
+						return tea.Sequence(m.runCLI(args...), func() tea.Msg { return srvRefresh(c.host, "") })
+					}))
 				})
 			})
 		})

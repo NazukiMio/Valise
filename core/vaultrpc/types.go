@@ -106,6 +106,27 @@ type StationConn struct {
 	User    string `json:"user"`
 	// KnownHosts are the confirmed known_hosts lines of the station.
 	KnownHosts []string `json:"known_hosts"`
+	// Rooted: the station anchors this server's paths at its own folder
+	// (rrsync), so Dest already is the server's folder.
+	Rooted bool `json:"rooted,omitempty"`
+}
+
+// Station certificate methods (owner tier): the client signs the server's
+// station key for a while (docs/ARCHITECTURE.md section 7).
+const (
+	MethodStationCert  = "station_cert"
+	MethodStationProbe = "station_probe"
+)
+
+// StationCertParams installs a certificate for the server's station key.
+type StationCertParams struct {
+	Name string `json:"name"`
+	Cert string `json:"cert"`
+}
+
+// StationProbeResult is what the station's forced probe command printed.
+type StationProbeResult struct {
+	Output string `json:"output"`
 }
 
 // Station key and record methods (owner tier).
@@ -114,7 +135,8 @@ const (
 	MethodSyncRecord = "sync_record"
 )
 
-// StationKeyParams names the station whose key porter makes or shows.
+// StationKeyParams names the station whose key porter makes, shows,
+// probes with.
 type StationKeyParams struct {
 	Name string `json:"name"`
 }
@@ -128,6 +150,8 @@ type StationKeyResult struct {
 type SyncRecordParams struct {
 	Target    string   `json:"target"`
 	Snapshots []string `json:"snapshots"`
+	// Forget drops a period the client deleted from the station.
+	Forget string `json:"forget,omitempty"`
 }
 
 // AutoSync is a target's automatic backup setting.

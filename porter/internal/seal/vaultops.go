@@ -204,7 +204,7 @@ func SetTarget(p Paths, t vaultrpc.Target) error {
 		return valise.New("target_name_invalid", "同步目标名只能包含小写字母、数字和连字符", "例如 nas")
 	}
 	switch t.Kind {
-	case stationsync.MethodRsync, stationsync.MethodSFTP:
+	case stationsync.MethodRsync, stationsync.MethodSFTP, stationsync.MethodRRsync:
 	case "rclone":
 		return valise.New("target_kind_unsupported", "这个版本还不支持 rclone 同步", "改用 rsync 或 sftp")
 	default:
@@ -283,6 +283,10 @@ func findTarget(p Paths, name string) (*vaultrpc.Target, error) {
 
 // treeDest is <dest>/<server_name>.
 func treeDest(t *vaultrpc.Target, serverName string) string {
+	if t.Station != nil && t.Station.Rooted {
+		// The station already anchors this server at its own folder.
+		return strings.TrimRight(t.Dest, "/")
+	}
 	return strings.TrimRight(t.Dest, "/") + "/" + serverName
 }
 

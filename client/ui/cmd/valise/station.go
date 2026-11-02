@@ -43,11 +43,12 @@ func (c *cli) stationAdd(ctx context.Context, args []string) error {
 	path := fs.String("path", "", "")
 	login := fs.String("login", config.LoginPassword, "")
 	trust := fs.String("trust-fingerprint", "", "")
+	anySource := fs.Bool("any-source", false, "")
 	pos, err := parseArgs(fs, args, 1)
 	if err != nil {
 		return err
 	}
-	st := config.Station{Name: pos[0], Address: *addr, Port: *port, User: *user, Path: *path, Login: config.LoginPassword}
+	st := config.Station{Name: pos[0], Address: *addr, Port: *port, User: *user, Path: *path, Login: config.LoginPassword, AnySource: *anySource}
 	if k, ok := strings.CutPrefix(*login, "key:"); ok {
 		st.Login, st.LoginKey = config.LoginKey, k
 	} else if *login != config.LoginPassword {
@@ -73,9 +74,19 @@ func (c *cli) stationAdd(ctx context.Context, args []string) error {
 	if st.Login == config.LoginPassword {
 		fmt.Fprintln(c.out, "接下来 OpenSSH 会询问一次空间站用户的密码（Valise 不保存它），用来装 Valise 的钥匙。")
 	}
-	if err := c.svc.StationAdd(ctx, st, keys); err != nil {
+	res, err := c.svc.StationAdd(ctx, st, keys)
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(c.out, "已添加空间站 %s。上云时 Valise 先让服务器直传；服务器连不上它时，经这台电脑中转。\n", st.Name)
+	switch {
+	case res.Station.RRsync:
+		fmt.Fprintln(c.out, "服务器只能凭 Valise 签发的短期证书写入（rrsync：只写、不删、不覆盖，限定在各自的目录）。")
+	case res.Station.SFTPServer != "":
+		fmt.Fprintln(c.out, "服务器只能凭 Valise 签发的短期证书写入（受限的 sftp：不能删除）。")
+	}
+	for _, w := range res.Warnings {
+		fmt.Fprintln(c.out, "注意："+w)
+	}
 	return nil
 }

@@ -27,6 +27,13 @@ type Station struct {
 	// Login and LoginKey: the one login that installs the keys.
 	Login    string `json:"login,omitempty"`
 	LoginKey string `json:"login_key,omitempty"`
+	// What the station offers to limit server keys, found when added:
+	// rrsync, else the path of sftp-server.
+	RRsync     bool   `json:"rrsync,omitempty"`
+	SFTPServer string `json:"sftp_server,omitempty"`
+	// AnySource leaves certificates without a source address (servers
+	// whose address changes).
+	AnySource bool `json:"any_source,omitempty"`
 }
 
 var (

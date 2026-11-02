@@ -14,9 +14,11 @@ type repoSynced struct {
 	err  error
 }
 
-// repoAuto starts the first copy of this run for a freshly loaded server.
+// repoAuto starts this run's background work for a freshly loaded
+// server (once per server and run): copying to the repositories, and
+// renewing station certificates while the Valise passphrase is unlocked.
 func (m *Model) repoAuto(d *srvData) tea.Cmd {
-	if d.status == nil || d.status.ServerName == "" || !d.status.Exists || len(m.svc.Repos()) == 0 {
+	if d.status == nil || d.status.ServerName == "" {
 		return nil
 	}
 	if m.repoDone == nil {
@@ -26,7 +28,24 @@ func (m *Model) repoAuto(d *srvData) tea.Cmd {
 		return nil
 	}
 	m.repoDone[d.host] = true
-	return repoSyncAll(m, d.host)
+	var cmds []tea.Cmd
+	if d.status.Exists && len(m.svc.Repos()) > 0 {
+		cmds = append(cmds, repoSyncAll(m, d.host))
+	}
+	if exp := m.svc.ExpiringCerts(d.host); len(exp) > 0 {
+		svc, ctx, host := m.svc, m.ctx, d.host
+		cmds = append(cmds, func() tea.Msg {
+			done, err := svc.RenewCerts(ctx, host)
+			switch {
+			case err != nil:
+				return repoSynced{host: host, err: err}
+			case len(done) > 0:
+				return repoSynced{host: host, text: host + " 到空间站 " + joinNames(done) + " 的证书已续期"}
+			}
+			return repoSynced{host: host, text: host + " 到空间站 " + joinNames(exp) + " 的证书快到期了：上云一次即可续期（自动同步才不会中断）"}
+		})
+	}
+	return tea.Batch(cmds...)
 }
 
 // repoSyncAll copies host's escape pods to every repository.

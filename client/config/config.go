@@ -21,6 +21,9 @@ type Config struct {
 	// Repos are local folders escape pods are copied to (docs/
 	// ARCHITECTURE.md section 7, "本机仓库"), shared by all servers.
 	Repos []Repo `json:"repos,omitempty"`
+	// StationCertHours is how long a server's station certificate lasts
+	// (1–720, default 168; renewed when Valise opens).
+	StationCertHours int `json:"station_cert_hours,omitempty"`
 }
 
 // Repo is a local folder used as a repository.

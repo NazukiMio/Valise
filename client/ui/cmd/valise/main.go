@@ -69,7 +69,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
          [--trust-fingerprint SHA256:…] [--name 名字] [--release 版本 | --local 文件]
                                                  手动添加服务器：确认身份 → 用密码登录一次装好日常钥匙 → 检查 → 部署 porter → 起名
   server rekey <服务器> [--admin-key]              在这台电脑上重新安装日常钥匙（导入配置后、换电脑后；需要用服务器密码登录一次）
-  station add <名称> --address <地址> --user <用户> --path <路径> [--port 22] [--login password|key:<私钥>]
+  station add <名称> --address <地址> --user <用户> --path <路径> [--port 22] [--login password|key:<私钥>] [--any-source]
   station list | station remove <名称>               Valise 管理的空间站（服务器连不上时经这台电脑中转）
   repo add <名称> <文件夹> | repo list | repo remove <名称>    本机仓库（逃生舱另存到本机文件夹）
   repo sync <服务器> [名称]                          把服务器上的逃生舱补到仓库（不指定名称时同步全部仓库）

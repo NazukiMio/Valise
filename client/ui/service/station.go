@@ -68,54 +68,109 @@ func stationInvalid(err error) error {
 	return valise.New("station_invalid", "空间站的"+what, "例如 名字 nas、地址 192.168.1.20、用户 valise、路径 /volume1/valise")
 }
 
+// StationAddResult reports what adding a station found.
+type StationAddResult struct {
+	Station  config.Station
+	Warnings []string
+}
+
 // StationAdd records a station after its host keys were confirmed, logs
 // in once (password or the user's key; OpenSSH asks) to install the
-// client's station key, and checks the key works.
-func (s *Service) StationAdd(ctx context.Context, st config.Station, confirmed []HostKey) error {
+// client's station key and the line trusting Valise's certificates, then
+// finds what the station offers to limit server keys.
+func (s *Service) StationAdd(ctx context.Context, st config.Station, confirmed []HostKey) (*StationAddResult, error) {
+	res, err := s.stationAdd(ctx, st, confirmed)
+	return res, err
+}
+
+func (s *Service) stationAdd(ctx context.Context, st config.Station, confirmed []HostKey) (*StationAddResult, error) {
 	if err := st.Validate(); err != nil {
-		return stationInvalid(err)
+		return nil, stationInvalid(err)
+	}
+	caPub, err := s.ensureCA(ctx)
+	if err != nil {
+		return nil, err
 	}
 	list := s.Stations()
 	if slices.ContainsFunc(list, func(x config.Station) bool { return x.Name == st.Name }) {
-		return valise.New("station_exists", "已经有一个叫 "+st.Name+" 的空间站", "换一个名字，或先移除旧的")
+		return nil, valise.New("station_exists", "已经有一个叫 "+st.Name+" 的空间站", "换一个名字，或先移除旧的")
 	}
 	if err := s.TrustHostKeys(ctx, stationServer(st), confirmed); err != nil {
-		return err
+		return nil, err
+	}
+	res := &StationAddResult{}
+	// A station anyone can log in to makes every limit moot: say so.
+	if s.refuseNoAuth(ctx, stationServer(st)) != nil {
+		res.Warnings = append(res.Warnings, st.Address+" 不需要任何密码或钥匙就能登录：Valise 对钥匙的限制在它上面不起作用。请先给它设密码、为 Valise 开专用用户。")
 	}
 	if err := config.SaveStations(s.Dirs.Data, append(slices.Clone(list), st)); err != nil {
-		return err
+		return nil, err
 	}
 	undo := func() { _ = config.SaveStations(s.Dirs.Data, list) }
 	key := s.stationKey(st.Name)
 	if !fileExists(key) {
 		if err := os.MkdirAll(filepath.Dir(key), 0o700); err != nil {
 			undo()
-			return err
+			return nil, err
 		}
 		if err := runTool(ctx, s.toolPath("ssh-keygen"), []string{"-q", "-t", "ed25519", "-N", "", "-C", "valise-station@" + localName(), "-f", key}, os.Environ()); err != nil {
 			undo()
-			return valise.New("keygen_failed", "无法生成空间站钥匙", "确认本机安装了 OpenSSH 的 ssh-keygen").WithDetail(err.Error())
+			return nil, valise.New("keygen_failed", "无法生成空间站钥匙", "确认本机安装了 OpenSSH 的 ssh-keygen").WithDetail(err.Error())
 		}
 	}
 	pub, err := os.ReadFile(key + ".pub")
 	if err != nil {
 		undo()
-		return err
+		return nil, err
 	}
 	t, err := s.bootstrapTransport(stationServer(st))
 	if err != nil {
 		undo()
-		return err
+		return nil, err
 	}
-	if err := s.installStationKey(ctx, t, string(pub)); err != nil {
+	if err := s.installStationKey(ctx, t, string(pub), ""); err != nil {
 		undo()
-		return err
+		return nil, err
 	}
 	if _, err := s.stationTransport(st).Run(ctx, "true", nil); err != nil {
 		undo()
-		return valise.New("station_key_unusable", "空间站钥匙装好了，但用它登录失败", "检查空间站 SSH 是否允许公钥登录").WithDetail(err.Error())
+		return nil, valise.New("station_key_unusable", "空间站钥匙装好了，但用它登录失败", "检查空间站 SSH 是否允许公钥登录").WithDetail(err.Error())
 	}
-	return nil
+	// Server keys only ever log in with Valise's certificates.
+	if err := s.installStationKey(ctx, s.stationTransport(st), caPub, `cert-authority,restrict,principals="`+st.User+`"`); err != nil {
+		undo()
+		return nil, err
+	}
+	st.RRsync, st.SFTPServer = s.stationTools(ctx, st)
+	if !st.RRsync && st.SFTPServer == "" {
+		res.Warnings = append(res.Warnings, "空间站上没有 rrsync 也没有 sftp-server，Valise 不会给服务器凭据：上云一律经这台电脑中转。")
+	} else if !st.RRsync {
+		res.Warnings = append(res.Warnings, "空间站上没有 rrsync，服务器的证书限定为禁止删除的 sftp：它仍可能覆盖已有文件，建议在 NAS 上开启定时快照。")
+	}
+	if err := config.SaveStations(s.Dirs.Data, append(slices.Clone(list), st)); err != nil {
+		return nil, err
+	}
+	res.Station = st
+	res.Warnings = append(res.Warnings, "建议在 NAS 上为 Valise 的目录开启定时快照：即使有人拿到这台电脑上的钥匙删了逃生舱，也能找回。")
+	return res, nil
+}
+
+// stationTools finds rrsync and sftp-server on a station.
+func (s *Service) stationTools(ctx context.Context, st config.Station) (rrsync bool, sftpServer string) {
+	r, err := s.stationTransport(st).Run(ctx, `command -v rrsync >/dev/null 2>&1 && echo rrsync; for p in /usr/lib/openssh/sftp-server /usr/libexec/sftp-server /usr/libexec/openssh/sftp-server /usr/lib/ssh/sftp-server /usr/lib/sftp-server; do [ -x "$p" ] && { echo "$p"; break; }; done; true`, nil)
+	if err != nil {
+		return false, ""
+	}
+	for _, l := range strings.Split(string(r.Stdout), "\n") {
+		l = strings.TrimSpace(l)
+		switch {
+		case l == "rrsync":
+			rrsync = true
+		case strings.HasPrefix(l, "/") && sftpServer == "":
+			sftpServer = l
+		}
+	}
+	return rrsync, sftpServer
 }
 
 // StationRemove forgets a station; nothing on it or on servers changes.
@@ -130,7 +185,7 @@ func (s *Service) StationRemove(name string) error {
 
 // installStationKey appends a restricted authorized_keys line on the
 // station (no terminal, no forwarding), replacing the same key.
-func (s *Service) installStationKey(ctx context.Context, t *ssh.Transport, pub string) error {
+func (s *Service) installStationKey(ctx context.Context, t *ssh.Transport, pub, options string) error {
 	f := strings.Fields(pub)
 	if len(f) < 2 {
 		return valise.New("station_key_invalid", "空间站钥匙的公钥格式不对", "重试；仍不行请报告")
@@ -139,7 +194,10 @@ func (s *Service) installStationKey(ctx context.Context, t *ssh.Transport, pub s
 	if len(f) > 2 {
 		comment = f[2]
 	}
-	line := "restrict " + f[0] + " " + f[1] + " " + comment
+	if options == "" {
+		options = "restrict"
+	}
+	line := options + " " + f[0] + " " + f[1] + " " + comment
 	res, err := t.Run(ctx, "sh -s", strings.NewReader(installKeysScript(map[string]string{"station": line})))
 	if err != nil {
 		return err
@@ -188,28 +246,52 @@ func asExit(err error, exit **exec.ExitError) bool {
 	return ok
 }
 
-// attachStation gives host its own key for st and records st in host's
-// targets.json, so the server can copy directly (and sync by itself).
-func (s *Service) attachStation(ctx context.Context, host string, st config.Station) error {
+// attachStation gives host its own key for st with a fresh certificate,
+// and records st in host's targets.json, so the server can copy directly
+// (and sync by itself while the certificate lasts).
+func (s *Service) attachStation(ctx context.Context, host string, st config.Station, status *vaultrpc.StatusResult) error {
+	_, kind, rooted, ok := certLimit(st, status.ServerName)
+	if !ok {
+		return valise.New(stationsync.UnreachableCode, "空间站 "+st.Name+" 无法限制服务器的钥匙，Valise 不给服务器凭据", "经这台电脑中转")
+	}
 	var key vaultrpc.StationKeyResult
 	if err := s.call(ctx, host, vaultrpc.MethodStationKey, vaultrpc.StationKeyParams{Name: st.Name}, &key); err != nil {
 		return err
 	}
-	if err := s.installStationKey(ctx, s.stationTransport(st), key.PublicKey); err != nil {
-		return err
+	dest := st.Address + ":" + st.Path
+	if rooted {
+		// rrsync anchors this server at its own folder, which must exist.
+		folder := strings.TrimRight(st.Path, "/") + "/" + status.ServerName
+		r, err := s.stationTransport(st).Run(ctx, "mkdir -p "+ssh.Quote(folder), nil)
+		if err == nil && r.ExitCode != 0 {
+			err = valise.New("station_mkdir_failed", "无法在空间站上创建 "+folder, "检查空间站上这个目录的权限").WithDetail(strings.TrimSpace(string(r.Stderr)))
+		}
+		if err != nil {
+			return err
+		}
+		dest = st.Address + ":/"
 	}
 	data, _ := os.ReadFile(filepath.Join(s.Dirs.Data, config.KnownHostsFile))
 	_, lines := parseHostKeys(data, knownHostsField(st.Address, st.PortOr22()))
-	t := vaultrpc.Target{Name: st.Name, Kind: stationsync.MethodRsync, Dest: st.Address + ":" + st.Path,
-		Station: &vaultrpc.StationConn{Address: st.Address, Port: st.PortOr22(), User: st.User, KnownHosts: lines}}
-	return s.TargetSet(ctx, host, t)
+	t := vaultrpc.Target{Name: st.Name, Kind: kind, Dest: dest,
+		Station: &vaultrpc.StationConn{Address: st.Address, Port: st.PortOr22(), User: st.User, KnownHosts: lines, Rooted: rooted}}
+	for _, old := range status.Targets {
+		if old.Name == st.Name && old.Auto != nil {
+			t.Auto = old.Auto
+		}
+	}
+	if err := s.TargetSet(ctx, host, t); err != nil {
+		return err
+	}
+	return s.issueCert(ctx, host, status.ServerName, key.PublicKey, st)
 }
 
-// attached reports whether host's targets.json already has st as recorded.
+// attached reports whether host's targets.json has st as it should be.
 func attached(status *vaultrpc.StatusResult, st config.Station) bool {
+	_, kind, rooted, ok := certLimit(st, status.ServerName)
 	for _, t := range status.Targets {
-		if t.Name == st.Name && t.Station != nil && t.Station.Address == st.Address && t.Station.Port == st.PortOr22() && t.Station.User == st.User &&
-			t.Dest == st.Address+":"+st.Path {
+		if ok && t.Name == st.Name && t.Station != nil && t.Station.Address == st.Address && t.Station.Port == st.PortOr22() &&
+			t.Station.User == st.User && t.Kind == kind && t.Station.Rooted == rooted {
 			return true
 		}
 	}
@@ -253,8 +335,8 @@ func (s *Service) SyncStation(ctx context.Context, host, name string) (*StationS
 	}
 	res := &StationSyncResult{Station: name}
 	var directErr error
-	if !attached(status, *st) {
-		directErr = s.attachStation(ctx, host, *st)
+	if !attached(status, *st) || !s.certFresh(host, name) {
+		directErr = s.attachStation(ctx, host, *st, status)
 	}
 	if directErr == nil {
 		r, err := s.Sync(ctx, host, name)
@@ -375,12 +457,7 @@ func (s *Service) StationList(ctx context.Context, host, name string) (*vaultrpc
 	if err != nil {
 		return nil, err
 	}
-	if attached(status, *st) {
-		l, err := s.TargetList(ctx, host, name)
-		if ue, ok := valise.As(err); !ok || ue.Code != stationsync.UnreachableCode {
-			return l, err
-		}
-	}
+	// Server keys may only write (rrsync -wo): the client lists.
 	if status.ServerName == "" {
 		return &vaultrpc.TargetListResult{Target: name, Leaves: []vaultrpc.RemoteLeaf{}}, nil
 	}
@@ -422,4 +499,55 @@ func (s *Service) StationList(ctx context.Context, host, name string) (*vaultrpc
 		}
 	}
 	return res, nil
+}
+
+// stationLeafDelete deletes a period on a managed station from this
+// computer (server keys cannot delete): an owner operation while the
+// server still holds the period, developer mode when it is the only copy
+// (docs/ARCHITECTURE.md 2.2).
+func (s *Service) stationLeafDelete(ctx context.Context, host, name, leaf string) error {
+	st, err := s.station(name)
+	if err != nil {
+		return err
+	}
+	inst, period, ok := vault.SplitLeaf(leaf)
+	if !ok {
+		return valise.New("leaf_invalid", "无效的周期："+leaf, "使用列表中的名称")
+	}
+	status, err := s.VaultStatus(ctx, host)
+	if err != nil {
+		return err
+	}
+	onServer := false
+	for _, l := range status.Leaves {
+		if l.Leaf == leaf {
+			if l.Current {
+				return valise.New("leaf_current", "这是正在写入的周期，不能删除", "等它结束后再删")
+			}
+			onServer = !l.Deleting && l.VaultID != ""
+		}
+	}
+	if onServer {
+		if _, err := s.ownerIdentity(host); err != nil {
+			return err
+		}
+	} else {
+		t, done, err := s.adminTransport(ctx, host)
+		if err != nil {
+			return err
+		}
+		_ = t
+		done()
+	}
+	rs := s.relayStation(*st)
+	parent := strings.TrimRight(st.Path, "/") + "/" + status.ServerName + "/" + inst
+	if _, _, err := stationsync.With(ctx, localRunner{}, rs, func(r stationsync.Remote) error {
+		return r.DeleteDir(ctx, rs.Dest(parent), period)
+	}); err != nil {
+		return err
+	}
+	if attached(status, *st) {
+		_ = s.call(ctx, host, vaultrpc.MethodSyncRecord, vaultrpc.SyncRecordParams{Target: name, Forget: leaf}, nil)
+	}
+	return nil
 }
