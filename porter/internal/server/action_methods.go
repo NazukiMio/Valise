@@ -16,6 +16,17 @@ import (
 )
 
 func init() {
+	methods[action.MethodApproval] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p action.ApprovalParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		prof, err := porterenroll.ReadProfile(s.cfg.Home, p.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		return porteraction.Approval(ctx, s.loginEnv(ctx).For(prof), prof.ApprovalCheck)
+	}
 	methods[action.MethodRun] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p action.RunParams
 		if err := json.Unmarshal(raw, &p); err != nil {

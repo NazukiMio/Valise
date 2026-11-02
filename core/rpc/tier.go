@@ -54,6 +54,7 @@ var dailyMethods = map[string]bool{
 	"proposals_list":  true,
 	"kit_status":      true,
 	"kit_tools_check": true,
+	"approval_check":  true,
 	"prev_list":       true,
 	"old_list":        true,
 	"journal_get":     true,

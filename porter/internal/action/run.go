@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -99,4 +100,28 @@ func pick(stdout []byte, sp *profile.SecretPick) (string, bool) {
 		return q.Get(sp.URLParam), true
 	}
 	return "", false
+}
+
+// Approval runs a profile's approval_check: a read-only command whose JSON
+// output is matched by equality (profile.EvalApproval).
+func Approval(ctx context.Context, e *porterenroll.Env, c *profile.ApprovalCheck) (*action.ApprovalResult, error) {
+	if c == nil {
+		return &action.ApprovalResult{}, nil
+	}
+	res := &action.ApprovalResult{Declared: true, Pending: c.Verify == "pending", Mode: profile.ApprovalUnknown}
+	argv, ok := e.ExpandArgv(c.Argv, nil)
+	if !ok {
+		res.Detail = "命令依赖未设置的环境变量"
+		return res, nil
+	}
+	out, err := e.Run(ctx, time.Minute, "", argv...)
+	switch {
+	case err != nil:
+		res.Detail = "没能运行：" + err.Error()
+	case out.Code != 0:
+		res.Detail = "命令退出码 " + strconv.Itoa(out.Code)
+	default:
+		res.Mode, res.Detail = profile.EvalApproval(c, out.Stdout)
+	}
+	return res, nil
 }

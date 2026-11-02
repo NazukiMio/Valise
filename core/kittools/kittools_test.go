@@ -20,8 +20,8 @@ func TestRepositoryList(t *testing.T) {
 			t.Fatalf("no %s", id)
 		}
 	}
-	if !l.ByID("rclone").Pending() {
-		t.Fatal("rclone without sha256 must not be installable")
+	if l.ByID("rclone").Pending() || !l.ByID("rsync").Pending() {
+		t.Fatal("rclone is verified; rsync is not yet")
 	}
 	if got := For(l.ByID("rsync").Install, "ol"); len(got) == 0 || got[1] != "dnf" {
 		t.Fatalf("%v", got)

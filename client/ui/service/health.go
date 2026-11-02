@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"valise/core/action"
 	"valise/core/agentkit"
 	"valise/core/enroll"
+	"valise/core/profile"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 )
@@ -125,15 +127,19 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 		case !ts.Enabled:
 			it.Level, it.Text = HealthInfo, "没有开启（在设置里开启）"
 		case !ts.Linger:
-			it.Level, it.Text, it.Key = HealthWarn, "每 "+ts.Every+" 一次，但 linger 没有开启：你登出或服务器重启后会停下", "k"
+			it.Level, it.Text, it.Key = HealthWarn, "每 "+everyText(ts.Every)+"一次，但 linger 没有开启：你登出或服务器重启后会停下", "k"
 			it.Detail = "linger 让服务器在你没有登录时也运行你的定时任务。按 k 打开 Kit 工具开启它（专家级，需要高级模式），或在服务器终端里运行 sudo loginctl enable-linger $USER。"
 		default:
-			it.Level, it.Text = HealthOK, "每 "+ts.Every+" 一次，登出后也会运行"
+			it.Level, it.Text = HealthOK, "每 "+everyText(ts.Every)+"一次，登出后也会运行"
 		}
 		add(it)
 	}
 	if k, err := s.KitStatus(ctx, host, instance); err == nil {
-		add(approvalItem(k.Declaration))
+		var chk action.ApprovalResult
+		if err := s.call(ctx, host, action.MethodApproval, action.ApprovalParams{InstanceID: instance}, &chk); err != nil {
+			chk = action.ApprovalResult{}
+		}
+		add(approvalItem(&chk, k.Declaration))
 		stale := 0
 		for _, sk := range k.Skills {
 			if sk.State != agentkit.SkillCurrent {
@@ -270,19 +276,52 @@ func serviceItem(svc []enroll.ServiceState, entries []enroll.EntryState) HealthI
 	return it
 }
 
-func approvalItem(d *agentkit.Declaration) HealthItem {
+// approvalItem: the harness's own settings (the profile's approval_check)
+// come first; the agent's declaration fills in when there is no check, and
+// is shown against the settings when they disagree.
+func approvalItem(chk *action.ApprovalResult, d *agentkit.Declaration) HealthItem {
 	it := HealthItem{ID: "approval", Group: HealthAgent, Title: "审批"}
+	bypassDetail := "agent 可以不经你同意删除文件、改配置或运行命令；被注入的指令也会直接执行。在 harness 的设置里改为执行前询问，然后让 agent 重新声明。"
+	declared := ""
+	if d != nil {
+		declared = d.ApprovalMode
+	}
+	if chk != nil && chk.Declared && chk.Mode != profile.ApprovalUnknown {
+		src := "harness 设置读出"
+		if chk.Pending {
+			src += "，读法尚未核实"
+		}
+		src += "：" + chk.Detail
+		switch chk.Mode {
+		case profile.ApprovalBypass:
+			it.Level, it.Text, it.Detail = HealthBad, "agent 执行风险命令无需批准（Bypass）（"+src+"）", bypassDetail
+			if declared == agentkit.ApprovalAsk {
+				it.Text += "；agent 声称需要批准，与设置不符"
+			}
+		default:
+			it.Level, it.Text = HealthOK, "执行风险命令前需要你批准（"+src+"）"
+			if declared == agentkit.ApprovalBypass {
+				it.Level = HealthWarn
+				it.Text += "；agent 声称无需批准，与设置不符"
+				it.Detail = "可能还有设置没被读到（例如某个会话里临时放开）。让 agent 说明它在哪里看到自己无需批准。"
+			}
+		}
+		return withSkills(it, d)
+	}
 	switch {
 	case d == nil:
 		it.Level, it.Text = HealthInfo, "agent 还没有声明执行风险命令前是否需要你批准"
 	case d.ApprovalMode == agentkit.ApprovalBypass:
-		it.Level, it.Text = HealthBad, "agent 执行风险命令无需批准（Bypass）（agent 声明，未经核实）"
-		it.Detail = "agent 可以不经你同意删除文件、改配置或运行命令；被注入的指令也会直接执行。在 harness 的设置里改为执行前询问，然后让 agent 重新声明。"
+		it.Level, it.Text, it.Detail = HealthBad, "agent 执行风险命令无需批准（Bypass）（agent 声明，未经核实）", bypassDetail
 	case d.ApprovalMode == agentkit.ApprovalAsk:
 		it.Level, it.Text = HealthOK, "执行风险命令前需要你批准（agent 声明，未经核实）"
 	default:
 		it.Level, it.Text = HealthInfo, "agent 说不清执行风险命令前是否需要你批准"
 	}
+	return withSkills(it, d)
+}
+
+func withSkills(it HealthItem, d *agentkit.Declaration) HealthItem {
 	if d != nil && len(d.SecuritySkills) > 0 {
 		var names []string
 		for _, sk := range d.SecuritySkills {
@@ -301,4 +340,21 @@ func agoPlain(d time.Duration) string {
 		return strconv.Itoa(int(d/time.Hour)) + " 小时"
 	}
 	return strconv.Itoa(max(1, int(d/time.Minute))) + " 分钟"
+}
+
+// everyText turns a timer interval ("6h", "1d", "30m") into words.
+func everyText(every string) string {
+	if n := len(every); n > 1 {
+		if _, err := strconv.Atoi(every[:n-1]); err == nil {
+			switch every[n-1] {
+			case 'd':
+				return every[:n-1] + " 天"
+			case 'h':
+				return every[:n-1] + " 小时"
+			case 'm':
+				return every[:n-1] + " 分钟"
+			}
+		}
+	}
+	return every + " "
 }

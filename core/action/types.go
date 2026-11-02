@@ -25,3 +25,21 @@ type RunResult struct {
 
 // MaxOutputLines is how much of a text action's output is kept.
 const MaxOutputLines = 200
+
+// MethodApproval runs the stored profile's approval_check (read only).
+const MethodApproval = "approval_check"
+
+// ApprovalParams names the instance.
+type ApprovalParams struct {
+	InstanceID string `json:"instance_id"`
+}
+
+// ApprovalResult is what the harness's own settings say. Declared is false
+// when the profile has no approval_check; Pending when the check is not
+// verified on a target yet.
+type ApprovalResult struct {
+	Declared bool   `json:"declared"`
+	Mode     string `json:"mode,omitempty"` // profile.Approval*
+	Detail   string `json:"detail,omitempty"`
+	Pending  bool   `json:"pending,omitempty"`
+}

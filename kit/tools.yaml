@@ -9,13 +9,14 @@ tools:
     purpose: 同步到网盘（Google Drive、OneDrive 等）
     without: 不能同步到网盘；本机仓库与空间站不受影响
     check: { binary: rclone }
-    # Filled after checking on a target: a pinned version, each
-    # architecture's https://downloads.rclone.org/v<version>/… zip, its
-    # SHA-256 from the release's SHA256SUMS, and the member path.
+    # SHA-256 from https://downloads.rclone.org/v1.75.2/SHA256SUMS.
     binary:
-      version: ""
-      archives: []
-    verify: pending
+      version: "1.75.2"
+      archives:
+        - { arch: amd64, url: "https://downloads.rclone.org/v1.75.2/rclone-v1.75.2-linux-amd64.zip", sha256: "349ac8fba6ff65d6247043f1750cdcb518ec5d500ef91463a10d37c0ccdf3702", member: "rclone-v1.75.2-linux-amd64/rclone" }
+        - { arch: arm64, url: "https://downloads.rclone.org/v1.75.2/rclone-v1.75.2-linux-arm64.zip", sha256: "7e1e8d69654941b7b7df84ee74c5f7fb09cce7d5496947fb7bf16b55ff427d10", member: "rclone-v1.75.2-linux-arm64/rclone" }
+    # Installed, run and removed on Debian 13 arm64 (2026-11-02). The amd64
+    # build is the same release, not yet run on a target.
 
   - id: rsync
     tier: expert

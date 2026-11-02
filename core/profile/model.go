@@ -2,6 +2,13 @@
 // its strict YAML loader and profilelint. See docs/PROFILES.md.
 package profile
 
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+)
+
 // Schema is the only profile schema this package understands.
 const Schema = "valise-profile/1"
 
@@ -51,6 +58,9 @@ type Profile struct {
 	NativeHints []string `yaml:"native_hints" json:"native_hints,omitempty"`
 	// Actions are managed actions (docs/INSTALL.md section 5).
 	Actions []Action `yaml:"actions" json:"actions,omitempty"`
+	// ApprovalCheck reads whether the harness asks before risky commands
+	// (docs/PROFILES.md 1, 审批状态检查).
+	ApprovalCheck *ApprovalCheck `yaml:"approval_check" json:"approval_check,omitempty"`
 	// Capabilities record what was verified, per capability
 	// (docs/PROFILES.md 1.2).
 	Capabilities map[string]Capability `yaml:"capabilities" json:"capabilities,omitempty"`
@@ -546,4 +556,93 @@ func (p *Profile) CapabilityStatus(name string) string {
 		return "tested"
 	}
 	return "untested"
+}
+
+// ApprovalCheck runs a read-only command and matches fields of its JSON
+// output by equality: all of BypassWhen means bypass, any of AskWhen means
+// the harness asks; anything else is unknown. With Each, every element of
+// that array is checked and the worst result wins.
+type ApprovalCheck struct {
+	Argv       Argv                `yaml:"argv" json:"argv"`
+	Each       string              `yaml:"each" json:"each,omitempty"`
+	BypassWhen map[string]string   `yaml:"bypass_when" json:"bypass_when"`
+	AskWhen    []map[string]string `yaml:"ask_when" json:"ask_when,omitempty"`
+	Verify     string              `yaml:"verify" json:"verify,omitempty"`
+}
+
+// Approval modes read by ApprovalCheck.
+const (
+	ApprovalAsk     = "ask"
+	ApprovalBypass  = "bypass"
+	ApprovalUnknown = "unknown"
+)
+
+// EvalApproval matches a check against the command's JSON output and
+// returns the mode with the matched values as a short detail.
+func EvalApproval(c *ApprovalCheck, out []byte) (mode, detail string) {
+	var doc any
+	if json.Unmarshal(out, &doc) != nil {
+		return ApprovalUnknown, "输出不是 JSON"
+	}
+	items := []any{doc}
+	if c.Each != "" {
+		arr, ok := field(doc, c.Each).([]any)
+		if !ok || len(arr) == 0 {
+			return ApprovalUnknown, c.Each + " 不是非空数组"
+		}
+		items = arr
+	}
+	mode = ApprovalAsk
+	for _, it := range items {
+		m, d := evalOne(c, it)
+		switch {
+		case m == ApprovalBypass:
+			return m, d
+		case m == ApprovalUnknown:
+			mode, detail = m, d
+		case mode == ApprovalAsk:
+			detail = d
+		}
+	}
+	return mode, detail
+}
+
+func evalOne(c *ApprovalCheck, it any) (string, string) {
+	match := func(want map[string]string) (bool, string) {
+		keys := make([]string, 0, len(want))
+		for k := range want {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var parts []string
+		for _, k := range keys {
+			got := fmt.Sprint(field(it, k))
+			parts = append(parts, k+"="+got)
+			if got != want[k] {
+				return false, ""
+			}
+		}
+		return true, strings.Join(parts, " ")
+	}
+	if ok, d := match(c.BypassWhen); ok {
+		return ApprovalBypass, d
+	}
+	for _, w := range c.AskWhen {
+		if ok, d := match(w); ok {
+			return ApprovalAsk, d
+		}
+	}
+	return ApprovalUnknown, "没有匹配的规则"
+}
+
+// field follows a dotted path through JSON objects.
+func field(v any, path string) any {
+	for _, k := range strings.Split(path, ".") {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return nil
+		}
+		v = m[k]
+	}
+	return v
 }

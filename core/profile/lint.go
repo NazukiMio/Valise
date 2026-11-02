@@ -399,6 +399,7 @@ func (c *checker) checkTop(p *Profile) {
 		c.add("native_hints", "没有 native_cli 时不需要提示")
 	}
 	c.checkActions(p.Actions)
+	c.checkApproval(p.ApprovalCheck)
 	c.checkInstall(p.Install)
 	c.checkCapabilities(p)
 }
@@ -867,5 +868,31 @@ func (c *checker) checkActions(as []Action) {
 		default:
 			c.add(f+".output", "只能是 text、none 或 secret")
 		}
+	}
+}
+
+func (c *checker) checkApproval(a *ApprovalCheck) {
+	if a == nil {
+		return
+	}
+	c.argvVars("approval_check.argv", a.Argv, true, VarHome)
+	if len(a.Argv) == 0 {
+		c.add("approval_check.argv", "不能为空：一条只读命令，输出 JSON")
+	}
+	if a.Each != "" && !fieldPathRe.MatchString(a.Each) {
+		c.add("approval_check.each", "必须是点分字段路径")
+	}
+	if len(a.BypassWhen) == 0 {
+		c.add("approval_check.bypass_when", "不能为空：哪些值同时成立时算无需批准")
+	}
+	for _, w := range append([]map[string]string{a.BypassWhen}, a.AskWhen...) {
+		for k := range w {
+			if !fieldPathRe.MatchString(k) {
+				c.add("approval_check", "字段必须是点分路径：%q", k)
+			}
+		}
+	}
+	if a.Verify != "" && a.Verify != "pending" {
+		c.add("approval_check.verify", "只能是 pending 或不写")
 	}
 }
