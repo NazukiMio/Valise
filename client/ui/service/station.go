@@ -341,7 +341,8 @@ func (s *Service) SyncStation(ctx context.Context, host, name string) (*StationS
 	if directErr == nil {
 		r, err := s.Sync(ctx, host, name)
 		if err == nil {
-			res.Path, res.Method, res.Note, res.Dest, res.Leaves, res.Snapshots = PathDirect, r.Method, r.Note, r.Dest, r.Leaves, r.Snapshots
+			res.Path, res.Method, res.Note, res.Leaves, res.Snapshots = PathDirect, r.Method, r.Note, r.Leaves, r.Snapshots
+			res.Dest = st.Address + ":" + strings.TrimRight(st.Path, "/") + "/" + status.ServerName
 			return res, nil
 		}
 		ue, ok := valise.As(err)

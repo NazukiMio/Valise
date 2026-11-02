@@ -117,8 +117,25 @@ func With(ctx context.Context, run Runner, st Station, op func(Remote) error) (m
 		// The station only takes rrsync from this key: no sftp fallback.
 		return MethodRsync, "", valise.New(UnreachableCode, "这里没有可用的 rsync，而空间站只接受 rsync", "经这台电脑中转").WithDetail(firstLine(missing.err))
 	}
-	note = "rsync 不可用（" + firstLine(missing.err) + "），改用 sftp，速度会慢一些"
+	note = "rsync 不可用（" + whyNoRsync(missing.err) + "），改用 sftp，速度会慢一些"
 	return MethodSFTP, note, op(&sftpRemote{run: run, st: st})
+}
+
+// whyNoRsync says in a few words why rsync could not be used.
+func whyNoRsync(err error) string {
+	detail := err.Error()
+	if ue, ok := valise.As(err); ok {
+		detail = ue.Detail
+	}
+	switch {
+	case strings.Contains(detail, "unrecognized option"), strings.Contains(detail, "unknown option"), strings.Contains(detail, "usage: rsync"):
+		return "这里的 rsync 版本太旧"
+	case strings.Contains(detail, "executable file not found"):
+		return "这里没有安装 rsync"
+	case strings.Contains(detail, "not found"):
+		return "对方没有安装 rsync"
+	}
+	return firstLine(err)
 }
 
 func firstLine(err error) string {

@@ -102,7 +102,13 @@ func (s *Service) TrustHostKeys(ctx context.Context, srv config.Server, confirme
 	}
 	field := knownHostsField(srv.HostName, srv.Port)
 	keys, lines := parseHostKeys(data, field)
-	if !slices.Equal(keys, confirmed) {
+	// ssh-keyscan answers in no fixed order: compare as sets.
+	sorted := func(k []HostKey) []HostKey {
+		k = slices.Clone(k)
+		slices.SortFunc(k, func(a, b HostKey) int { return strings.Compare(a.Type+a.Fingerprint, b.Type+b.Fingerprint) })
+		return k
+	}
+	if !slices.Equal(sorted(keys), sorted(confirmed)) {
 		return valise.New("host_key_changed_during_add", "服务器的身份在确认期间变了", "重新开始添加，并再次核对指纹")
 	}
 	return s.writeKnownHosts(field, lines)
