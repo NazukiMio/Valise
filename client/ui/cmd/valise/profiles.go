@@ -32,10 +32,10 @@ func (c *cli) profilesCmd(ctx context.Context, args []string) error {
 			fmt.Fprintln(c.out, "harness 资料包：未安装。安装：valise profiles install")
 		}
 		for _, id := range st.Local {
-			fmt.Fprintf(c.out, "本地 profile（未经审核）：%s\n", id)
+			fmt.Fprintf(c.out, "本地 harness 资料（未经审核）：%s\n", id)
 		}
 		for _, r := range st.Rejected {
-			fmt.Fprintf(c.out, "已忽略的本地 profile：%s\n", r)
+			fmt.Fprintf(c.out, "已忽略的本地 harness 资料：%s\n", r)
 		}
 		return nil
 	case "install":
@@ -69,14 +69,14 @@ func (c *cli) profilesCmd(ctx context.Context, args []string) error {
 			return nil
 		}
 		c.printProblem(f.SignatureErr)
-		fmt.Fprintln(c.out, "\n这个文件不能作为官方资料包安装。可以把其中的 profile 作为\"本地 profile\"使用，它们未经审核。")
+		fmt.Fprintln(c.out, "\n这个文件不能作为官方资料包安装。可以把其中的 harness 资料作为\"本地 harness 资料\"使用，它们未经审核。")
 		fmt.Fprintln(c.out, "它们可能让 Valise 在你的服务器上运行以下命令：")
 		for _, d := range f.Pack.Docs {
 			for _, cmd := range profiles.Commands(d.Profile) {
 				fmt.Fprintf(c.out, "  [%s] %s\n", d.Profile.ID, cmd)
 			}
 		}
-		if !*yes && !c.confirm("作为本地 profile 安装？") {
+		if !*yes && !c.confirm("作为本地 harness 资料安装？") {
 			return nil
 		}
 		paths, err := c.svc.InstallPackAsLocal(f)

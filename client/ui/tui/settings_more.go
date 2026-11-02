@@ -40,7 +40,7 @@ func (s *settingsScreen) updateView(m *Model, w int) string {
 			pack = warnStyle.Render("还没有安装")
 		}
 		if len(st.Local) > 0 {
-			pack += "\n" + dimStyle.Render("本地 profile（未经审核）："+strings.Join(st.Local, "、"))
+			pack += "\n" + dimStyle.Render("本地 harness 资料（未经审核）："+strings.Join(st.Local, "、"))
 		}
 	}
 	b.WriteString(box("harness 资料包", pack+"\n"+keyStyle.Render("p")+" 在线更新   "+keyStyle.Render("f")+" 从文件安装", w) + "\n")

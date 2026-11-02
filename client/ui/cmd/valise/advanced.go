@@ -32,11 +32,11 @@ func (c *cli) advancedRequirements(ctx context.Context, plan *service.InstallPla
 	}
 	batch := service.CheckRequirements(plan)
 	if len(batch.Unfixable) > 0 {
-		return nil, valise.New("install_requirements_unfixable", "profile 没有为这台服务器的发行版给出 "+batch.Unfixable[0].Binary+" 的安装命令",
+		return nil, valise.New("install_requirements_unfixable", "harness 资料没有为这台服务器的发行版给出 "+batch.Unfixable[0].Binary+" 的安装命令",
 			"自己在服务器上装好它（valise shell "+host+"），或交给服务器管理员")
 	}
 	var again *service.InstallPlan
-	err := c.withAdvanced(ctx, host, "依赖安装命令（来源：profile）", batch, yes, func(io service.InstallIO) error {
+	err := c.withAdvanced(ctx, host, "依赖安装命令（来源：harness 资料）", batch, yes, func(io service.InstallIO) error {
 		var err error
 		again, err = c.svc.RunRequirements(ctx, plan, batch, io)
 		return err

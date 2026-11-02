@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"valise/core/agentkit"
+	"valise/core/enroll"
 	"valise/core/profile"
 )
 
@@ -124,4 +125,38 @@ func categoryName(c string) string {
 		return n
 	}
 	return c
+}
+
+func provenanceText(pv enroll.Provenance) string {
+	switch {
+	case pv.NPM != nil:
+		return "npm 全局包 " + pv.NPM.Package + "@" + pv.NPM.Version
+	case pv.Git != nil:
+		s := "git " + pv.Git.Remote + " @ " + short(pv.Git.Commit)
+		if pv.Git.Dirty {
+			s += warnStyle.Render("（有本地修改）")
+		}
+		return s
+	case pv.Tool != nil:
+		return pv.Kind + " " + pv.Tool.Package + " " + pv.Tool.Version
+	case pv.Binary != nil:
+		return "程序 " + shortPath(pv.Binary.Path, 48)
+	}
+	return dimStyle.Render("未知")
+}
+
+// shortPath keeps the end of a long path.
+func shortPath(p string, n int) string {
+	r := []rune(p)
+	if len(r) <= n {
+		return p
+	}
+	return "…" + string(r[len(r)-n+1:])
+}
+
+func short(s string) string {
+	if len(s) > 10 {
+		return s[:10]
+	}
+	return s
 }

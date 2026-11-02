@@ -134,7 +134,7 @@ func CandidateLabel(c enroll.Candidate) string {
 func choose(set *profiles.Set, cands []enroll.Candidate, want, name, host string) (enroll.Candidate, string, error) {
 	if len(cands) == 0 {
 		return enroll.Candidate{}, "", valise.New("no_instance", fmt.Sprintf("在服务器 %s 上没有发现任何已知 harness 的实例", host),
-			"确认 harness 已安装并至少运行过一次初始化；如果是 profile 尚未支持的 harness，可以在本地 profile 目录中添加 profile")
+			"确认 harness 已安装并至少运行过一次初始化；如果是还没有资料的 harness，可以在本地资料目录中添加一份")
 	}
 	var pick []enroll.Candidate
 	for _, c := range cands {
@@ -150,7 +150,7 @@ func choose(set *profiles.Set, cands []enroll.Candidate, want, name, host string
 		sort.Strings(ids)
 		reason := fmt.Sprintf("服务器 %s 上发现多个实例：%s", host, strings.Join(ids, "、"))
 		if len(pick) == 0 {
-			reason = fmt.Sprintf("服务器 %s 上没有 profile %q 的实例（发现的有：%s）", host, want, strings.Join(ids, "、"))
+			reason = fmt.Sprintf("服务器 %s 上没有 harness 资料 %q 的实例（发现的有：%s）", host, want, strings.Join(ids, "、"))
 		}
 		return enroll.Candidate{}, "", valise.New("choose_instance", reason, "用 --profile <id> 指定要接入的那一个；命名实例再加 --name <名字>")
 	}
@@ -162,11 +162,11 @@ func choose(set *profiles.Set, cands []enroll.Candidate, want, name, host string
 		return c, c.Children[0], nil
 	case len(c.Children) > 1:
 		return c, "", valise.New("choose_profile",
-			fmt.Sprintf("实例同时符合多个子 profile：%s", strings.Join(c.Children, "、")),
+			fmt.Sprintf("实例同时符合多个子 harness 资料：%s", strings.Join(c.Children, "、")),
 			"用 --profile <子 profile id> 指定与已安装插件相符的那一个")
 	}
 	if set.ByID[c.ProfileID] == nil {
-		return c, "", valise.New("profile_unknown", "porter 返回了未知的 profile："+c.ProfileID, "升级客户端")
+		return c, "", valise.New("profile_unknown", "porter 返回了未知的 harness 资料："+c.ProfileID, "升级客户端")
 	}
 	return c, c.ProfileID, nil
 }

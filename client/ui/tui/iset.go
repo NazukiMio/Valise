@@ -102,7 +102,7 @@ func (t *isetTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool)
 		case k == "enter" && t.cursor == isRules:
 			return m.push(&rulesScreen{page: p}), true
 		case k == "enter" && t.cursor == isReenroll:
-			return m.push(confirm("重新接入 "+inst+"？", []string{"harness 升级、目录变化或换了 profile 版本后使用。会先在终端显示接入报告，你确认后才写入。"},
+			return m.push(confirm("重新接入 "+inst+"？", []string{"harness 升级、目录变化或换了 harness 资料版本后使用。会先在终端显示接入报告，你确认后才写入。"},
 				func(m *Model) tea.Cmd {
 					return tea.Sequence(m.runCLI("enroll", host, "--profile", p.inst.ProfileID, "--id", inst), func() tea.Msg {
 						return pushMsg{confirm("接受上面的接入报告？", nil, func(m *Model) tea.Cmd {
@@ -214,7 +214,7 @@ func (t *isetTab) kitText(p *instancePage) string {
 	case k == nil:
 		b.WriteString(dimStyle.Render("读取中…"))
 	case k.Dir == "":
-		b.WriteString("这个 agent 的 profile 没有声明技能目录。")
+		b.WriteString("这个 agent 的 harness 资料没有声明技能目录。")
 	default:
 		var parts []string
 		for _, s := range k.Skills {

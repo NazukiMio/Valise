@@ -60,7 +60,7 @@ func (r *rulesScreen) view(m *Model) string {
 	var lines []string
 	add := func(s ...string) { lines = append(lines, s...) }
 	add(dimStyle.Render("Valise 按这些规则把 agent 的文件分到各类，再决定每一类进哪些逃生舱。"),
-		dimStyle.Render("顺序：凭据规则最优先 → 你补充的规则 → 身体 → profile 的规则（第一条命中的为准）；都没命中的按凭据对待。"), "")
+		dimStyle.Render("顺序：凭据规则最优先 → 你补充的规则 → 身体 → harness 资料的规则（第一条命中的为准）；都没命中的按凭据对待。"), "")
 	if p.target == nil {
 		return strings.Join(append(lines, dimStyle.Render("读取中…")), "\n")
 	}
@@ -110,7 +110,7 @@ func (r *rulesScreen) view(m *Model) string {
 	add("", headStyle.Render("怎么修改"),
 		"  · agent 可以通过逃生舱技能提议补充规则，你在「体检」里接受或拒绝。",
 		"  · 也可以在终端里重新接入时指定："+accStyle.Render("valise enroll "+p.host+" --profile "+prof.ID+" --id "+p.inst.InstanceID+" --assign <root>:<glob>=<类别>"),
-		"  · profile 的规则随 harness 资料包更新；Valise 不会自己改动它们。")
+		"  · harness 资料的规则随 harness 资料包更新；Valise 不会自己改动它们。")
 	height := m.bodyHeight()
 	if len(lines) > height {
 		room := height - 1

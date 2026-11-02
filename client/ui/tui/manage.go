@@ -157,9 +157,9 @@ func (t *manageTab) view(m *Model, p *instancePage, height int) string {
 	if t.loadErr != nil {
 		lines = append(lines, "", warnStyle.Render("管理动作读不出来："+firstLine(errText(t.loadErr))))
 	} else if t.actions != nil && len(t.actions.Actions) == 0 {
-		lines = append(lines, "", dimStyle.Render("这个 harness 的 profile 没有声明管理动作。"))
+		lines = append(lines, "", dimStyle.Render("这个 harness 的 harness 资料没有声明管理动作。"))
 	} else if t.actions != nil && t.actions.Stale {
-		lines = append(lines, "", warnStyle.Render("服务器上保存的 profile 是旧版本；新增的动作要重新接入后才能用（设置 › 重新接入）。"))
+		lines = append(lines, "", warnStyle.Render("服务器上保存的 harness 资料是旧版本；新增的动作要重新接入后才能用（设置 › 重新接入）。"))
 	}
 	return scrollLinesHint(lines, cur, height, "还有更多")
 }

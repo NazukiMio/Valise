@@ -235,7 +235,7 @@ func (c *cli) kitStatus(ctx context.Context, args []string) error {
 		return err
 	}
 	if st.Dir == "" {
-		fmt.Fprintln(c.out, "这个实例的 profile 没有声明技能目录。")
+		fmt.Fprintln(c.out, "这个实例的 harness 资料没有声明技能目录。")
 	} else {
 		fmt.Fprintf(c.out, "技能目录：%s\n", st.Dir)
 		for _, s := range st.Skills {

@@ -19,7 +19,7 @@ import (
 func (s *Service) Profiles() (*profiles.Set, error) {
 	set, err := profiles.Load(s.Dirs.Data, s.Release.PublicKey)
 	if err != nil {
-		return nil, valise.New("profiles_broken", "harness 资料包中的 profile 损坏", "重新安装资料包：valise profiles install").WithDetail(err.Error())
+		return nil, valise.New("profiles_broken", "harness 资料包中的资料损坏", "重新安装资料包：valise profiles install").WithDetail(err.Error())
 	}
 	return set, nil
 }

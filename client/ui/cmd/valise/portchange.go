@@ -24,7 +24,7 @@ func (c *cli) changePort(ctx context.Context, host, instance, entry string, to i
 	fmt.Fprintf(c.out, "；本机也用 %d。\n", p.To)
 	fmt.Fprintf(c.out, "服务会中断一会儿（最多约 %d 秒）；以后打开管理页都用新端口。\n", int(p.Grace.Seconds()))
 	if p.Draft {
-		fmt.Fprintln(c.out, "⚠ 这个 profile 未核实，改端口的命令可能不准确。")
+		fmt.Fprintln(c.out, "⚠ 这个 harness 资料未核实，改端口的命令可能不准确。")
 	}
 	fmt.Fprintln(c.out, "将在服务器上运行 harness 自己的命令（需要开发者模式）：")
 	for _, st := range p.Steps {

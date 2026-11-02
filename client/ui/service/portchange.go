@@ -67,7 +67,7 @@ func (s *Service) PlanPortChange(ctx context.Context, host, instance, entryID st
 		return nil, valise.New("entry_unknown", "profile "+target.Profile.ID+" 中没有这个入口", "不带 --entry 使用默认入口")
 	}
 	if entry.PortChange == nil {
-		return nil, valise.New("port_change_unsupported", target.Profile.ID+" 的 profile 没有声明改端口的方法",
+		return nil, valise.New("port_change_unsupported", target.Profile.ID+" 的 harness 资料没有声明改端口的方法",
 			fmt.Sprintf("关闭本机占用端口 %d 的程序后重试", entry.Port))
 	}
 	p := &PortChangePlan{Host: host, Instance: instance, ProfileID: target.Profile.ID, Entry: entry.ID, From: entry.Port,

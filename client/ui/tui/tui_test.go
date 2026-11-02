@@ -165,7 +165,7 @@ func openInstance(t *testing.T, m *Model) {
 	drive(t, m, m.Init())
 	wantText(t, m, "box", "1 个 agent", "在线")
 	key(t, m, "enter")
-	wantText(t, m, "demo", "Demo", "profile 未核实")
+	wantText(t, m, "demo", "Demo", "harness 资料未核实")
 	key(t, m, "enter")
 	wantText(t, m, "1 概览", "2 管理", "3 健康", "4 逃生舱", "5 设置")
 }

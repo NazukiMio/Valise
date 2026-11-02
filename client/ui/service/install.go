@@ -92,7 +92,7 @@ func (s *Service) PlanInstall(ctx context.Context, host, profileID string) (*Ins
 	}
 	lp := set.ByID[profileID]
 	if lp == nil {
-		return nil, valise.New("profile_missing", "本机没有 profile "+profileID, "安装或更新 harness 资料包：valise profiles install")
+		return nil, valise.New("profile_missing", "本机没有 harness 资料 "+profileID, "安装或更新 harness 资料包：valise profiles install")
 	}
 	prof := lp.Effective
 	if prof.Install == nil {

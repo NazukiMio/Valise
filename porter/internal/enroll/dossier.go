@@ -132,6 +132,14 @@ func dossierOf(home, id string) (*enroll.Dossier, error) {
 	return nil, nil
 }
 
+// InstallOf is the installation holding agent id, "" when none.
+func InstallOf(home, id string) string {
+	if d, err := dossierOf(home, id); err == nil && d != nil {
+		return d.InstallID
+	}
+	return ""
+}
+
 // migrateLegacy moves each legacy record into its installation's dossier
 // and renames the old files to <id>.legacy.json and <id>.legacy-profile.json
 // (kept, not deleted).

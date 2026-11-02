@@ -157,12 +157,12 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		prof = *d
 		rp.ProfileFromSnapshot = true
 		if !o.AllowSnapshotProfile {
-			rp.block("profile_from_snapshot", fmt.Sprintf("客户端中没有 profile %s v%d，只能使用快照里保存的副本（未经当前客户端审核）", d.ID, d.ProfileVersion),
+			rp.block("profile_from_snapshot", fmt.Sprintf("客户端中没有 harness 资料 %s v%d，只能使用快照里保存的副本（未经当前客户端审核）", d.ID, d.ProfileVersion),
 				"检查计划中的命令后加上 --allow-snapshot-profile；或升级客户端")
 		}
 	} else {
-		return nil, valise.New("profile_version", fmt.Sprintf("快照使用 profile %s v%d，客户端中没有同一版本，快照里也没有保存副本", head.Profile.ID, head.Profile.Version),
-			"升级客户端，或用当前 profile 重新接入并建立逃生舱后再着陆")
+		return nil, valise.New("profile_version", fmt.Sprintf("快照使用 harness 资料 %s v%d，客户端中没有同一版本，快照里也没有保存副本", head.Profile.ID, head.Profile.Version),
+			"升级客户端，或用当前 harness 资料重新接入并建立逃生舱后再着陆")
 	}
 	// A named instance's service and entries are not verified: never
 	// stopped, started or shown (profile.ForAgent).
@@ -406,7 +406,7 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 		for _, b := range prof.Body.Paths {
 			d, ok := strings.CutSuffix(b.Glob, "/**")
 			if !ok || !profile.IsLiteral(d) {
-				rp.block("body_glob", "profile 的身体路径 "+b.Glob+" 不是 <目录>/** 形式，v0.1 无法在交换中搬动", "修正 profile")
+				rp.block("body_glob", "harness 资料的身体路径 "+b.Glob+" 不是 <目录>/** 形式，v0.1 无法在交换中搬动", "修正 harness 资料")
 				continue
 			}
 			swap := b.Root
@@ -445,7 +445,7 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 		case same && mode == revive.ModeRollback:
 			plan.Body = revive.BodyPlan{Action: revive.BodyMoveDirs, Dirs: dirs}
 		default:
-			rp.block("body_rebuild_unverified", "目标服务器上没有同一 commit 的身体，而 profile 的重建步骤（bootstrap_argv）尚未核实",
+			rp.block("body_rebuild_unverified", "目标服务器上没有同一 commit 的身体，而 harness 资料的重建步骤（bootstrap_argv）尚未核实",
 				"在目标服务器上按官方文档安装同一版本后重试（"+freshDoc(prof)+"），或使用同架构、同路径的 raw 快照")
 		}
 	default:
@@ -482,7 +482,7 @@ func planService(rp *RevivePlan, plan *revive.Plan, facts revive.InspectResult, 
 	}
 	if !loaded {
 		if len(prof.Service.InstallArgv) == 0 {
-			rp.block("service_missing", "目标服务器上没有服务 "+plan.Unit+"，profile 也没有声明安装命令", "手动安装该服务后重试")
+			rp.block("service_missing", "目标服务器上没有服务 "+plan.Unit+"，harness 资料也没有声明安装命令", "手动安装该服务后重试")
 			return
 		}
 		plan.InstallService = true

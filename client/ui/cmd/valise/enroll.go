@@ -56,7 +56,7 @@ func printCandidates(w io.Writer, cands []enroll.Candidate) {
 		}
 		fmt.Fprintf(w, "  %-18s %s（%s）\n", service.CandidateLabel(c), c.StateDir, v)
 		for _, ch := range c.Children {
-			fmt.Fprintf(w, "             符合子 profile：%s\n", ch)
+			fmt.Fprintf(w, "             符合子 harness 资料：%s\n", ch)
 		}
 	}
 	fmt.Fprintln(w)
@@ -99,7 +99,7 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 
 	fmt.Fprintln(w, "目录：")
 	for _, rt := range r.Roots {
-		note := map[string]string{"detect": "探测", "default": "profile 默认", "discover": "harness 命令读出"}[rt.Source]
+		note := map[string]string{"detect": "探测", "default": "harness 资料默认", "discover": "harness 命令读出"}[rt.Source]
 		if !rt.Exists {
 			note += "，不存在"
 		}
@@ -186,7 +186,7 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 		}
 	}
 	for _, rej := range res.RejectedLocalProfiles {
-		fmt.Fprintf(w, "  · 已忽略未通过检查的本地 profile：%s\n", rej)
+		fmt.Fprintf(w, "  · 已忽略未通过检查的本地 harness 资料：%s\n", rej)
 	}
 	fmt.Fprintln(w)
 	if res.Written != "" {

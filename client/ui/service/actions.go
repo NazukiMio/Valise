@@ -82,7 +82,7 @@ func (s *Service) RunAction(ctx context.Context, host, instance, id string, o Ac
 		}
 	}
 	if a == nil {
-		return nil, valise.New("action_unknown", list.ProfileID+" 的 profile 里没有动作 "+id, "不带动作名运行 valise action <服务器> <实例> 查看可用的动作")
+		return nil, valise.New("action_unknown", list.ProfileID+" 的 harness 资料里没有动作 "+id, "不带动作名运行 valise action <服务器> <实例> 查看可用的动作")
 	}
 	if a.Risk == profile.RiskConfig || a.Risk == profile.RiskDanger {
 		if err := s.RequireGate(ctx, host, instance); err != nil {

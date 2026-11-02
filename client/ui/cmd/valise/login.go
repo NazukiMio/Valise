@@ -37,15 +37,15 @@ func (c *cli) login(ctx context.Context, args []string) error {
 			return err
 		}
 		if len(target.Profile.Login) == 0 {
-			fmt.Fprintf(c.out, "profile %s 没有声明登录方式。\n", target.Profile.ID)
+			fmt.Fprintf(c.out, "harness 资料 %s 没有声明登录方式。\n", target.Profile.ID)
 			return nil
 		}
-		fmt.Fprintf(c.out, "%s（profile %s）的登录方式：\n", instance, target.Profile.ID)
+		fmt.Fprintf(c.out, "%s（harness 资料 %s）的登录方式：\n", instance, target.Profile.ID)
 		for _, l := range target.Profile.Login {
 			fmt.Fprintf(c.out, "  %-20s %s  %s\n", l.ID, l.DisplayName, loginKinds[l.Kind])
 		}
 		if target.Profile.Status != "verified" {
-			fmt.Fprintln(c.out, "（profile 未核实：登录命令可能与当前 harness 版本不符）")
+			fmt.Fprintln(c.out, "（harness 资料未核实：登录命令可能与当前 harness 版本不符）")
 		}
 		fmt.Fprintf(c.out, "使用：valise login %s %s --method <id>\n", host, instance)
 		return nil

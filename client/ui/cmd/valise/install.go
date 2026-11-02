@@ -91,10 +91,10 @@ func (c *cli) install(ctx context.Context, args []string) error {
 }
 
 func (c *cli) printInstallPlan(plan *service.InstallPlan, show bool) {
-	fmt.Fprintf(c.out, "安装方案：%s（%s，profile v%d）\n  %s\n", plan.ProfileID, plan.ID, plan.ProfileVersion, plan.Summary)
+	fmt.Fprintf(c.out, "安装方案：%s（%s，harness 资料 v%d）\n  %s\n", plan.ProfileID, plan.ID, plan.ProfileVersion, plan.Summary)
 	switch {
 	case plan.ProfileLocal:
-		fmt.Fprintln(c.out, "  ⚠ 这是本地 profile，未经审核。")
+		fmt.Fprintln(c.out, "  ⚠ 这是本地 harness 资料，未经审核。")
 	case plan.Capability != "tested":
 		fmt.Fprintln(c.out, "  ⚠ 这个安装方案在当前版本上尚未完整测试（"+plan.Capability+"）。")
 	}
@@ -107,7 +107,7 @@ func (c *cli) printInstallPlan(plan *service.InstallPlan, show bool) {
 		fmt.Fprintf(c.out, "  %s %s %s\n", mark, q.Binary, detail)
 	}
 	if len(plan.Fixes) > 0 {
-		fmt.Fprintln(c.out, "  profile 给出的安装命令（需要管理员权限；Valise 只在高级模式下代为执行，加 --advanced）：")
+		fmt.Fprintln(c.out, "  harness 资料给出的安装命令（需要管理员权限；Valise 只在高级模式下代为执行，加 --advanced）：")
 		for _, f := range plan.Fixes {
 			fmt.Fprintf(c.out, "    %s\n", strings.Join(f, " "))
 		}

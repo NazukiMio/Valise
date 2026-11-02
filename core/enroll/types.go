@@ -295,6 +295,10 @@ type InstanceSummary struct {
 	Roots          map[string]string `json:"roots"`
 	Superseded     *Supersession     `json:"superseded,omitempty"`
 	ProfileStatus  string            `json:"profile_status"`
+	// InstallID is the installation (dossier) the agent belongs to; Name
+	// the agent's name within it, "" for the default agent.
+	InstallID string `json:"install_id,omitempty"`
+	Name      string `json:"name,omitempty"`
 	// Live state read when listing (systemctl show, a TCP dial).
 	Service []ServiceState `json:"service"`
 	Entries []EntryState   `json:"entries"`

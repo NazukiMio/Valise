@@ -39,6 +39,8 @@ type instancePage struct {
 	health *service.HealthReport
 	// healthErr: the health report could not be read.
 	healthErr error
+	// install: the installation key on an install page (installpage.go).
+	install string
 }
 
 func newInstancePage(host string, in enroll.InstanceSummary) *instancePage {
@@ -123,6 +125,12 @@ func (p *instancePage) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		}
 	case healthLoaded:
 		p.health, p.healthErr = msg.r, msg.err
+	case agentsFound:
+		for _, t := range p.tabs {
+			if a, ok := t.(*agentsTab); ok {
+				a.set(msg)
+			}
+		}
 	case sealDone:
 		return sealResult(m, p, msg), true
 	case logLoaded:
@@ -179,13 +187,13 @@ func (p *instancePage) view(m *Model) string {
 	if v := p.version(); v != "" {
 		name += " " + v
 	}
-	info := []string{headStyle.Render(p.inst.InstanceID) + dimStyle.Render(" · "+name+" · "+p.host), runState(p.inst)}
+	info := []string{headStyle.Render(p.heading(m)) + dimStyle.Render(" · "+name+" · "+p.host), runState(p.inst)}
 	if len(p.inst.Entries) > 0 {
 		e := p.inst.Entries[0]
 		info = append(info, "管理页：http://127.0.0.1:"+itoa(e.Port)+" "+mark(e.Listening, true))
 	}
 	if p.inst.ProfileStatus != "verified" {
-		info = append(info, faintStyle.Render("profile 未经审核或尚未完整核实（见概览里的支持程度）"))
+		info = append(info, faintStyle.Render("harness 资料未经审核或尚未完整核实（见概览里的支持程度）"))
 	}
 	head := lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(icon, "\n"), "  ", strings.Join(info, "\n"))
 	names := make([]string, len(p.tabs))
@@ -340,7 +348,7 @@ func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 		}
 		rows := []string{"支持程度", strings.Join(caps, "  ")}
 		if p.target.Local {
-			rows = append(rows, "", dimStyle.Render("本地 profile，未经审核"))
+			rows = append(rows, "", dimStyle.Render("本地 harness 资料，未经审核"))
 		}
 		if p.target.Record != nil {
 			rows = append(rows, "安装来源", provenanceText(p.target.Record.Provenance))
@@ -356,38 +364,4 @@ func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 		b.WriteString(kv(rows...))
 	}
 	return b.String()
-}
-
-func provenanceText(pv enroll.Provenance) string {
-	switch {
-	case pv.NPM != nil:
-		return "npm 全局包 " + pv.NPM.Package + "@" + pv.NPM.Version
-	case pv.Git != nil:
-		s := "git " + pv.Git.Remote + " @ " + short(pv.Git.Commit)
-		if pv.Git.Dirty {
-			s += warnStyle.Render("（有本地修改）")
-		}
-		return s
-	case pv.Tool != nil:
-		return pv.Kind + " " + pv.Tool.Package + " " + pv.Tool.Version
-	case pv.Binary != nil:
-		return "程序 " + shortPath(pv.Binary.Path, 48)
-	}
-	return dimStyle.Render("未知")
-}
-
-// shortPath keeps the end of a long path.
-func shortPath(p string, n int) string {
-	r := []rune(p)
-	if len(r) <= n {
-		return p
-	}
-	return "…" + string(r[len(r)-n+1:])
-}
-
-func short(s string) string {
-	if len(s) > 10 {
-		return s[:10]
-	}
-	return s
 }

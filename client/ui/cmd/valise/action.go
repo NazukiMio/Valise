@@ -38,7 +38,7 @@ func (c *cli) action(ctx context.Context, args []string) error {
 		}
 	}
 	if a == nil {
-		return valise.New("action_unknown", list.ProfileID+" 的 profile 里没有动作 "+pos[2], "不带动作名运行，查看可用的动作")
+		return valise.New("action_unknown", list.ProfileID+" 的 harness 资料里没有动作 "+pos[2], "不带动作名运行，查看可用的动作")
 	}
 	fmt.Fprintf(c.out, "%s（%s · %s）\n  %s\n", a.Name, service.RiskLabels[a.Risk], service.ActionAccess(*a), a.Explain)
 	if a.Undo != "" {
@@ -78,10 +78,10 @@ func (c *cli) action(ctx context.Context, args []string) error {
 
 func (c *cli) printActions(host string, list *service.ActionList) error {
 	if len(list.Actions) == 0 {
-		fmt.Fprintf(c.out, "%s 的 profile 没有声明管理动作。\n", list.ProfileID)
+		fmt.Fprintf(c.out, "%s 的 harness 资料没有声明管理动作。\n", list.ProfileID)
 		return nil
 	}
-	fmt.Fprintf(c.out, "%s 的管理动作（来自 %s 的 profile）：\n", list.Instance, list.ProfileID)
+	fmt.Fprintf(c.out, "%s 的管理动作（来自 %s 的 harness 资料）：\n", list.Instance, list.ProfileID)
 	for _, risk := range []string{profile.RiskRead, profile.RiskManage, profile.RiskConfig, profile.RiskDanger} {
 		first := true
 		for _, a := range list.Actions {
@@ -97,7 +97,7 @@ func (c *cli) printActions(host string, list *service.ActionList) error {
 		}
 	}
 	if list.Stale {
-		fmt.Fprintf(c.out, "\n注意：服务器上保存的 profile 与本机的版本不同，新增的动作要重新接入后才能用（valise enroll %s --profile %s --accept）。\n", host, list.ProfileID)
+		fmt.Fprintf(c.out, "\n注意：服务器上保存的 harness 资料与本机的版本不同，新增的动作要重新接入后才能用（valise enroll %s --profile %s --accept）。\n", host, list.ProfileID)
 	}
 	fmt.Fprintf(c.out, "\n执行：valise action %s %s <动作>\n", host, list.Instance)
 	return nil

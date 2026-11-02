@@ -269,7 +269,7 @@ func serviceItem(svc []enroll.ServiceState, entries []enroll.EntryState) HealthI
 		}
 	}
 	if len(parts) == 0 {
-		it.Level, it.Text = HealthInfo, "profile 没有声明服务或管理页"
+		it.Level, it.Text = HealthInfo, "harness 资料没有声明服务或管理页"
 		return it
 	}
 	it.Text = strings.Join(parts, " · ")

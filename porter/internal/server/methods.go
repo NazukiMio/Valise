@@ -79,6 +79,7 @@ var methods = map[string]handler{
 		for _, r := range recs {
 			sum := enroll.InstanceSummary{InstanceID: r.InstanceID, ProfileID: r.ProfileID,
 				ProfileVersion: r.ProfileVersion, Roots: r.Roots, Superseded: r.Superseded,
+				Name: r.Name, InstallID: porterenroll.InstallOf(s.cfg.Home, r.InstanceID),
 				Service: []enroll.ServiceState{}, Entries: []enroll.EntryState{}}
 			if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
 				sum.ProfileStatus = p.Status

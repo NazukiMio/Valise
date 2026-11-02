@@ -74,7 +74,7 @@ func instanceCard(m *Model, d *srvData, in enroll.InstanceSummary, selected, com
 	icon := standardIcon(dp)
 	info := []string{headStyle.Render(in.InstanceID), dimStyle.Render(name)}
 	if in.ProfileStatus != "verified" {
-		info = append(info, faintStyle.Render("（profile 未核实）"))
+		info = append(info, faintStyle.Render("（harness 资料未核实）"))
 	} else {
 		info = append(info, "")
 	}

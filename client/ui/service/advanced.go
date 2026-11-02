@@ -162,7 +162,7 @@ func CheckRequirements(plan *InstallPlan) *RequirementBatch {
 // included).
 func (s *Service) RunRequirements(ctx context.Context, plan *InstallPlan, b *RequirementBatch, tio InstallIO) (*InstallPlan, error) {
 	if len(b.Unfixable) > 0 {
-		return nil, valise.New("install_requirements_unfixable", "profile 没有为这台服务器的发行版给出 "+b.Unfixable[0].Binary+" 的安装命令",
+		return nil, valise.New("install_requirements_unfixable", "harness 资料没有为这台服务器的发行版给出 "+b.Unfixable[0].Binary+" 的安装命令",
 			"自己在服务器上装好它，或交给服务器管理员")
 	}
 	if err := s.runAdvancedBatch(ctx, plan.Host, "requirements", b, tio); err != nil {

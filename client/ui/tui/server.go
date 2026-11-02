@@ -41,14 +41,18 @@ func (s *serverPage) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, false
 	}
 	d := m.server(s.host)
-	if c, moved := movePager(s.cursor, len(d.instances), m.width, s.cardWidth(m), k.String()); moved {
+	gs := groupInstalls(d.instances)
+	if c, moved := movePager(s.cursor, len(gs), m.width, s.cardWidth(m), k.String()); moved {
 		s.cursor = c
 		return nil, true
 	}
 	switch k.String() {
 	case "enter":
-		if s.cursor < len(d.instances) {
-			in := d.instances[s.cursor]
+		if s.cursor < len(gs) {
+			if len(gs[s.cursor].agents) > 1 {
+				return m.push(newInstallPage(s.host, gs[s.cursor])), true
+			}
+			in := gs[s.cursor].agents[0]
 			if in.Superseded != nil {
 				return func() tea.Msg {
 					return flashMsg("这个实例已被 " + in.Superseded.By + " 取代；可以在空间清理（k）里删除它")
@@ -191,8 +195,12 @@ func (s *serverPage) view(m *Model) string {
 	}
 	compact := compactCards(m.width, m.height)
 	var cards []string
-	for i, in := range d.instances {
-		cards = append(cards, instanceCard(m, d, in, i == s.cursor, compact))
+	for i, g := range groupInstalls(d.instances) {
+		if len(g.agents) > 1 {
+			cards = append(cards, installCard(m, d, g, i == s.cursor, compact))
+		} else {
+			cards = append(cards, instanceCard(m, d, g.agents[0], i == s.cursor, compact))
+		}
 	}
 	head := dimStyle.Render(s.host + " · 在线 · " + itoa(len(live(d.instances))) + " 个 agent")
 	return head + "\n\n" + pager(cards, s.cursor, min(m.width, 160), s.cardWidth(m))

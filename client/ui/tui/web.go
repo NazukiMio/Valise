@@ -6,7 +6,7 @@ import tea "charm.land/bubbletea/v2"
 // the terminal (docs/LOGIN_RELAY.md); the TUI is paused meanwhile.
 func loginPicker(m *Model, p *instancePage) tea.Cmd {
 	if p.target == nil || len(p.target.Profile.Login) == 0 {
-		return func() tea.Msg { return flashMsg("这个 agent 的 profile 没有声明登录方式") }
+		return func() tea.Msg { return flashMsg("这个 agent 的 harness 资料没有声明登录方式") }
 	}
 	var cs []choice
 	for _, l := range p.target.Profile.Login {
