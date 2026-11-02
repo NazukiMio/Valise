@@ -163,7 +163,7 @@ func choose(set *profiles.Set, cands []enroll.Candidate, want, name, host string
 	case len(c.Children) > 1:
 		return c, "", valise.New("choose_profile",
 			fmt.Sprintf("实例同时符合多个子 harness 资料：%s", strings.Join(c.Children, "、")),
-			"用 --profile <子 profile id> 指定与已安装插件相符的那一个")
+			"用 --profile <子资料 id> 指定与已安装插件相符的那一个")
 	}
 	if set.ByID[c.ProfileID] == nil {
 		return c, "", valise.New("profile_unknown", "porter 返回了未知的 harness 资料："+c.ProfileID, "升级客户端")

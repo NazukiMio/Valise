@@ -370,7 +370,7 @@ func (s *Service) NativeCommand(ctx context.Context, host, profileID string) (*e
 	}
 	lp := set.ByID[profileID]
 	if lp == nil || len(lp.Effective.NativeCLI) == 0 {
-		return nil, nil, valise.New("native_cli_none", "profile "+profileID+" 没有声明原生界面", "改用 valise shell 打开服务器终端")
+		return nil, nil, valise.New("native_cli_none", "harness 资料 "+profileID+" 没有声明原生界面", "改用 valise shell 打开服务器终端")
 	}
 	if err := s.RequireGate(ctx, host, ""); err != nil {
 		return nil, nil, err

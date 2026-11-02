@@ -73,7 +73,7 @@ func (r *rulesScreen) view(m *Model) string {
 			add("  " + padRight(o.Root+":"+o.Glob, 40) + categoryName(o.Category) + dimStyle.Render("  进 "+tierReach(o.Category)))
 		}
 	}
-	add("", headStyle.Render("profile "+prof.ID+" v"+itoa(prof.ProfileVersion)+" 的规则"))
+	add("", headStyle.Render("harness 资料 "+prof.ID+" v"+itoa(prof.ProfileVersion)+" 的规则"))
 	byCat := map[string][]profile.PathRule{}
 	for _, pr := range prof.Paths {
 		byCat[pr.Category] = append(byCat[pr.Category], pr)

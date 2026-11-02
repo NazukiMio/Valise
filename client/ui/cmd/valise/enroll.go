@@ -95,8 +95,20 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 		origin = "本地，未经审核"
 	}
 	fmt.Fprintf(w, "接入报告：%s 上的实例 %s\n", res.Host, r.InstanceID)
-	fmt.Fprintf(w, "profile：%s v%d（%s，%s）\n\n", r.ProfileID, r.ProfileVersion, origin, verified)
+	fmt.Fprintf(w, "harness 资料：%s v%d（%s，%s）\n\n", r.ProfileID, r.ProfileVersion, origin, verified)
 
+	// Re-detecting: what changed since the dossier comes first (docs/UI.md 9.4).
+	if r.Previous != nil {
+		if len(r.Changes) == 0 {
+			fmt.Fprint(w, "与实例档案相比：没有变化\n\n")
+		} else {
+			fmt.Fprintln(w, "与实例档案相比的变化（确认后才写入）：")
+			for _, ch := range r.Changes {
+				fmt.Fprintf(w, "  %s：%s → %s\n", changeLabel(ch.Field), orNone(ch.From), orNone(ch.To))
+			}
+			fmt.Fprintln(w)
+		}
+	}
 	fmt.Fprintln(w, "目录：")
 	for _, rt := range r.Roots {
 		note := map[string]string{"detect": "探测", "default": "harness 资料默认", "discover": "harness 命令读出"}[rt.Source]
@@ -170,12 +182,6 @@ func printReport(w io.Writer, res *service.EnrollResult) {
 			fmt.Fprintf(w, "  %s  %s:%d  %s\n", e.ID, e.Host, e.Port, state)
 		}
 	}
-	if len(r.Changes) > 0 {
-		fmt.Fprintln(w, "\n与上次接入相比的变化：")
-		for _, ch := range r.Changes {
-			fmt.Fprintf(w, "  %s：%s → %s\n", ch.Field, ch.From, ch.To)
-		}
-	}
 	if len(r.Warnings) > 0 || len(r.Unreadable) > 0 {
 		fmt.Fprintln(w, "\n提醒：")
 		for _, s := range r.Warnings {
@@ -231,6 +237,25 @@ func printProvenance(w io.Writer, p enroll.Provenance) {
 func orUnknown(s string) string {
 	if s == "" {
 		return "（未知）"
+	}
+	return s
+}
+
+// changeLabel names a changed dossier field in plain words.
+func changeLabel(f string) string {
+	if root, ok := strings.CutPrefix(f, "roots."); ok {
+		return "目录（" + root + "）"
+	}
+	if l, ok := map[string]string{"profile_id": "harness 资料", "profile_version": "harness 资料版本",
+		"provenance.kind": "安装方式", "provenance": "安装来源与版本"}[f]; ok {
+		return l
+	}
+	return f
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "（无）"
 	}
 	return s
 }

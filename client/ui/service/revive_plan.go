@@ -174,7 +174,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	// Landing is judged by the restore capability alone (docs/PROFILES.md
 	// 1.2), not by the profile's overall draft status.
 	if st := prof.CapabilityStatus("restore"); st != "tested" && !o.AllowDraft {
-		rp.block("profile_draft", "profile "+prof.ID+" v"+strconv.Itoa(prof.ProfileVersion)+" 的着陆尚未在此版本测试（"+st+"），复活需要显式同意",
+		rp.block("profile_draft", "harness 资料 "+prof.ID+" v"+strconv.Itoa(prof.ProfileVersion)+" 的着陆尚未在此版本测试（"+st+"），复活需要显式同意",
 			"确认风险后加上 --allow-draft-profile")
 	}
 

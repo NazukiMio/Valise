@@ -185,6 +185,19 @@ func (t *agentsTab) rows(m *Model, p *instancePage) []agentRow {
 	return out
 }
 
+// missing: detection finished without finding enrolled agent id.
+func (t *agentsTab) missing(id string) bool {
+	if t.found == nil || t.loading || t.err != nil {
+		return false
+	}
+	for _, f := range t.found {
+		if f.Enrolled == id {
+			return false
+		}
+	}
+	return true
+}
+
 func (t *agentsTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool) {
 	k, ok := msg.(tea.KeyPressMsg)
 	if !ok {
@@ -236,6 +249,9 @@ func (t *agentsTab) view(m *Model, p *instancePage, height int) string {
 			line := agentLabel(m, r.in.ProfileID, r.in.Name) + dimStyle.Render("  ·  ") + backupLine(m, d, *r.in, true)
 			if a := attention(m, d, *r.in); len(a) > 0 && !strings.Contains(line, a[0]) {
 				line += warnStyle.Render("  ! " + a[0])
+			}
+			if t.missing(r.in.InstanceID) {
+				line += warnStyle.Render("  ! 重新检测时没有找到它的目录")
 			}
 			b.WriteString("  " + cursorLine(i == t.cursor, line) + "\n")
 			continue

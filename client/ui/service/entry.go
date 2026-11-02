@@ -86,9 +86,9 @@ func (s *Service) OpenEntry(ctx context.Context, host, instance string, o OpenOp
 	}
 	if entry == nil {
 		if o.Entry == "" {
-			return valise.New("entry_none", "profile "+target.Profile.ID+" 没有声明入口", "这个 harness 没有本机 Web 页面")
+			return valise.New("entry_none", "harness 资料 "+target.Profile.ID+" 没有声明入口", "这个 harness 没有本机 Web 页面")
 		}
-		return valise.New("entry_unknown", "profile "+target.Profile.ID+" 中没有入口 "+o.Entry, "不带 --entry 使用默认入口")
+		return valise.New("entry_unknown", "harness 资料 "+target.Profile.ID+" 中没有入口 "+o.Entry, "不带 --entry 使用默认入口")
 	}
 	status := func(st EntryStatus) {
 		if o.Status != nil {

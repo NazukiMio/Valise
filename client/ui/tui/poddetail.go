@@ -91,7 +91,7 @@ func (s *podScreen) view(m *Model) string {
 		if d.status != nil {
 			leaf = d.status.LeafOf(s.snap.SnapshotID)
 		}
-		b.WriteString(box("技术信息", kv("快照 id", s.snap.SnapshotID, "周期", leaf, "epoch", itoa(s.snap.Epoch), "档位", s.snap.Tier, "profile", s.snap.ProfileID), w))
+		b.WriteString(box("技术信息", kv("快照 id", s.snap.SnapshotID, "周期", leaf, "epoch", itoa(s.snap.Epoch), "档位", s.snap.Tier, "harness 资料", s.snap.ProfileID), w))
 	} else {
 		b.WriteString(dimStyle.Render("▸ 技术信息（按 t 展开）"))
 	}

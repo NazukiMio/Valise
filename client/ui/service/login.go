@@ -110,7 +110,7 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 		}
 	}
 	if m == nil {
-		return nil, valise.New("login_method_unknown", "profile "+target.Profile.ID+" 中没有登录方式 "+method, "不带 --method 运行 valise login 查看可用的登录方式")
+		return nil, valise.New("login_method_unknown", "harness 资料 "+target.Profile.ID+" 中没有登录方式 "+method, "不带 --method 运行 valise login 查看可用的登录方式")
 	}
 	if m.Kind == login.KindRemoteBrowser {
 		return nil, valise.New("login_kind_unsupported", "远端浏览器登录还没有实现", "改用 harness 资料中的其他登录方式")
