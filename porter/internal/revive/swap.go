@@ -64,6 +64,8 @@ func (r *Runner) Resume(ctx context.Context, p revive.ResumeParams) (*revive.Swa
 		return r.advance(ctx, j)
 	case "back":
 		return r.back(ctx, j, "用户选择退回")
+	case "discard":
+		return r.discard(ctx, j)
 	}
 	return nil, valise.New("resume_action_invalid", "未知的处理方式", "使用 --continue 或 --back")
 }
@@ -226,6 +228,23 @@ func (r *Runner) back(ctx context.Context, j *revive.Journal, why string) (*revi
 		return r.finishBack(ctx, j, why)
 	}
 	return r.rollback(ctx, j, why)
+}
+
+// discard ends a restore test (docs/ARCHITECTURE.md 8.2): an operation
+// that was staged and never swapped. Its stage, only a copy, is removed at
+// once; the live directories were never touched.
+func (r *Runner) discard(ctx context.Context, j *revive.Journal) (*revive.SwapResult, error) {
+	if j.State != revive.StatePlanned {
+		return nil, valise.New("op_state", "这个操作已经开始切换，不能当作恢复测试丢弃", "用 --back 退回")
+	}
+	for _, jr := range j.Roots {
+		if jr.Stage != "" && jr.Stage != jr.Live && strings.HasPrefix(filepath.Base(jr.Stage), ".valise-") && exists(jr.Stage) {
+			if err := os.RemoveAll(jr.Stage); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return r.finishBack(ctx, j, "恢复测试结束，暂存已删除")
 }
 
 // rollback is the failure path after the new state is in place

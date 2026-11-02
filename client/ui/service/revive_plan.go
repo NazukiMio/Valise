@@ -109,18 +109,25 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		return nil, valise.New("vault_problems", "本机金库副本没有通过校验", "先运行 valise verify --vault "+pull.Dir)
 	}
 	report(ctx, StageOpen, 0, 0)
-	k, err := s.Unlock(passphrase)
-	if err != nil {
-		return nil, err
+	var id age.Identity
+	if passphrase == "" {
+		// No passphrase given: the unlocked identity, or ask for it.
+		if id, err = s.ownerIdentity(o.Target); err != nil {
+			return nil, err
+		}
+	} else {
+		k, err := s.Unlock(passphrase)
+		if err != nil {
+			return nil, err
+		}
+		defer k.Lock()
+		if id, err = k.Identity(); err != nil {
+			return nil, err
+		}
+		// The passphrase just given also proves the owner for the
+		// landing (docs/ARCHITECTURE.md 2.2): no second prompt.
+		s.rememberOwner(id)
 	}
-	defer k.Lock()
-	id, err := k.Identity()
-	if err != nil {
-		return nil, err
-	}
-	// The passphrase just given also proves the owner for the landing
-	// (docs/ARCHITECTURE.md 2.2): no second prompt.
-	s.rememberOwner(id)
 	v, err := vault.Open(pull.Dir)
 	if err != nil {
 		return nil, err
