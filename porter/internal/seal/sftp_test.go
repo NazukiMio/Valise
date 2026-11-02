@@ -108,3 +108,16 @@ func TestSyncFallsBackToSFTP(t *testing.T) {
 		t.Fatalf("not deleted: %v", err)
 	}
 }
+
+func TestSSHFailureNamesTheCause(t *testing.T) {
+	tg := &vaultrpc.Target{Name: "nas", Dest: "nas-test:/x/"}
+	for stderr, want := range map[string]string{
+		"ssh: Could not resolve hostname nas-test: Name or service not known": "不认识主机名 nas-test",
+		"nas@1.2.3.4: Permission denied (publickey).":                         "拒绝了服务器的登录",
+		"Host key verification failed.":                                       "还没有确认过 nas-test",
+	} {
+		if ue := sshFailure(tg, "同步到 nas 失败", stderr); !strings.Contains(ue.Reason, want) {
+			t.Errorf("%q → %q", stderr, ue.Reason)
+		}
+	}
+}

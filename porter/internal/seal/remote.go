@@ -100,6 +100,28 @@ func skipName(name string) bool {
 	return strings.HasPrefix(name, "tmp-") || strings.HasPrefix(name, ".tmp-") || strings.HasPrefix(name, partPrefix)
 }
 
+// sshFailure explains a failed copy, naming the usual SSH causes: the
+// server reaching the target is the user's own SSH setup on the server.
+func sshFailure(t *vaultrpc.Target, what, stderr string) *valise.UserError {
+	host := targetHost(t)
+	reason, hint := what, "确认服务器能用 SSH 登录 "+host+"（凭据由你在服务器上配置），然后重试；金库只追加，可以断点续传"
+	switch {
+	case strings.Contains(stderr, "Could not resolve hostname"):
+		reason = what + "：服务器不认识主机名 " + host
+		hint = "在服务器的 ~/.ssh/config 里加上 Host " + host + "（HostName、User、IdentityFile），或把位置改成 <地址>:<路径>"
+	case strings.Contains(stderr, "Permission denied"):
+		reason = what + "：" + host + " 拒绝了服务器的登录"
+		hint = "把服务器上用于登录 " + host + " 的公钥加到 " + host + " 的 ~/.ssh/authorized_keys，或在服务器的 ~/.ssh/config 里为它指定 IdentityFile"
+	case strings.Contains(stderr, "Host key verification failed"):
+		reason = what + "：服务器还没有确认过 " + host + " 的身份"
+		hint = "在服务器上手动执行一次 ssh " + host + "，核对并接受指纹后重试"
+	case strings.Contains(stderr, "Connection refused"), strings.Contains(stderr, "timed out"), strings.Contains(stderr, "No route to host"):
+		reason = what + "：服务器连不上 " + host
+		hint = "确认 " + host + " 已开机、网络可达、SSH 服务在运行，然后重试"
+	}
+	return valise.New("sync_failed", reason, hint).WithDetail(lastLines(stderr, 5))
+}
+
 // --- rsync ---
 
 type rsyncRemote struct {
@@ -148,9 +170,7 @@ func (r *rsyncRemote) run(ctx context.Context, args []string) error {
 		return &errNoRsync{valise.New("sync_failed", "无法运行 rsync", "确认服务器上安装了 rsync").WithDetail(err.Error())}
 	}
 	if out.Code != 0 {
-		ue := valise.New("sync_failed", "同步到 "+r.t.Name+" 失败",
-			"确认服务器能用 SSH 登录 "+targetHost(r.t)+"（凭据由你在服务器上配置），然后重试；金库只追加，可以断点续传").
-			WithDetail(lastLines(string(out.Stderr), 5))
+		ue := sshFailure(r.t, "同步到 "+r.t.Name+" 失败", string(out.Stderr))
 		if rsyncMissing(out.Code, string(out.Stderr)) {
 			return &errNoRsync{ue}
 		}
@@ -175,8 +195,7 @@ func (r *rsyncRemote) list(ctx context.Context, base string) ([]remoteEntry, err
 		if strings.Contains(string(out.Stderr), "No such file or directory") {
 			return nil, nil
 		}
-		ue := valise.New("target_list_failed", "无法列出 "+r.t.Name+" 上的内容",
-			"确认服务器能用 SSH 登录 "+targetHost(r.t)+" 后重试").WithDetail(lastLines(string(out.Stderr), 5))
+		ue := sshFailure(r.t, "无法列出 "+r.t.Name+" 上的内容", string(out.Stderr))
 		if rsyncMissing(out.Code, string(out.Stderr)) {
 			return nil, &errNoRsync{ue}
 		}
@@ -276,9 +295,7 @@ func (r *sftpRemote) run(ctx context.Context, lines []string, what string) (stri
 		return "", valise.New("sync_failed", "无法运行 sftp", "确认服务器上安装了 OpenSSH 客户端").WithDetail(err.Error())
 	}
 	if out.Code != 0 {
-		return "", valise.New("sync_failed", what+"失败（sftp，"+r.t.Name+"）",
-			"确认服务器能用 SSH 登录 "+targetHost(r.t)+"（凭据由你在服务器上配置），然后重试；金库只追加，可以断点续传").
-			WithDetail(lastLines(string(out.Stderr), 5))
+		return "", sshFailure(r.t, what+"失败（sftp，"+r.t.Name+"）", string(out.Stderr))
 	}
 	return string(out.Stdout), nil
 }
