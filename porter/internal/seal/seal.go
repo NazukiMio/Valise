@@ -91,7 +91,8 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		Unstable: []string{}, SQLite: []vault.SQLiteNote{}}
 	var items []porterenroll.Item
 	c := profile.NewClassifier(prof, rec.LocalOverrides)
-	porterenroll.Walk(roots, c, func(it porterenroll.Item) {
+	nested := porterenroll.NestedInstances(e.For(prof), prof, params.InstanceID, rec.Roots[profile.StateRoot])
+	porterenroll.Walk(roots, nested, c, func(it porterenroll.Item) {
 		if it.SidecarOf != "" {
 			return // covered by the database's VACUUM INTO copy
 		}
@@ -203,6 +204,7 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 	snap := vault.Snapshot{InstanceID: rec.InstanceID, Tier: params.Tier, CreatedAt: now,
 		Profile:    vault.ProfileRef{ID: prof.ID, Version: prof.ProfileVersion, Status: prof.Status},
 		ProfileDoc: prof, Provenance: rec.Provenance, LocalOverrides: rec.LocalOverrides, Roots: rec.Roots, SQLite: rep.SQLite,
+		Name: rec.Name, Env: rec.Env,
 		Notes: vault.Notes{Unstable: rep.Unstable, UnclassifiedCount: rep.UnclassifiedCount}}
 	meta, err := w.Commit(snap, files, vault.Meta{})
 	if err != nil {

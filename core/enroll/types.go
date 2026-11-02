@@ -44,7 +44,11 @@ type DetectResult struct {
 // Candidate is one detected instance.
 type Candidate struct {
 	ProfileID string `json:"profile_id"`
-	StateDir  string `json:"state_dir"`
+	// Name is a named instance's name (detect.named), "" for the default;
+	// Env is what selects it for the harness's commands.
+	Name     string            `json:"name,omitempty"`
+	Env      map[string]string `json:"env,omitempty"`
+	StateDir string            `json:"state_dir"`
 	// Markers are the markers_any entries present in StateDir.
 	Markers []string `json:"markers"`
 	// Binary is the first detect.binaries entry found on the login PATH.
@@ -61,6 +65,9 @@ type ScanParams struct {
 	StateDir   string             `json:"state_dir"`
 	InstanceID string             `json:"instance_id"`
 	Overrides  []profile.Override `json:"overrides,omitempty"`
+	// Name and Env: a named instance (Candidate.Name, Candidate.Env).
+	Name string            `json:"name,omitempty"`
+	Env  map[string]string `json:"env,omitempty"`
 }
 
 // Root is a resolved root.
@@ -134,6 +141,8 @@ type EntryState struct {
 // Report is the enrollment report.
 type Report struct {
 	InstanceID     string              `json:"instance_id"`
+	Name           string              `json:"name,omitempty"`
+	Env            map[string]string   `json:"env,omitempty"`
 	ProfileID      string              `json:"profile_id"`
 	ProfileVersion int                 `json:"profile_version"`
 	ProfileStatus  string              `json:"profile_status"`
@@ -216,6 +225,10 @@ type Record struct {
 	// Superseded is set when a migrate or clone replaced this instance's
 	// directories with another instance (ARCHITECTURE.md 8.2.1).
 	Superseded *Supersession `json:"superseded,omitempty"`
+	// Name and Env: a named instance (docs/PROFILES.md 2, 多实例); Env
+	// is set on every harness command run for it.
+	Name string            `json:"name,omitempty"`
+	Env  map[string]string `json:"env,omitempty"`
 }
 
 // Supersession says which operation replaced an instance.
@@ -239,6 +252,7 @@ func RecordFrom(r *Report, now time.Time) Record {
 		InstanceID: r.InstanceID, ProfileID: r.ProfileID, ProfileVersion: r.ProfileVersion,
 		Roots: roots, Provenance: r.Provenance, Service: r.Service, Entries: r.Entries,
 		LocalOverrides: ov, EntryPorts: r.EntryPorts, EnrolledAt: now.UTC(),
+		Name: r.Name, Env: r.Env,
 	}
 }
 

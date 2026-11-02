@@ -15,6 +15,7 @@ import (
 	"valise/core/enroll"
 	"valise/core/profile"
 	"valise/core/revive"
+	"valise/core/valise"
 	porterenroll "valise/porter/internal/enroll"
 )
 
@@ -434,5 +435,27 @@ func TestCloneSupersedesOverlappingInstance(t *testing.T) {
 	}
 	if r, _ := porterenroll.ReadRecord(w.home, "new"); r == nil || read(t, filepath.Join(w.state, "SOUL.md")) != "old soul" {
 		t.Fatal("cleanup touched the live instance")
+	}
+}
+
+// A state dir with another agent inside (a named instance) is never
+// swapped: the swap would carry that agent off while it runs. The stage
+// can still be discarded (restore test).
+func TestSwapRefusesNestedInstance(t *testing.T) {
+	w := newWorld(t)
+	w.p.Detect = &profile.Detect{StateDirCandidates: []string{"${HOME}/.demo"}, MarkersAny: []string{"SOUL.md"},
+		Named: []profile.Named{{Glob: "${HOME}/.demo/profiles/*", Env: map[string]string{"DEMO_HOME": "${STATE_DIR}"}}}}
+	write(t, filepath.Join(w.state, "profiles/bot/SOUL.md"), "another agent", 0o644)
+	p := w.plan()
+	w.stage(t, p, snapshot)
+	_, err := w.r.Swap(context.Background(), p.OpID)
+	if ue, ok := valise.As(err); !ok || ue.Code != "nested_instances" {
+		t.Fatalf("swapped over a nested agent: %v", err)
+	}
+	if read(t, filepath.Join(w.state, "SOUL.md")) != "current soul" || read(t, filepath.Join(w.state, "profiles/bot/SOUL.md")) != "another agent" {
+		t.Fatal("live state changed")
+	}
+	if _, err := w.r.Resume(context.Background(), revive.ResumeParams{OpID: p.OpID, Action: "discard"}); err != nil {
+		t.Fatal(err)
 	}
 }

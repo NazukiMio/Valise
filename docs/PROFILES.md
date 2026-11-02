@@ -42,6 +42,15 @@ capabilities:
   - **OpenClaw**：`openclaw exec-policy show --json` 的 `effectivePolicy.scopes[]`，`security.effective = full` 且 `ask.effective = off` 为无需批准。2026.10.9 默认即为此状态；预设 cautious（allowlist / on-miss）、deny-all（deny / off）以及 allowlist / off、full / always 都读作需要批准（均在 debian-vm 上读出，修改设置时需先停止网关）。
 - **核实证据**（2026-11-02 用户决定，细节随 profile 专题与 M17 定稿）："已核实"按能力看三种证据：官方测试过（维护者在靶机上的记录，随资料包签名）、在用户这里成功过（Valise 自动记录这个 profile 版本与 harness 版本下的成功操作，如着陆或着陆演练）、用户标记通过（用户亲自试过后手动确认，与前两种区分显示）。官方 profile 与第三方 profile 同样适用，后者只是没有官方签名。
 
+### 1.3 多实例（M12，2026-11-02 用户决定）
+
+- **发现**：`state_dir_candidates` 中第一个有标记文件的目录是默认实例；`detect.named` 每条 glob 匹配到、并且有标记文件的目录各是一个命名实例，名字取 `*` 匹配到的部分（小写字母、数字、连字符）。一个目录只算一个实例（按真实路径去重，真实目录优先于指向它的软链）。没有 `markers_any` 时，只有 `skills/`、日志、缓存的目录不算实例。
+- **实例 id**：默认实例为 profile id，命名实例为 `<profile id>-<名字>`（如 `openclaw-work`），接入时可改。
+- **选择变量**：`named[].env` 必须写明怎样让 harness 自己的命令针对这个实例（值只能引用 `${NAME}`、`${STATE_DIR}`）。登记时记入实例记录（`name`、`env`）与逃生舱头；之后读取目录、管理动作、审批检查、登录都带上。必须在靶机上核实（OpenClaw 2026.10.9 只认 `OPENCLAW_STATE_DIR`，不认环境变量 `OPENCLAW_PROFILE`）。
+- **命名实例共用安装**：存进实例记录的 profile 副本去掉 `service`、`entries`、`body`、`provenance`：服务单元与端口尚未核实（profile 里写的是默认实例的），Valise 不显示、不控制，恢复时也不停止或启动任何服务；身体由默认实例负责。
+- **嵌套**：一个实例的状态目录里如果嵌着其他实例（Hermes 的 bot 都在 `~/.hermes/profiles/` 下；也包括其他已接入实例），它们不装进这个实例的逃生舱。原地交换这样的目录会把它们一起挪走，所以暂不支持（porter 在交换前再检查一次）；恢复测试、单独恢复嵌在里面的实例、恢复到另一台服务器不受影响。上层实例原地恢复时如何处理嵌套实例，待用户决定。
+- **迁移或克隆命名实例**：Valise 不猜目标目录（默认目录属于另一个 agent），必须用 `--root state=<路径>` 指定；路径型的选择变量随新目录改写。
+
 ## 2. Schema
 
 ```yaml
@@ -70,6 +79,9 @@ detect:
   version_argv: [example, --version]
   state_dir_candidates: ["${env:EXAMPLE_HOME}", "${HOME}/.example"]   # 按顺序，取第一个存在的
   markers_any: [config.yaml]     # 状态目录中至少要存在其中一个
+  home_env: EXAMPLE_HOME          # 可选：harness 自己的家目录变量，设置时代替候选与 named 中的 ${HOME}
+  named:                          # 可选：同一份安装里的其他实例（多实例，见下）
+    - { glob: "${HOME}/.example-*", env: { EXAMPLE_STATE_DIR: "${STATE_DIR}" } }
 
 roots:                           # 除 state 之外的其他根目录
   - id: workspace

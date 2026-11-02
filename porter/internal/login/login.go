@@ -56,7 +56,7 @@ func Prepare(e *porterenroll.Env, p login.PrepareParams) (*login.PrepareResult, 
 		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+p.InstanceID, "先运行 valise enroll <服务器> --accept")
 	}
 	if prof, err := porterenroll.ReadProfile(e.Home, p.InstanceID); err == nil {
-		e = e.For(prof)
+		e = e.ForInstance(prof, rec)
 	}
 	if len(p.Login.Argv) == 0 {
 		return nil, valise.New("login_argv_missing", "登录方式 "+p.Login.ID+" 没有声明命令", "检查 profile 的 login 条目")

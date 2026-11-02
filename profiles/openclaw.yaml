@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 15
+profile_version: 16
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -33,6 +33,17 @@ detect:
   version_argv: [openclaw, --version]                                       # OBS: "OpenClaw 2026.10.9 (8b18b55)"
   state_dir_candidates: ["${env:OPENCLAW_STATE_DIR}", "${HOME}/.openclaw"]  # S&S
   markers_any: [openclaw.json]                                              # OBS + S&S
+  # OpenClaw's ~ is $OPENCLAW_HOME when set; a named profile (--profile <n>,
+  # $OPENCLAW_PROFILE, --dev) lives in ~/.openclaw-<n> with its own config,
+  # workspace and sessions (OBS 2026.10.9 debian-vm: `openclaw --profile
+  # test setup --baseline` made ~/.openclaw-test; magpie's notes cite
+  # src/config/paths.ts and state-dir.ts).
+  home_env: OPENCLAW_HOME
+  named:
+    # Its commands follow OPENCLAW_STATE_DIR (OBS 2026.10.9: `config get`
+    # and `exec-policy show` read ~/.openclaw-test; OPENCLAW_PROFILE in the
+    # environment is not honoured by `config get`, only --profile is).
+    - { glob: "${HOME}/.openclaw-*", env: { OPENCLAW_STATE_DIR: "${STATE_DIR}" } }
   # The official local-prefix installer (install-cli.sh) keeps the CLI wrapper
   # and its private Node under ~/.openclaw and does not touch PATH (OBS: script
   # source, PREFIX=~/.openclaw, wrapper ${PREFIX}/bin/openclaw).

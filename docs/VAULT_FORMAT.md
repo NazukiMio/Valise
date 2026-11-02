@@ -116,6 +116,8 @@
 
 `local_overrides` 是封存时这个实例生效的补充归类规则（与实例记录中的同名字段相同），可选；没有这个字段的快照按空列表处理。
 
+`name` 与 `env`（可选，2026-11-02 起）：命名实例的名字，以及让 harness 的命令针对这个实例的环境变量（PROFILES.md 第 2 节"多实例"）。没有这两个字段的快照是默认实例。
+
 文件列表（`format` 为 `valise-files/1`；`files` 与 `symlinks` 都按 `root`、`path` 的字节序排序）：
 
 ```json

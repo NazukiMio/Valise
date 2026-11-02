@@ -23,6 +23,7 @@ func (c *cli) enroll(ctx context.Context, args []string) error {
 	var opts service.EnrollOptions
 	var assign multiFlag
 	fs.StringVar(&opts.ProfileID, "profile", "", "")
+	fs.StringVar(&opts.Name, "name", "", "")
 	fs.StringVar(&opts.InstanceID, "id", "", "")
 	fs.Var(&assign, "assign", "")
 	fs.BoolVar(&opts.Accept, "accept", false, "")
@@ -53,7 +54,7 @@ func printCandidates(w io.Writer, cands []enroll.Candidate) {
 		if v == "" {
 			v = "版本未知"
 		}
-		fmt.Fprintf(w, "  %-10s %s（%s）\n", c.ProfileID, c.StateDir, v)
+		fmt.Fprintf(w, "  %-18s %s（%s）\n", service.CandidateLabel(c), c.StateDir, v)
 		for _, ch := range c.Children {
 			fmt.Fprintf(w, "             符合子 profile：%s\n", ch)
 		}

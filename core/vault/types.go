@@ -117,13 +117,16 @@ type Snapshot struct {
 	// LocalOverrides are the instance's extra classification rules at seal
 	// time; carried into the record of a migrated or cloned instance.
 	LocalOverrides []profile.Override `json:"local_overrides,omitempty"`
-	CreatedAt      time.Time          `json:"created_at"`
-	Epoch          int                `json:"epoch"`
-	Roots          map[string]string  `json:"roots"`
-	FilesBlobs     []string           `json:"files_blobs"`
-	FilesSHA256    string             `json:"files_sha256"`
-	SQLite         []SQLiteNote       `json:"sqlite"`
-	Notes          Notes              `json:"notes"`
+	// Name and Env: a named instance (docs/PROFILES.md 2, 多实例).
+	Name        string            `json:"name,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	Epoch       int               `json:"epoch"`
+	Roots       map[string]string `json:"roots"`
+	FilesBlobs  []string          `json:"files_blobs"`
+	FilesSHA256 string            `json:"files_sha256"`
+	SQLite      []SQLiteNote      `json:"sqlite"`
+	Notes       Notes             `json:"notes"`
 }
 
 // ProfileRef records which profile a snapshot was sealed with.

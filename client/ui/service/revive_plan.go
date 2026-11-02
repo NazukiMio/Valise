@@ -54,6 +54,9 @@ type RevivePlan struct {
 	FreeBytes           uint64             `json:"free_bytes"`
 	Warnings            []string           `json:"warnings,omitempty"`
 	Blockers            []valise.UserError `json:"blockers,omitempty"`
+	// Nested are other agents inside the target state dir: a swap is
+	// refused (a restore test, which does not swap, is not).
+	Nested []string `json:"nested,omitempty"`
 
 	files  []vault.File
 	links  []vault.Symlink
@@ -161,6 +164,13 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		return nil, valise.New("profile_version", fmt.Sprintf("快照使用 profile %s v%d，客户端中没有同一版本，快照里也没有保存副本", head.Profile.ID, head.Profile.Version),
 			"升级客户端，或用当前 profile 重新接入并建立逃生舱后再着陆")
 	}
+	// A named instance's service and entries are not verified: never
+	// stopped, started or shown (see instanceProfile).
+	prof = instanceProfile(prof, head.Name)
+	if head.Name != "" && o.Mode != revive.ModeRollback && o.Roots[profile.StateRoot] == "" {
+		return nil, valise.New("named_needs_root", "这是命名实例 "+head.Name+" 的逃生舱，迁移或克隆时 Valise 不猜目标目录（默认目录属于另一个 agent）",
+			"用 --root state=<路径> 指定目标目录")
+	}
 	// Landing is judged by the restore capability alone (docs/PROFILES.md
 	// 1.2), not by the profile's overall draft status.
 	if st := prof.CapabilityStatus("restore"); st != "tested" && !o.AllowDraft {
@@ -212,6 +222,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if len(facts.PendingOps) > 0 {
 		rp.block("op_pending", "目标服务器上有未完成的操作："+strings.Join(facts.PendingOps, "、"), "先用 valise revive resume 处理")
 	}
+	rp.Nested = facts.Nested
 	if o.Mode == revive.ModeRollback {
 		if facts.Record == nil {
 			rp.block("not_enrolled", "目标服务器上没有接入 Valise 的实例 "+instance, "原地着陆针对已接入的实例；跨服务器请用 migrate")
@@ -273,7 +284,14 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 			rootsMap[r.ID] = r.Path
 		}
 		rec := enroll.Record{InstanceID: instance, ProfileID: prof.ID, ProfileVersion: prof.ProfileVersion, Roots: rootsMap,
-			Provenance: head.Provenance, LocalOverrides: append([]profile.Override{}, head.LocalOverrides...), EnrolledAt: time.Now().UTC()}
+			Provenance: head.Provenance, LocalOverrides: append([]profile.Override{}, head.LocalOverrides...), EnrolledAt: time.Now().UTC(),
+			Name: head.Name}
+		if len(head.Env) > 0 {
+			rec.Env = map[string]string{}
+			for k, v := range head.Env { // a path-based selection follows the new state dir
+				rec.Env[k] = strings.ReplaceAll(v, head.Roots[profile.StateRoot], rootsMap[profile.StateRoot])
+			}
+		}
 		plan.Record = &rec
 	}
 
@@ -289,6 +307,9 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		grace = prof.Health.GraceSeconds
 	}
 	rp.Downtime = fmt.Sprintf("从停止服务到健康检查通过：至少约 %d 秒（宽限 %d 秒 + 3 次检查），最长约 %d 秒", grace+15, grace, grace+120)
+	if plan.Unit == "" {
+		rp.Downtime = "没有 Valise 控制的服务：只交换文件，几秒钟；agent 要你自己重新启动"
+	}
 	if plan.Body.Action == revive.BodyNPMInstall {
 		rp.Downtime += "；另加按来源安装身体的时间"
 	}

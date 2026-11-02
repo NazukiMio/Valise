@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,7 +41,7 @@ func (e *Env) ExpandArgv(argv []string, vars map[string]string) ([]string, bool)
 // services and entries. It only reads; nothing on the server is modified.
 func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enroll.Record) (*enroll.Report, error) {
 	p := &params.Profile
-	e = e.For(p)
+	e = e.For(p).With(params.Env)
 	previous.ApplyEntryPorts(p)
 	if err := enroll.ValidInstanceID(params.InstanceID); err != nil {
 		return nil, valise.New("instance_id_invalid", err.Error(), "用 --id 指定一个由小写字母、数字和连字符组成的 id")
@@ -54,7 +55,7 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 		}
 	}
 	r := &enroll.Report{
-		InstanceID: params.InstanceID, ProfileID: p.ID, ProfileVersion: p.ProfileVersion, ProfileStatus: p.Status,
+		InstanceID: params.InstanceID, Name: params.Name, Env: params.Env, ProfileID: p.ID, ProfileVersion: p.ProfileVersion, ProfileStatus: p.Status,
 		Categories: map[string]enroll.Tally{}, Secrets: []enroll.FileRef{}, SQLite: []enroll.SQLiteFile{},
 		UnclassGroups: []enroll.UnclassifiedGroup{}, Service: []enroll.ServiceState{}, Entries: []enroll.EntryState{},
 		Overrides: params.Overrides, ScannedAt: time.Now().UTC(), Previous: previous,
@@ -64,7 +65,11 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 	}
 	r.Warnings = append(r.Warnings, e.Warnings...)
 	r.Roots = resolveRoots(ctx, e, p, params.StateDir, &r.Warnings)
-	classify(r, p, params.Overrides)
+	nested := NestedInstances(e, p, params.InstanceID, params.StateDir)
+	for _, n := range nested {
+		r.Warnings = append(r.Warnings, "状态目录里嵌着另一个 agent："+n+"；它不会装进这个 agent 的逃生舱，要单独接入")
+	}
+	classify(r, p, params.Overrides, nested)
 	r.Provenance = Provenance(ctx, e, p, r.Roots)
 	r.Service = services(ctx, e, p, &r.Warnings)
 	r.Entries = entries(p)
@@ -142,9 +147,16 @@ type Item struct {
 }
 
 // Walk visits every regular file and symlink of every existing root; a file
-// belongs only to the deepest root containing it. Unreadable paths are
-// passed to bad.
-func Walk(roots []enroll.Root, c *profile.Classifier, fn func(Item), bad func(root, rel string)) {
+// belongs only to the deepest root containing it. Directories in skip
+// (other instances nested inside, see NestedInstances) are left out.
+// Unreadable paths are passed to bad.
+func Walk(roots []enroll.Root, skip []string, c *profile.Classifier, fn func(Item), bad func(root, rel string)) {
+	// Roots are walked at their resolved path; compare skips the same way.
+	for _, d := range append([]string{}, skip...) {
+		if r := realPath(d); r != d {
+			skip = append(skip, r)
+		}
+	}
 	for _, root := range roots {
 		if !root.Exists {
 			continue
@@ -170,6 +182,9 @@ func Walk(roots []enroll.Root, c *profile.Classifier, fn func(Item), bad func(ro
 					if path == n {
 						return fs.SkipDir
 					}
+				}
+				if len(skip) > 0 && slices.ContainsFunc(skip, func(n string) bool { return path == n || realPath(path) == n }) {
+					return fs.SkipDir
 				}
 				return nil
 			}
@@ -205,12 +220,12 @@ func Walk(roots []enroll.Root, c *profile.Classifier, fn func(Item), bad func(ro
 }
 
 // classify tallies every file into the report.
-func classify(r *enroll.Report, p *profile.Profile, overrides []profile.Override) {
+func classify(r *enroll.Report, p *profile.Profile, overrides []profile.Override, skip []string) {
 	c := profile.NewClassifier(p, overrides)
 	groups := map[[2]string]*enroll.UnclassifiedGroup{}
 	sqlite := map[enroll.FileRef]*enroll.SQLiteFile{}
 	sidecars := map[enroll.FileRef][]string{}
-	Walk(r.Roots, c, func(it Item) {
+	Walk(r.Roots, skip, c, func(it Item) {
 		ref := enroll.FileRef{Root: it.Root, Path: it.Rel}
 		switch {
 		case it.Symlink:

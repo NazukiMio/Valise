@@ -27,7 +27,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] <命令>
   install <服务器> --profile <id> [--show-script] [--yes] [--advanced] [--with <可选步骤 id>]...
                                                  按官方方案安装 harness：先检测依赖、核对脚本哈希并展示，确认后在交互终端里执行
   native <服务器> --profile <id>                   打开 harness 自己的原生界面（独立的管理连接）
-  enroll <服务器> [--profile id] [--id 实例] [--assign root:glob=类别]... [--report-json] [--accept]
+  enroll <服务器> [--profile id] [--name 命名实例] [--id 实例] [--assign root:glob=类别]... [--report-json] [--accept]
                                                  登记 agent：展示登记报告，加 --accept 才写入实例记录
   porter deploy <服务器> --release <版本>         从 GitHub Release 下载、校验并部署 porter
   porter deploy <服务器> --local <文件>           上传本地构建的 porter

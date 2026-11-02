@@ -3,6 +3,7 @@ package profile
 import (
 	"fmt"
 	"net"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -238,6 +239,26 @@ func (c *checker) checkTop(p *Profile) {
 		for i, d := range p.Detect.BinDirs {
 			if err := validateBaseTemplate(d, VarHome); err != nil {
 				c.add(fmt.Sprintf("detect.bin_dirs[%d]", i), "%v", err)
+			}
+		}
+		if p.Detect.HomeEnv != "" && !envNameRe.MatchString(p.Detect.HomeEnv) {
+			c.add("detect.home_env", "必须是环境变量名")
+		}
+		for i, n := range p.Detect.Named {
+			f := fmt.Sprintf("detect.named[%d].glob", i)
+			dir, last := path.Split(n.Glob)
+			if strings.Count(n.Glob, "*") != 1 || last == "" || strings.Count(last, "*") != 1 || strings.ContainsAny(last, "?[") {
+				c.add(f, "最后一段必须恰好有一个 *（实例名就是 * 匹配到的部分）：%q", n.Glob)
+			} else if err := validateBaseTemplate(strings.TrimSuffix(dir, "/"), VarHome); err != nil {
+				c.add(f, "%v", err)
+			}
+			if len(n.Env) == 0 {
+				c.add(fmt.Sprintf("detect.named[%d].env", i), "必须写明怎样让 harness 的命令针对这个实例（如 OPENCLAW_PROFILE: ${NAME}）")
+			}
+			for k, v := range n.Env {
+				if !envNameRe.MatchString(k) || strings.ReplaceAll(strings.ReplaceAll(v, "${NAME}", ""), "${STATE_DIR}", "") != "" && strings.Contains(v, "$") {
+					c.add(fmt.Sprintf("detect.named[%d].env", i), "变量名无效，或值引用了 ${NAME}、${STATE_DIR} 以外的变量：%s", k)
+				}
 			}
 		}
 	}

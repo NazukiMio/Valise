@@ -91,6 +91,11 @@ func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.Inspect
 		res.Record, _ = porterenroll.ReadRecord(e.Home, p.InstanceID)
 	}
 	res.Overlapping = overlapping(e.Home, p.InstanceID, p.Roots)
+	for _, rp := range p.Roots {
+		if rp.ID == profile.StateRoot {
+			res.Nested = porterenroll.NestedInstances(e, &p.Profile, p.InstanceID, rp.Path)
+		}
+	}
 	pend, err := s.Pending()
 	if err != nil {
 		return nil, err

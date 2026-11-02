@@ -35,6 +35,10 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 	if len(rp.Blockers) > 0 {
 		return nil, &rp.Blockers[0]
 	}
+	if len(rp.Nested) > 0 {
+		return nil, valise.New("nested_instances", "目标目录里还嵌着其他 agent（"+strings.Join(rp.Nested, "、")+"），原地交换会把它们一起挪走，暂不支持",
+			"可以单独恢复嵌在里面的 agent，或恢复到另一台服务器；恢复测试不受影响")
+	}
 	plan := rp.Plan
 	// A daily key gets a one-time grant to run stage-write for this op.
 	var begun struct {

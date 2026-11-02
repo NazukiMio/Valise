@@ -25,7 +25,8 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		return porteraction.Approval(ctx, s.loginEnv(ctx).For(prof), prof.ApprovalCheck)
+		rec, _ := porterenroll.ReadRecord(s.cfg.Home, p.InstanceID)
+		return porteraction.Approval(ctx, s.loginEnv(ctx).ForInstance(prof, rec), prof.ApprovalCheck)
 	}
 	methods[action.MethodRun] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p action.RunParams
@@ -44,7 +45,8 @@ func init() {
 		if err := s.require(rpc.Tier(a.AccessTier()), action.MethodRun+" "+a.ID); err != nil {
 			return nil, err
 		}
-		res, err := porteraction.Run(ctx, s.loginEnv(ctx).For(prof), a)
+		rec, _ := porterenroll.ReadRecord(s.cfg.Home, p.InstanceID)
+		res, err := porteraction.Run(ctx, s.loginEnv(ctx).ForInstance(prof, rec), a)
 		result := "failed"
 		if res != nil {
 			result = fmt.Sprintf("exit %d", res.Exit)

@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 
 	"valise/core/enroll"
+	"valise/ui/service"
 )
 
 // serverPage shows one server's instances as paged cards (docs/UI.md 8.1,
@@ -79,15 +82,50 @@ func (s *serverPage) cardWidth(m *Model) int {
 }
 
 // connect shows the report of connecting an agent to Valise in the
-// terminal, then asks (PRODUCT.md 8.1).
+// terminal, then asks (PRODUCT.md 8.1). With several agents not yet
+// connected on the server (several harnesses, or named instances of one),
+// the user picks which first.
 func (s *serverPage) connect(m *Model) tea.Cmd {
-	host := s.host
-	return tea.Sequence(m.runCLI("enroll", host), func() tea.Msg {
+	host, svc, ctx := s.host, m.svc, m.ctx
+	m.flash, m.flashErr = "正在查找服务器上的 agent…", false
+	return func() tea.Msg {
+		found, err := svc.DetectInstances(ctx, host)
+		if err != nil {
+			return failed(err)
+		}
+		var cs []choice
+		for _, d := range found {
+			if d.Enrolled != "" {
+				continue
+			}
+			cs = append(cs, choice{label: service.CandidateLabel(d.Candidate), value: d.ProfileID + "|" + d.Name, desc: d.StateDir})
+		}
+		switch len(cs) {
+		case 0:
+			return flashMsg("没有找到还没接入的 agent")
+		case 1:
+			pid, name, _ := strings.Cut(cs[0].value, "|")
+			return contMsg{func(m *Model) tea.Cmd { return connectOne(m, host, pid, name) }}
+		}
+		return pushMsg{pick("接入哪一个 agent？", cs, func(m *Model, v string) tea.Cmd {
+			pid, name, _ := strings.Cut(v, "|")
+			return connectOne(m, host, pid, name)
+		})}
+	}
+}
+
+// connectOne runs the report for one agent, then asks.
+func connectOne(m *Model, host, pid, name string) tea.Cmd {
+	args := []string{"enroll", host, "--profile", pid}
+	if name != "" {
+		args = append(args, "--name", name)
+	}
+	return tea.Sequence(m.runCLI(args...), func() tea.Msg {
 		return pushMsg{confirm("接受上面的接入报告，把这个 agent 接入 Valise？", []string{
 			"接入只读取和记录：在服务器上写一份实例记录，不改动 agent 的任何文件，也不往 harness 里安装任何东西。",
 			"如果报告里有多个候选或需要补充归类，请在终端用 valise enroll 的参数处理。",
 		}, func(m *Model) tea.Cmd {
-			return tea.Sequence(m.runCLI("enroll", host, "--accept"), m.loadServer(host))
+			return tea.Sequence(m.runCLI(append(args, "--accept")...), m.loadServer(host))
 		})}
 	})
 }

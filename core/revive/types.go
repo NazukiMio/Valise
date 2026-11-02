@@ -110,6 +110,10 @@ type InspectResult struct {
 	// planned roots (they would be superseded by a migrate or clone).
 	Overlapping   []string `json:"overlapping,omitempty"`
 	RegistryCheck string   `json:"registry_integrity,omitempty"`
+	// Nested lists other agents inside the target state dir (named
+	// instances, other enrolled instances). A swap would carry them off,
+	// so it is refused while there are any.
+	Nested []string `json:"nested,omitempty"`
 }
 
 // BodyAction is how the body is handled.

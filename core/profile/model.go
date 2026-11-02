@@ -91,6 +91,21 @@ type Detect struct {
 	// private prefix its installer uses), put in front of the login PATH
 	// whenever Valise runs this harness's commands.
 	BinDirs []string `yaml:"bin_dirs" json:"bin_dirs,omitempty"`
+	// HomeEnv names the harness's own home variable: when set on the
+	// server, it stands for ${HOME} in the candidates and named globs.
+	HomeEnv string `yaml:"home_env" json:"home_env,omitempty"`
+	// Named are further instances of one installation (docs/PROFILES.md
+	// 2, 多实例): each directory a glob matches that holds a marker is an
+	// instance named by what the * matched.
+	Named []Named `yaml:"named" json:"named,omitempty"`
+}
+
+// Named is a glob whose last segment holds exactly one *.
+type Named struct {
+	Glob string `yaml:"glob" json:"glob"`
+	// Env selects the instance for the harness's own commands: values
+	// may use ${NAME} (what the * matched) and ${STATE_DIR}.
+	Env map[string]string `yaml:"env" json:"env,omitempty"`
 }
 
 // Root is an additional root besides state.

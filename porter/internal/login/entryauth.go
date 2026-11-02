@@ -32,7 +32,7 @@ func EntryAuth(ctx context.Context, e *porterenroll.Env, home string, p login.En
 		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+p.InstanceID, "先把这个 agent 接入 Valise")
 	}
 	if prof, err := porterenroll.ReadProfile(home, p.InstanceID); err == nil {
-		e = e.For(prof)
+		e = e.ForInstance(prof, rec)
 	}
 	a := p.Entry.Auth
 	if a == nil || (len(a.URLArgv) == 0 && len(a.TokenArgv) == 0) {

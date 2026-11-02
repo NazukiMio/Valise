@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"valise/core/enroll"
+	"valise/core/profile"
 	"valise/core/revive"
 	"valise/core/valise"
 	"valise/core/vault"
@@ -41,7 +42,22 @@ func (r *Runner) Swap(ctx context.Context, op string) (*revive.SwapResult, error
 	if j.State != revive.StatePlanned || !j.StageVerified {
 		return nil, valise.New("op_state", "暂存尚未校验通过，不能交换", "先完成暂存与校验")
 	}
+	for _, jr := range j.Roots {
+		if jr.ID != profile.StateRoot {
+			continue
+		}
+		if nested := porterenroll.NestedInstances(r.Env.For(&j.Plan.Profile), &j.Plan.Profile, j.Plan.InstanceID, jr.Live); len(nested) > 0 {
+			return nil, nestedRefusal(nested)
+		}
+	}
 	return r.advance(ctx, j)
+}
+
+// nestedRefusal: other agents live inside the state dir; swapping it would
+// carry them off while they run.
+func nestedRefusal(nested []string) error {
+	return valise.New("nested_instances", "这个 agent 的目录里还嵌着其他 agent（"+strings.Join(nested, "、")+"），原地交换会把它们一起挪走，暂不支持",
+		"可以单独恢复嵌在里面的 agent，或恢复到另一台服务器；恢复测试不受影响")
 }
 
 // Resume continues or backs out an unfinished operation (crash recovery).

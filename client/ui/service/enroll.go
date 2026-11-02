@@ -17,7 +17,10 @@ import (
 type EnrollOptions struct {
 	// ProfileID picks a candidate (or a child profile) when several match.
 	ProfileID string `json:"profile_id,omitempty"`
-	// InstanceID defaults to the harness profile id.
+	// Name picks a named instance (detect.named); "" is the default one.
+	Name string `json:"name,omitempty"`
+	// InstanceID defaults to the harness profile id, plus "-<name>" for a
+	// named instance.
 	InstanceID string `json:"instance_id,omitempty"`
 	// Assign are "<root>:<glob>=<category>" decisions for unclassified files.
 	Assign []string `json:"assign,omitempty"`
@@ -66,7 +69,7 @@ func (s *Service) Enroll(ctx context.Context, host string, opts EnrollOptions) (
 		return nil, err
 	}
 	res := &EnrollResult{Host: host, Candidates: det.Candidates, RejectedLocalProfiles: set.Rejected}
-	cand, eff, err := choose(set, det.Candidates, opts.ProfileID, host)
+	cand, eff, err := choose(set, det.Candidates, opts.ProfileID, opts.Name, host)
 	if err != nil {
 		return res, err
 	}
@@ -74,25 +77,30 @@ func (s *Service) Enroll(ctx context.Context, host string, opts EnrollOptions) (
 	res.ProfileLocal = loaded.Local
 	id := opts.InstanceID
 	if id == "" {
-		id = cand.ProfileID
+		id = CandidateID(cand)
 	}
 	if err := enroll.ValidInstanceID(id); err != nil {
 		return res, valise.New("instance_id_invalid", err.Error(), "用 --id 指定一个由小写字母、数字和连字符组成的 id")
 	}
 
 	var rep enroll.Report
-	params := enroll.ScanParams{Profile: *loaded.Effective, StateDir: cand.StateDir, InstanceID: id, Overrides: overrides}
+	prof := instanceProfile(*loaded.Effective, cand.Name)
+	params := enroll.ScanParams{Profile: prof, StateDir: cand.StateDir, InstanceID: id, Overrides: overrides, Name: cand.Name, Env: cand.Env}
 	if err := c.Call(ctx, enroll.MethodScan, params, &rep); err != nil {
 		return res, err
 	}
 	rep.Pending = pendingOf(set, eff)
 	rep.Warnings = append(cand.Warnings, rep.Warnings...)
+	if cand.Name != "" {
+		rep.Warnings = append(rep.Warnings, "这是命名实例 "+cand.Name+"：它的服务与管理页尚未在靶机上核实，Valise 不控制它的服务（恢复时也不会停止或启动任何服务）")
+		rep.Provenance.Warnings = []string{"命名实例与默认实例共用同一份安装，Valise 不单独记录它的身体来源"}
+	}
 	res.Report = &rep
 
 	if opts.Accept {
 		var w enroll.InstanceWriteResult
 		rec := enroll.RecordFrom(&rep, time.Now())
-		if err := c.Call(ctx, enroll.MethodInstanceWrite, enroll.InstanceWriteParams{Record: rec, Profile: *loaded.Effective}, &w); err != nil {
+		if err := c.Call(ctx, enroll.MethodInstanceWrite, enroll.InstanceWriteParams{Record: rec, Profile: prof}, &w); err != nil {
 			return res, err
 		}
 		res.Written = w.Path
@@ -102,28 +110,44 @@ func (s *Service) Enroll(ctx context.Context, host string, opts EnrollOptions) (
 
 // choose picks the candidate and the effective profile id (a child profile
 // when exactly one child's condition holds).
-func choose(set *profiles.Set, cands []enroll.Candidate, want, host string) (enroll.Candidate, string, error) {
+// CandidateID is the default instance id of a candidate.
+func CandidateID(c enroll.Candidate) string {
+	if c.Name != "" {
+		return c.ProfileID + "-" + c.Name
+	}
+	return c.ProfileID
+}
+
+// CandidateLabel names a candidate for messages.
+func CandidateLabel(c enroll.Candidate) string {
+	if c.Name != "" {
+		return c.ProfileID + "（" + c.Name + "）"
+	}
+	return c.ProfileID
+}
+
+func choose(set *profiles.Set, cands []enroll.Candidate, want, name, host string) (enroll.Candidate, string, error) {
 	if len(cands) == 0 {
 		return enroll.Candidate{}, "", valise.New("no_instance", fmt.Sprintf("在服务器 %s 上没有发现任何已知 harness 的实例", host),
 			"确认 harness 已安装并至少运行过一次初始化；如果是 profile 尚未支持的 harness，可以在本地 profile 目录中添加 profile")
 	}
 	var pick []enroll.Candidate
 	for _, c := range cands {
-		if want == "" || want == c.ProfileID || contains(c.Children, want) {
+		if (want == "" || want == c.ProfileID || contains(c.Children, want)) && c.Name == name {
 			pick = append(pick, c)
 		}
 	}
 	if len(pick) != 1 {
 		var ids []string
 		for _, c := range cands {
-			ids = append(ids, c.ProfileID)
+			ids = append(ids, CandidateLabel(c))
 		}
 		sort.Strings(ids)
 		reason := fmt.Sprintf("服务器 %s 上发现多个实例：%s", host, strings.Join(ids, "、"))
 		if len(pick) == 0 {
 			reason = fmt.Sprintf("服务器 %s 上没有 profile %q 的实例（发现的有：%s）", host, want, strings.Join(ids, "、"))
 		}
-		return enroll.Candidate{}, "", valise.New("choose_instance", reason, "用 --profile <id> 指定要接入的那一个")
+		return enroll.Candidate{}, "", valise.New("choose_instance", reason, "用 --profile <id> 指定要接入的那一个；命名实例再加 --name <名字>")
 	}
 	c := pick[0]
 	switch {
@@ -161,4 +185,49 @@ func pendingOf(set *profiles.Set, id string) []profile.Pending {
 		}
 	}
 	return out
+}
+
+// DetectInstances lists the agents found on host, each with the instance
+// already enrolled for its state dir ("" when none).
+func (s *Service) DetectInstances(ctx context.Context, host string) ([]DetectedInstance, error) {
+	set, err := s.Profiles()
+	if err != nil {
+		return nil, err
+	}
+	var det enroll.DetectResult
+	if err := s.call(ctx, host, enroll.MethodDetect, enroll.DetectParams{Profiles: set.Effective()}, &det); err != nil {
+		return nil, err
+	}
+	insts, _ := s.Instances(ctx, host)
+	var out []DetectedInstance
+	for _, c := range det.Candidates {
+		d := DetectedInstance{Candidate: c, ID: CandidateID(c)}
+		for _, in := range insts {
+			if in.Superseded == nil && in.Roots[profile.StateRoot] == c.StateDir {
+				d.Enrolled = in.InstanceID
+			}
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// DetectedInstance is one agent found on a server.
+type DetectedInstance struct {
+	enroll.Candidate
+	// ID is the default instance id; Enrolled the instance already
+	// enrolled for this state dir.
+	ID       string `json:"id"`
+	Enrolled string `json:"enrolled,omitempty"`
+}
+
+// instanceProfile is the profile stored for an instance. A named instance
+// shares the installation (body and provenance) with the default one, and
+// its service units and entries are not verified (the profile's are the
+// default instance's), so Valise neither shows nor controls them.
+func instanceProfile(p profile.Profile, name string) profile.Profile {
+	if name != "" {
+		p.Service, p.Entries, p.Body, p.Provenance = nil, nil, nil, nil
+	}
+	return p
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"valise/core/enroll"
 	"valise/core/profile"
 )
 
@@ -65,6 +66,28 @@ func LoadEnv(ctx context.Context, home string) *Env {
 
 // For returns the environment for running p's commands: p's own bin
 // directories (detect.bin_dirs) in front of the login PATH.
+// With returns e with vars set (a named instance's selection, see
+// detect.named); e itself is unchanged.
+func (e *Env) With(vars map[string]string) *Env {
+	if e == nil || len(vars) == 0 {
+		return e
+	}
+	c := &Env{Home: e.Home, Vars: append([]string{}, e.Vars...), Warnings: e.Warnings}
+	for k, v := range vars {
+		c.Set(k, v)
+	}
+	return c
+}
+
+// ForInstance is e for running p's commands for one enrolled instance.
+func (e *Env) ForInstance(p *profile.Profile, rec *enroll.Record) *Env {
+	e = e.For(p)
+	if rec != nil {
+		e = e.With(rec.Env)
+	}
+	return e
+}
+
 func (e *Env) For(p *profile.Profile) *Env {
 	if e == nil || p == nil || p.Detect == nil || len(p.Detect.BinDirs) == 0 {
 		return e
