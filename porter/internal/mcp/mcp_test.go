@@ -16,6 +16,7 @@ import (
 	"valise/core/agentkit"
 	"valise/core/enroll"
 	"valise/core/profile"
+	"valise/core/vault"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/kit"
 	"valise/porter/internal/seal"
@@ -171,6 +172,9 @@ func TestProtocolAndTools(t *testing.T) {
 	if sc["last_seal"] == nil || len(sc["unclassified"].([]any)) == 0 || strings.Contains(text, "API_KEY=secret") || strings.Contains(text, "user notes") {
 		t.Fatalf("%s", text)
 	}
+	if sc["configured_targets"] == nil || !strings.Contains(sc["protection_summary"].(string), "没有配置") {
+		t.Fatalf("protection: %s", text)
+	}
 
 	// Checkup runs, then is rate limited.
 	sc, text, isErr = c.tool("valise_checkup", map[string]any{})
@@ -244,5 +248,19 @@ func TestProtocolAndTools(t *testing.T) {
 	}
 	if _, _, isErr := c.tool("valise_handoff_finish", map[string]any{"snapshot_id": sid}); !isErr {
 		t.Fatal("finished twice")
+	}
+}
+
+// The case the review found (F10): a target is configured and older pods
+// reached it, only the newest is still on the server.
+func TestProtectionSummary(t *testing.T) {
+	now := time.Date(2026, 11, 3, 13, 0, 0, 0, time.UTC)
+	r := &statusResult{Targets: []string{"nas"}, LastSeal: &vault.Meta{SnapshotID: "s_new"}, SyncedTo: []string{},
+		LastOffsite: &offsitePod{SnapshotID: "s_old", CreatedAt: now, Targets: []string{"nas"}}, WaitingSync: 1}
+	got := protection(r)
+	for _, want := range []string{"已配置 1 个同步位置（nas）", "还只在服务器上", "1 个在等同步", "别处最新的一份", "本机仓库"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("%q lacks %q", got, want)
+		}
 	}
 }

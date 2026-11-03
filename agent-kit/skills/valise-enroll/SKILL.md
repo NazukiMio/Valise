@@ -17,7 +17,11 @@ Always talk to the user in the user's language.
 
 1. Call the `valise_status` tool. It tells you which instance you are, which
    profile describes you, when you were last sealed (and in which tier), and
-   whether that seal is synced off-site.
+   where copies are. For where copies are, pass on `protection_summary` as it
+   is: Valise writes it from the facts. Do not infer anything from an empty
+   list (an empty `last_seal_synced_to` means the newest seal is not copied
+   yet, not that no target is configured; see `configured_targets` and
+   `last_offsite`).
 2. Tell the user in one or two sentences what is protected:
    - the soul tier holds persona, memory, skills, sessions and state, without
      credentials (credentials are only in the tiers the user seals from the client);

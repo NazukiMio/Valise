@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -168,11 +169,19 @@ func (t *Tools) Call(ctx context.Context, name string, args json.RawMessage) (an
 }
 
 type statusResult struct {
-	Instance        string                     `json:"instance"`
-	Profile         string                     `json:"profile"`
-	ProfileStatus   string                     `json:"profile_status"`
-	LastSeal        *vault.Meta                `json:"last_seal,omitempty"`
-	SyncedTo        []string                   `json:"last_seal_synced_to"`
+	Instance      string      `json:"instance"`
+	Profile       string      `json:"profile"`
+	ProfileStatus string      `json:"profile_status"`
+	LastSeal      *vault.Meta `json:"last_seal,omitempty"`
+	SyncedTo      []string    `json:"last_seal_synced_to"`
+	// The protection state, split so nothing is guessed from an empty
+	// list (review F10): the targets this server copies to, the newest
+	// escape pod that reached one, the pods still waiting, and one plain
+	// sentence written by code for the agent to pass on as it is.
+	Targets         []string                   `json:"configured_targets"`
+	LastOffsite     *offsitePod                `json:"last_offsite,omitempty"`
+	WaitingSync     int                        `json:"pods_waiting_sync"`
+	Protection      string                     `json:"protection_summary"`
 	Findings        []string                   `json:"findings"`
 	LastCheckup     *time.Time                 `json:"last_checkup,omitempty"`
 	Unclassified    []enroll.UnclassifiedGroup `json:"unclassified"`
@@ -182,6 +191,35 @@ type statusResult struct {
 	HandoffTargets  []string                   `json:"handoff_targets"`
 	HandoffOpen     string                     `json:"handoff_open_snapshot,omitempty"`
 	Notes           []string                   `json:"notes,omitempty"`
+}
+
+type offsitePod struct {
+	SnapshotID string    `json:"snapshot_id"`
+	CreatedAt  time.Time `json:"created_at"`
+	Targets    []string  `json:"targets"`
+}
+
+// protection is the plain sentence of the protection state.
+func protection(r *statusResult) string {
+	var b strings.Builder
+	if len(r.Targets) == 0 {
+		b.WriteString("这台服务器没有配置空间站或其他同步位置。")
+	} else {
+		b.WriteString("已配置 " + strconv.Itoa(len(r.Targets)) + " 个同步位置（" + strings.Join(r.Targets, "、") + "）。")
+	}
+	switch {
+	case r.LastSeal == nil:
+		b.WriteString("还没有逃生舱。")
+	case len(r.SyncedTo) > 0:
+		b.WriteString("最新的逃生舱已经复制到 " + strings.Join(r.SyncedTo, "、") + "。")
+	case r.LastOffsite != nil:
+		b.WriteString("最新的逃生舱还只在服务器上（" + strconv.Itoa(r.WaitingSync) + " 个在等同步）；别处最新的一份是 " +
+			r.LastOffsite.CreatedAt.Local().Format("2006-01-02 15:04") + " 的（" + strings.Join(r.LastOffsite.Targets, "、") + "）。")
+	default:
+		b.WriteString("逃生舱都只在服务器上，还没有复制到别处。")
+	}
+	b.WriteString("用户电脑上的本机仓库由 Valise 客户端管理，这里看不到。")
+	return b.String()
 }
 
 func (t *Tools) status(ctx context.Context) (any, error) {
@@ -213,7 +251,40 @@ func (t *Tools) status(ctx context.Context) (any, error) {
 				}
 			}
 		}
+		for _, tg := range vs.Targets {
+			res.Targets = append(res.Targets, tg.Name)
+		}
+		for _, m := range vs.Snapshots {
+			if m.InstanceID != t.Instance {
+				continue
+			}
+			var where []string
+			for _, tg := range vs.Targets {
+				if slices.Contains(tg.LastSynced, m.SnapshotID) {
+					where = append(where, tg.Name)
+				}
+			}
+			switch {
+			case len(where) == 0:
+				res.WaitingSync++
+			case res.LastOffsite == nil || m.CreatedAt.After(res.LastOffsite.CreatedAt):
+				res.LastOffsite = &offsitePod{SnapshotID: m.SnapshotID, CreatedAt: m.CreatedAt, Targets: where}
+			}
+		}
+		if res.LastOffsite != nil {
+			// Only pods newer than the last offsite one are waiting.
+			res.WaitingSync = 0
+			for _, m := range vs.Snapshots {
+				if m.InstanceID == t.Instance && m.CreatedAt.After(res.LastOffsite.CreatedAt) {
+					res.WaitingSync++
+				}
+			}
+		}
 	}
+	if res.Targets == nil {
+		res.Targets = []string{}
+	}
+	res.Protection = protection(&res)
 	if res.LastSeal == nil {
 		res.Notes = append(res.Notes, "这个实例还没有封存过")
 	}
