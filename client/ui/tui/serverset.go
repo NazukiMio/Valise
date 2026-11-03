@@ -173,7 +173,7 @@ func (s *serverSettings) view(m *Model) string {
 // nameServer asks for the server name (its cloud backup folder, set once)
 // and records it; then runs after it is saved.
 func nameServer(m *Model, host string, then func(m *Model) tea.Cmd) tea.Cmd {
-	return m.push(newInput("给 "+host+" 起名：仓库和空间站里的文件夹名，只能用小写字母、数字和连字符，起好后不能修改", host, false,
+	return m.push(newInput("给 "+host+" 起名：仓库和空间站里的文件夹名，只能用小写字母、数字和连字符；之后可以改名", host, false,
 		func(m *Model, v string) tea.Cmd {
 			name := strings.TrimSpace(v)
 			if name == "" {

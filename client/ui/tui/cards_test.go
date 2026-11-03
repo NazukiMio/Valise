@@ -66,7 +66,7 @@ func TestManageActions(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 44})
 	openInstance(t, m)
 	key(t, m, "3")
-	wantText(t, m, "动作 · 查看", "打招呼", "日常钥匙", "动作 · 常规管理", "重启演示", "动作 · 修改配置", "换令牌", "原生", "打开这台服务器的终端")
+	wantText(t, m, "动作 · 查看", "打招呼", "用你自己的 SSH 登录", "动作 · 常规管理", "重启演示", "动作 · 修改配置", "换令牌", "原生", "打开这台服务器的终端")
 	v := screenText(m)
 	if strings.Contains(v, "/bin/echo") {
 		t.Fatal("commands shown before v")
@@ -83,7 +83,7 @@ func TestManageActions(t *testing.T) {
 	key(t, m, "esc")
 	key(t, m, "down")
 	key(t, m, "enter")
-	wantText(t, m, "会发生什么：重启", "需要管理登录")
+	wantText(t, m, "会发生什么：重启", "用你自己的 SSH 登录")
 	key(t, m, "enter")
 	wantText(t, m, "命令：退出码 0", "无法检查运行状态")
 	key(t, m, "esc")

@@ -158,8 +158,8 @@ func Build(dir, kitFile, version string, now time.Time) ([]byte, error) {
 // Verify checks the pack's minisign signature against the release key.
 func Verify(tgz, sig []byte, publicKey string) error {
 	if publicKey == "" {
-		return valise.New("pack_key_missing", "这个客户端没有配置 Release 签名公钥，无法确认资料包来自官方",
-			"把其中的 profile 作为本地 profile 安装，或使用正式发布的客户端")
+		return valise.New("pack_key_missing", "这是开发版客户端，没有内置发布签名公钥，无法确认资料包来自官方",
+			"把其中的资料作为本地 harness 资料安装（未经审核），或使用正式发布的客户端")
 	}
 	pk, err := minisign.ParsePublicKey(publicKey)
 	if err != nil {

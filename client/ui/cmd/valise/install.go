@@ -130,7 +130,7 @@ func (c *cli) printInstallSummary(plan *service.InstallPlan) {
 	row("装什么", plan.Summary)
 	row("装到哪里", plan.Where)
 	row("大概多久", plan.Takes)
-	need := "只用你的用户权限，不需要管理员；会用管理登录在服务器上开一个终端来执行"
+	need := "只用你的用户权限，不需要管理员；敏感操作，要用服务器密码或管理钥匙在服务器上开一个终端来执行"
 	if len(plan.Missing) > 0 {
 		var names []string
 		for _, q := range plan.Missing {

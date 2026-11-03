@@ -157,7 +157,8 @@ var ReleasesAPI = "https://api.github.com/repos/NazukiMio/Valise/releases?per_pa
 func (s *Service) latestPackTag(ctx context.Context, h *http.Client) (string, error) {
 	b, err := s.download(ctx, h, ReleasesAPI, 2<<20)
 	if err != nil {
-		return "", err
+		return "", valise.New("pack_list", "读不到 Valise 的发布列表，无法在线获取资料包",
+			"项目还没有公开发布或网络不通时，改用本地文件安装（valise profiles install --file <文件>，终端界面里选「本地文件」）").WithDetail(errText1(err))
 	}
 	var rels []struct {
 		Tag        string `json:"tag_name"`
@@ -190,7 +191,7 @@ func (s *Service) download(ctx context.Context, h *http.Client, url string, max 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, valise.New("download_failed", fmt.Sprintf("下载失败（HTTP %d）", resp.StatusCode), "确认版本号存在后重试").WithDetail(url)
+		return nil, valise.New("download_failed", fmt.Sprintf("下载失败（HTTP %d）", resp.StatusCode), "确认这个地址存在后重试；资料包也可以用本地文件安装").WithDetail(url)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, max+1))
 	if err != nil {

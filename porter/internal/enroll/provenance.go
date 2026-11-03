@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,7 +35,13 @@ func Provenance(ctx context.Context, e *Env, p *profile.Profile, roots []enroll.
 	warn := func(s string) { out.Warnings = append(out.Warnings, s) }
 	switch pv.Kind {
 	case profile.ProvenanceNPMGlobal:
-		out.NPM = npmProvenance(ctx, e, p, pv.NPM.Package, warn)
+		state := ""
+		for _, r := range roots {
+			if r.ID == profile.StateRoot {
+				state = r.Path
+			}
+		}
+		out.NPM = npmProvenance(ctx, e, p, pv.NPM.Package, state, warn)
 	case profile.ProvenanceGit:
 		dir := ""
 		for _, r := range roots {
@@ -52,7 +60,7 @@ func Provenance(ctx context.Context, e *Env, p *profile.Profile, roots []enroll.
 	return out
 }
 
-func npmProvenance(ctx context.Context, e *Env, p *profile.Profile, pkg string, warn func(string)) *enroll.NPMRecord {
+func npmProvenance(ctx context.Context, e *Env, p *profile.Profile, pkg, stateDir string, warn func(string)) *enroll.NPMRecord {
 	rec := &enroll.NPMRecord{Package: pkg}
 	var bin string
 	if p.Detect != nil {
@@ -92,21 +100,39 @@ func npmProvenance(ctx context.Context, e *Env, p *profile.Profile, pkg string, 
 		}
 		dir = filepath.Dir(dir)
 	}
+	// The command may be a wrapper (a private prefix's launcher): look in
+	// the roots the profile declares, then the global root of the npm on
+	// this harness's PATH.
+	inRoot := func(root string) bool {
+		var meta struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+		}
+		if b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(pkg), "package.json")); err != nil || json.Unmarshal(b, &meta) != nil || meta.Name != pkg {
+			return false
+		}
+		rec.Version = meta.Version
+		if filepath.Base(root) == "node_modules" && filepath.Base(filepath.Dir(root)) == "lib" {
+			rec.Prefix = filepath.Dir(filepath.Dir(root))
+		}
+		return true
+	}
+	if rec.Version == "" && p.Provenance.NPM != nil {
+		for _, tmpl := range p.Provenance.NPM.Roots {
+			g, ok := e.Expand(tmpl, map[string]string{"STATE_DIR": stateDir})
+			if !ok {
+				continue
+			}
+			matches, _ := filepath.Glob(filepath.Clean(g))
+			sort.Sort(sort.Reverse(sort.StringSlice(matches))) // newest version-named dir first
+			if slices.ContainsFunc(matches, inRoot) {
+				break
+			}
+		}
+	}
 	if rec.Version == "" {
-		// The command may be a wrapper (a private prefix's launcher):
-		// look in the global root of the npm on this harness's PATH.
 		if out, err := e.Run(ctx, toolTimeout, "", "npm", "root", "-g"); err == nil && out.Code == 0 {
-			root := firstLine(out.Stdout)
-			var meta struct {
-				Name    string `json:"name"`
-				Version string `json:"version"`
-			}
-			if b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(pkg), "package.json")); err == nil && json.Unmarshal(b, &meta) == nil && meta.Name == pkg {
-				rec.Version = meta.Version
-				if filepath.Base(root) == "node_modules" && filepath.Base(filepath.Dir(root)) == "lib" {
-					rec.Prefix = filepath.Dir(filepath.Dir(root))
-				}
-			}
+			inRoot(firstLine(out.Stdout))
 		}
 	}
 	if rec.Version == "" {

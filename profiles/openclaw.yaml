@@ -96,7 +96,10 @@ consistency:
 
 provenance:
   kind: npm_global
-  npm: { package: openclaw }   # OBS
+  # OBS (2026-11-03, oracle, install-cli.sh 2026.10.9): the official
+  # installer's ~/.openclaw/bin/openclaw is a launcher script; the package
+  # lives in its private Node under tools/ (tools/node-v24.22.1/lib/...).
+  npm: { package: openclaw, roots: ["${HOME}/.openclaw/tools/*/lib/node_modules"] }   # OBS
 
 body:
   # OBS (InstaBox, install-cli.sh): the local-prefix installer keeps its

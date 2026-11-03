@@ -38,8 +38,12 @@ func (s *Service) LeafDelete(ctx context.Context, host, leaf string) (*vaultrpc.
 	return &res, err
 }
 
-// TargetList lists what a cloud backup holds for host.
+// TargetList lists what a cloud backup holds for host. A managed station
+// is listed from this computer: the server's certificate may only write.
 func (s *Service) TargetList(ctx context.Context, host, target string) (*vaultrpc.TargetListResult, error) {
+	if s.IsStation(target) {
+		return s.StationList(ctx, host, target)
+	}
 	var res vaultrpc.TargetListResult
 	err := s.call(ctx, host, vaultrpc.MethodTargetList, vaultrpc.TargetListParams{Target: target}, &res)
 	return &res, err
@@ -107,7 +111,7 @@ func (s *Service) LeafCopies(ctx context.Context, host, leaf string) (copies []C
 	}
 	errs = map[string]error{}
 	for _, t := range st.Targets {
-		list, err := s.listPlace(ctx, host, t.Name)
+		list, err := s.TargetList(ctx, host, t.Name)
 		if err != nil {
 			errs[t.Name] = err
 			continue

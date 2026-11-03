@@ -100,9 +100,6 @@ func (c *cloudScreen) init(m *Model) tea.Cmd {
 
 func (c *cloudScreen) list(m *Model, name string) tea.Cmd {
 	svc, ctx, host := m.svc, m.ctx, c.host
-	if svc.IsStation(name) {
-		return func() tea.Msg { l, err := svc.StationList(ctx, host, name); return targetListed{name, l, err} }
-	}
 	return func() tea.Msg { l, err := svc.TargetList(ctx, host, name); return targetListed{name, l, err} }
 }
 
@@ -326,7 +323,7 @@ func (c *cloudScreen) view(m *Model) string {
 	var b strings.Builder
 	b.WriteString(strings.Join(tabs, "   ") + "\n" + head + "\n")
 	rows := c.rows(m, p)
-	b.WriteString(dimStyle.Render("按 agent 和周期浏览（\"两处都有\"才算真正安全）：") + "\n")
+	b.WriteString(dimStyle.Render("按 agent 和周期浏览：哪里有副本（是否校验过、最近一次恢复测试见各 agent 的健康页）") + "\n")
 	var lines []string
 	for i, r := range rows {
 		lines = append(lines, cursorLine(i == c.cursor, cloudLine(r)))

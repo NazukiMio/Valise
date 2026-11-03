@@ -384,3 +384,21 @@ func TestSetEntryPort(t *testing.T) {
 		t.Fatal("accepted an instance that is not enrolled")
 	}
 }
+
+// A private installer's launcher script: the package is found in the
+// profile's declared node_modules roots, not via the npm on PATH.
+func TestNPMProvenanceLauncher(t *testing.T) {
+	home := t.TempDir()
+	bin := filepath.Join(home, ".demo", "bin")
+	write(t, filepath.Join(bin, "demo"), "#!/bin/sh\nexec node ../tools/node/lib/node_modules/demo/cli.js \"$@\"\n", 0o755)
+	write(t, filepath.Join(home, ".demo", "tools", "node-v1", "lib", "node_modules", "demo", "package.json"), `{"name":"demo","version":"1.2.3"}`, 0o644)
+	p := &profile.Profile{ID: "demo", Detect: &profile.Detect{Binaries: []string{"demo"}},
+		Provenance: &profile.Provenance{Kind: profile.ProvenanceNPMGlobal,
+			NPM: &profile.NPMProvenance{Package: "demo", Roots: []string{"${HOME}/.demo/tools/*/lib/node_modules"}}}}
+	e := &Env{Home: home, Vars: []string{"HOME=" + home, "PATH=" + bin}}
+	var warns []string
+	rec := npmProvenance(context.Background(), e, p, "demo", filepath.Join(home, ".demo"), func(s string) { warns = append(warns, s) })
+	if rec.Version != "1.2.3" || rec.Prefix != filepath.Join(home, ".demo", "tools", "node-v1") {
+		t.Fatalf("%+v %v", rec, warns)
+	}
+}

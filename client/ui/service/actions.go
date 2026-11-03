@@ -165,17 +165,29 @@ func (s *Service) settle(ctx context.Context, host, instance string, res *Action
 	}
 }
 
-// ActionAccess describes how an action runs, for the confirmation.
-func ActionAccess(a profile.Action) string {
+// ActionAccess says which login an action needs on host, in the words of
+// that server's setup (docs/ARCHITECTURE.md 2.1), for the confirmation.
+func (s *Service) ActionAccess(host string, a profile.Action) string {
+	if !a.Terminal && a.Output != profile.OutputSecret && !a.NeedsAdmin() {
+		if !s.Tiered(host) {
+			return "用你自己的 SSH 登录"
+		}
+		return "日常钥匙即可"
+	}
+	login := "要输入服务器密码（敏感操作）"
+	switch {
+	case !s.Tiered(host):
+		login = "用你自己的 SSH 登录"
+	case s.HasAdminKey(host):
+		login = "要解锁管理钥匙（管理口令）"
+	}
 	switch {
 	case a.Terminal:
-		return "需要管理登录 · 在独立终端里运行"
+		return login + " · 在独立终端里运行"
 	case a.Output == profile.OutputSecret:
-		return "需要管理登录 · 机密"
-	case a.NeedsAdmin():
-		return "需要管理登录"
+		return login + " · 内容不显示"
 	}
-	return "日常钥匙"
+	return login
 }
 
 // SealsByDefault reports whether the action takes an escape pod first

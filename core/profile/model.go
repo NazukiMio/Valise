@@ -225,6 +225,10 @@ type BinaryProvenance struct {
 // NPMProvenance names the npm package of the body.
 type NPMProvenance struct {
 	Package string `yaml:"package" json:"package"`
+	// Roots are node_modules directories (globs, ${HOME} / ${STATE_DIR})
+	// a private installer keeps the package in, behind a launcher script;
+	// checked before the global root of the npm on PATH.
+	Roots []string `yaml:"roots" json:"roots,omitempty"`
 }
 
 // GitProvenance locates the git work tree of the body.

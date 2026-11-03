@@ -419,6 +419,11 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 		}
 	}
 	switch {
+	case pv.NPM != nil && pv.NPM.Version == "":
+		// Nothing was recorded at enrollment: say so, not "changed".
+		rp.block("provenance_missing", "接入时没有记下 "+pv.NPM.Package+" 的来源版本，无法核对目标上的身体",
+			"在原服务器上重新接入（让 Valise 记下来源），再建立逃生舱；或按官方文档在目标上全新安装："+freshDoc(prof))
+		return
 	case pv.NPM != nil:
 		installed := facts.Provenance.NPM != nil && facts.Provenance.NPM.Version == pv.NPM.Version
 		if installed {
@@ -430,7 +435,12 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 				"先在目标服务器上安装 Node.js 与 npm（用户级即可），参考 "+freshDoc(prof))
 			return
 		}
-		if pv.NPM.Integrity == "" || facts.RegistryCheck != pv.NPM.Integrity {
+		if pv.NPM.Integrity == "" {
+			rp.block("provenance_missing", "接入时没有记下 "+pv.NPM.Package+"@"+pv.NPM.Version+" 的 integrity，无法核对 registry 上的版本",
+				"在原服务器上重新接入，再建立逃生舱；或按官方文档全新安装："+freshDoc(prof))
+			return
+		}
+		if facts.RegistryCheck != pv.NPM.Integrity {
 			rp.block("provenance_changed", fmt.Sprintf("registry 上 %s@%s 的 integrity 与接入时记录的不一致（或无法查询）", pv.NPM.Package, pv.NPM.Version),
 				"来源已变化，Valise 不会自动安装。核实后可按官方文档全新安装："+freshDoc(prof))
 			return

@@ -458,6 +458,12 @@ func (c *checker) checkProvenance(pv *Provenance) {
 	case ProvenanceNPMGlobal:
 		if pv.NPM == nil || pv.NPM.Package == "" {
 			c.add("provenance.npm.package", "npm_global 必须声明包名")
+		} else {
+			for _, r := range pv.NPM.Roots {
+				if err := validateBaseTemplate(r, VarStateDir, VarHome); err != nil {
+					c.add("provenance.npm.roots", "%v", err)
+				}
+			}
 		}
 	case ProvenanceGit:
 		if pv.Git == nil {

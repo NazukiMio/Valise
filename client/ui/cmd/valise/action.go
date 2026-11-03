@@ -40,7 +40,7 @@ func (c *cli) action(ctx context.Context, args []string) error {
 	if a == nil {
 		return valise.New("action_unknown", list.ProfileID+" 的 harness 资料里没有动作 "+pos[2], "不带动作名运行，查看可用的动作")
 	}
-	fmt.Fprintf(c.out, "%s（%s · %s）\n  %s\n", a.Name, service.RiskLabels[a.Risk], service.ActionAccess(*a), a.Explain)
+	fmt.Fprintf(c.out, "%s（%s · %s）\n  %s\n", a.Name, service.RiskLabels[a.Risk], c.svc.ActionAccess(host, *a), a.Explain)
 	if a.Undo != "" {
 		fmt.Fprintf(c.out, "  能否撤销：%s\n", a.Undo)
 	}
@@ -92,7 +92,7 @@ func (c *cli) printActions(host string, list *service.ActionList) error {
 				fmt.Fprintf(c.out, "\n  %s\n", service.RiskLabels[risk])
 				first = false
 			}
-			fmt.Fprintf(c.out, "    %-14s %s · %s\n", a.ID, a.Name, service.ActionAccess(a))
+			fmt.Fprintf(c.out, "    %-14s %s · %s\n", a.ID, a.Name, c.svc.ActionAccess(host, a))
 			fmt.Fprintf(c.out, "    %-14s %s\n", "", a.Explain)
 		}
 	}

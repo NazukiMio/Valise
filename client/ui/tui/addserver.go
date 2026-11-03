@@ -85,7 +85,7 @@ func (a *addServerScreen) chooseName(m *Model, alias string) tea.Cmd {
 		return nil
 	}
 	a.alias = alias
-	in := newInput("给服务器起个名字。它会成为仓库和空间站里的文件夹名（valise-vault/<名字>/…），起好后不能改。直接回车就用 "+alias, alias, false,
+	in := newInput("给服务器起个名字。它会成为仓库和空间站里的文件夹名（valise-vault/<名字>/…），之后可以在服务器设置里改名。直接回车就用 "+alias, alias, false,
 		func(m *Model, v string) tea.Cmd {
 			a.name = strings.TrimSpace(v)
 			if a.name == "" {

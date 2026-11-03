@@ -100,7 +100,7 @@ func (c *actionConfirm) view(m *Model) string {
 	if c.a.Undo != "" {
 		rows = append(rows, "能否撤销："+c.a.Undo)
 	}
-	rows = append(rows, "", dimStyle.Render("实际命令："+strings.Join(c.a.Argv, " ")), dimStyle.Render(service.ActionAccess(c.a)))
+	rows = append(rows, "", dimStyle.Render("实际命令："+strings.Join(c.a.Argv, " ")), dimStyle.Render(m.svc.ActionAccess(c.host, c.a)))
 	if c.a.Terminal {
 		rows = append(rows, dimStyle.Render("会在终端里运行；终端里的内容 Valise 不读取。"))
 	}

@@ -42,7 +42,7 @@ func (t *manageTab) load(m *Model, p *instancePage) tea.Cmd {
 	return func() tea.Msg { l, err := svc.Actions(ctx, host, inst); return actionsLoaded{l, err} }
 }
 
-func (t *manageTab) rows(p *instancePage) []manageRow {
+func (t *manageTab) rows(m *Model, p *instancePage) []manageRow {
 	var rows []manageRow
 	host, inst := p.host, p.inst.InstanceID
 	var prof *profile.Profile
@@ -74,7 +74,7 @@ func (t *manageTab) rows(p *instancePage) []manageRow {
 				if first {
 					g, first = "动作 · "+service.RiskLabels[risk], false
 				}
-				rows = append(rows, manageRow{group: g, label: a.Name, note: service.ActionAccess(a), cmd: a.Argv,
+				rows = append(rows, manageRow{group: g, label: a.Name, note: m.svc.ActionAccess(p.host, a), cmd: a.Argv,
 					do: func(m *Model, p *instancePage) tea.Cmd { return startAction(m, p, a) }})
 			}
 		}
@@ -111,7 +111,7 @@ func (t *manageTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 		t.actions, t.loadErr = msg.list, msg.err
 		return nil, true
 	case tea.KeyPressMsg:
-		rows := t.rows(p)
+		rows := t.rows(m, p)
 		if c, ok := moveList(t.cursor, len(rows), msg.String()); ok {
 			t.cursor = c
 			return nil, true
@@ -133,7 +133,7 @@ func (t *manageTab) view(m *Model, p *instancePage, height int) string {
 	if p.target == nil {
 		return dimStyle.Render("读取中…")
 	}
-	rows := t.rows(p)
+	rows := t.rows(m, p)
 	t.cursor = min(t.cursor, len(rows)-1)
 	var lines []string
 	cur := 0

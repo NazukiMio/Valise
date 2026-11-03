@@ -164,7 +164,7 @@ func (s *Service) offsitePlaces(ctx context.Context, host string, st *vaultrpc.S
 	}
 	for _, t := range st.Targets {
 		p := offsitePlace{label: "空间站 " + t.Name, leaf: map[string]string{}}
-		list, err := s.listPlace(ctx, host, t.Name)
+		list, err := s.TargetList(ctx, host, t.Name)
 		if err != nil {
 			p.err = "列不出空间站 " + t.Name + " 上的内容：" + errText1(err)
 			out = append(out, p)
@@ -269,13 +269,4 @@ func (s *Service) trialDecrypt(host, dir, snapshot string) error {
 	done[key] = time.Now().UTC()
 	b, _ := json.MarshalIndent(done, "", "  ")
 	return os.WriteFile(path, append(b, '\n'), 0o600)
-}
-
-// listPlace lists a target: a station Valise manages from this client,
-// any other through the server.
-func (s *Service) listPlace(ctx context.Context, host, target string) (*vaultrpc.TargetListResult, error) {
-	if s.IsStation(target) {
-		return s.StationList(ctx, host, target)
-	}
-	return s.TargetList(ctx, host, target)
 }
