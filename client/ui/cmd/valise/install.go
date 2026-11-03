@@ -230,7 +230,7 @@ func (c *cli) existingAgent(ctx context.Context, plan *service.InstallPlan, yes 
 			ex.Enrolled = inst
 		}
 		fmt.Fprintln(c.out, "正在建立逃生舱…")
-		rep, err := c.svc.Seal(ctx, plan.Host, vaultrpc.SealParams{InstanceID: inst, Tier: vault.TierSoulSecrets, Reason: "安装前"})
+		rep, err := c.svc.Seal(c.withProgress(ctx), plan.Host, vaultrpc.SealParams{InstanceID: inst, Tier: vault.TierSoulSecrets, Reason: "安装前"})
 		if err != nil {
 			return err
 		}

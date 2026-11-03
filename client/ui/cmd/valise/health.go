@@ -59,7 +59,7 @@ func (c *cli) restoreTest(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Fprintln(c.out, "在这台电脑和服务器上各解开一次逃生舱并逐个核对文件；不切换、不碰 agent，结束后删除临时文件。")
-	r, err := c.svc.RunRestoreTest(ctx, pos[0], pos[1], *snap)
+	r, err := c.svc.RunRestoreTest(c.withProgress(ctx), pos[0], pos[1], *snap)
 	if err != nil {
 		return err
 	}

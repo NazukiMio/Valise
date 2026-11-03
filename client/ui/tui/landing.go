@@ -280,7 +280,7 @@ func (r *reviveScreen) view(m *Model) string {
 
 // Steps shown while the revive runs.
 var (
-	planSteps = []step{{service.StagePull, "取回逃生舱到这台电脑"}, {service.StageOpen, "在这台电脑上打开（解密）"},
+	planSteps = []step{{service.StagePull, "取回逃生舱所在的周期到这台电脑（已有的块不再下载）"}, {service.StageOpen, "在这台电脑上打开（解密）"},
 		{service.StageInspect, "检查目标服务器"}}
 	stageSteps = []step{{service.StageStage, "写入目标服务器的暂存目录"}, {service.StageVerify, "校验暂存的文件（SHA-256、SQLite）"}}
 	swapSteps  = []step{{service.StageSwap, "停止服务 → 交换 → 启动 → 健康检查"}}

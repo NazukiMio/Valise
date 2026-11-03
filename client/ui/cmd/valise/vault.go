@@ -47,7 +47,7 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 		return err
 	}
 	p.InstanceID = pos[1]
-	rep, err := c.svc.Seal(ctx, pos[0], p)
+	rep, err := c.svc.Seal(c.withProgress(ctx), pos[0], p)
 	if err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func (c *cli) pull(ctx context.Context, args []string) error {
 	var results []*service.PullResult
 	if *leaf != "" {
 		var r *service.PullResult
-		r, err = c.svc.Pull(ctx, pos[0], *leaf, *to)
+		r, err = c.svc.Pull(c.withProgress(ctx), pos[0], *leaf, *to)
 		if r != nil {
 			results = append(results, r)
 		}

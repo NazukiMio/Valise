@@ -62,7 +62,7 @@ func (c *cli) revive(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	rp, err := c.svc.PlanRevive(ctx, o, pass)
+	rp, err := c.svc.PlanRevive(c.withProgress(ctx), o, pass)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (c *cli) revive(ctx context.Context, args []string) error {
 		fmt.Fprintln(c.out, "已取消，没有做任何改动。")
 		return nil
 	}
-	res, err := c.svc.ExecuteRevive(ctx, rp, o.Fault, func(v *revive.StageVerifyResult) bool {
+	res, err := c.svc.ExecuteRevive(c.withProgress(ctx), rp, o.Fault, func(v *revive.StageVerifyResult) bool {
 		fmt.Fprintf(c.out, "暂存校验通过：%d 个文件，%s，SHA-256 与 SQLite 完整性检查全部通过。\n", v.Files, size(v.Bytes))
 		return *yes || c.confirm("开始交换？（会停止服务；失败会自动退回）")
 	})

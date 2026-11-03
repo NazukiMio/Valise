@@ -45,7 +45,7 @@ func (c *cli) repo(ctx context.Context, args []string) error {
 			return nil
 		}
 		for _, n := range names {
-			res, err := c.svc.RepoSync(ctx, args[1], n)
+			res, err := c.svc.RepoSync(c.withProgress(ctx), args[1], n)
 			if err != nil {
 				return err
 			}
