@@ -41,6 +41,8 @@ type GuideState struct {
 	Read    []string `json:"read,omitempty"`
 	// Hidden: no card on the home page (the checklist stays in settings).
 	Hidden bool `json:"hidden,omitempty"`
+	// WizardDone: the first-run guide was finished or skipped.
+	WizardDone bool `json:"wizard_done,omitempty"`
 }
 
 const guideFile = "guide.json"
@@ -111,10 +113,10 @@ func (s *Service) Guide(f GuideFacts) []GuideItem {
 	}
 	read := func(id string) bool { return slices.Contains(g.Read, id) }
 	items := []GuideItem{
-		{ID: GuidePrep, Title: "准备工作", Desc: "口令、钥匙、资料包、添加服务器",
-			Done: keyErr == nil && profErr == nil && set != nil && len(set.ByID) > 0 && f.Servers > 0},
+		{ID: GuidePrep, Title: "准备工作", Desc: "资料包、添加服务器",
+			Done: profErr == nil && set != nil && len(set.ByID) > 0 && f.Servers > 0},
 		{ID: GuideFirstAgent, Title: "第一个 agent", Desc: "在服务器上安装一个 harness，或把已有的 agent 接入 Valise", Done: f.Agents > 0},
-		{ID: GuideFirstPod, Title: "建立第一个逃生舱", Desc: "把 agent 现在的样子打包加密存起来，出事时可以退回来", Done: pods},
+		{ID: GuideFirstPod, Title: "建立第一个逃生舱", Desc: "设好加密钥匙，把 agent 现在的样子打包加密存起来", Done: pods && keyErr == nil},
 		{ID: GuideOffsite, Title: "存一份到别处", Desc: "添加本机仓库或空间站，服务器坏了也不丢", Done: offsite},
 		{ID: GuideRestoreTest, Title: "做一次恢复测试", Desc: "确认逃生舱真的能打开，不碰正在运行的 agent", Done: tested},
 		{ID: GuideAdminKey, Title: "认识管理钥匙", Desc: "敏感操作不用每次输服务器密码", Optional: true, Done: read(GuideAdminKey) || admin},

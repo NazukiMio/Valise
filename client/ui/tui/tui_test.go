@@ -334,27 +334,46 @@ func TestSettingsSections(t *testing.T) {
 func TestFirstRunGuide(t *testing.T) {
 	m, _ := world(t)
 	svc := m.svc
+	// A first run: no key, no server.
 	os.Remove(filepath.Join(svc.Dirs.Data, "keystore.age"))
 	os.Remove(filepath.Join(svc.Dirs.Data, "recipient.txt"))
+	if _, err := svc.RemoveServer("box"); err != nil {
+		t.Fatal(err)
+	}
 	m = New(context.Background(), Options{Service: svc})
-	wantText(t, m, "欢迎使用 Valise")
+	wantText(t, m, "欢迎使用 Valise", "安装和管理 agent", "第一次建立逃生舱时再设")
 	key(t, m, "enter")
-	key(t, m, "enter")
-	typeText(t, m, "short")
-	key(t, m, "enter")
-	wantText(t, m, "至少 12 个字符")
-	key(t, m, "enter")
-	typeText(t, m, pass)
-	key(t, m, "enter")
-	typeText(t, m, pass)
-	key(t, m, "enter")
-	wantText(t, m, "钥匙已生成", "强烈建议现在备份")
-	key(t, m, "enter") // later
 	wantText(t, m, "harness 资料包")
 	key(t, m, "enter") // skip
-	wantText(t, m, "添加第一台服务器")
+	wantText(t, m, "添加第一台服务器", "手动填写")
 	key(t, m, "s")
-	wantText(t, m, "box") // home
+	wantText(t, m, "还没有添加服务器") // home
+	if New(context.Background(), Options{Service: svc}).top().title() == newWizard().title() {
+		t.Fatal("the guide comes back after it was skipped")
+	}
+}
+
+// Without a key, building the first escape pod sets the passphrase first,
+// offers the recovery kit, registers the key, then goes on.
+func TestKeyOnFirstSeal(t *testing.T) {
+	m, _ := world(t)
+	os.Remove(filepath.Join(m.svc.Dirs.Data, "keystore.age"))
+	os.Remove(filepath.Join(m.svc.Dirs.Data, "recipient.txt"))
+	openInstance(t, m)
+	key(t, m, "b")
+	wantText(t, m, "要先有一把加密钥匙")
+	key(t, m, "y")
+	typeText(t, m, pass)
+	key(t, m, "enter")
+	typeText(t, m, pass)
+	key(t, m, "enter")
+	wantText(t, m, "现在备份一份")
+	key(t, m, "down")
+	key(t, m, "enter") // later
+	wantText(t, m, "装什么")
+	if _, err := m.svc.KeyShow(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestIconFitting(t *testing.T) {

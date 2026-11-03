@@ -183,8 +183,8 @@ func guideFor(m *Model, hosts []string, it service.GuideItem) screen {
 	}
 	switch it.ID {
 	case service.GuidePrep:
-		g.pages = []string{"准备工作包括：设一个 Valise 口令并创建加密钥匙、备份钥匙、安装 harness 资料包、添加第一台服务器。\n\n" +
-			"还没做完的，可以在 设置 里补上：加密钥匙、更新（资料包）、服务器。"}
+		g.pages = []string{"准备工作包括：安装 harness 资料包、添加第一台服务器。加密钥匙在第一次建立逃生舱时再设。\n\n" +
+			"还没做完的，可以在 设置 里补上：更新（资料包）、服务器。"}
 	case service.GuideFirstAgent:
 		g.pages = []string{
 			"harness 是 agent 的「身体」，比如 OpenClaw、Hermes。agent 是它里面那个有记忆、有设置的助手。\n\n" +

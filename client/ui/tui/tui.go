@@ -107,14 +107,14 @@ type Model struct {
 	animOn bool
 }
 
-// New returns the TUI model: the first-run guide when there is no key,
-// otherwise the home page.
+// New returns the TUI model: the first-run guide on a first run (no key,
+// no server), otherwise the home page.
 func New(ctx context.Context, opt Options) *Model {
 	m := &Model{opt: opt, svc: opt.Service, ctx: ctx, width: 100, height: 32, send: func(tea.Msg) {},
 		data: map[string]*srvData{}, now: time.Now, tick: 30 * time.Second}
 	m.prof, _ = opt.Service.Profiles()
 	chatTabOn = !opt.Service.Config.ChatEntryOff
-	if _, err := opt.Service.KeyShow(); err != nil {
+	if needsWizard(opt.Service) {
 		m.stack = []screen{newWizard()}
 	} else {
 		m.stack = []screen{newHome()}

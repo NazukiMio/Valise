@@ -246,6 +246,10 @@ type sealDone struct {
 
 // startSeal asks what to pack and why, then builds the escape pod.
 func startSeal(m *Model, p *instancePage) tea.Cmd {
+	return ensureKey(m, p.host, func(m *Model) tea.Cmd { return pickSeal(m, p) })
+}
+
+func pickSeal(m *Model, p *instancePage) tea.Cmd {
 	return m.push(pick("建立逃生舱 · 装什么？", tierChoices, func(m *Model, tier string) tea.Cmd {
 		return m.push(newInput("原因（可选，以后在列表里能看到，例如\"升级前\"）", "", false, func(m *Model, reason string) tea.Cmd {
 			sc := newSealScreen(m, p.host, p.inst.InstanceID, tier)

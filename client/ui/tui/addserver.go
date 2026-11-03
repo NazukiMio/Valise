@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -64,12 +65,15 @@ func (a *addServerScreen) chooseAlias(m *Model) tea.Cmd {
 	if err != nil {
 		return func() tea.Msg { return failed(err) }
 	}
-	var cs []choice
+	cs := []choice{{label: "手动填写：地址、端口、用户名、登录方式", value: manualValue, desc: "不需要 SSH 配置；Valise 会装上自己的日常钥匙"}}
 	for _, h := range hosts {
-		cs = append(cs, choice{label: h, value: h})
+		cs = append(cs, choice{label: "从 SSH 配置导入：" + h, value: h})
 	}
-	cs = append(cs, choice{label: "手动输入 SSH 别名…", value: ""})
-	return m.push(pick("选择要添加的服务器（来自 ~/.ssh/config）", cs, func(m *Model, v string) tea.Cmd {
+	cs = append(cs, choice{label: "输入 SSH 别名…", value: ""})
+	return m.push(pick("添加服务器", cs, func(m *Model, v string) tea.Cmd {
+		if v == manualValue {
+			return a.manual(m)
+		}
 		if v == "" {
 			return m.push(newInput("SSH 别名（~/.ssh/config 中的 Host，或 user@host）", "my-server", false, func(m *Model, v string) tea.Cmd {
 				return a.chooseName(m, strings.TrimSpace(v))
@@ -199,4 +203,58 @@ func (a *addServerScreen) view(m *Model) string {
 		b.WriteString("\n" + okStyle.Render("已添加。进入服务器后按 n 把上面的 agent 接入 Valise。"))
 	}
 	return b.String()
+}
+
+const manualValue = "\x00manual"
+
+// manual collects a server by hand (docs/UI.md 9.3) and records it in the
+// terminal, where the host key is confirmed and a password can be typed;
+// then the usual setup goes on.
+func (a *addServerScreen) manual(m *Model) tea.Cmd {
+	var alias, host, port, user string
+	ask := func(label, ph string, set *string, next func(m *Model) tea.Cmd) tea.Cmd {
+		return m.push(newInput(label, ph, false, func(m *Model, v string) tea.Cmd {
+			*set = strings.TrimSpace(v)
+			if *set == "" {
+				*set = ph
+			}
+			return next(m)
+		}))
+	}
+	login := func(m *Model) tea.Cmd {
+		return m.push(pick("第一次怎么登录这台服务器？（只用这一次，之后用 Valise 的日常钥匙）", []choice{
+			{label: "服务器密码", value: "password", desc: "在终端里输入，Valise 不保存"},
+			{label: "私钥文件", value: "key", desc: "例如 ~/.ssh/id_ed25519"},
+		}, func(m *Model, how string) tea.Cmd {
+			run := func(m *Model, loginArg string) tea.Cmd {
+				args := []string{"server", "add", alias, "--host", host, "--port", port, "--user", user, "--login", loginArg}
+				return m.cliThen(func() tea.Msg {
+					return contMsg{func(m *Model) tea.Cmd {
+						if hosts, _ := m.svc.Servers(); !slices.Contains(hosts, alias) {
+							m.flash, m.flashErr = "没有添加 "+alias+"：看终端里的提示后重试", true
+							return nil
+						}
+						return a.chooseName(m, alias)
+					}}
+				}, false, args...)
+			}
+			if how == "password" {
+				return run(m, "password")
+			}
+			return m.push(newInput("私钥文件路径", "~/.ssh/id_ed25519", false, func(m *Model, p string) tea.Cmd {
+				return run(m, "key:"+expandHome(m, strings.TrimSpace(p)))
+			}))
+		}))
+	}
+	return ask("给这台服务器起个别名（只在这台电脑上用，例如 home-vps）", "my-server", &alias, func(m *Model) tea.Cmd {
+		return ask("地址（IP 或域名）", "", &host, func(m *Model) tea.Cmd {
+			if host == "" {
+				m.flash, m.flashErr = "地址不能为空", true
+				return nil
+			}
+			return ask("SSH 端口", "22", &port, func(m *Model) tea.Cmd {
+				return ask("用户名", "root", &user, login)
+			})
+		})
+	})
 }
