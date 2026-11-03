@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+
+	"valise/ui/service"
 )
 
 // Below 80×24 only a notice shows and keys wait; a confirmation that does
@@ -37,5 +39,32 @@ func TestWindowMinimumAndConfirmScroll(t *testing.T) {
 	key(t, m, "y")
 	if !yes {
 		t.Fatal("not confirmed after reading it all")
+	}
+}
+
+// The overview's "需要处理" never says 无 over health problems, waits for
+// health, and counts what was dismissed (review F07).
+func TestOverviewNeeds(t *testing.T) {
+	m, _ := world(t)
+	drive(t, m, m.Init())
+	p := newInstancePage("box", m.server("box").instances[0])
+	d := m.server("box")
+	if v := needsView(m, p, d); !strings.Contains(v, "正在读取健康状态") {
+		t.Fatalf("loading: %s", v)
+	}
+	bad := service.HealthItem{ID: "approval", Level: service.HealthBad, Title: "审批", Text: "Bypass"}
+	if _, err := m.svc.ToggleDismiss("box", p.inst.InstanceID, bad); err != nil {
+		t.Fatal(err)
+	}
+	p.health = &service.HealthReport{Items: []service.HealthItem{bad,
+		{ID: "restore_test", Level: service.HealthWarn, Title: "恢复测试", Text: "还没有测试过"}}}
+	m.svc.MarkDismissed("box", p.inst.InstanceID, p.health.Items)
+	v := ansiRe.ReplaceAllString(needsView(m, p, d), "")
+	if strings.Contains(v, "需要处理：无") || !strings.Contains(v, "恢复测试") || !strings.Contains(v, "另有 1 项已忽略") || !strings.Contains(v, "详见 4 健康") {
+		t.Fatalf("with problems: %s", v)
+	}
+	p.health.Items = p.health.Items[:1]
+	if v := ansiRe.ReplaceAllString(needsView(m, p, d), ""); !strings.Contains(v, "需要处理：无") || !strings.Contains(v, "另有 1 项已忽略") {
+		t.Fatalf("only dismissed: %s", v)
 	}
 }

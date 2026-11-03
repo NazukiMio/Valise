@@ -173,7 +173,7 @@ func openInstance(t *testing.T, m *Model) {
 func TestHomeServerInstanceAndSeal(t *testing.T) {
 	m, _ := world(t)
 	openInstance(t, m)
-	wantText(t, m, "需要处理：无", "快捷操作", "建立逃生舱", "支持程度", "备份")
+	wantText(t, m, "需要处理", "详见 4 健康", "快捷操作", "建立逃生舱", "支持程度", "备份")
 	// Build an escape pod: what to pack, then why.
 	key(t, m, "b")
 	wantText(t, m, "轻装", "标准", "完整", "原样")

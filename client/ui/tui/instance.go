@@ -320,27 +320,7 @@ func capMark(status string) string {
 func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 	d := m.server(p.host)
 	var b strings.Builder
-	// The health page's one or two most important items (docs/UI.md 9.5).
-	if top := topHealth(m, p, 2); len(top) > 0 {
-		for _, it := range top {
-			st := warnStyle
-			if it.Level == service.HealthBad {
-				st = errStyle
-			}
-			b.WriteString(st.Render(levelMarkPlain(it.Level)+" "+it.Title+"："+it.Text) + dimStyle.Render("  · 详见 3 健康") + "\n")
-		}
-		b.WriteString("\n")
-	}
-	attn := attention(m, d, p.inst)
-	if len(attn) == 0 {
-		b.WriteString(dimStyle.Render("需要处理：无") + "\n\n")
-	} else {
-		b.WriteString(warnStyle.Render("需要处理") + "\n")
-		for _, a := range attn {
-			b.WriteString(warnStyle.Render("  ! "+a) + "\n")
-		}
-		b.WriteString("\n")
-	}
+	b.WriteString(needsView(m, p, d))
 	b.WriteString(headStyle.Render("快捷操作") + "\n")
 	qs := o.quicks(p)
 	o.cursor = min(o.cursor, len(qs)-1)
@@ -375,4 +355,46 @@ func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 		b.WriteString(kv(rows...))
 	}
 	return b.String()
+}
+
+// needsView is the overview's one "需要处理" block (review F07): run and
+// backup problems, then the health page's most important items; "无" only
+// once health has been read.
+func needsView(m *Model, p *instancePage, d *srvData) string {
+	var lines []string
+	for _, a := range attention(m, d, p.inst) {
+		lines = append(lines, warnStyle.Render("  ! "+a))
+	}
+	tabNo := ""
+	for i, t := range p.tabs {
+		if _, ok := t.(*healthTab); ok {
+			tabNo = itoa(i + 1)
+		}
+	}
+	for _, it := range topHealth(m, p, 2) {
+		st := warnStyle
+		if it.Level == service.HealthBad {
+			st = errStyle
+		}
+		lines = append(lines, st.Render("  "+levelMarkPlain(it.Level)+" "+it.Title+"："+it.Text)+dimStyle.Render("  · 详见 "+tabNo+" 健康"))
+	}
+	quiet := 0
+	if p.health != nil {
+		for _, it := range p.health.Items {
+			if it.Quiet() {
+				quiet++
+			}
+		}
+	}
+	note := ""
+	if quiet > 0 {
+		note = dimStyle.Render("（另有 " + itoa(quiet) + " 项已忽略，见 " + tabNo + " 健康）")
+	}
+	switch {
+	case len(lines) > 0:
+		return warnStyle.Render("需要处理") + note + "\n" + strings.Join(lines, "\n") + "\n\n"
+	case p.health == nil && p.healthErr == nil:
+		return dimStyle.Render("需要处理：正在读取健康状态…") + "\n\n"
+	}
+	return dimStyle.Render("需要处理：无") + note + "\n\n"
 }

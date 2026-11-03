@@ -190,6 +190,9 @@ func (s *serverPage) view(m *Model) string {
 		return errText(d.err)
 	case !d.loaded:
 		return dimStyle.Render("正在连接 " + s.host + " …")
+	case d.loading && len(live(d.instances)) == 0:
+		// Not "nothing here" while a refresh (after an install) runs.
+		return dimStyle.Render("正在读取 " + s.host + " 上的 agent…")
 	case len(d.instances) == 0:
 		return box("", "这台服务器上还没有接入 Valise 的 agent。\n\n按 "+keyStyle.Render("n")+" 把已经装好的 agent 接入 Valise，或按 "+
 			keyStyle.Render("i")+" 安装一个新的 harness。", min(m.width-2, 70)) + "\n\n" + subtitle("这台服务器上的 agent 还没塞进 Valise。")

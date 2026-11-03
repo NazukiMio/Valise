@@ -256,6 +256,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case contMsg:
 		return m, msg.then(m)
 	case execDone:
+		// Whatever was said before the terminal step is over now
+		// (review F06: "正在确认…" stayed after an install).
+		m.flash, m.flashErr = "", false
 		if msg.then != nil {
 			return m, msg.then
 		}
