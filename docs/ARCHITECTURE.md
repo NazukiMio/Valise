@@ -294,7 +294,7 @@
 
 ### 8.2.1 实现细节（M4 确定）
 
-- **快照来源**：客户端先从快照所在服务器 `valise pull` 到本机，在内存中解密快照与 blob；明文以 tar 流经 `porter stage-write --op <id>` 写入目标服务器的暂存目录。profile 优先取已安装资料包（或本地）的同 id、同 `profile_version` 的 profile；没有时，改用快照头中的 `profile_doc`（封存时使用的完整 profile），计划中标明"来自快照，未经当前客户端审核"，并且必须显式传入 `--allow-snapshot-profile`（其中的服务安装命令等仍逐字展示）。两者都没有时停止。着陆能力未核实（`capabilities.restore` 不是 `tested`，或 `status: draft`）的 profile 必须显式传入 `--allow-draft-profile`（PROFILES.md 1.2）。
+- **快照来源**：客户端从快照所在服务器只取回这个逃生舱需要的部分（2026-11-03 用户同意，检测报告 F03）：先取回周期里的小文件（VAULT、epochs、keys、index、快照头与 meta），用加密钥匙解开快照头，按文件清单与各文件引用的 blob 查 index 得到用到的 pack，只下载本机缺的 pack（下载时核对 SHA-256；本机已有的重新核对后复用，损坏的重新下载）；之后每个文件仍按 SHA-256 核对。这样的本机缓存只是这个逃生舱的恢复材料，旁边以 `<金库目录>.partial.json` 标明，不能当作完整周期副本校验或使用；本机仓库、空间站与"保存加密备份"仍复制整个周期，`tools/standalone-restore/` 的承诺不变。计划与恢复测试的结果写明周期总大小、逃生舱大小、用到的 pack 大小、本次下载量与复用量。然后在内存中解密快照与 blob；明文以 tar 流经 `porter stage-write --op <id>` 写入目标服务器的暂存目录。profile 优先取已安装资料包（或本地）的同 id、同 `profile_version` 的 profile；没有时，改用快照头中的 `profile_doc`（封存时使用的完整 profile），计划中标明"来自快照，未经当前客户端审核"，并且必须显式传入 `--allow-snapshot-profile`（其中的服务安装命令等仍逐字展示）。两者都没有时停止。着陆能力未核实（`capabilities.restore` 不是 `tested`，或 `status: draft`）的 profile 必须显式传入 `--allow-draft-profile`（PROFILES.md 1.2）。
 - **目标路径**：目标的状态目录由目标服务器按 profile 的 `detect.state_dir_candidates` 解析（使用目标用户的 HOME）。其余 root：原路径在原状态目录下的，映射到新状态目录下的同一相对路径；在原 HOME 下的，映射到新 HOME 下；都不是时停止，由用户用 `--root <id>=<路径>` 指定。
 - **符号链接**：目标的 root 本身是符号链接时，v0.1 拒绝复活并说明原因（链接常由其他工具管理；交换时被改名的会是链接而不是数据）；封存不受影响。root 的上级路径中有符号链接（例如 macOS 的 `/var`、把 `/home` 软链到数据盘）不影响原子交换，允许。
 - **交换单位**：只交换没有嵌套在其他 root 内的 root（例如工作区在状态目录内时，只交换状态目录，工作区随之移动）。暂存目录为 `<root 的父目录>/.valise-stage-<op>-<root>`，必须与 root 在同一文件系统。

@@ -280,7 +280,8 @@ func (r *reviveScreen) view(m *Model) string {
 
 // Steps shown while the revive runs.
 var (
-	planSteps = []step{{service.StagePull, "取回逃生舱所在的周期到这台电脑（已有的块不再下载）"}, {service.StageOpen, "在这台电脑上打开（解密）"},
+	planSteps = []step{{service.StagePullMeta, "取回周期的索引与清单（很小）"}, {service.StageOpen, "在这台电脑上打开（解密）"},
+		{service.StagePullPacks, "只取回这个逃生舱用到的数据包（已有的核对后复用）"},
 		{service.StageInspect, "检查目标服务器"}}
 	stageSteps = []step{{service.StageStage, "写入目标服务器的暂存目录"}, {service.StageVerify, "校验暂存的文件（SHA-256、SQLite）"}}
 	swapSteps  = []step{{service.StageSwap, "停止服务 → 交换 → 启动 → 健康检查"}}
@@ -314,6 +315,9 @@ func planText(rp *service.RevivePlan) string {
 		origin = "本地，未经审核"
 	}
 	fmt.Fprintf(&b, "操作 %s：%s，目标 %s（%s）上的实例 %s\n", p.OpID, modeNames[p.Mode], rp.Target, rp.TargetArch, p.InstanceID)
+	if l := rp.Transfer.Summary(); l != "" {
+		b.WriteString(l + "\n")
+	}
 	fmt.Fprintf(&b, "harness 资料 %s v%d（%s）\n", p.Profile.ID, p.Profile.ProfileVersion, origin)
 	for _, root := range p.Roots {
 		fmt.Fprintf(&b, "  目录 %-10s → %s\n", root.ID, root.Path)

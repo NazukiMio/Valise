@@ -99,6 +99,9 @@ func printPlan(c *cli, rp *service.RevivePlan) {
 	fmt.Fprintf(w, "着陆计划（%s）：op %s\n", mode, p.OpID)
 	fmt.Fprintf(w, "  逃生舱：%s（%s，%s，来自 %s）\n", p.SnapshotID, tierLabel(p.Tier), rp.Snapshot.CreatedAt.Local().Format("2006-01-02 15:04"), rp.From)
 	fmt.Fprintf(w, "  目标：%s（%s）上的实例 %s\n", rp.Target, rp.TargetArch, p.InstanceID)
+	if l := transferLine(rp.Transfer); l != "" {
+		fmt.Fprintln(w, "  "+l)
+	}
 	origin := "官方"
 	if rp.ProfileLocal {
 		origin = "本地，未经审核"

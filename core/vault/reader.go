@@ -183,23 +183,51 @@ func (v *Vault) ReadBlob(id string, ids ...age.Identity) ([]byte, error) {
 	return plain, nil
 }
 
-// Snapshot decrypts a snapshot header and its file list.
-func (v *Vault) Snapshot(snapshotID string, ids ...age.Identity) (*Snapshot, *Files, error) {
+// SnapshotHeader decrypts only a snapshot's header: enough to know the
+// blobs of its file list without any pack.
+func (v *Vault) SnapshotHeader(snapshotID string, ids ...age.Identity) (*Snapshot, error) {
 	if !ValidID(snapshotID) {
-		return nil, nil, errors.New("vault: invalid snapshot id")
+		return nil, errors.New("vault: invalid snapshot id")
 	}
 	ct, err := os.ReadFile(joinRel(v.Dir, SnapshotPath(snapshotID)))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	r, err := age.Decrypt(bytes.NewReader(ct), ids...)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var s Snapshot
 	if err := json.NewDecoder(r).Decode(&s); err != nil || s.Format != FormatSnapshot || s.SnapshotID != snapshotID {
-		return nil, nil, errors.New("vault: snapshot header is invalid")
+		return nil, errors.New("vault: snapshot header is invalid")
 	}
+	return &s, nil
+}
+
+// PacksOf lists the packs holding blobs (each once, in first-use order);
+// unknown lists blob ids no index knows.
+func (v *Vault) PacksOf(blobs []string) (packs, unknown []string) {
+	seen := map[string]bool{}
+	for _, id := range blobs {
+		e, ok := v.blobs[id]
+		switch {
+		case !ok:
+			unknown = append(unknown, id)
+		case !seen[e.Pack]:
+			seen[e.Pack] = true
+			packs = append(packs, e.Pack)
+		}
+	}
+	return packs, unknown
+}
+
+// Snapshot decrypts a snapshot header and its file list.
+func (v *Vault) Snapshot(snapshotID string, ids ...age.Identity) (*Snapshot, *Files, error) {
+	sh, err := v.SnapshotHeader(snapshotID, ids...)
+	if err != nil {
+		return nil, nil, err
+	}
+	s := *sh
 	var doc bytes.Buffer
 	for _, id := range s.FilesBlobs {
 		b, err := v.ReadBlob(id, ids...)

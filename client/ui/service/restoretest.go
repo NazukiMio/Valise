@@ -38,6 +38,8 @@ type RestoreTest struct {
 	// Downtime is what a real restore would add: the plan's estimate.
 	Downtime string   `json:"downtime,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
+	// Transfer is what pulling the pod to this computer took.
+	Transfer *SnapshotPull `json:"transfer,omitempty"`
 }
 
 // Restore test steps, for progress and for a failed result.
@@ -73,7 +75,7 @@ func (s *Service) RunRestoreTest(ctx context.Context, host, instance, snapshot s
 		return nil, err
 	}
 	res := &RestoreTest{At: time.Now().UTC(), Snapshot: snapshot, Tier: rp.Snapshot.Tier, Created: rp.Snapshot.CreatedAt,
-		Files: rp.Files, Bytes: rp.Bytes, Downtime: rp.Downtime, Warnings: rp.Warnings}
+		Files: rp.Files, Bytes: rp.Bytes, Downtime: rp.Downtime, Warnings: rp.Warnings, Transfer: rp.Transfer}
 	defer func() { s.recordRestoreTest(host, instance, res) }()
 	fail := func(step string, err error) (*RestoreTest, error) {
 		res.Step, res.Problem = step, errText1(err)

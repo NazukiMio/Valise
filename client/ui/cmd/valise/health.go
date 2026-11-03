@@ -72,5 +72,8 @@ func (c *cli) restoreTest(ctx context.Context, args []string) error {
 	if r.Downtime != "" {
 		fmt.Fprintf(c.out, "  真正恢复时还要：%s\n", r.Downtime)
 	}
+	if l := transferLine(r.Transfer); l != "" {
+		fmt.Fprintln(c.out, "  "+l)
+	}
 	return nil
 }

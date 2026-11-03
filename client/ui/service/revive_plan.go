@@ -34,12 +34,14 @@ type ReviveOptions struct {
 
 // RevivePlan is shown to the user before anything changes.
 type RevivePlan struct {
-	Plan         revive.Plan `json:"plan"`
-	Snapshot     vault.Meta  `json:"snapshot"`
-	Target       string      `json:"target"`
-	From         string      `json:"from"`
-	TargetArch   string      `json:"target_arch"`
-	ProfileLocal bool        `json:"profile_local"`
+	// Transfer is what pulling the pod took (review F03).
+	Transfer     *SnapshotPull `json:"transfer,omitempty"`
+	Plan         revive.Plan   `json:"plan"`
+	Snapshot     vault.Meta    `json:"snapshot"`
+	Target       string        `json:"target"`
+	From         string        `json:"from"`
+	TargetArch   string        `json:"target_arch"`
+	ProfileLocal bool          `json:"profile_local"`
 	// ProfileFromSnapshot: the profile came from the snapshot header, not
 	// reviewed by this client.
 	ProfileFromSnapshot bool               `json:"profile_from_snapshot"`
@@ -104,14 +106,8 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if leaf == "" {
 		return nil, valise.New("snapshot_unknown", o.From+" 上没有逃生舱 "+o.SnapshotID, "用 valise vault status "+o.From+" 列出现有的逃生舱")
 	}
-	pull, err := s.Pull(ctx, o.From, leaf, "")
-	if err != nil {
-		return nil, err
-	}
-	if len(pull.Problems) > 0 {
-		return nil, valise.New("vault_problems", "本机金库副本没有通过校验", "先运行 valise verify --vault "+pull.Dir)
-	}
-	report(ctx, StageOpen, 0, 0)
+	// The key comes first: which packs to fetch is in the encrypted file
+	// list (review F03).
 	var id age.Identity
 	if passphrase == "" {
 		// No passphrase given: the unlocked identity, or ask for it.
@@ -131,7 +127,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		// landing (docs/ARCHITECTURE.md 2.2): no second prompt.
 		s.rememberOwner(id)
 	}
-	v, err := vault.Open(pull.Dir)
+	v, pull, err := s.PullSnapshot(ctx, o.From, leaf, o.SnapshotID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +135,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if err != nil {
 		return nil, valise.New("snapshot_unreadable", "无法解密快照 "+o.SnapshotID, "确认快照 id 正确，且本机密钥是该快照的收件人").WithDetail(err.Error())
 	}
-	rp = &RevivePlan{Target: o.Target, From: o.From, vault: v, ident: id, sqlite: map[string]bool{}}
+	rp = &RevivePlan{Target: o.Target, From: o.From, vault: v, ident: id, sqlite: map[string]bool{}, Transfer: pull}
 	for _, m := range v.Metas {
 		if m.SnapshotID == o.SnapshotID {
 			rp.Snapshot = m

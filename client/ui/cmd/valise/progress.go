@@ -13,8 +13,10 @@ import (
 // a wait always says what it is waiting for.
 
 var stageLabels = map[string]string{
-	service.StagePull: "取回逃生舱所在的整个周期到这台电脑（逃生舱按周期打包存放，只要一个也要先取回这个周期；已有的块不再下载）",
-	service.StageOpen: "在这台电脑上解密", service.StageInspect: "检查目标服务器",
+	service.StagePull:      "复制整个周期到这台电脑（已有的文件不再下载）",
+	service.StagePullMeta:  "取回周期的索引与清单（很小）",
+	service.StagePullPacks: "只取回这个逃生舱用到的数据包（已有的核对 SHA-256 后复用）",
+	service.StageOpen:      "在这台电脑上解密", service.StageInspect: "检查目标服务器",
 	service.StageStage: "写入服务器的暂存目录", service.StageVerify: "核对暂存的文件",
 	service.StageSwap: "停止服务 → 交换 → 启动 → 健康检查", service.TestLocal: "在这台电脑上解开并核对",
 	service.StageSealScan: "清点文件", service.StageSealPack: "读取、加密并写入", service.StageSealCommit: "写入逃生舱目录",
@@ -46,3 +48,6 @@ func (c *cli) withProgress(ctx context.Context) context.Context {
 		}
 	})
 }
+
+// transferLine says what pulling one pod took (review F03).
+func transferLine(t *service.SnapshotPull) string { return t.Summary() }
