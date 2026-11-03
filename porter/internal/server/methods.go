@@ -304,6 +304,16 @@ func init() {
 }
 
 func init() {
+	methods[install.MethodSessions] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		return install.SessionsResult{Sessions: porterinstall.Sessions(s.cfg.Home)}, nil
+	}
+	methods[install.MethodSessionEnd] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p install.SessionEndParams
+		if err := json.Unmarshal(raw, &p); err != nil || p.PID <= 0 {
+			return nil, errInvalidParams
+		}
+		return struct{}{}, porterinstall.EndSession(s.cfg.Home, p.PID)
+	}
 	methods[install.MethodCheck] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p install.CheckParams
 		if err := json.Unmarshal(raw, &p); err != nil {

@@ -13,11 +13,13 @@ import (
 	"slices"
 	"strings"
 
+	"errors"
 	"valise/client/porter"
 	"valise/client/ssh"
 	"valise/core/enroll"
 	"valise/core/install"
 	"valise/core/profile"
+	"valise/core/rpc"
 	"valise/core/valise"
 )
 
@@ -404,4 +406,29 @@ func (s *Service) NativeCommand(ctx context.Context, host, profileID string) (*e
 		dirs = lp.Effective.Detect.BinDirs
 	}
 	return exec.CommandContext(ctx, t.Binary(), t.TTYArgs(execLine(found.Path, dirs, lp.Effective.NativeCLI))...), done, nil
+}
+
+// TerminalSessions lists the terminal programs Valise started on host that
+// are still running (review F05); an old porter without the method has none.
+func (s *Service) TerminalSessions(ctx context.Context, host string) ([]install.Session, error) {
+	var res install.SessionsResult
+	if err := s.call(ctx, host, install.MethodSessions, struct{}{}, &res); err != nil {
+		if rpcMissing(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return res.Sessions, nil
+}
+
+// EndTerminalSession ends one of them (developer mode; porter checks it
+// is its own).
+func (s *Service) EndTerminalSession(ctx context.Context, host string, pid int) error {
+	return s.call(ctx, host, install.MethodSessionEnd, install.SessionEndParams{PID: pid}, nil)
+}
+
+// rpcMissing: porter does not know the method (an older porter).
+func rpcMissing(err error) bool {
+	var re *rpc.Error
+	return errors.As(err, &re) && re.Code == rpc.CodeMethodNotFound
 }

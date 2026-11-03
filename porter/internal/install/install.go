@@ -81,8 +81,20 @@ func OSRelease(path string) (id, version string) {
 // install steps and port changes, over an admin connection only (the daily
 // key's forced command never allows it). It returns only on failure.
 func Exec(ctx context.Context, e *porterenroll.Env, argv []string) error {
+	bin, out, err := resolve(e, argv)
+	if err != nil {
+		return err
+	}
+	if err := os.Chdir(e.Home); err != nil {
+		return err
+	}
+	return syscall.Exec(bin, out, e.Vars)
+}
+
+// resolve expands argv and finds its program on the login PATH.
+func resolve(e *porterenroll.Env, argv []string) (string, []string, error) {
 	if len(argv) == 0 {
-		return errors.New("nothing to run")
+		return "", nil, errors.New("nothing to run")
 	}
 	out := make([]string, len(argv))
 	for i, a := range argv {
@@ -92,12 +104,9 @@ func Exec(ctx context.Context, e *porterenroll.Env, argv []string) error {
 	if !strings.HasPrefix(bin, "/") {
 		p, err := e.LookPath(bin)
 		if err != nil {
-			return errors.New("在登录环境的 PATH 里找不到 " + bin)
+			return "", nil, errors.New("在登录环境的 PATH 里找不到 " + bin)
 		}
 		bin = p
 	}
-	if err := os.Chdir(e.Home); err != nil {
-		return err
-	}
-	return syscall.Exec(bin, out, e.Vars)
+	return bin, out, nil
 }

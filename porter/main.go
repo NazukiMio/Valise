@@ -94,8 +94,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			argv = []string{sh, "-i"}
 		}
-		fmt.Fprintln(stderr, "exec:", porterinstall.Exec(ctx, env, argv))
-		return 127
+		// Run as a recorded child, so a program left running after the
+		// connection dropped can be found and ended (review F05).
+		code, err := porterinstall.RunTracked(env, argv)
+		if err != nil {
+			fmt.Fprintln(stderr, "exec:", err)
+		}
+		return code
 	case "action-exec":
 		// Admin connections only: a terminal action from the instance's
 		// stored profile, in the caller's terminal (docs/INSTALL.md 5).
@@ -121,8 +126,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		seal.Paths{Home: home}.AppendAudit(seal.AuditEntry{Time: time.Now().UTC(), Op: "action", Instance: args[2],
 			Initiator: vaultrpc.InitiatorClient, Result: "started in terminal", Reason: fmt.Sprintf("%s (%s)", a.ID, a.Risk)})
 		ctx := context.Background()
-		fmt.Fprintln(stderr, "action-exec:", porterinstall.Exec(ctx, porterenroll.LoadEnv(ctx, home).For(prof), a.Argv))
-		return 127
+		code, err := porterinstall.RunTracked(porterenroll.LoadEnv(ctx, home).For(prof), a.Argv)
+		if err != nil {
+			fmt.Fprintln(stderr, "action-exec:", err)
+		}
+		return code
 	case "path-add":
 		// Admin connections only (an install step the user opted in to).
 		if len(args) != 5 || args[1] != "--dir" || args[3] != "--label" {

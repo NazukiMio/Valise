@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"valise/core/profile"
 )
@@ -14,7 +15,32 @@ import (
 const (
 	MethodCheck = "install_check"
 	MethodAudit = "install_audit"
+	// Sessions Valise started in a terminal (native UI, install steps,
+	// shells) that are still running: listed on the daily key, ended only
+	// in developer mode (review F05).
+	MethodSessions   = "terminal_sessions"
+	MethodSessionEnd = "terminal_session_end"
 )
+
+// Session is a terminal program Valise started that has not exited.
+type Session struct {
+	PID       int       `json:"pid"`
+	Argv      []string  `json:"argv"`
+	StartedAt time.Time `json:"started_at"`
+	// Detached: the connection that started it is gone.
+	Detached bool `json:"detached"`
+}
+
+// SessionsResult lists the live sessions.
+type SessionsResult struct {
+	Sessions []Session `json:"sessions"`
+}
+
+// SessionEndParams names a session by pid; porter ends it only when its
+// own record matches the running process.
+type SessionEndParams struct {
+	PID int `json:"pid"`
+}
 
 // Audit operations.
 const (

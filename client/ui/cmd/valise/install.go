@@ -45,6 +45,11 @@ func (c *cli) install(ctx context.Context, args []string) error {
 	if err := c.existingAgent(ctx, plan, *yes); err != nil {
 		return err
 	}
+	if !*yes {
+		if err := c.leftovers(ctx, host); err != nil {
+			return err
+		}
+	}
 	if err := c.gate(ctx, host, "", *yes); err != nil {
 		return err
 	}
@@ -311,6 +316,9 @@ func (c *cli) native(ctx context.Context, args []string) error {
 	if err := c.gate(ctx, pos[0], "", false); err != nil {
 		return err
 	}
+	if err := c.leftovers(ctx, pos[0]); err != nil {
+		return err
+	}
 	cmd, done, err := c.svc.NativeCommand(ctx, pos[0], *prof)
 	if err != nil {
 		return err
@@ -373,4 +381,45 @@ func (c *cli) chooseOptional(plan *service.InstallPlan, with multiFlag, yes bool
 		}
 	}
 	return nil
+}
+
+// leftovers shows the terminal programs Valise started on host that are
+// still running, typically after a dropped connection (review F05), and
+// lets the user end them, leave them, or stop. Nothing is ended without
+// the user's yes, and porter ends only programs it started itself.
+func (c *cli) leftovers(ctx context.Context, host string) error {
+	list, err := c.svc.TerminalSessions(ctx, host)
+	if err != nil || len(list) == 0 {
+		return nil // nothing known, or an older porter: go on
+	}
+	fmt.Fprintf(c.out, "%s 上还有 Valise 之前打开的程序在运行：\n", host)
+	for _, s := range list {
+		state := "连接还在"
+		if s.Detached {
+			state = "当时的连接已经断开"
+		}
+		fmt.Fprintf(c.out, "  · %s（PID %d，%s开始，%s）\n", strings.Join(s.Argv, " "), s.PID, s.StartedAt.Local().Format("01-02 15:04"), state)
+	}
+	fmt.Fprintln(c.out, "它可能还占着配置，新打开的同一个程序会因此报错。")
+	fmt.Fprintln(c.out, "  1  结束它们，再继续（需要开发者模式）")
+	fmt.Fprintln(c.out, "  2  不管它们，直接继续")
+	fmt.Fprintln(c.out, "  3  取消")
+	fmt.Fprint(c.errOut, "选择 [1/2/3] ")
+	if c.lines == nil {
+		c.lines = bufio.NewReader(c.in)
+	}
+	line, _ := c.lines.ReadString('\n')
+	switch strings.TrimSpace(line) {
+	case "1":
+		for _, s := range list {
+			if err := c.svc.EndTerminalSession(ctx, host, s.PID); err != nil {
+				return err
+			}
+			fmt.Fprintf(c.out, "  已结束 PID %d\n", s.PID)
+		}
+		return nil
+	case "2":
+		return nil
+	}
+	return valise.New("cancelled", "已取消，没有任何改动", "")
 }

@@ -61,7 +61,8 @@ var dailyMethods = map[string]bool{
 	"listen_addrs":    true,
 	// Appending an audit entry after an admin operation must not need the
 	// admin window again; it changes nothing protected.
-	"install_audit": true,
+	"install_audit":     true,
+	"terminal_sessions": true,
 	// Naming is allowed once; porter refuses to rename.
 	"server_name_set":    true,
 	MethodOwnerChallenge: true,
@@ -118,6 +119,8 @@ var adminMethods = map[string]bool{
 	"recipient_remove": true,
 	"old_cleanup":      true,
 	"install_check":    true,
+	// Ends a process: only one Valise started, after the user confirms.
+	"terminal_session_end": true,
 }
 
 // TierOf returns the tier a method needs. Conditional methods report
