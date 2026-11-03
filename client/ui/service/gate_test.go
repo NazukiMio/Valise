@@ -22,6 +22,12 @@ func TestAdvancedGate(t *testing.T) {
 	if ue, ok := valise.As(err); !ok || ue.Code != GateCode {
 		t.Fatalf("pods only on the server must not count: %v", err)
 	}
+	// Accepting the risk lets one operation through; nothing else changes.
+	s.RiskAccepted = true
+	if err := s.RequireGate(ctx, "box", ""); err != nil {
+		t.Fatalf("accepted risk still refused: %v", err)
+	}
+	s.RiskAccepted = false
 	if _, _, err := s.ShellCommand(ctx, "box", ""); err == nil {
 		t.Fatal("terminal opened without an offsite pod")
 	}

@@ -31,14 +31,14 @@ func guideCard(m *Model, hosts []string, w int) string {
 		return ""
 	}
 	items := m.svc.Guide(guideFacts(m, hosts))
-	done, next := service.GuideProgress(items)
+	done, required, next := service.GuideProgress(items)
 	if next == nil {
 		return ""
 	}
 	cells := 20
-	n := done * cells / len(items)
+	n := done * cells / required
 	bar := okStyle.Render(strings.Repeat("█", n)) + faintStyle.Render(strings.Repeat("░", cells-n))
-	body := accStyle.Render("第一次使用") + "  " + dimStyle.Render("已完成 "+itoa(done)+" / "+itoa(len(items))) + "   " + bar + "\n" +
+	body := accStyle.Render("第一次使用") + "  " + dimStyle.Render("已完成 "+itoa(done)+" / "+itoa(required)) + "   " + bar + "\n" +
 		dimStyle.Render("下一步：") + next.Title + "    " + keyStyle.Render("g") + dimStyle.Render(" 打开清单")
 	return box("", body, w)
 }

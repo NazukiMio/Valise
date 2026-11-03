@@ -45,7 +45,7 @@ type instancePage struct {
 
 func newInstancePage(host string, in enroll.InstanceSummary) *instancePage {
 	p := &instancePage{host: host, inst: in, log: map[string]vaultrpc.SealLogEntry{}}
-	p.tabs = []tab{&overviewTab{}, &chatTab{}, &manageTab{}, &healthTab{}, newPodsTab(), &isetTab{}}
+	p.tabs = agentTabs(&overviewTab{}, &manageTab{}, &healthTab{}, newPodsTab(), &isetTab{})
 	return p
 }
 

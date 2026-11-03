@@ -84,6 +84,8 @@ func (d *srvData) synced(sid string) bool {
 
 // Model is the root of the TUI.
 type Model struct {
+	// riskOnce: the next CLI step runs with the risk accepted (gate.go).
+	riskOnce bool
 	opt      Options
 	svc      *service.Service
 	ctx      context.Context
@@ -111,6 +113,7 @@ func New(ctx context.Context, opt Options) *Model {
 	m := &Model{opt: opt, svc: opt.Service, ctx: ctx, width: 100, height: 32, send: func(tea.Msg) {},
 		data: map[string]*srvData{}, now: time.Now, tick: 30 * time.Second}
 	m.prof, _ = opt.Service.Profiles()
+	chatTabOn = !opt.Service.Config.ChatEntryOff
 	if _, err := opt.Service.KeyShow(); err != nil {
 		m.stack = []screen{newWizard()}
 	} else {
@@ -227,6 +230,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if k, ok := msg.(tea.KeyPressMsg); ok && m.tooSmall() && k.String() != "ctrl+c" {
+		return m, nil // nothing can be read in full, so nothing is decided
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -306,7 +312,22 @@ func (m *Model) bodyHeight() int {
 }
 
 // View implements tea.Model.
+// Smallest usable terminal (docs/UI.md section 8, 2026-11-03).
+const minWidth, minHeight = 80, 24
+
+// tooSmall: below the minimum only a notice is shown and keys other than
+// quitting wait; work already running goes on.
+func (m *Model) tooSmall() bool {
+	return m.width > 0 && m.height > 0 && (m.width < minWidth || m.height < minHeight)
+}
+
 func (m *Model) View() tea.View {
+	if m.tooSmall() {
+		v := tea.NewView(warnStyle.Render("窗口太小") + "\n\n" + "请把终端放大到至少 " + itoa(minWidth) + "×" + itoa(minHeight) +
+			"（现在 " + itoa(m.width) + "×" + itoa(m.height) + "）。\n" + dimStyle.Render("正在进行的操作不受影响；放大后接着显示。ctrl+c 退出"))
+		v.AltScreen = true
+		return v
+	}
 	var crumbs []string
 	for _, s := range m.stack {
 		crumbs = append(crumbs, s.title())
@@ -394,6 +415,11 @@ func (m *Model) cliThen(next tea.Cmd, accepted bool, args ...string) tea.Cmd {
 	cmd := m.opt.Command(args...)
 	if accepted {
 		cmd.Env = append(cmd.Environ(), service.StaleAcceptedEnv+"=1")
+	}
+	if m.riskOnce {
+		// Accepted on the gate's confirmation, for this command only.
+		cmd.Env = append(cmd.Environ(), service.RiskAcceptedEnv+"=1")
+		m.riskOnce = false
 	}
 	return tea.Exec(&pausedStep{cmd: cmd}, func(err error) tea.Msg { return execDone{err, next} })
 }

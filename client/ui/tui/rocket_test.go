@@ -111,9 +111,10 @@ func TestLandingHUD(t *testing.T) {
 			t.Log("\n" + out)
 		}
 	}
+	// Below 80×24 only the notice shows; the landing goes on underneath.
 	m.width, m.height = 58, 20
-	if out := screenText(m); !strings.Contains(out, "取回逃生舱到这台电脑") || strings.Contains(out, "遥测") {
-		t.Fatalf("small window not plain:\n%s", out)
+	if out := screenText(m); !strings.Contains(out, "窗口太小") || strings.Contains(out, "遥测") {
+		t.Fatalf("small window:\n%s", out)
 	}
 	if !r.animating(m) {
 		t.Fatal("not animating while planning")

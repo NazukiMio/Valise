@@ -5,24 +5,56 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // confirmScreen asks a yes/no question; yes runs onYes after closing.
+// The detail wraps to the window and scrolls; yes is accepted only once
+// all of it has been on screen (docs/UI.md section 8).
 type confirmScreen struct {
 	question string
 	detail   []string
 	onYes    func(m *Model) tea.Cmd
+	scroll   int
+	seen     bool // the last line has been shown
+	room     int  // detail lines that fit, set by view
+	total    int
 }
 
-func (c *confirmScreen) title() string         { return "确认" }
-func (c *confirmScreen) help() string          { return menu("y", "确认", "n", "取消") }
+func (c *confirmScreen) title() string { return "确认" }
+func (c *confirmScreen) help() string {
+	if !c.seen {
+		return menu("↓/pgdn", "往下看", "n", "取消")
+	}
+	return menu("y", "确认", "n", "取消", "↑↓", "滚动")
+}
 func (c *confirmScreen) init(m *Model) tea.Cmd { return nil }
 func (c *confirmScreen) view(m *Model) string {
-	var b strings.Builder
+	wrap := lipgloss.NewStyle().Width(max(20, min(m.width, 120)-2))
+	var lines []string
 	for _, d := range c.detail {
-		b.WriteString(d + "\n")
+		lines = append(lines, strings.Split(wrap.Render(d), "\n")...)
 	}
-	if len(c.detail) > 0 {
+	c.total, c.room = len(lines), max(3, m.bodyHeight()-4)
+	var b strings.Builder
+	if len(lines) <= c.room {
+		c.scroll, c.seen = 0, true
+		for _, l := range lines {
+			b.WriteString(l + "\n")
+		}
+	} else {
+		c.scroll = max(0, min(c.scroll, len(lines)-c.room+1))
+		end := min(len(lines), c.scroll+c.room-1)
+		for _, l := range lines[c.scroll:end] {
+			b.WriteString(l + "\n")
+		}
+		if end == len(lines) {
+			c.seen = true
+		} else {
+			b.WriteString(faintStyle.Render("  ↓ 还有 "+itoa(len(lines)-end)+" 行，看完才能确认") + "\n")
+		}
+	}
+	if len(lines) > 0 {
 		b.WriteString("\n")
 	}
 	b.WriteString(warnStyle.Render(c.question) + dimStyle.Render("  [y/N]"))
@@ -35,8 +67,24 @@ func (c *confirmScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	}
 	switch k.String() {
 	case "y", "Y":
+		if !c.seen {
+			m.flash, m.flashErr = "还有内容没看到：先按 ↓ 或 pgdn 看完再确认", true
+			return nil, true
+		}
 		m.pop()
 		return c.onYes(m), true
+	case "down", "j":
+		c.scroll++
+		return nil, true
+	case "up", "k":
+		c.scroll = max(0, c.scroll-1)
+		return nil, true
+	case "pgdown", "space":
+		c.scroll += max(1, c.room-2)
+		return nil, true
+	case "pgup":
+		c.scroll = max(0, c.scroll-max(1, c.room-2))
+		return nil, true
 	case "n", "N", "esc", "q", "enter":
 		m.pop()
 		m.flash, m.flashErr = "已取消，没有做任何改动。", false

@@ -17,6 +17,7 @@ import (
 // the server.
 func gateThen(m *Model, host, instance string, next func(m *Model) tea.Cmd) tea.Cmd {
 	svc, ctx := m.svc, m.ctx
+	m.riskOnce = false
 	m.flash, m.flashErr = "正在确认仓库或空间站里有能独立恢复的备份…", false
 	return func() tea.Msg {
 		g, err := svc.AdvancedGate(ctx, host, instance)
@@ -50,13 +51,22 @@ func gateRefused(m *Model, host, instance string, g *service.GateResult, next fu
 			choice{label: "备份并复制到仓库 " + r.Name + "（记忆与人格 + 凭据，推荐）", value: vault.TierSoulSecrets + "|" + r.Name, desc: "恢复后开箱即用"},
 			choice{label: "备份并复制到仓库 " + r.Name + "（只要记忆与人格）", value: vault.TierSoul + "|" + r.Name, desc: "恢复后要重新填写凭据"})
 	}
-	cs = append(cs, choice{label: "先去添加仓库或空间站", value: "add"}, choice{label: "取消", value: "cancel"})
+	cs = append(cs, choice{label: "先去添加仓库或空间站", value: "add"},
+		choice{label: "自己承担风险，继续这一次", value: "risk", desc: "没有充足备份时，数据丢失是永久性的"},
+		choice{label: "取消", value: "cancel"})
 	p := pick("这一步要先在仓库或空间站里有一份能独立恢复的备份", cs, func(m *Model, v string) tea.Cmd {
 		switch v {
 		case "cancel":
 			return nil
 		case "add":
 			return m.push(newCloud(host))
+		case "risk":
+			warn := append([]string{errStyle.Render(service.RiskWarning), "", "缺少放在别处的备份："}, detail[1:]...)
+			warn = append(warn, "", dimStyle.Render("只对这一次操作有效，下次还会检查。"))
+			return m.push(confirm("我自己承担数据丢失的风险，继续这一次？", warn, func(m *Model) tea.Cmd {
+				m.riskOnce = true
+				return next(m)
+			}))
 		}
 		tier, repo, _ := strings.Cut(v, "|")
 		return backupToRepo(m, host, missing, tier, repo, func(m *Model) tea.Cmd { return gateThen(m, host, instance, next) })

@@ -139,3 +139,12 @@ func (it HealthItem) Counts() bool {
 	}
 	return false
 }
+
+// SetChatEntry turns the terminal UI's 对话 tab on or off.
+func (s *Service) SetChatEntry(on bool) error {
+	if err := config.SetChatEntryOff(s.Dirs.Data, !on); err != nil {
+		return err
+	}
+	s.Config.ChatEntryOff = !on
+	return nil
+}

@@ -27,6 +27,8 @@ type Config struct {
 	// RedDismissDays is how long a dismissed red health item stays off the
 	// overview and home (30–365, default 30; docs/UI.md 9.5).
 	RedDismissDays int `json:"red_dismiss_days,omitempty"`
+	// ChatEntryOff hides the terminal UI's 对话 tab (docs/UI.md 9.5).
+	ChatEntryOff bool `json:"chat_entry_off,omitempty"`
 }
 
 // Repo is a local folder used as a repository.
@@ -86,6 +88,9 @@ func SetAdminWindow(dir string, minutes int) error {
 
 // SetRepos replaces the repository list in config.json.
 func SetRepos(dir string, repos []Repo) error { return setKey(dir, "repos", repos) }
+
+// SetChatEntryOff records whether the 对话 tab is hidden.
+func SetChatEntryOff(dir string, off bool) error { return setKey(dir, "chat_entry_off", off) }
 
 // SetRedDismissDays records how long a red dismissal lasts.
 func SetRedDismissDays(dir string, days int) error { return setKey(dir, "red_dismiss_days", days) }

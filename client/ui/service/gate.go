@@ -26,6 +26,13 @@ import (
 // not ask again. It never skips the precondition itself.
 const StaleAcceptedEnv = "VALISE_STALE_BACKUP_ACCEPTED"
 
+// RiskAcceptedEnv is set by the terminal UI when the user chose to go on
+// without an escape pod elsewhere and confirmed it there (INSTALL.md 4.2).
+const RiskAcceptedEnv = "VALISE_RISK_ACCEPTED"
+
+// RiskWarning is said whenever the user goes on at their own risk.
+const RiskWarning = "如果没有充足的备份，数据丢失将是永久性的。建议先备份到仓库或空间站，或在云厂商、虚拟化平台那里给服务器做一份快照（Valise 不做整机备份）。"
+
 // GateCode is the error code when the precondition is not met.
 const GateCode = "offsite_pod_required"
 
@@ -76,7 +83,7 @@ func (g *GateResult) Err() error {
 		}
 	}
 	return valise.New(GateCode, "这一步要先有一份放在别处、能独立恢复的逃生舱（只在服务器上的不算）",
-		"建立逃生舱（推荐\"记忆与人格 + 凭据\"），再放进本机仓库或空间站").WithDetail(strings.Join(lines, "\n"))
+		"建立逃生舱（推荐\"记忆与人格 + 凭据\"），再放进本机仓库或空间站；也可以自己承担风险继续这一次（valise --accept-risk …）").WithDetail(strings.Join(lines, "\n"))
 }
 
 // Warning describes stale offsite pods, "" when none.
@@ -132,6 +139,9 @@ func (s *Service) AdvancedGate(ctx context.Context, host, instance string) (*Gat
 // RequireGate refuses when the precondition is not met; a stale pod is
 // not a refusal (callers show Warning first).
 func (s *Service) RequireGate(ctx context.Context, host, instance string) error {
+	if s.RiskAccepted {
+		return nil // the user accepted the risk for this one operation
+	}
 	g, err := s.AdvancedGate(ctx, host, instance)
 	if err != nil {
 		return err

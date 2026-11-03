@@ -14,9 +14,13 @@ import (
 
 // Service holds client-wide state.
 type Service struct {
-	Dirs    config.Dirs
-	Config  config.Config
-	Version string
+	// RiskAccepted lets this process's operations run without an escape
+	// pod elsewhere: the user accepted the risk for this one operation
+	// (docs/INSTALL.md 4.2). Only the CLI sets it, for one command.
+	RiskAccepted bool
+	Dirs         config.Dirs
+	Config       config.Config
+	Version      string
 	// Home is the local user's home, for ~/.ssh/config.
 	Home string
 	// SSHConfigPath defaults to ~/.ssh/config.

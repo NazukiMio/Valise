@@ -21,7 +21,8 @@ import (
 // version is set at release build time with -ldflags "-X main.version=…".
 var version = "0.0.0-dev"
 
-const usage = `用法：valise [--config-dir 目录] [-v] <命令>
+const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命令>
+  --accept-risk  没有放在别处的备份时，自己承担数据丢失风险继续这一次（会再确认）
 
   doctor <服务器> [--json]                       检查服务器：架构、porter 版本、可用工具
   install <服务器> --profile <id> [--show-script] [--yes] [--advanced] [--with <可选步骤 id>]...
@@ -122,6 +123,9 @@ type cli struct {
 	// configDir is the --config-dir given on the command line ("" for the
 	// default), passed on to CLI steps the TUI runs.
 	configDir string
+	// acceptRisk: --accept-risk, go on without an escape pod elsewhere
+	// (docs/INSTALL.md 4.2, "自担风险继续").
+	acceptRisk bool
 }
 
 var (
@@ -134,6 +138,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	fs.SetOutput(io.Discard)
 	configDir := fs.String("config-dir", "", "")
 	verbose := fs.Bool("v", false, "")
+	acceptRisk := fs.Bool("accept-risk", false, "")
 	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
 		fmt.Fprintln(errOut, usage)
 		return 2
@@ -147,7 +152,8 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	if *configDir != "" {
 		dirs, err = config.Dirs{Data: *configDir, Cache: filepath.Join(*configDir, "cache")}, nil
 	}
-	c := &cli{in: in, out: out, errOut: errOut, verbose: *verbose, configDir: *configDir}
+	c := &cli{in: in, out: out, errOut: errOut, verbose: *verbose, configDir: *configDir,
+		acceptRisk: *acceptRisk || os.Getenv(service.RiskAcceptedEnv) == "1"}
 	if err == nil {
 		c.svc, err = service.New(dirs, version)
 	}

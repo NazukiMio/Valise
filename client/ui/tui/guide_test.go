@@ -10,7 +10,7 @@ func TestChecklist(t *testing.T) {
 	m, _ := world(t)
 	drive(t, m, m.Init())
 	// world has a key, a server, an enrolled and sealed agent: three done.
-	wantText(t, m, "第一次使用", "已完成 3 / 7", "下一步：存一份到别处")
+	wantText(t, m, "第一次使用", "已完成 3 / 5", "下一步：存一份到别处")
 	key(t, m, "g")
 	v := wantText(t, m, "准备工作", "建立第一个逃生舱", "做一次恢复测试", "认识 Kit 与高级模式")
 	if strings.Count(v, "✓") != 3 {

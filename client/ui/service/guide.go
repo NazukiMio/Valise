@@ -126,15 +126,20 @@ func (s *Service) Guide(f GuideFacts) []GuideItem {
 	return items
 }
 
-// GuideProgress counts the done items and finds the next one (neither
-// done nor skipped).
-func GuideProgress(items []GuideItem) (done int, next *GuideItem) {
+// GuideProgress counts the required items and those done, and finds the
+// next required one (neither done nor skipped). Optional items never keep
+// the checklist unfinished.
+func GuideProgress(items []GuideItem) (done, required int, next *GuideItem) {
 	for i := range items {
+		if items[i].Optional {
+			continue
+		}
+		required++
 		if items[i].Done {
 			done++
 		} else if !items[i].Skipped && next == nil {
 			next = &items[i]
 		}
 	}
-	return done, next
+	return done, required, next
 }
