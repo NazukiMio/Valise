@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -52,6 +53,11 @@ func TestOverviewNeeds(t *testing.T) {
 	if v := needsView(m, p, d); !strings.Contains(v, "正在读取健康状态") {
 		t.Fatalf("loading: %s", v)
 	}
+	p.healthErr = errors.New("health RPC failed")
+	if v := needsView(m, p, d); !strings.Contains(v, "健康状态读取失败，暂无法判断") || strings.Contains(v, "需要处理：无") {
+		t.Fatalf("failed: %s", v)
+	}
+	p.healthErr = nil
 	bad := service.HealthItem{ID: "approval", Level: service.HealthBad, Title: "审批", Text: "Bypass"}
 	if _, err := m.svc.ToggleDismiss("box", p.inst.InstanceID, bad); err != nil {
 		t.Fatal(err)

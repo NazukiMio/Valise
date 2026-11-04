@@ -199,7 +199,9 @@ func (s *Service) Pull(ctx context.Context, host, leaf, dir string) (*PullResult
 		res.Problems = []vault.Problem{}
 	}
 	if len(probs) == 0 {
-		markPartial(dir, "", false) // the whole period is here now
+		if err := markPartial(dir, "", false); err != nil { // the whole period is here now
+			return res, err
+		}
 	}
 	return res, nil
 }

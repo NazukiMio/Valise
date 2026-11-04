@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"valise/core/vault"
@@ -46,6 +48,59 @@ func TestPullSnapshotOnlyItsPacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, _ := k.Identity()
+	// Drop actual fake-ssh output during metadata and pack transfer. Neither
+	// failure may advertise this snapshot as ready; re-entry must work.
+	var cacheDir string
+	for _, stage := range []string{StagePullMeta, StagePullPacks} {
+		t.Run("interrupt_"+stage, func(t *testing.T) {
+			t.Setenv("FAKESSH_DROP_AFTER_BYTES", "")
+			fired := false
+			interrupted := WithProgress(ctx, func(p Progress) {
+				if p.Stage == stage && p.Total > 0 && !fired {
+					fired = true
+					t.Setenv("FAKESSH_DROP_AFTER_BYTES", "32")
+				}
+			})
+			_, r, err := s.PullSnapshot(interrupted, "box", small.Leaf, small.SnapshotID, id)
+			if !fired || err == nil || r == nil {
+				t.Fatalf("fault not reached: fired=%v result=%+v err=%v", fired, r, err)
+			}
+			cacheDir = r.Dir
+			var mark partialMark
+			b, err := os.ReadFile(partialFile(r.Dir))
+			if err != nil || json.Unmarshal(b, &mark) != nil || len(mark.Snapshots) != 0 {
+				t.Fatalf("interrupted cache state: %s, %v", b, err)
+			}
+			if _, err := s.VerifyLocal(r.Dir, nil); err == nil {
+				t.Fatal("interrupted cache accepted for whole-period verification")
+			}
+			temps, _ := filepath.Glob(filepath.Join(r.Dir, "packs", "*", ".tmp-*"))
+			if len(temps) != 0 {
+				t.Fatalf("unfinished pack kept: %v", temps)
+			}
+		})
+	}
+	// A directory at the marker path makes its write fail deterministically,
+	// including when the tests run as a privileged user.
+	t.Run("marker_write_failure", func(t *testing.T) {
+		path := partialFile(cacheDir)
+		if err := os.Rename(path, path+".saved"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		_, r, err := s.PullSnapshot(ctx, "box", small.Leaf, small.SnapshotID, id)
+		if err == nil || !strings.Contains(err.Error(), "无法保存本机缓存") || r.Downloaded != 0 {
+			t.Fatalf("marker failure ignored: %+v %v", r, err)
+		}
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(path+".saved", path); err != nil {
+			t.Fatal(err)
+		}
+	})
 	v, r, err := s.PullSnapshot(ctx, "box", small.Leaf, small.SnapshotID, id)
 	if err != nil {
 		t.Fatal(err)
@@ -55,8 +110,10 @@ func TestPullSnapshotOnlyItsPacks(t *testing.T) {
 		t.Fatalf("cold: %+v of %d packs", r, len(allPacks))
 	}
 	t.Logf("period %d, pod %d, packs %d of %d (%d bytes), downloaded %d", r.PeriodBytes, r.PodBytes, r.Packs, len(allPacks), r.PackBytes, r.Downloaded)
-	if _, err := os.Stat(partialFile(r.Dir)); err != nil {
-		t.Fatal("partial copy not marked")
+	var mark partialMark
+	b, err := os.ReadFile(partialFile(r.Dir))
+	if err != nil || json.Unmarshal(b, &mark) != nil || len(mark.Snapshots) != 1 || mark.Snapshots[0] != small.SnapshotID {
+		t.Fatalf("completed snapshot not recorded: %s %v", b, err)
 	}
 	// Every file of the pod can be written and checked.
 	_, files, err := v.Snapshot(small.SnapshotID, id)

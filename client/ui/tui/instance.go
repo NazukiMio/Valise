@@ -357,9 +357,6 @@ func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 	return b.String()
 }
 
-// needsView is the overview's one "需要处理" block (review F07): run and
-// backup problems, then the health page's most important items; "无" only
-// once health has been read.
 func needsView(m *Model, p *instancePage, d *srvData) string {
 	var lines []string
 	for _, a := range attention(m, d, p.inst) {
@@ -377,6 +374,9 @@ func needsView(m *Model, p *instancePage, d *srvData) string {
 			st = errStyle
 		}
 		lines = append(lines, st.Render("  "+levelMarkPlain(it.Level)+" "+it.Title+"："+it.Text)+dimStyle.Render("  · 详见 "+tabNo+" 健康"))
+	}
+	if p.healthErr != nil {
+		lines = append(lines, warnStyle.Render("  ! 健康状态读取失败，暂无法判断"))
 	}
 	quiet := 0
 	if p.health != nil {

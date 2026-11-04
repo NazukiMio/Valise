@@ -50,7 +50,7 @@ type SnapshotPull struct {
 	Downloaded  int64 `json:"downloaded_bytes"`
 	Reused      int64 `json:"reused_bytes"`
 	Packs       int   `json:"packs"`
-	// Partial: some packs of the period are not here.
+	// Partial: this cache has not been verified as a complete period.
 	Partial bool `json:"partial"`
 }
 
@@ -82,7 +82,12 @@ func (s *Service) PullSnapshot(ctx context.Context, host, leaf, snapshot string,
 	if b, err := os.ReadFile(filepath.Join(dir, vault.DescriptorFile)); err == nil && !strings.Contains(string(b), `"`+list.VaultID+`"`) {
 		return nil, nil, valise.New("pull_wrong_vault", "本机缓存目录里已经是另一个金库", "删除 "+dir+" 后重试")
 	}
-	res := &SnapshotPull{Dir: dir, VaultID: list.VaultID}
+	res := &SnapshotPull{Dir: dir, VaultID: list.VaultID, Partial: true}
+	// Persist the conservative state before changing any cache files. A
+	// failed or interrupted pull must never leave an unmarked partial copy.
+	if err := markPartial(dir, "", true); err != nil {
+		return nil, res, err
+	}
 	byPath := map[string]vaultrpc.VaultFile{}
 	var meta []vaultrpc.VaultFile
 	for _, f := range list.Files {
@@ -182,15 +187,9 @@ func (s *Service) PullSnapshot(ctx context.Context, host, leaf, snapshot string,
 	if err := ensure(blobs); err != nil {
 		return nil, res, err
 	}
-	for rel := range byPath {
-		if strings.HasPrefix(rel, vault.PacksDir+"/") {
-			if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); err != nil {
-				res.Partial = true
-				break
-			}
-		}
+	if err := markPartial(dir, snapshot, true); err != nil {
+		return nil, res, err
 	}
-	markPartial(dir, snapshot, res.Partial)
 	return v, res, nil
 }
 
@@ -216,22 +215,57 @@ type partialMark struct {
 
 // markPartial records which pods a partial cache can restore, or removes
 // the mark once the period is complete.
-func markPartial(dir, snapshot string, partial bool) {
+func markPartial(dir, snapshot string, partial bool) (err error) {
+	defer func() {
+		if err != nil {
+			err = valise.New("pull_cache_state", "无法保存本机缓存的完整性状态", "检查缓存目录的权限和剩余空间后重试").WithDetail(err.Error())
+		}
+	}()
+	path := partialFile(dir)
 	if !partial {
-		_ = os.Remove(partialFile(dir))
-		return
+		err = os.Remove(path)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
 	}
 	var m partialMark
-	if b, err := os.ReadFile(partialFile(dir)); err == nil {
-		_ = json.Unmarshal(b, &m)
+	if b, readErr := os.ReadFile(path); readErr == nil {
+		if err := json.Unmarshal(b, &m); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(readErr) {
+		return readErr
 	}
-	m.Note = "这是只取回了部分数据包的本机缓存，只能恢复下面这些逃生舱，不是完整的周期副本"
-	if !containsStr(m.Snapshots, snapshot) {
+	m.Note = "这是尚未通过完整周期校验的本机缓存；下面仅列出已成功取回恢复材料的逃生舱，清单为空时可能仍在取回或已中断"
+	if snapshot != "" && !containsStr(m.Snapshots, snapshot) {
 		m.Snapshots = append(m.Snapshots, snapshot)
 	}
 	m.Updated = time.Now().UTC()
-	b, _ := json.MarshalIndent(m, "", "  ")
-	_ = os.WriteFile(partialFile(dir), append(b, '\n'), 0o600)
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".partial-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }
 
 func containsStr(list []string, s string) bool {
@@ -251,7 +285,7 @@ func (t *SnapshotPull) Summary() string {
 	line := fmt.Sprintf("取回：周期共 %s，这个逃生舱 %s，用到 %d 个数据包 %s；这次下载 %s，复用本机已有 %s",
 		sizeText(t.PeriodBytes), sizeText(t.PodBytes), t.Packs, sizeText(t.PackBytes), sizeText(t.Downloaded), sizeText(t.Reused))
 	if t.Partial {
-		line += "（本机只有部分数据包，是这个逃生舱的恢复材料，不是完整的周期副本）"
+		line += "（本机缓存是这个逃生舱的恢复材料，尚未通过完整周期校验）"
 	}
 	return line
 }
