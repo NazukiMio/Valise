@@ -199,11 +199,11 @@ func guideFor(m *Model, hosts []string, it service.GuideItem) screen {
 		}
 	case service.GuideFirstPod:
 		g.pages = []string{
-			"一个逃生舱是 agent 某一刻的完整样子：记忆、设置、会话，按你选的档位决定带不带凭据。\n" +
+			"一个逃生舱保存所选内容在此刻的状态：记忆、设置、会话等；是否包含凭据和工作区，由你选择的备份内容决定。\n" +
 				"它用你的钥匙加密后存在服务器上，只能追加，不会被覆盖或悄悄删掉。\n\n" +
 				"升级 harness、让 agent 做大改动、或者只是想留个底的时候，建一个。\n" +
 				"出了问题，可以把 agent 退回到任何一个逃生舱的样子（原地恢复），也能搬到另一台服务器。",
-			"这一步会：为 " + in.InstanceID + " 建一个逃生舱，档位由你选（推荐\"标准\"，带凭据）。\n\n" +
+			"这一步会：为 " + in.InstanceID + " 建一个逃生舱，备份内容由你选（推荐\"标准\"，带凭据）。\n\n" +
 				"不会：停下 agent，或改动它的任何文件。建立时 agent 照常运行。",
 		}
 		g.then = needAgent

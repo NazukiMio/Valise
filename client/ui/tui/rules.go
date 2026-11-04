@@ -108,7 +108,7 @@ func (r *rulesScreen) view(m *Model) string {
 		}
 	}
 	add("", headStyle.Render("怎么修改"),
-		"  · agent 可以通过逃生舱技能提议补充规则，你在「体检」里接受或拒绝。",
+		"  · agent 可以通过逃生舱技能提议补充规则，你在「健康」里接受或拒绝。",
 		"  · 也可以在终端里重新接入时指定："+accStyle.Render("valise enroll "+p.host+" --profile "+prof.ID+" --id "+p.inst.InstanceID+" --assign <root>:<glob>=<类别>"),
 		"  · harness 资料的规则随 harness 资料包更新；Valise 不会自己改动它们。")
 	height := m.bodyHeight()

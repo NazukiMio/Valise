@@ -23,10 +23,17 @@ func (c *cli) health(ctx context.Context, args []string) error {
 	if *asJSON {
 		return c.printJSON(r)
 	}
-	if n := r.Problems(); n == 0 {
-		fmt.Fprintln(c.out, "✓ 一切正常")
+	if n := r.Incomplete(); n > 0 {
+		fmt.Fprintf(c.out, "! 部分检查未完成（%d 项），暂无法完整判断；已知 %d 件事要留意\n", n, r.Problems())
+	} else if n := r.Problems(); n == 0 {
+		fmt.Fprintln(c.out, "✓ 已完成检查未发现问题")
 	} else {
 		fmt.Fprintf(c.out, "! %d 件事要留意\n", n)
+	}
+	for _, check := range r.Checks {
+		if check.State != "ok" {
+			fmt.Fprintf(c.out, "  · %s：%s\n", check.Title, check.Reason)
+		}
 	}
 	group := ""
 	for _, it := range r.Items {

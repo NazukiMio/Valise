@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"valise/core/agentkit"
 	"valise/ui/service"
 )
 
@@ -50,14 +51,15 @@ func TestOverviewNeeds(t *testing.T) {
 	drive(t, m, m.Init())
 	p := newInstancePage("box", m.server("box").instances[0])
 	d := m.server("box")
-	if v := needsView(m, p, d); !strings.Contains(v, "正在读取健康状态") {
+	if v := needsView(m, p, d); !strings.Contains(v, "健康状态正在读取") {
 		t.Fatalf("loading: %s", v)
 	}
 	p.healthErr = errors.New("health RPC failed")
-	if v := needsView(m, p, d); !strings.Contains(v, "健康状态读取失败，暂无法判断") || strings.Contains(v, "需要处理：无") {
+	if v := needsView(m, p, d); !strings.Contains(v, "部分检查未完成") || strings.Contains(v, "需要处理：无") {
 		t.Fatalf("failed: %s", v)
 	}
 	p.healthErr = nil
+	p.check = &agentkit.CheckupResult{}
 	bad := service.HealthItem{ID: "approval", Level: service.HealthBad, Title: "审批", Text: "Bypass"}
 	if _, err := m.svc.ToggleDismiss("box", p.inst.InstanceID, bad); err != nil {
 		t.Fatal(err)

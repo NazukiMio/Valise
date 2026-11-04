@@ -32,7 +32,7 @@ func (c *cli) checkup(ctx context.Context, args []string) error {
 		return c.printJSON(r)
 	}
 	w := c.out
-	fmt.Fprintf(w, "体检：%s（只读，由代码计算）\n", r.InstanceID)
+	fmt.Fprintf(w, "会话与记忆检查：%s（只读，由代码计算）\n", r.InstanceID)
 	if r.SessionsDeclared {
 		fmt.Fprintf(w, "  会话：%d 个，共 %s；%d 天前的冷会话 %s\n", r.SessionCount, size(r.TotalBytes), agentkit.DefaultColdDays, size(r.ColdBytes))
 		if cur := r.Current; cur != nil {

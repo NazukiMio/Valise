@@ -29,7 +29,7 @@ func agentTabs(rest ...tab) []tab {
 // skillPrompts are the words that start each Valise skill (agent-kit/skills).
 var skillPrompts = []struct{ skill, label, say string }{
 	{"valise-enroll", "让 agent 认识它的逃生舱", "我给你装了一个逃生舱，你学习一下"},
-	{"valise-checkup", "让 agent 做一次体检", "体检一下"},
+	{"valise-checkup", "检查会话与记忆", "请用 valise-checkup 技能检查会话与记忆，提出建议，等我确认后再修改"},
 	{"valise-handoff", "交接到一个新会话", "交接一下，我们换个新会话"},
 	{"valise-upkeep", "提醒它改动前先建逃生舱", "以后改记忆、设置或装插件之前，先用 Valise 给自己建一个逃生舱"},
 }

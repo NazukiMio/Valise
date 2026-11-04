@@ -33,11 +33,6 @@ type proposalsLoaded struct {
 	err  error
 }
 
-type healthLoaded struct {
-	r   *service.HealthReport
-	err error
-}
-
 type restoreTested struct {
 	r   *service.RestoreTest
 	err error
@@ -59,16 +54,17 @@ func (c *healthTab) load(m *Model, p *instancePage) tea.Cmd {
 	return tea.Batch(
 		func() tea.Msg { l, err := svc.Proposals(ctx, host, inst); return proposalsLoaded{l, err} },
 		p.loadHealth(m),
+		p.loadCheckup(m),
 	)
 }
 
 // rows are the health items with the checkup findings added to the agent
 // group, problems first.
 func (c *healthTab) rows(m *Model, p *instancePage) []service.HealthItem {
-	if p.health == nil {
-		return nil
+	r := service.HealthReport{}
+	if p.health != nil {
+		r.Items = append(r.Items, p.health.Items...)
 	}
-	r := service.HealthReport{Items: append([]service.HealthItem{}, p.health.Items...)}
 	if ck := p.check; ck != nil {
 		for _, f := range ck.Findings {
 			info := findingInfo[f.ID]
@@ -195,7 +191,7 @@ func (c *healthTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 			return nil, true
 		case "r":
 			m.flash, m.flashErr = "正在刷新…", false
-			return tea.Batch(c.load(m, p), p.loadCheckup(m)), true
+			return c.load(m, p), true
 		}
 		if !c.onProposal(m, p) {
 			return nil, false
@@ -250,12 +246,6 @@ func levelMark(level string) string {
 
 func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 	w := min(m.width-2, 100)
-	if p.health == nil {
-		if p.healthErr != nil {
-			return errStyle.Render(errText(p.healthErr))
-		}
-		return dimStyle.Render("读取中…（只读，不会改动 agent 的任何文件）")
-	}
 	rows := c.rows(m, p)
 	c.nrows = len(rows)
 	c.cursor = min(c.cursor, max(0, len(rows)+len(c.proposals)-1))
@@ -266,10 +256,26 @@ func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 		}
 	}
 	var b strings.Builder
-	if problems == 0 {
-		b.WriteString(okStyle.Render("✓ 一切正常") + "\n")
+	notices := p.healthNotices()
+	if len(notices) > 0 {
+		b.WriteString(warnStyle.Render("! 部分检查未完成，暂无法完整判断") + "\n")
+		for _, n := range notices {
+			b.WriteString(dimStyle.Render(n) + "\n")
+		}
+		if problems > 0 {
+			b.WriteString(warnStyle.Render("! "+itoa(problems)+" 件事要留意") + "\n")
+		}
+	} else if problems == 0 {
+		b.WriteString(okStyle.Render("✓ 已完成检查未发现问题") + "\n")
 	} else {
 		b.WriteString(warnStyle.Render("! "+itoa(problems)+" 件事要留意") + "\n")
+	}
+	if p.health != nil {
+		for _, check := range p.health.Checks {
+			if check.State == "unsupported" {
+				b.WriteString(dimStyle.Render(check.Title+"："+check.Reason) + "\n")
+			}
+		}
 	}
 	group := ""
 	for i, it := range rows {

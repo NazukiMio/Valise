@@ -38,8 +38,8 @@ func TestChecklist(t *testing.T) {
 	key(t, m, "up")
 	key(t, m, "up")
 	key(t, m, "enter")
-	wantText(t, m, "一个逃生舱是 agent 某一刻的完整样子", "1 / 2")
+	wantText(t, m, "保存所选内容在此刻的状态", "1 / 2")
 	key(t, m, "enter")
 	key(t, m, "enter")
-	wantText(t, m, "建立逃生舱 · 装什么？")
+	wantText(t, m, "建立逃生舱（备份）· 选择内容")
 }

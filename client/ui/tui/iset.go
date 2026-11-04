@@ -157,7 +157,7 @@ func (t *isetTab) confirmKit(m *Model, p *instancePage, force bool) tea.Cmd {
 }
 
 func (t *isetTab) choosePeriod(m *Model, p *instancePage) tea.Cmd {
-	return m.push(pick("每个周期一个文件夹，只影响下一个周期", []choice{
+	return m.push(pick("备份分组 · 修改从下一组生效", []choice{
 		{label: "每周", value: vault.UnitWeek}, {label: "每月", value: vault.UnitMonth, desc: "默认"}, {label: "每季度", value: vault.UnitQuarter},
 	}, func(m *Model, unit string) tea.Cmd {
 		svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
@@ -165,7 +165,7 @@ func (t *isetTab) choosePeriod(m *Model, p *instancePage) tea.Cmd {
 			if err := svc.PeriodSet(ctx, host, inst, vault.PeriodSetting{Unit: unit, TZ: service.LocalZone()}); err != nil {
 				return failed(err)
 			}
-			return flashMsg("已保存，从下一个周期开始生效（时区 " + service.LocalZone() + "）")
+			return flashMsg("已保存，备份分组从下一组开始生效（时区 " + service.LocalZone() + "）")
 		}
 	}))
 }
@@ -190,7 +190,7 @@ func (t *isetTab) view(m *Model, p *instancePage, height int) string {
 	sections := []struct{ title, body string }{
 		{"名字", nameText(p.inst)},
 		{"逃生舱技能", t.kitText(p)},
-		{"云备份周期", t.periodText(m, p)},
+		{"备份分组", t.periodText(m, p)},
 		{"定时建立逃生舱", t.timerText()},
 		{"归类规则", t.rulesText(p)},
 		{"重新接入", dimStyle.Render("harness 升级、目录变化后使用；会先显示接入报告。")},
@@ -214,7 +214,7 @@ func (t *isetTab) view(m *Model, p *instancePage, height int) string {
 
 func (t *isetTab) kitText(p *instancePage) string {
 	var b strings.Builder
-	b.WriteString(dimStyle.Render("让 agent 自己知道什么时候该建立逃生舱、怎么交接、怎么体检。") + "\n")
+	b.WriteString(dimStyle.Render("让 agent 自己知道什么时候该建立逃生舱、怎么交接、怎么检查会话与记忆。") + "\n")
 	switch k := p.kit; {
 	case k == nil:
 		b.WriteString(dimStyle.Render("读取中…"))
@@ -254,11 +254,11 @@ func (t *isetTab) periodText(m *Model, p *instancePage) string {
 		for _, l := range st.Leaves {
 			if l.Current && l.Period != nil && l.Period.InstanceID == p.inst.InstanceID {
 				names := map[string]string{vault.UnitWeek: "每周", vault.UnitMonth: "每月", vault.UnitQuarter: "每季度"}
-				cur = names[l.Period.Unit] + "　当前周期 " + l.Period.Start + " ~ " + l.Period.End
+				cur = names[l.Period.Unit] + "　当前分组 " + l.Period.Start + " ~ " + l.Period.End
 			}
 		}
 	}
-	return cur + "\n" + dimStyle.Render("每个周期是一个独立的文件夹，可以整个删除；修改只影响下一个周期。")
+	return cur + "\n" + dimStyle.Render("按月/周/季度分组保存；清理时整组删除。修改从下一组生效。")
 }
 
 func (t *isetTab) timerText() string {

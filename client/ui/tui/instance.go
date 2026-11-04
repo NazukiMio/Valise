@@ -38,7 +38,8 @@ type instancePage struct {
 	log    map[string]vaultrpc.SealLogEntry
 	health *service.HealthReport
 	// healthErr: the health report could not be read.
-	healthErr error
+	healthErr             error
+	healthRead, checkRead readState
 	// install: the installation key on an install page (installpage.go).
 	install string
 }
@@ -53,11 +54,7 @@ func newInstancePage(host string, in enroll.InstanceSummary) *instancePage {
 type (
 	targetLoaded struct{ t *service.LoginTarget }
 	kitLoaded    struct{ k *agentkit.KitStatusResult }
-	checkLoaded  struct {
-		c   *agentkit.CheckupResult
-		err error
-	}
-	logLoaded struct{ l *vaultrpc.SealLogResult }
+	logLoaded    struct{ l *vaultrpc.SealLogResult }
 )
 
 func (p *instancePage) title() string {
@@ -108,28 +105,14 @@ func (p *instancePage) loadLog(m *Model) tea.Cmd {
 	return func() tea.Msg { l, _ := svc.SealLog(ctx, host, inst); return logLoaded{l} }
 }
 
-func (p *instancePage) loadHealth(m *Model) tea.Cmd {
-	svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
-	return func() tea.Msg { r, err := svc.Health(ctx, host, inst); return healthLoaded{r, err} }
-}
-
-func (p *instancePage) loadCheckup(m *Model) tea.Cmd {
-	svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
-	return func() tea.Msg { c, err := svc.Checkup(ctx, host, inst); return checkLoaded{c, err} }
-}
-
 func (p *instancePage) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case targetLoaded:
 		p.target = msg.t
 	case kitLoaded:
 		p.kit = msg.k
-	case checkLoaded:
-		if msg.err == nil {
-			p.check = msg.c
-		}
-	case healthLoaded:
-		p.health, p.healthErr = msg.r, msg.err
+	case checkLoaded, healthLoaded:
+		p.receiveRead(m, msg)
 	case agentsFound:
 		for _, t := range p.tabs {
 			if a, ok := t.(*agentsTab); ok {
@@ -345,9 +328,7 @@ func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 			rows = append(rows, "安装来源", provenanceText(p.target.Record.Provenance))
 		}
 		backup := backupLine(m, d, p.inst, true)
-		if p.check != nil && len(p.check.Findings) > 0 {
-			backup += dimStyle.Render("  ·  ") + warnStyle.Render("体检有 "+itoa(len(p.check.Findings))+" 个提醒（见体检）")
-		}
+
 		rows = append(rows, "备份", backup)
 		if p.kit != nil && p.kit.LastMCP != nil {
 			rows = append(rows, "agent 上次联系", ago(*p.kit.LastMCP, m.now())+dimStyle.Render("，通过逃生舱技能"))
@@ -355,46 +336,4 @@ func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 		b.WriteString(kv(rows...))
 	}
 	return b.String()
-}
-
-func needsView(m *Model, p *instancePage, d *srvData) string {
-	var lines []string
-	for _, a := range attention(m, d, p.inst) {
-		lines = append(lines, warnStyle.Render("  ! "+a))
-	}
-	tabNo := ""
-	for i, t := range p.tabs {
-		if _, ok := t.(*healthTab); ok {
-			tabNo = itoa(i + 1)
-		}
-	}
-	for _, it := range topHealth(m, p, 2) {
-		st := warnStyle
-		if it.Level == service.HealthBad {
-			st = errStyle
-		}
-		lines = append(lines, st.Render("  "+levelMarkPlain(it.Level)+" "+it.Title+"："+it.Text)+dimStyle.Render("  · 详见 "+tabNo+" 健康"))
-	}
-	if p.healthErr != nil {
-		lines = append(lines, warnStyle.Render("  ! 健康状态读取失败，暂无法判断"))
-	}
-	quiet := 0
-	if p.health != nil {
-		for _, it := range p.health.Items {
-			if it.Quiet() {
-				quiet++
-			}
-		}
-	}
-	note := ""
-	if quiet > 0 {
-		note = dimStyle.Render("（另有 " + itoa(quiet) + " 项已忽略，见 " + tabNo + " 健康）")
-	}
-	switch {
-	case len(lines) > 0:
-		return warnStyle.Render("需要处理") + note + "\n" + strings.Join(lines, "\n") + "\n\n"
-	case p.health == nil && p.healthErr == nil:
-		return dimStyle.Render("需要处理：正在读取健康状态…") + "\n\n"
-	}
-	return dimStyle.Render("需要处理：无") + note + "\n\n"
 }

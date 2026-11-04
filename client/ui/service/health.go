@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,9 +52,10 @@ type HealthItem struct {
 
 // HealthReport is one agent's health.
 type HealthReport struct {
-	Host     string       `json:"host"`
-	Instance string       `json:"instance"`
-	Items    []HealthItem `json:"items"`
+	Host     string        `json:"host"`
+	Instance string        `json:"instance"`
+	Items    []HealthItem  `json:"items"`
+	Checks   []HealthCheck `json:"checks,omitempty"`
 }
 
 // Rank orders levels for sorting: bad first.
@@ -101,30 +103,61 @@ func sortRank(it HealthItem) int {
 
 const clockSkewLimit = 5 * time.Minute
 
-// Health collects instance's health on host. Nothing is asked and nothing
-// changes; a part that cannot be read is left out.
+// Health collects independent checks; failure of one never hides another.
 func (s *Service) Health(ctx context.Context, host, instance string) (*HealthReport, error) {
-	st, err := s.VaultStatus(ctx, host)
-	if err != nil {
-		return nil, err
-	}
+	return s.collectHealth(host, instance, healthSources{
+		vault:     func() (*vaultrpc.StatusResult, error) { return s.VaultStatus(ctx, host) },
+		instances: func() ([]enroll.InstanceSummary, error) { return s.Instances(ctx, host) },
+		timer:     func() (*vaultrpc.TimerStatus, error) { return s.TimerStatus(ctx, host, instance) },
+		kit:       func() (*agentkit.KitStatusResult, error) { return s.KitStatus(ctx, host, instance) },
+		approval: func() (*action.ApprovalResult, error) {
+			var chk action.ApprovalResult
+			err := s.call(ctx, host, action.MethodApproval, action.ApprovalParams{InstanceID: instance}, &chk)
+			return &chk, err
+		},
+	}), nil
+}
+
+func (s *Service) collectHealth(host, instance string, src healthSources) *HealthReport {
 	r := &HealthReport{Host: host, Instance: instance, Items: []HealthItem{}}
 	add := func(it HealthItem) { r.Items = append(r.Items, it) }
 	now := time.Now()
-
-	add(s.backupItem(host, instance, st.ServerName, st.Snapshots, st.Targets, now))
+	st, err := src.vault()
+	r.read("backup", "备份与服务器时间", err)
+	if err == nil {
+		add(s.backupItem(host, instance, st.ServerName, st.Snapshots, st.Targets, now))
+		if !st.Now.IsZero() {
+			if skew := st.Now.Sub(now); skew > clockSkewLimit || skew < -clockSkewLimit {
+				if skew < 0 {
+					skew = -skew
+				}
+				add(HealthItem{ID: "clock", Group: HealthAgent, Level: HealthWarn, Title: "服务器时钟",
+					Text:   "和这台电脑差 " + agoPlain(skew),
+					Detail: "时钟偏差会让空间站的短期证书失效，也会让逃生舱的时间显示不准。在服务器上开启时间同步（如 chrony 或 systemd-timesyncd）。"})
+			}
+		}
+	}
 	add(s.restoreTestItem(host, instance, now))
-
 	profileID := ""
-	if insts, err := s.Instances(ctx, host); err == nil {
+	insts, err := src.instances()
+	found := false
+	if err == nil {
 		for _, in := range insts {
 			if in.InstanceID == instance {
 				add(serviceItem(in.Service, in.Entries))
 				profileID = in.ProfileID
+				found = true
+				break
 			}
 		}
+		if !found {
+			err = errors.New("instance not listed")
+		}
 	}
-	if ts, err := s.TimerStatus(ctx, host, instance); err == nil {
+	r.read("service", "服务与管理页", err)
+	ts, err := src.timer()
+	r.read("timer", "定时备份", err)
+	if err == nil {
 		it := HealthItem{ID: "timer", Group: HealthAgent, Title: "定时备份"}
 		switch {
 		case !ts.Enabled:
@@ -138,16 +171,11 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 		}
 		add(it)
 	}
-	if k, err := s.KitStatus(ctx, host, instance); err == nil {
-		var chk action.ApprovalResult
-		if err := s.call(ctx, host, action.MethodApproval, action.ApprovalParams{InstanceID: instance}, &chk); err != nil {
-			chk = action.ApprovalResult{}
-		}
-		it := approvalItem(&chk, k.Declaration)
-		if it.Level == HealthBad {
-			it.Detail += s.approvalRemedy(profileID)
-		}
-		add(it)
+	k, err := src.kit()
+	r.read("kit", "逃生舱技能", err)
+	var declaration *agentkit.Declaration
+	if err == nil {
+		declaration = k.Declaration
 		stale := 0
 		for _, sk := range k.Skills {
 			if sk.State != agentkit.SkillCurrent {
@@ -160,19 +188,32 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 				Detail: "按 s 打开这个 agent 的设置，在「逃生舱技能」里重新安装。"})
 		}
 	}
-	if !st.Now.IsZero() {
-		if skew := st.Now.Sub(now); skew > clockSkewLimit || skew < -clockSkewLimit {
-			if skew < 0 {
-				skew = -skew
-			}
-			add(HealthItem{ID: "clock", Group: HealthAgent, Level: HealthWarn, Title: "服务器时钟",
-				Text:   "和这台电脑差 " + agoPlain(skew),
-				Detail: "时钟偏差会让空间站的短期证书失效，也会让逃生舱的时间显示不准。在服务器上开启时间同步（如 chrony 或 systemd-timesyncd）。"})
+	chk, err := src.approval()
+	r.read("approval", "审批设置", err)
+	if err == nil {
+		switch {
+		case !chk.Declared:
+			r.Checks[len(r.Checks)-1].State = "unsupported"
+			r.Checks[len(r.Checks)-1].Reason = "harness 资料未声明审批检查；仅展示 agent 声明（如有）"
+		case chk.Mode == profile.ApprovalUnknown:
+			r.Checks[len(r.Checks)-1].State = "failed"
+			r.Checks[len(r.Checks)-1].Reason = "未能判定审批设置，请检查 harness 资料与服务器上的程序版本后刷新"
+			chk = nil // never expose raw failed command details or turn a declaration green
 		}
+	} else {
+		chk = nil
 	}
+	it := approvalItem(chk, declaration)
+	if r.Checks[len(r.Checks)-1].State == "failed" && it.Level == HealthOK {
+		it.Level = HealthInfo
+	}
+	if it.Level == HealthBad {
+		it.Detail += s.approvalRemedy(profileID)
+	}
+	add(it)
 	s.MarkDismissed(host, instance, r.Items)
 	r.Sort()
-	return r, nil
+	return r
 }
 
 // backupItem: the newest escape pod, and the newest one kept in a
@@ -301,7 +342,7 @@ func serviceItem(svc []enroll.ServiceState, entries []enroll.EntryState) HealthI
 // is shown against the settings when they disagree.
 func approvalItem(chk *action.ApprovalResult, d *agentkit.Declaration) HealthItem {
 	it := HealthItem{ID: "approval", Group: HealthAgent, Title: "审批"}
-	bypassDetail := "agent 可以不经你同意删除文件、改配置或运行命令；被注入的指令也会直接执行。要改的话，在 harness 的设置里自己改为执行前询问（Valise 不替你改），然后让 agent 重新声明；不改也可以按 i 忽略。"
+	bypassDetail := "agent 可以不经你同意删除文件、改配置或运行命令；被注入的指令也会直接执行。要改的话，可在 harness 的审批设置中改为执行前询问；本版本尚未提供审批设置的执行入口，修改后刷新复核；不改也可以按 i 忽略。"
 	declared := ""
 	if d != nil {
 		declared = d.ApprovalMode
@@ -383,7 +424,7 @@ func everyText(every string) string {
 }
 
 // approvalRemedy is the harness profile's own steps to turn approval on, for
-// the user to follow (Valise never changes the setting itself).
+// the user to follow until a verified executable action is implemented.
 func (s *Service) approvalRemedy(profileID string) string {
 	set, err := s.Profiles()
 	if err != nil || set.ByID[profileID] == nil {

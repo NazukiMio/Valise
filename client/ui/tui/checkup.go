@@ -35,7 +35,7 @@ func findingTitle(id string) string {
 	return id
 }
 
-const agentAsk = "请用 valise-checkup 技能看一下体检结果，提出整理方案，等我确认后再做。"
+const agentAsk = "请用 valise-checkup 技能看一下健康页中的会话与记忆检查结果，提出整理方案，等我确认后再做。"
 
 // findingBars draws the measured value against its threshold.
 func findingBars(ck *agentkit.CheckupResult, id string, th *profile.Thresholds) string {

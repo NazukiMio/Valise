@@ -16,10 +16,10 @@ import (
 var tierNames = map[string]string{vault.TierSoul: "轻装", vault.TierSoulSecrets: "标准", vault.TierFull: "完整", vault.TierRaw: "原样"}
 
 var tierChoices = []choice{
-	{label: "轻装", value: vault.TierSoul, desc: "记忆、人格、技能、配置、会话。日常用这个"},
-	{label: "标准", value: vault.TierSoulSecrets, desc: "再加登录凭据和没归类的文件。换服务器前用"},
-	{label: "完整", value: vault.TierFull, desc: "再加 agent 的工作区文件"},
-	{label: "原样", value: vault.TierRaw, desc: "实例目录下的全部文件，体积大，兜底用"},
+	{label: "轻装", value: vault.TierSoul, desc: "记忆、人格、技能、配置、会话；不含凭据和工作区"},
+	{label: "标准", value: vault.TierSoulSecrets, desc: "轻装内容，加登录凭据和未归类文件；不含工作区"},
+	{label: "完整", value: vault.TierFull, desc: "标准内容，再加 agent 的工作区文件"},
+	{label: "原样", value: vault.TierRaw, desc: "实例目录下的全部文件，含凭据、身体与缓存；体积大"},
 }
 
 // whoText says who started a snapshot, from the seal log.
@@ -250,7 +250,7 @@ func startSeal(m *Model, p *instancePage) tea.Cmd {
 }
 
 func pickSeal(m *Model, p *instancePage) tea.Cmd {
-	return m.push(pick("建立逃生舱 · 装什么？", tierChoices, func(m *Model, tier string) tea.Cmd {
+	return m.push(pick("建立逃生舱（备份）· 选择内容", tierChoices, func(m *Model, tier string) tea.Cmd {
 		return m.push(newInput("原因（可选，以后在列表里能看到，例如\"升级前\"）", "", false, func(m *Model, reason string) tea.Cmd {
 			sc := newSealScreen(m, p.host, p.inst.InstanceID, tier)
 			return tea.Batch(m.push(sc), sc.run(m, reason))
