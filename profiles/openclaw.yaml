@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 19
+profile_version: 20
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -112,6 +112,7 @@ body:
 relocation: { env: OPENCLAW_STATE_DIR }   # S&S, WS
 
 service:
+  repair_action: restart   # OBS (M12, debian-vm, 2026.10.9): fixed action restarts the gateway; service and entry checked afterwards
   candidates: [ { scope: user, unit: openclaw-gateway.service } ]   # GP: default profile's systemd unit
   install_argv: [openclaw, gateway, install]   # OBS: installs and starts the unit on ubuntu-vm; refuses group-writable ~/.config/systemd
 

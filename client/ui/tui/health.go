@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -19,10 +18,12 @@ import (
 // findings join the agent group; the agent's classification proposals
 // stay at the bottom.
 type healthTab struct {
-	proposals []agentkit.Proposal
-	loadedP   bool
-	cursor    int // over rows(), then proposals
-	nrows     int // len(rows()) at the last view, for help()
+	proposals  []agentkit.Proposal
+	loadedP    bool
+	cursor     int // over rows(), then proposals
+	nrows      int // len(rows()) at the last view, for help()
+	repairName string
+	repairSeq  uint64
 
 	testing bool
 	prog    progressBox
@@ -43,6 +44,9 @@ type testProgress struct{}
 func (c *healthTab) name() string { return "健康" }
 func (c *healthTab) help(p *instancePage) string {
 	items := []string{"↑↓", "选择", "t", "测试恢复", "u", "仓库与空间站", "s", "设置", "i", "忽略", "y", "复制给 agent 的话", "r", "刷新"}
+	if c.repairName != "" {
+		items = append(items, "f", "修复 · "+c.repairName)
+	}
 	if len(c.proposals) > 0 && c.cursor >= c.nrows {
 		items = append(items, "a", "接受", "x", "拒绝")
 	}
@@ -143,6 +147,8 @@ func (c *healthTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 			return nil, true
 		}
 		switch k {
+		case "f":
+			return c.repair(m, p), true
 		case "t":
 			return c.runTest(m, p), true
 		case "u":
@@ -213,18 +219,6 @@ func (c *healthTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 	return nil, false
 }
 
-// topHealth is the n most important problems, bad first.
-func topHealth(m *Model, p *instancePage, n int) []service.HealthItem {
-	var out []service.HealthItem
-	for _, it := range (&healthTab{}).rows(m, p) {
-		if (it.Level == service.HealthBad || it.Level == service.HealthWarn) && !it.Quiet() {
-			out = append(out, it)
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool { return service.Rank(out[i].Level) < service.Rank(out[j].Level) })
-	return out[:min(n, len(out))]
-}
-
 func levelMarkPlain(level string) string {
 	if level == service.HealthBad {
 		return "✗"
@@ -249,6 +243,10 @@ func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 	rows := c.rows(m, p)
 	c.nrows = len(rows)
 	c.cursor = min(c.cursor, max(0, len(rows)+len(c.proposals)-1))
+	c.repairName = ""
+	if c.cursor < len(rows) {
+		c.repairName = rows[c.cursor].ActionName
+	}
 	problems := 0
 	for _, it := range rows {
 		if it.Counts() {

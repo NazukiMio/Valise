@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 
+	"valise/client/ssh"
 	"valise/ui/service"
 )
 
@@ -50,6 +51,9 @@ func (c *cli) health(ctx context.Context, args []string) error {
 			mark = "·"
 		}
 		fmt.Fprintf(c.out, "  %s %s：%s\n", mark, it.Title, it.Text)
+		if it.ActionID != "" {
+			fmt.Fprintf(c.out, "      %s：\n        valise action %s %s %s\n      资料版本不同需先重新接入。\n", it.ActionName, ssh.Quote(pos[0]), ssh.Quote(pos[1]), ssh.Quote(it.ActionID))
+		}
 		if it.Detail != "" && it.Level != service.HealthOK {
 			fmt.Fprintf(c.out, "      %s\n", it.Detail)
 		}

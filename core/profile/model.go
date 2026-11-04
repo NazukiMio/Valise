@@ -251,7 +251,8 @@ type Relocation struct {
 
 // Service lists candidate service units.
 type Service struct {
-	Candidates []ServiceUnit `yaml:"candidates" json:"candidates,omitempty"`
+	Candidates   []ServiceUnit `yaml:"candidates" json:"candidates,omitempty"`
+	RepairAction string        `yaml:"repair_action" json:"repair_action,omitempty"`
 	// InstallArgv is the harness's own command that installs the service;
 	// run on a revive target lacking the unit, after the user confirms.
 	InstallArgv Argv `yaml:"install_argv" json:"install_argv,omitempty"`

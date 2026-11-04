@@ -38,7 +38,7 @@ capabilities:
 
 - **审批状态检查**（2026-11-02 用户决定）：profile 可以声明 `approval_check`，用一条只读命令或一个配置键读出 harness 执行风险命令时是否需要用户批准，结果为"需要批准"或"无需批准（Bypass）"；与其他条目一样，未在靶机上核实时标 `verify: pending`。没有声明时，退回到 agent 经 MCP `valise_declare` 的申报（AGENT_KIT.md 第 3 节），界面标"未经核实"。
   - **schema**（M12 实现，2026-11-02 用户同意）：`approval_check: { argv, each, bypass_when, ask_when, verify }`。`argv` 是一条只读命令（只能引用 `${HOME}`），输出 JSON，由 porter 按服务器上保存的 profile 副本执行，走日常钥匙；`each` 可选，指向一个数组，逐项判断、取最差的结果；`bypass_when` 是"字段路径: 值"，全部相等才算无需批准；`ask_when` 是若干组条件，任一组全部相等就算需要批准；都不匹配为"不确定"。只做相等比较，不是解释器。读配置键的方式（不运行命令）留待需要时再加。
-  - **出厂设置**（2026-11-02 用户决定）：`default_when` 可选，形式同 `ask_when`（若干组"字段路径: 值"）；Bypass 结果命中时，界面注明"这是 harness 的出厂设置，不是你改的"。`remedy` 可选，是用户自己改为"执行前询问"的步骤（文字），健康页原样显示。**Valise 不提供一键修改**（2026-11-02 用户决定：像云厂商的安全中心一样只给出发现与改法，由用户自己处理或忽略），因此不为审批登记会修改设置的管理动作。
+  - **出厂设置与修复**（2026-11-02 决定，2026-11-04 修订）：`default_when` 可选，形式同 `ask_when`（若干组“字段路径: 值”）；Bypass 结果命中时，界面注明“这是 harness 的出厂设置，不是你改的”。`remedy` 可选，是改为“执行前询问”的文字步骤，在没有可执行修复时继续用于手动引导。取消“不提供一键修改、不得登记审批修改动作”的旧限制：允许通过已核实的 profile 管理动作修复审批设置，遵循 INSTALL.md 第 5 节，执行前说明行为变化及必要的服务中断，执行后重新运行审批检查。健康发现与动作的关联字段、需要停止/重启时的编排与失败恢复方式，必须先明确 schema 和验收，再实现；本条不视为这些能力已经存在。
 - **安装摘要**（2026-11-02 用户决定）：`install` 可以写 `where`（装到哪里）、`takes`（大概多久）与 `notes`（装之前要知道的事，例如 harness 出厂即为 Bypass），与 `summary` 一起组成方案开头的摘要（UI.md 9.6）。
 - **agent 的名字**（2026-11-02 用户决定）：profile 可以声明 `identity: { argv, path, verify }`：一条只读命令（只能引用 `${HOME}` 与 `${STATE_DIR}`）输出 JSON，`path` 指向 harness 里给 agent 起的名字（例如 OpenClaw 的 `identity.name`）。只读这一项，不扫描、不解析其他文件内容。界面上的显示名优先用用户在 Valise 里起的（记在实例档案的 agent 条目 `display_name`），其次用这里读出的名字，都没有时只显示实例 id；实例 id 不随名字改变（UI.md 9 节"名字"）。
 - **一个状态目录里的多个 agent**（2026-11-02 用户决定）：有的 harness 在一个状态目录里放多个 agent（OpenClaw 的 `agents.entries`，共用设置与网关）。暂时仍以一个状态目录为一个 Valise agent 备份与恢复，界面只列出其中的 agent 名单；是否拆开，等在靶机上研究清楚再定。
@@ -167,6 +167,7 @@ relocation: { env: EXAMPLE_HOME }   # 状态目录可以通过此变量改到别
 service:
   candidates: [ { scope: user, unit: example-gateway.service } ]   # 可以为空，表示前台运行
   install_argv: [example, gateway, install]   # 可选：harness 自带的服务安装命令；复活到没有该服务的服务器时，经用户确认后执行
+  repair_action: restart          # 可选：指向本 profile 已核实的 actions[].id；服务异常时提供该动作入口（B02）
 
 entries:
   - id: main
@@ -252,6 +253,7 @@ agent_kit:
 - `install.steps` 中 `script` 必须有 `sha256` 与 `runtime_downloads`（没有时写空字符串表示已确认没有）；`url` 必须是 `https`；所有命令都是 argv 数组。
 - `capabilities` 中状态为 `tested` 的项必须有 `versions` 与 `env`。
 - `actions`：`id` 唯一且合法；`name`、`explain` 不能为空；`risk` 与 `output` 只能取规定的值；`argv` 只能引用 `${HOME}`；`output: secret` 必须写 `secret`（`url_param` 只能与 `json_field` 一起出现），其他 `output` 不能写 `secret`；`terminal: true` 不能与 `secret` 同时出现；`config` 与 `danger` 必须写 `undo`。
+- `service.repair_action` 非空时必须有服务候选，引用本 profile 中存在的动作；B02 只允许非交互、非机密的 `manage` 动作。关联本身表示维护者已核实此动作可处理所声明服务的问题；尚未核实的动作不得填入关联。命名实例的有效 profile 去掉服务时，一并去掉此入口，不通过动作名猜测服务关系。客户端资料与服务器登记版本不同时，先重新接入，再确认执行；不根据新资料的说明执行旧版本命令。
 - `entries[].auth` 中 `url_argv` 与 `token_argv` 最多出现一个；`url_suffix` 只能与 `token_argv` 一起出现，并且只能引用 `${TOKEN}`；`url_field` 只能与 `url_argv` 一起出现，必须是点分字段路径。
 - profile 使用严格解析，出现 schema 中没有的字段即报错。子 profile 只能包含元信息字段（`schema`、`id`、`display_name`、`profile_version`、`status`、`harness_versions_tested`、`docs`、`extends`、`when`）以及 `paths`、`consistency`、`checkup`；它的父 profile 必须出现在同一次 lint 的文件集合中。
 

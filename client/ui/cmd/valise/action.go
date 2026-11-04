@@ -97,7 +97,7 @@ func (c *cli) printActions(host string, list *service.ActionList) error {
 		}
 	}
 	if list.Stale {
-		fmt.Fprintf(c.out, "\n注意：服务器上保存的 harness 资料与本机的版本不同，新增的动作要重新接入后才能用（valise enroll %s --profile %s --accept）。\n", host, list.ProfileID)
+		fmt.Fprintf(c.out, "\n注意：服务器上保存的 harness 资料与本机的版本不同，动作要重新接入后才能执行（valise enroll %s --profile %s --accept）。\n", host, list.ProfileID)
 	}
 	fmt.Fprintf(c.out, "\n执行：valise action %s %s <动作>\n", host, list.Instance)
 	return nil
@@ -113,6 +113,9 @@ func (c *cli) printActionResult(ctx context.Context, a *profile.Action, res *ser
 		mark = "✗"
 	}
 	fmt.Fprintf(c.out, "  %s 命令：退出码 %d\n", mark, res.Exit)
+	if v := res.Verification; v != nil {
+		fmt.Fprintf(c.out, "  该问题复核结果：%s\n", v.Text)
+	}
 	if res.Checked {
 		for _, sv := range res.Service {
 			m, st := "✓", "运行中"

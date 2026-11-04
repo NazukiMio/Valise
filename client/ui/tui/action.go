@@ -143,8 +143,9 @@ type actionResult struct {
 }
 
 type actionDone struct {
-	res *service.ActionResult
-	err error
+	res        *service.ActionResult
+	err        error
+	host, inst string
 }
 
 type clipTick struct{}
@@ -173,13 +174,16 @@ func (r *actionResult) init(m *Model) tea.Cmd {
 	host, inst, id, seal := r.host, r.inst, r.a.ID, r.seal
 	return func() tea.Msg {
 		res, err := svc.RunAction(ctx, host, inst, id, service.ActionOptions{Seal: seal})
-		return actionDone{res, err}
+		return actionDone{res: res, err: err, host: host, inst: inst}
 	}
 }
 
 func (r *actionResult) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case actionDone:
+		if msg.host != r.host || msg.inst != r.inst {
+			return nil, true
+		}
 		r.running, r.res, r.err = false, msg.res, msg.err
 		if r.err == nil && r.a.Output == profile.OutputSecret && r.res.Exit == 0 {
 			clip, err := service.CopySecret(m.ctx, r.res.Secret)
@@ -191,7 +195,7 @@ func (r *actionResult) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			r.res.Secret = ""
 			return tickClip(), true
 		}
-		return m.loadServer(r.host), true
+		return m.refreshInstance(r.host, r.inst), true
 	case clipTick:
 		if r.clip == nil || r.cleared {
 			return nil, true
@@ -251,6 +255,9 @@ func (r *actionResult) view(m *Model) string {
 		lines = append(lines, "  "+okStyle.Render("✓")+" 逃生舱：已建立")
 	}
 	lines = append(lines, "  "+mark(r.res.Exit == 0, true)+" 命令：退出码 "+itoa(r.res.Exit))
+	if v := r.res.Verification; v != nil {
+		lines = append(lines, "  "+mark(v.State == "resolved", true)+" 该问题复核结果："+v.Text)
+	}
 	if r.res.Checked && len(r.res.Service) == 0 && len(r.res.Entries) == 0 {
 		lines = append(lines, "  "+dimStyle.Render("· 这个 agent 没有声明服务与管理页，无法检查运行状态"))
 	}

@@ -38,13 +38,15 @@ const (
 
 // HealthItem is one line of the health page.
 type HealthItem struct {
-	ID     string `json:"id"`
-	Group  string `json:"group"`
-	Level  string `json:"level"`
-	Title  string `json:"title"`
-	Text   string `json:"text"`
-	Key    string `json:"key,omitempty"` // the one key that acts on it
-	Detail string `json:"detail,omitempty"`
+	ID         string `json:"id"`
+	Group      string `json:"group"`
+	Level      string `json:"level"`
+	Title      string `json:"title"`
+	Text       string `json:"text"`
+	Key        string `json:"key,omitempty"` // the one key that acts on it
+	ActionID   string `json:"action_id,omitempty"`
+	ActionName string `json:"action_name,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 	// Dismissed is set while the user has dismissed it: until then, or
 	// the zero time for a yellow item dismissed for good.
 	Dismissed *time.Time `json:"dismissed_until,omitempty"`
@@ -144,7 +146,9 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 	if err == nil {
 		for _, in := range insts {
 			if in.InstanceID == instance {
-				add(serviceItem(in.Service, in.Entries))
+				it := serviceItem(in.Service, in.Entries)
+				s.bindServiceRepair(&it, in)
+				add(it)
 				profileID = in.ProfileID
 				found = true
 				break

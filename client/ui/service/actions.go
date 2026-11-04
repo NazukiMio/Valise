@@ -33,7 +33,8 @@ type ActionList struct {
 	Actions   []profile.Action `json:"actions"`
 	// Stale is set when the server's stored profile is another version:
 	// actions added since then need a re-enrollment.
-	Stale bool `json:"stale"`
+	Stale        bool   `json:"stale"`
+	RepairAction string `json:"repair_action,omitempty"`
 }
 
 // Actions lists the instance's managed actions.
@@ -42,8 +43,13 @@ func (s *Service) Actions(ctx context.Context, host, instance string) (*ActionLi
 	if err != nil {
 		return nil, err
 	}
-	return &ActionList{Instance: instance, ProfileID: target.Profile.ID, Actions: target.Profile.Actions,
-		Stale: target.Record.ProfileVersion != target.Profile.ProfileVersion}, nil
+	p := target.Profile.ForAgent(target.Record.Name)
+	list := &ActionList{Instance: instance, ProfileID: p.ID, Actions: p.Actions,
+		Stale: target.Record.ProfileVersion != p.ProfileVersion}
+	if a := serviceRepair(p); a != nil {
+		list.RepairAction = a.ID
+	}
+	return list, nil
 }
 
 // ActionOptions control RunAction.
@@ -59,10 +65,11 @@ type ActionOptions struct {
 // the instance's state afterwards.
 type ActionResult struct {
 	action.RunResult
-	Snapshot string                `json:"snapshot,omitempty"`
-	Checked  bool                  `json:"checked"`
-	Service  []enroll.ServiceState `json:"service,omitempty"`
-	Entries  []enroll.EntryState   `json:"entries,omitempty"`
+	Snapshot     string                `json:"snapshot,omitempty"`
+	Checked      bool                  `json:"checked"`
+	Service      []enroll.ServiceState `json:"service,omitempty"`
+	Entries      []enroll.EntryState   `json:"entries,omitempty"`
+	Verification *HealthVerification   `json:"verification,omitempty"`
 }
 
 // actionSettle is how long the instance may take to come back after a
@@ -83,6 +90,9 @@ func (s *Service) RunAction(ctx context.Context, host, instance, id string, o Ac
 	}
 	if a == nil {
 		return nil, valise.New("action_unknown", list.ProfileID+" 的 harness 资料里没有动作 "+id, "不带动作名运行 valise action <服务器> <实例> 查看可用的动作")
+	}
+	if list.Stale {
+		return nil, valise.New("action_profile_stale", "本机与服务器的 harness 资料版本不同，动作没有执行", "先在设置中重新接入，再查看并确认动作")
 	}
 	if a.Risk == profile.RiskConfig || a.Risk == profile.RiskDanger {
 		if err := s.RequireGate(ctx, host, instance); err != nil {
@@ -130,6 +140,10 @@ func (s *Service) RunAction(ctx context.Context, host, instance, id string, o Ac
 		progress("检查服务与管理页")
 		s.settle(ctx, host, instance, res)
 	}
+	if list.RepairAction == id {
+		r, err := s.Health(ctx, host, instance)
+		res.Verification = verifyService(r, err)
+	}
 	return res, nil
 }
 
@@ -168,6 +182,12 @@ func (s *Service) settle(ctx context.Context, host, instance string, res *Action
 // ActionAccess says which login an action needs on host, in the words of
 // that server's setup (docs/ARCHITECTURE.md 2.1), for the confirmation.
 func (s *Service) ActionAccess(host string, a profile.Action) string {
+	if a.AccessTier() == "owner" {
+		if !s.Tiered(host) {
+			return "用你自己的 SSH 登录"
+		}
+		return "要用 Valise 口令确认是你本人"
+	}
 	if !a.Terminal && a.Output != profile.OutputSecret && !a.NeedsAdmin() {
 		if !s.Tiered(host) {
 			return "用你自己的 SSH 登录"

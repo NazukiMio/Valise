@@ -295,6 +295,12 @@ func (c *checker) checkTop(p *Profile) {
 		c.add("relocation.env", "环境变量名不合法")
 	}
 	if p.Service != nil {
+		if id := p.Service.RepairAction; id != "" {
+			a := p.FindAction(id)
+			if len(p.Service.Candidates) == 0 || a == nil || a.Risk != RiskManage || a.Terminal || a.Output == OutputSecret {
+				c.add("service.repair_action", "必须有服务候选，并引用非交互、非机密的 manage 动作")
+			}
+		}
 		c.argv("service.install_argv", p.Service.InstallArgv, false)
 		if len(p.Service.InstallArgv) > 0 && len(p.Service.Candidates) == 0 {
 			c.add("service.install_argv", "没有服务单元候选时不能声明安装命令")

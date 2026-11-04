@@ -42,6 +42,7 @@ type screen interface {
 // srvData is what the TUI knows about one recorded server.
 type srvData struct {
 	host      string
+	seq       uint64
 	loading   bool
 	loaded    bool
 	err       error // the server could not be reached
@@ -184,9 +185,11 @@ func (m *Model) server(host string) *srvData {
 func (m *Model) loadServer(host string) tea.Cmd {
 	d := m.server(host)
 	d.loading = true
+	d.seq++
+	seq := d.seq
 	ctx, svc := m.ctx, m.svc
 	return func() tea.Msg {
-		nd := &srvData{host: host, loaded: true}
+		nd := &srvData{host: host, seq: seq, loaded: true}
 		nd.instances, nd.err = svc.Instances(ctx, host)
 		if nd.err == nil {
 			nd.status, _ = svc.VaultStatus(ctx, host)
@@ -232,6 +235,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case repairReady:
+		return m, m.readyRepair(msg)
 	case healthLoaded:
 		return m, m.routeRead(msg, msg.stamp)
 	case checkLoaded:
@@ -241,6 +246,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case flashMsg:
 		m.flash, m.flashErr = string(msg), false
 	case srvLoaded:
+		if msg.d.seq != m.server(msg.d.host).seq {
+			return m, nil
+		}
 		m.data[msg.d.host] = msg.d
 		if c := m.repoAuto(msg.d); c != nil {
 			cmd, _ := m.top().update(m, msg)
@@ -263,7 +271,10 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, msg.then
 		}
 	case thenMsg:
-		m.data[msg.loaded.d.host], m.flash, m.flashErr = msg.loaded.d, msg.text, false
+		if msg.loaded.d.seq == m.server(msg.loaded.d.host).seq {
+			m.data[msg.loaded.d.host] = msg.loaded.d
+		}
+		m.flash, m.flashErr = msg.text, false
 		return m, msg.then(m)
 	case adminTick:
 		return m, m.tickAdmin()
