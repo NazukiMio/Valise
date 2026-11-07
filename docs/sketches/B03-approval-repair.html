@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B03 审批修复 · TUI 草图</title>
+<style>
+:root{color-scheme:dark;--bg:#14171d;--panel:#1c2028;--text:#dedfe4;--dim:#858a94;--line:#3a3f4a;--accent:#f0a35e;--ok:#8fc57a;--warn:#e6c069;--bad:#e57a6f;--info:#7fb0e6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 system-ui,sans-serif}main{max-width:1120px;margin:36px auto;padding:0 24px 48px}h1{font-size:25px;margin:0 0 6px}h2{font-size:17px;margin:30px 0 10px}p{max-width:850px;color:#b5b9c3}a{color:var(--info)}.tag{color:var(--accent);font-size:13px}.terminal{background:#101319;border:1px solid var(--line);border-radius:7px;padding:20px 24px;overflow-x:auto;min-height:365px;font:14px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.terminal pre{font:inherit;margin:0;white-space:pre;min-width:760px}.dim{color:var(--dim)}.accent{color:var(--accent)}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.info{color:var(--info)}.foot{display:block;border-top:1px solid var(--line);margin-top:18px;padding-top:8px;color:var(--dim)}.note{font-size:13px;color:var(--dim)}
+</style>
+<main>
+<div class="tag">Valise · B03 · 待确认草图 · 2026-11-05</div>
+<h1>改为执行前询问</h1>
+<p>沿用已有动作确认和结果页。新增的是中断后的处理页。以下均为静态示例，服务状态、步骤和备份时间只是说明布局，不代表已经实现或实际检查结果。</p>
+<h2>① 执行前：说明行为变化与服务中断</h2>
+<div class="terminal"><pre><span class="accent">◢ Valise</span>  首页 › 服务器 › 演示实例 › 改为执行前询问
+
+改为执行前询问                                      <span class="warn">修改配置</span>
+
+会发生什么：
+  白名单里的命令仍可直接执行，其他命令先询问你。
+  修改在暂存副本中完成，检查通过后再切换到新配置。
+
+服务影响：
+  网关目前运行中；会短暂停止，结束后恢复运行。
+  共用这个网关的 2 个 agent 会一起中断。
+
+[x] 执行前先建立逃生舱（推荐）
+
+能否撤销：
+  恢复服务不会撤销审批设置；撤销需要另行恢复修改前的备份。
+
+<span class="dim">实际命令与影响范围  v 展开</span>
+<span class="foot">enter 执行   space 备份 开/关   v 查看实际命令   esc 取消</span></pre></div>
+<p class="note">权限、备份前提和口令询问继续使用已有流程。展开后列出固定步骤、暂存重定向、目录切换及服务恢复行为。</p>
+<h2>② 结果：配置、审批与服务分别报告</h2>
+<div class="terminal"><pre><span class="accent">◢ Valise</span>  首页 › 服务器 › 演示实例 › 动作结果
+
+改为执行前询问
+
+<span class="ok">✓</span> 备份：已建立修改前的逃生舱
+<span class="ok">✓</span> 配置步骤：退出码 0
+<span class="ok">✓</span> 配置：已发布新配置
+<span class="ok">✓</span> 审批检查：白名单命令可直接执行，其他命令需要询问
+<span class="bad">✗</span> 服务：未能恢复运行
+
+<span class="warn">配置已经改变，但网关尚未恢复运行。</span>
+重试恢复服务不会再次执行配置命令。
+
+<span class="info">▸ 恢复原服务状态</span>
+  查看操作详情
+
+<span class="dim">如果服务原本已停止，这一行写“保持停止（与操作前一致）”；
+不能写“服务健康”。</span>
+<span class="foot">↑↓ 选择   enter 执行   esc 返回</span></pre></div>
+<p class="note">不以命令退出码概括整体结果。配置已发布后，不因为恢复服务失败而自动撤销配置；原始错误与恢复错误分开展示。</p>
+<h2>③ 重连：遇到结果不明的配置步骤</h2>
+<div class="terminal"><pre><span class="accent">◢ Valise</span>  服务器 › 有一项修改尚未结束
+
+演示实例 · 改为执行前询问
+
+<span class="warn">上次连接在配置步骤中断开。</span>
+
+配置：新配置尚未发布，活动目录仍是原来的内容。
+步骤：修改审批设置已开始，是否执行完成无法确认。
+服务：操作前运行中，目前已停止。
+
+<span class="info">▸ 放弃本次配置修改并恢复原服务状态（推荐）</span>
+  查看操作详情
+  稍后处理
+
+不会自动重跑结果不明的命令。
+暂存副本保留，之后可在清理页面确认删除。
+
+<span class="dim">只有步骤已明确完成、暂存检查通过时，才出现“继续发布配置”。
+已经发布的操作改为“保留已发布配置并恢复原服务状态”。</span>
+<span class="foot">↑↓ 选择   enter 确认   esc 稍后处理</span></pre></div>
+<p class="note">原执行进程仍在运行时，只显示状态与查看详情，不能并发恢复。目录现场冲突时，停止并说明需要检查，不猜测继续。</p>
+<p>对应设计：<a href="../B03_DESIGN_PROPOSAL_2026-11-05.md">B03 审批修复与中断恢复设计提案</a>。本页不执行任何命令。</p>
+</main>
+</html>

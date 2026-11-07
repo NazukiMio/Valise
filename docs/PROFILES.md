@@ -1,6 +1,8 @@
 # Harness Profile 规范 `valise-profile/1`
 
-Profile 是 Valise 了解某种 harness 的**唯一途径**：发现、路径与分类、来源、安装、服务、管理页、登录、健康检查、备份、体检、逃生舱技能与管理动作。Go 代码里不允许出现任何 harness 的具体知识；通用引擎负责安全执行，profile 的准确性决定具体 harness 的体验和保护范围。新增一种 harness，只需要提交一份 profile。
+Profile 是 Valise 了解某种 harness **通用规则的唯一途径**：发现、路径与分类、来源、安装、服务、管理页、登录、健康检查、备份、会话记忆检查、Agent 保护技能与管理动作。服务器 dossier 补足实际安装事实，不是第二套 harness 解释器。Go 代码不得硬编码具体 harness 知识；新增适配通过 profile 与必要的通用 schema 扩展，逐能力核实。
+
+> 2026-11-05：产品默认备份收敛到保护计划，范围预设、凭据分类与本文件现有 schema 保持兼容。本轮没有新增布局、自定义范围或身份字段；实例世代与迁移关联按已定稿 N1_SERVICE_CONTRACTS_2026-11-05.md 保存于金库外的 Valise 身份记录，不向本 profile schema 添加身份字段；自定义详细语义仍留 N5b。界面用语以 PRODUCT.md 8.1 为准。
 
 ## 1. 来源与信任
 
@@ -58,6 +60,15 @@ capabilities:
   - 嵌套的都是本 profile 共用服务的命名实例时（2026-11-02 用户决定先核实服务名；Hermes v0.22.5 已核实），交换照常进行：停止共用服务即停下它们，交换窗口内把它们的目录原样改名搬进新活目录（计划的 `keep`，与身体目录同一套交换日志，失败时搬回），不复制、不替换，回滚复制档位外内容时跳过它们。
   - 其他情况（服务未核实的命名实例、别的 profile 的实例）仍拒绝原地交换，porter 在交换前再检查一次；恢复测试、单独恢复嵌在里面的实例、恢复到另一台服务器不受影响。
 - **迁移或克隆命名实例**：Valise 不猜目标目录（默认目录属于另一个 agent），必须用 `--root state=<路径>` 指定；路径型的选择变量随新目录改写。
+
+### 1.4 通用规则、本机事实与保护范围（2026-11-05）
+
+- 按 profile 发现通用结构，由用户接受的 dossier 核对真实 roots、来源、共享服务及安装布局；剩余未知项继续按既有分类优先级处理。分类优先级仍以 ARCHITECTURE.md 第 4 节为准，不能把“先看档案”解释为覆盖 secrets 声明。
+- 官方 profile 不枚举每台机器的绝对链接或安装路径。布局探测只提供证据，用户接受不等于已验证管理命令的暂存隔离性；未知外部目标不自动跟随。具体 dossier 扩展及 B03 链接处置仍待定稿，不能把候选提案当已实现能力。
+- 新计划 full 范围包含既有 roots 内的 unclassified，并按敏感层保存；用户可以确认接入而不逐文件归类。不可读项、roots 外内容与外部引用单列为覆盖缺口，不能把已保存链接文本称为已保存目标。
+- 保护计划、自定义包含/排除与类别是不同模型。`local_overrides` 仍只补充分类；不得为实现“自定义备份”伪造类别、放宽 secrets 优先级或改写 raw 的原含义。
+- N1 / N5b 在引入新范围前定稿匹配、SQLite 单位、快照范围记录、回滚携带/删除语义及旧工具拒绝策略；本文件 schema 和 lint 未扩展前不在 YAML 中使用假定字段。
+- full / raw 不等于可重建所有程序。来源记录与能力核实继续逐项检查，目录外程序、版本不可得与架构限制如实报告；通过备份测试不自动将 restore 标为 tested。
 
 ## 2. Schema
 
@@ -257,6 +268,14 @@ agent_kit:
 - `entries[].auth` 中 `url_argv` 与 `token_argv` 最多出现一个；`url_suffix` 只能与 `token_argv` 一起出现，并且只能引用 `${TOKEN}`；`url_field` 只能与 `url_argv` 一起出现，必须是点分字段路径。
 - profile 使用严格解析，出现 schema 中没有的字段即报错。子 profile 只能包含元信息字段（`schema`、`id`、`display_name`、`profile_version`、`status`、`harness_versions_tested`、`docs`、`extends`、`when`）以及 `paths`、`consistency`、`checkup`；它的父 profile 必须出现在同一次 lint 的文件集合中。
 
+### 3.1 B03 配置事务（2026-11-05 用户确认）
+
+动作的 `argv` 与 `steps` 互斥。`steps` 为 1–16 个 `{id, argv}` 固定步骤，必须同时声明 `transaction: {root: state, env: {变量名: "${STAGE_DIR}[/相对路径]"}, writes: [相对文件或目录]}`；只允许非交互、`output: none`、`risk: config` 且有 `undo` 的动作。`verification: {versions: [精确版本], env, date}` 记录完整事务证据；未核实时写 `verify: pending`，不提供执行入口。重定向与 writes 必须覆盖所有副作用，不把声明当成系统沙箱。
+
+`approval_check` 可声明 `repair_action` 与 `repair_expect`（字段路径到目标值的 map），两者同时存在；动作必须是已核实事务，审批读法不可 pending，当前 harness 精确版本必须命中证据。每个非空 scope 必须满足 repair_expect 的全部值，空 scope、缺字段、unknown 不通过。暂存与发布后的复核都使用该目标，不能仅凭 ask 分类确认成功。步骤只能在暂存环境运行，首错停止，不自动重跑结果不明的步骤。
+
+服务启停、目录交换、失败恢复与中断记录由固定引擎执行，profile 不提供条件、循环或任意 cleanup 命令。原本 inactive 的服务不启动；命名实例仍按 ForAgent 处理。完整执行、兼容、恢复与验收语义以用户确认的 [B03 设计](B03_DESIGN_PROPOSAL_2026-11-05.md) 第 3–7 节为本次实现依据。
+
 ## 4. 子 profile
 
 用于覆盖同一 harness 下的不同插件形态，例如 DSH 的各种记忆插件。子 profile 通过 `extends` 继承父 profile，通过 `when` 设置生效条件，并只能**追加** `paths`、`consistency`、`checkup` 规则。子 profile 只用于正确地封存用户已经安装的东西，**不代表推荐**。
@@ -301,7 +320,7 @@ agent_kit:
 
 **用户决定（2026-10-30）**：三份 profile 保持 `draft`，上表各条目在对应的里程碑（或配置凭据实际运行 harness 后）再核实，不阻塞 M2。
 
-`ubuntu-vm-x86` 上的 Hermes 还有 14 个文件没有任何规则（`shared-state.db`、`source-checks/`、`gateway_state.json`、`state/`、`spawn-ledger.json`、`gateway-starts.log`、`context_length_cache.yaml`、`install_id`、`plugin-update-checks/`、`kanban/`、`runtime/` 等，合计约 158 KiB）。它们在登记报告中显示为未分类，不会被封存；没有文档依据，就不为它们编写规则。**用户决定**：保持未分类，由用户登记时用 `--assign` 自行归类。
+`ubuntu-vm-x86` 上的 Hermes 还有 14 个文件没有任何规则（`shared-state.db`、`source-checks/`、`gateway_state.json`、`state/`、`spawn-ledger.json`、`gateway-starts.log`、`context_length_cache.yaml`、`install_id`、`plugin-update-checks/`、`kanban/`、`runtime/` 等，合计约 158 KiB）。这是 2026-10-30 的观察与当时 soul 范围下的处理记录。当前这些内容保持 unclassified，不凭文件名编造分类；soul-secrets / full / raw 按既有规则将其放入敏感层，新默认 full 包含它们。用户可自愿用 `--assign` 补充归类，接入不再要求先逐文件归类。
 
 ### 6.3 额外样本：`ubuntu-vm` 上的旧版 Hermes
 
