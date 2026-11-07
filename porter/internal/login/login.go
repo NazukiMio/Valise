@@ -72,11 +72,21 @@ func Prepare(e *porterenroll.Env, p login.PrepareParams) (*login.PrepareResult, 
 		}
 		argv[0] = bin
 	}
+	return write(e, p.InstanceID, p.Login.ID, argv)
+}
+
+// PrepareArgv writes a session for a fixed argv that is not a harness
+// login (a cloud drive's rclone login, docs/LOGIN_RELAY.md section 7).
+func PrepareArgv(e *porterenroll.Env, loginID string, argv []string) (*login.PrepareResult, error) {
+	return write(e, "", loginID, argv)
+}
+
+func write(e *porterenroll.Env, instance, loginID string, argv []string) (*login.PrepareResult, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return nil, err
 	}
-	s := Session{ID: "ls_" + hex.EncodeToString(b[:]), InstanceID: p.InstanceID, LoginID: p.Login.ID,
+	s := Session{ID: "ls_" + hex.EncodeToString(b[:]), InstanceID: instance, LoginID: loginID,
 		Argv: argv, Env: e.Vars, Created: time.Now().UTC()}
 	if err := os.MkdirAll(Dir(e.Home), 0o700); err != nil {
 		return nil, err

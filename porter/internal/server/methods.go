@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"valise/porter/internal/forced"
 
 	"valise/core/enroll"
 	"valise/core/install"
@@ -274,6 +275,32 @@ func init() {
 			return nil, errInvalidParams
 		}
 		return seal.CheckTarget(ctx, s.loginEnv(ctx), paths(s), p)
+	}
+	methods[vaultrpc.MethodCloudPrepare] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.CloudPrepareParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		res, err := seal.CloudPrepare(ctx, s.loginEnv(ctx), paths(s), p)
+		if err != nil || !s.daily() {
+			return res, err
+		}
+		// The daily key runs login-run only with this one-time grant.
+		res.Grant, err = forced.Mint(s.cfg.Home, "login-run", res.Session)
+		return res, err
+	}
+	methods[vaultrpc.MethodCloudForget] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.CloudForgetParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		if !p.RemoveTarget {
+			return struct{}{}, seal.CloudForget(ctx, s.loginEnv(ctx), paths(s), p.Name, false)
+		}
+		// A location a protection plan copies to cannot just disappear.
+		return struct{}{}, s.protectionStore(ctx).WithLegacyTargetsWrite(p.Name, func() error {
+			return seal.CloudForget(ctx, s.loginEnv(ctx), paths(s), p.Name, true)
+		})
 	}
 	methods[vaultrpc.MethodLeafMaterials] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.LeafMaterialsParams

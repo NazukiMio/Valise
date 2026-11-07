@@ -133,7 +133,7 @@ login:
 
 云盘的“服务器登录”（ARCHITECTURE.md 7.3）复用本文的登录中继，登录条目由代码按 `kit-tools.yaml` 的 `clouds` 生成，不来自 harness profile：
 
-1. 主人操作，新开管理连接，`ssh -tt` 下由 porter 运行固定 argv：`rclone config create valise-<名> <rclone_type> <固定参数…> config_is_local=true --config ~/.config/valise/rclone/rclone.conf`。
+1. 主人操作，连接方式与 harness 登录相同（5.2 节；日常钥匙可开终端时加主人证明，否则管理登录），`ssh -tt` 下由 porter 运行固定 argv：`rclone config create valise-<名> <rclone_type> <固定参数…> config_is_local=true --config ~/.config/valise/rclone/rclone.conf`。
 2. rclone 在服务器 `127.0.0.1:53682` 起回调并打印 `http://127.0.0.1:53682/auth?state=…`；按 5.2 节以 `loopback_oauth` 处理：截获链接、绑定本机同一端口、显示域名后打开本机浏览器，回调经隧道到达服务器。
 3. **退回**：本机 53682 被占用（报告占用进程），或云盘条目声明不支持回环授权时，改为 `config_is_local=false`。rclone 打印一行 `rclone authorize "<类型>" "<参数>"`；Valise 展示这行命令，用户确认后用本机 rclone（ARCHITECTURE.md 7.3“这台电脑登录”的同一来源，没有时先按确认下载）在本机前台运行，输出只显示给用户；用户把结果复制、粘贴回服务器终端。Valise 不解析、不自动传递这段结果。
 4. 结束后按 ARCHITECTURE.md 7.3 做连通测试并保存位置。审计只记录云盘条目 id、开始与结束时间、退出码。

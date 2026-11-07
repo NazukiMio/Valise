@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"valise/core/kittools"
 	"valise/core/stationsync"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
@@ -71,5 +73,42 @@ func TestRcloneTarget(t *testing.T) {
 	os.Remove(w.p.Rclone())
 	if _, err := Sync(ctx, w.env, w.p, "gd", "client"); err == nil {
 		t.Fatal("synced without rclone")
+	}
+}
+
+func TestCloudPrepareAndForget(t *testing.T) {
+	w := newWorld(t)
+	rcloneWorld(t, w) // valise-gd exists already
+	ctx := context.Background()
+	gd := kittools.Cloud{ID: "gdrive", Name: "Google Drive", RcloneType: "drive", Params: map[string]string{"scope": "drive.file"},
+		Access: kittools.AccessFolder, AccessNote: "n", AskApp: true}
+	if _, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "gd", Cloud: gd}); err == nil || !strings.Contains(err.Error(), "cloud_exists") {
+		t.Fatalf("existing login: %v", err)
+	}
+	bad := gd
+	bad.Params = map[string]string{"token": "x"}
+	if _, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "other", Cloud: bad}); err == nil {
+		t.Fatal("token parameter accepted")
+	}
+	res, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "drive2", Cloud: gd, Fallback: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{w.p.Rclone(), "config", "create", "valise-drive2", "drive", "scope=drive.file", "config_is_local=false", "--all", "--config", w.p.RcloneConfig()}
+	if strings.Join(res.Argv, " ") != strings.Join(want, " ") {
+		t.Fatalf("%v", res.Argv)
+	}
+	SetTarget(w.p, vaultrpc.Target{Name: "gd", Kind: "rclone", Dest: "valise-gd:valise-vault/"})
+	if err := CloudForget(ctx, w.env, w.p, "gd", false); err == nil {
+		t.Fatal("forgot a login a location uses")
+	}
+	if err := CloudForget(ctx, w.env, w.p, "gd", true); err != nil {
+		t.Fatal(err)
+	}
+	if t2, _ := findTarget(w.p, "gd"); t2 != nil {
+		t.Fatal("location kept")
+	}
+	if b, _ := os.ReadFile(w.p.RcloneConfig()); strings.Contains(string(b), "valise-gd") {
+		t.Fatal("login still in the config")
 	}
 }

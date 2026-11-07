@@ -5,6 +5,7 @@ package vaultrpc
 import (
 	"time"
 
+	"valise/core/kittools"
 	"valise/core/vault"
 )
 
@@ -403,6 +404,33 @@ const (
 	SealStagePack   = "pack"
 	SealStageCommit = "commit"
 )
+
+// Cloud drives (docs/ARCHITECTURE.md 7.3; capability CloudCapability).
+const (
+	CloudCapability    = "cloud/1"
+	MethodCloudPrepare = "cloud_login_prepare"
+	MethodCloudForget  = "cloud_forget"
+)
+
+// CloudPrepareParams asks porter to set up the server login of a cloud
+// drive: Cloud is the signed list's entry; Fallback uses rclone's own
+// headless login instead of the loopback one.
+type CloudPrepareParams struct {
+	Name     string         `json:"name"`
+	Cloud    kittools.Cloud `json:"cloud"`
+	Fallback bool           `json:"fallback,omitempty"`
+}
+
+// CloudForgetParams removes a cloud drive's login from the server's
+// Valise rclone config; RemoveTarget also removes the saved location of
+// the same name (a cloud drive only).
+type CloudForgetParams struct {
+	Name         string `json:"name"`
+	RemoveTarget bool   `json:"remove_target,omitempty"`
+}
+
+// CloudRemote is the rclone remote of a cloud location.
+func CloudRemote(name string) string { return "valise-" + name }
 
 // Strict copies (docs/ARCHITECTURE.md 7.1.1; capability CopyVerifyCapability).
 const (

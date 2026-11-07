@@ -131,6 +131,8 @@ var ownerMethods = map[string]bool{
 	"station_probe":        true,
 	"kit_tool_begin":       true,
 	"kit_tool_remove":      true,
+	"cloud_login_prepare":  true,
+	"cloud_forget":         true,
 }
 
 // adminMethods carry security risks: developer mode. Listed explicitly so

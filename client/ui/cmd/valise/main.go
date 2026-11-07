@@ -70,6 +70,11 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   target list <服务器> <名称> [--json]              列出备份位置上的周期，并与服务器对照
   target delete <服务器> <名称> <周期> [--skip 位置,…] [--yes]  删除备份位置上一整个已结束的周期（先核对其他各处副本）
   sync <服务器> <目标>                            把服务器金库同步到备份位置
+  cloud list                                     列出可以添加的云盘（经 rclone）
+  cloud rclone                                   准备这台电脑的 rclone（PATH 中已有就直接用）
+  cloud add <服务器> <名称> --cloud <id> [--headless] [--allow-pending]
+                                                 在服务器上登录云盘并保存为备份位置（授权留在服务器的 rclone 配置里）
+  cloud remove <服务器> <名称>                     移除云盘位置与服务器上的登录（网盘里的备份不删除）
   pull <服务器> [--leaf 周期] [--to 目录]          把金库拉取到本机（默认全部周期）
   period <服务器> <实例> week|month|quarter [--tz 时区]
                                                  设置备份分组（从下一组开始生效）
@@ -245,6 +250,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.shell(ctx, args[1:])
 	case args[0] == "kit":
 		return c.kit(ctx, args[1:])
+	case args[0] == "cloud":
+		return c.cloud(ctx, args[1:])
 	case args[0] == "login":
 		return c.login(ctx, args[1:])
 	case args[0] == "open":

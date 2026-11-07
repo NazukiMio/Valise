@@ -144,6 +144,21 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 	if err := c.Call(ctx, login.MethodPrepare, login.PrepareParams{InstanceID: instance, Login: *m}, &prep); err != nil {
 		return nil, err
 	}
+	return s.relaySession(ctx, c, t, porterPath, prep, relayOpts{kind: m.Kind, pattern: m.URLPattern, timeout: timeout}, lio)
+}
+
+// relayOpts describe one relayed login session. watch, when set, sees the
+// recent terminal output on every tick (for prompts the relay acts on).
+type relayOpts struct {
+	kind, pattern string
+	timeout       time.Duration
+	watch         func(recent string)
+}
+
+// relaySession runs a prepared login session under a terminal and relays
+// its link (docs/LOGIN_RELAY.md 5.2); the session is ended in all cases.
+func (s *Service) relaySession(ctx context.Context, c *ssh.RPCClient, t *ssh.Transport, porterPath string, prep login.PrepareResult, ro relayOpts, lio LoginIO) (*LoginStatus, error) {
+	timeout := ro.timeout
 	exit := -1
 	defer func() {
 		// A fresh context: the session file goes even after a timeout.
@@ -157,7 +172,7 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 			lio.Status(st)
 		}
 	}
-	scan, err := relay.NewScanner(m.URLPattern)
+	scan, err := relay.NewScanner(ro.pattern)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +184,8 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 		remote += " --grant " + prep.Grant
 	}
 	cmd := exec.CommandContext(ctx, t.Binary(), t.TTYArgs(remote)...)
-	out := io.MultiWriter(lio.Stdout, scan)
+	recent := &tailBuffer{}
+	out := io.MultiWriter(lio.Stdout, scan, recent)
 	cmd.Stdout, cmd.Stderr = out, out
 	// After ssh is killed, do not wait long for its output pipes.
 	cmd.WaitDelay = 3 * time.Second
@@ -221,6 +237,9 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 			status(LoginStatus{State: LoginExited, ExitCode: exit})
 			return nil, err
 		case <-tick.C:
+			if ro.watch != nil {
+				ro.watch(recent.String())
+			}
 			if handled {
 				continue
 			}
@@ -235,7 +254,7 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 			handled = true
 			link := links[0]
 			go func() {
-				l, err := s.relayLink(ctx, c, t, m.Kind, link, lio, status, &once)
+				l, err := s.relayLink(ctx, c, t, ro.kind, link, lio, status, &once)
 				lnMu.Lock()
 				ln = l
 				lnMu.Unlock()
@@ -245,6 +264,29 @@ func (s *Service) RunLogin(ctx context.Context, host, instance, method string, l
 			}()
 		}
 	}
+}
+
+// tailBuffer keeps the last few KiB written, for watching prompts; it is
+// never logged.
+type tailBuffer struct {
+	mu  sync.Mutex
+	buf []byte
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf = append(b.buf, p...)
+	if len(b.buf) > 8<<10 {
+		b.buf = append([]byte{}, b.buf[len(b.buf)-(8<<10):]...)
+	}
+	return len(p), nil
+}
+
+func (b *tailBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return string(b.buf)
 }
 
 // relayLink sets up the callback tunnel when the link redirects to a

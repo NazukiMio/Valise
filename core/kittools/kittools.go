@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -214,6 +215,61 @@ func Parse(data []byte) (*List, error) {
 	return &l, nil
 }
 
+// Problems lists what is wrong with a cloud entry; porter repeats it at
+// the execution boundary.
+func (c Cloud) Problems() []string {
+	var errs []string
+	bad := func(format string, a ...any) { errs = append(errs, fmt.Sprintf(format, a...)) }
+	if !idRe.MatchString(c.ID) {
+		bad("云盘 id 无效：%s", c.ID)
+	}
+	if c.Name == "" || c.AccessNote == "" || !typeRe.MatchString(c.RcloneType) {
+		bad("云盘 %s 要写 name、access_note 与 rclone_type", c.ID)
+	}
+	if c.Access != AccessFolder && c.Access != AccessAccount {
+		bad("云盘 %s 的 access 只能是 folder 或 account", c.ID)
+	}
+	if c.Verify != "" && c.Verify != "pending" {
+		bad("云盘 %s 的 verify 只能是 pending 或不写", c.ID)
+	}
+	if c.AppHelp != "" {
+		if u, err := url.Parse(c.AppHelp); err != nil || u.Scheme != "https" {
+			bad("云盘 %s 的 app_help 必须是 https 地址", c.ID)
+		}
+	}
+	for k, v := range c.Params {
+		secret := false
+		for _, s := range secretKeys {
+			secret = secret || k == s
+		}
+		if secret || !keyRe.MatchString(k) || !valueRe.MatchString(v) || k == "config_is_local" {
+			bad("云盘 %s 的参数 %s 不允许（不能写授权内容，只能是固定的简单值）", c.ID, k)
+		}
+	}
+	return errs
+}
+
+// CreateArgs are the arguments of `rclone config create` for a remote of
+// this cloud (docs/ARCHITECTURE.md 7.3): fixed parameters in key order,
+// then whether this machine's browser is used, then --all when rclone
+// should ask for the user's own app.
+func (c Cloud) CreateArgs(remote string, local bool) []string {
+	args := []string{"config", "create", remote, c.RcloneType}
+	keys := make([]string, 0, len(c.Params))
+	for k := range c.Params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		args = append(args, k+"="+c.Params[k])
+	}
+	args = append(args, fmt.Sprintf("config_is_local=%t", local))
+	if c.AskApp {
+		args = append(args, "--all")
+	}
+	return args
+}
+
 // Lint checks the rules of docs/AGENT_KIT.md 8.4.1.
 func (l *List) Lint() error {
 	var errs []string
@@ -296,32 +352,12 @@ func (l *List) Lint() error {
 			if t.ID != "rclone" {
 				bad(id, "只有 rclone 能声明 clouds")
 			}
-			if !idRe.MatchString(c.ID) || clouds[c.ID] {
-				bad(id, "云盘 id 无效或重复：%s", c.ID)
+			if clouds[c.ID] {
+				bad(id, "云盘 id 重复：%s", c.ID)
 			}
 			clouds[c.ID] = true
-			if c.Name == "" || c.AccessNote == "" || !typeRe.MatchString(c.RcloneType) {
-				bad(id, "云盘 %s 要写 name、access_note 与 rclone_type", c.ID)
-			}
-			if c.Access != AccessFolder && c.Access != AccessAccount {
-				bad(id, "云盘 %s 的 access 只能是 folder 或 account", c.ID)
-			}
-			if c.Verify != "" && c.Verify != "pending" {
-				bad(id, "云盘 %s 的 verify 只能是 pending 或不写", c.ID)
-			}
-			if c.AppHelp != "" {
-				if u, err := url.Parse(c.AppHelp); err != nil || u.Scheme != "https" {
-					bad(id, "云盘 %s 的 app_help 必须是 https 地址", c.ID)
-				}
-			}
-			for k, v := range c.Params {
-				secret := false
-				for _, s := range secretKeys {
-					secret = secret || k == s
-				}
-				if secret || !keyRe.MatchString(k) || !valueRe.MatchString(v) || k == "config_is_local" {
-					bad(id, "云盘 %s 的参数 %s 不允许（不能写授权内容，只能是固定的简单值）", c.ID, k)
-				}
+			for _, e := range c.Problems() {
+				bad(id, "%s", e)
 			}
 		}
 		for _, c := range append(append([]Command{}, t.Install...), t.Uninstall...) {
