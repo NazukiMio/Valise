@@ -39,7 +39,12 @@ type FileFact struct {
 
 // TreeFacts hashes complete files for change detection; contents are never retained.
 // Symlinks must be relative and stay within the root, including their full chain.
-func TreeFacts(root string) (map[string]FileFact, int64, error) {
+func TreeFacts(root string) (map[string]FileFact, int64, error) { return TreeFactsAllow(root, nil) }
+
+// TreeFactsAllow also accepts the links a transaction plan handles
+// (INSTALL.md 5.2.1): allow maps a slash path to the exact link text
+// permitted there; such a link is recorded by its text, not followed.
+func TreeFactsAllow(root string, allow map[string]string) (map[string]FileFact, int64, error) {
 	if _, err := DirectoryIdentity(root); err != nil {
 		return nil, 0, err
 	}
@@ -89,6 +94,10 @@ func TreeFacts(root string) (map[string]FileFact, int64, error) {
 			if err != nil {
 				return err
 			}
+			if want, ok := allow[filepath.ToSlash(rel)]; ok && want == link {
+				f.Link = link
+				break
+			}
 			if filepath.IsAbs(link) {
 				return errors.New("absolute state symlink cannot be staged")
 			}
@@ -111,8 +120,8 @@ func TreeFacts(root string) (map[string]FileFact, int64, error) {
 }
 
 // CopyTree writes only to a new private sibling. Failed copies remain for explicit cleanup.
-func CopyTree(live, stage string, created ...func(action.Identity) error) (action.Identity, error) {
-	before, _, err := TreeFacts(live)
+func CopyTree(live, stage string, allow map[string]string, created ...func(action.Identity) error) (action.Identity, error) {
+	before, _, err := TreeFactsAllow(live, allow)
 	if err != nil {
 		return action.Identity{}, err
 	}
@@ -196,11 +205,11 @@ func CopyTree(live, stage string, created ...func(action.Identity) error) (actio
 	if err != nil {
 		return action.Identity{}, err
 	}
-	after, _, err := TreeFacts(stage)
+	after, _, err := TreeFactsAllow(stage, allow)
 	if err != nil {
 		return action.Identity{}, err
 	}
-	sourceAfter, _, err := TreeFacts(live)
+	sourceAfter, _, err := TreeFactsAllow(live, allow)
 	if err != nil {
 		return action.Identity{}, err
 	}

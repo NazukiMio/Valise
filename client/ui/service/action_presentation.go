@@ -20,6 +20,7 @@ func ActionPlanLines(p *action.Plan) []string {
 		}
 		lines = append(lines, "服务 "+sv.Unit+"："+state)
 	}
+	lines = append(lines, linkLines(p)...)
 	for _, step := range p.Definition.Steps {
 		argv := make([]string, len(step.Argv))
 		for i, a := range step.Argv {
@@ -85,4 +86,27 @@ func CanContinueAction(j *action.Operation) bool {
 		}
 	}
 	return true
+}
+
+// linkLines explains the staged link handling (docs/INSTALL.md 5.2.1).
+func linkLines(p *action.Plan) []string {
+	var inner, body int
+	for _, l := range p.Links {
+		if l.Class == action.LinkBody {
+			body++
+		} else {
+			inner++
+		}
+	}
+	var out []string
+	if inner > 0 {
+		out = append(out, fmt.Sprintf("链接：%d 个指向状态目录内部的绝对链接，执行期间临时指向暂存中的对应位置，交换前还原", inner))
+	}
+	if body > 0 {
+		out = append(out, fmt.Sprintf("链接：%d 个指向程序代码的链接，执行期间改用私有副本（%d 字节）；副本或原代码被改动就不发布", body, p.LinkBytes))
+	}
+	for _, l := range p.Links {
+		out = append(out, "  "+l.Rel+" → "+l.Target)
+	}
+	return out
 }

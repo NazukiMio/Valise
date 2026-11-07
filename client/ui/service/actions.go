@@ -156,7 +156,7 @@ func (s *Service) RunAction(ctx context.Context, host, instance, id string, o Ac
 	} else {
 		var rr action.RunResult
 		if err := s.withSession(ctx, host, func(c caller) error {
-			return c.Call(ctx, action.MethodRun, action.RunParams{InstanceID: instance, ActionID: id, Sealed: o.Seal, PlanDigest: o.PlanDigest, BackupID: res.Snapshot}, &rr)
+			return c.Call(ctx, action.MethodRun, action.RunParams{InstanceID: instance, ActionID: id, Sealed: o.Seal, PlanDigest: o.PlanDigest, BackupID: res.Snapshot, LinkHandling: action.LinkHandlingVersion}, &rr)
 		}); err != nil {
 			return nil, err
 		}

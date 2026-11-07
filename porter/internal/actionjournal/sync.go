@@ -9,8 +9,11 @@ import (
 	"path/filepath"
 )
 
-func TreeDigest(root string) (string, error) {
-	facts, _, err := TreeFacts(root)
+func TreeDigest(root string) (string, error) { return TreeDigestAllow(root, nil) }
+
+// TreeDigestAllow is TreeDigest accepting a plan's handled links.
+func TreeDigestAllow(root string, allow map[string]string) (string, error) {
+	facts, _, err := TreeFactsAllow(root, allow)
 	if err != nil {
 		return "", err
 	}

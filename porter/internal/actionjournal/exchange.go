@@ -92,11 +92,12 @@ func (s Store) Publish(j *action.Operation) error {
 	if err != nil || id != j.StageIdentity {
 		return invalid()
 	}
-	liveTree, err := TreeDigest(j.Plan.Live)
+	allow := OriginalTexts(j.Plan.Links)
+	liveTree, err := TreeDigestAllow(j.Plan.Live, allow)
 	if err != nil || j.LiveTreeDigest == "" || liveTree != j.LiveTreeDigest {
 		return invalid()
 	}
-	tree, err := TreeDigest(j.Stage)
+	tree, err := TreeDigestAllow(j.Stage, allow)
 	if err != nil || j.StageTreeDigest == "" || tree != j.StageTreeDigest {
 		return invalid()
 	}

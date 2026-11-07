@@ -5,6 +5,7 @@ package enroll
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -200,6 +201,23 @@ type GitRecord struct {
 	PatchBytes  int64  `json:"patch_bytes,omitempty"`
 	PatchSHA256 string `json:"patch_sha256,omitempty"`
 	Untracked   int    `json:"untracked,omitempty"`
+}
+
+// BodyPaths are the program locations this provenance records (INSTALL.md
+// 5.2.1): an npm global package directory, a git work tree or a single
+// binary. A uv/pipx tool records no location and yields none.
+func (p Provenance) BodyPaths() []string {
+	var out []string
+	if p.NPM != nil && p.NPM.Prefix != "" && p.NPM.Package != "" {
+		out = append(out, filepath.Join(p.NPM.Prefix, "lib", "node_modules", filepath.FromSlash(p.NPM.Package)))
+	}
+	if p.Git != nil && p.Git.Path != "" {
+		out = append(out, filepath.Clean(p.Git.Path))
+	}
+	if p.Binary != nil && p.Binary.Path != "" {
+		out = append(out, filepath.Clean(p.Binary.Path))
+	}
+	return out
 }
 
 // ToolRecord is a uv tool or pipx package.

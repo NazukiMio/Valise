@@ -75,6 +75,30 @@ type Plan struct {
 	Services        []Service             `json:"services"`
 	Health          *profile.Health       `json:"health,omitempty"`
 	Entries         []profile.Entry       `json:"entries,omitempty"`
+	// Links are the state symlinks needing staged handling (INSTALL.md
+	// 5.2.1), frozen into the plan digest; LinkBytes is the size of the
+	// private program copies.
+	Links     []Link `json:"links,omitempty"`
+	LinkBytes int64  `json:"link_bytes,omitempty"`
+}
+
+// Link classes (INSTALL.md 5.2.1).
+const (
+	LinkInside = "inside" // absolute, resolving inside the state root
+	LinkBody   = "body"   // resolving inside a recorded program location
+)
+
+// Link is one state symlink and how the transaction stages it. Rel is
+// slash-separated under the state root; Text is the original link text;
+// Target is the fully resolved target. For a body link, Digest is the
+// target tree digest taken at planning and checked after the steps.
+type Link struct {
+	Rel    string `json:"rel"`
+	Text   string `json:"text"`
+	Target string `json:"target"`
+	Class  string `json:"class"`
+	Dir    bool   `json:"dir"`
+	Digest string `json:"digest,omitempty"`
 }
 
 // Operation is the independent persistent transaction record.

@@ -76,11 +76,14 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 	if err = checkPlan(plan); err != nil {
 		return nil, err
 	}
+	if len(plan.Links) > 0 && p.LinkHandling < action.LinkHandlingVersion {
+		return nil, reject("状态目录里有需要特别处理的链接，这个客户端版本不能显示处理方式；请升级 Valise 后重新确认")
+	}
 	var disk syscall.Statfs_t
 	if err = syscall.Statfs(filepath.Dir(plan.Live), &disk); err != nil {
 		return nil, err
 	}
-	if uint64(disk.Bavail)*uint64(disk.Bsize) < uint64(plan.Bytes)+16<<20 {
+	if uint64(disk.Bavail)*uint64(disk.Bsize) < uint64(plan.Bytes+plan.LinkBytes)+16<<20 {
 		return nil, reject("可用空间不足以复制完整状态目录")
 	}
 	now := time.Now().UTC()
@@ -103,7 +106,13 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 	if err = r.idle(plan.Live); err != nil {
 		return r.failed(ctx, s, j, "活动目录仍被使用", err)
 	}
-	j.LiveTreeDigest, err = actionjournal.TreeDigest(plan.Live)
+	// Re-check the link layout once the service is stopped: a change after
+	// confirmation stops the operation (INSTALL.md 5.2.1).
+	if again, _, scanErr := actionjournal.ScanLinks(plan.Live, r.bodies(j)); scanErr != nil || digest(again) != digest(plan.Links) {
+		return r.failed(ctx, s, j, "停服后状态目录里的链接与确认时不同", scanErr)
+	}
+	allow := actionjournal.OriginalTexts(plan.Links)
+	j.LiveTreeDigest, err = actionjournal.TreeDigestAllow(plan.Live, allow)
 	if err != nil {
 		return r.failed(ctx, s, j, "无法固定活动目录内容", err)
 	}
@@ -111,16 +120,20 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 	if err = s.Save(j); err != nil {
 		return r.failed(ctx, s, j, "无法保存复制意图", err)
 	}
-	_, err = actionjournal.CopyTree(plan.Live, j.Stage, func(id action.Identity) error { j.StageIdentity = id; return s.Save(j) })
+	_, err = actionjournal.CopyTree(plan.Live, j.Stage, allow, func(id action.Identity) error { j.StageIdentity = id; return s.Save(j) })
 	if err != nil {
 		return r.failed(ctx, s, j, "完整状态目录复制失败", err)
 	}
-	copied, copyErr := actionjournal.TreeDigest(j.Stage)
+	copied, copyErr := actionjournal.TreeDigestAllow(j.Stage, allow)
 	if copyErr != nil || copied != j.LiveTreeDigest {
 		return r.failed(ctx, s, j, "复制期间活动内容发生变化", copyErr)
 	}
+	stagedLinks, err := actionjournal.StageLinks(j.Stage, plan.Live, filepath.Dir(j.Stage), plan.Links)
+	if err != nil {
+		return r.failed(ctx, s, j, "暂存中的链接无法改为指向暂存", err)
+	}
 	staged := stageEnvironment(e, j)
-	before, _, err := actionjournal.TreeFacts(j.Stage)
+	before, _, err := actionjournal.TreeFactsAllow(j.Stage, stagedLinks)
 	if err != nil {
 		return r.failed(ctx, s, j, "无法核实暂存文件", err)
 	}
@@ -148,12 +161,15 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 			return r.failed(ctx, s, j, "配置步骤失败："+step.ID, runErr)
 		}
 	}
-	after, _, err := actionjournal.TreeFacts(j.Stage)
+	after, _, err := actionjournal.TreeFactsAllow(j.Stage, stagedLinks)
 	if err != nil {
 		return r.failed(ctx, s, j, "暂存目录包含无法隔离的文件", err)
 	}
 	if err = actionjournal.CheckChanges(before, after, plan.Definition.Transaction.Writes); err != nil {
 		return r.failed(ctx, s, j, "配置命令写入未声明的目标", err)
+	}
+	if err = actionjournal.CheckPrograms(filepath.Dir(j.Stage), plan.Links); err != nil {
+		return r.failed(ctx, s, j, "配置命令改动了程序代码", err)
 	}
 	if err = actionjournal.CheckWrites(j.Stage, plan.Definition.Transaction.Writes); err != nil {
 		return r.failed(ctx, s, j, "配置命令产生链接写入目标", err)
@@ -162,11 +178,17 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 	if !matched || verifyErr != nil {
 		return r.failed(ctx, s, j, "暂存审批检查未达到声明目标", verifyErr)
 	}
-	checked, _, err := actionjournal.TreeFacts(j.Stage)
+	checked, _, err := actionjournal.TreeFactsAllow(j.Stage, stagedLinks)
 	if err != nil || digest(checked) != digest(after) {
 		return r.failed(ctx, s, j, "审批读法意外改变暂存配置", err)
 	}
-	j.StageTreeDigest, err = actionjournal.TreeDigest(j.Stage)
+	if err = actionjournal.CheckPrograms(filepath.Dir(j.Stage), plan.Links); err != nil {
+		return r.failed(ctx, s, j, "审批读法改动了程序代码", err)
+	}
+	if err = actionjournal.RestoreLinks(j.Stage, plan.Links, stagedLinks); err != nil {
+		return r.failed(ctx, s, j, "暂存中的链接无法还原为原文本", err)
+	}
+	j.StageTreeDigest, err = actionjournal.TreeDigestAllow(j.Stage, allow)
 	if err != nil {
 		return r.failed(ctx, s, j, "暂存配置无法固定", err)
 	}
@@ -183,6 +205,16 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 	}
 	return r.finish(ctx, e, lock, s, j)
 }
+
+// bodies are the recorded program locations of the operation's instance.
+func (r Runner) bodies(j *action.Operation) []string {
+	rec, err := porterenroll.ReadRecord(r.Env.Home, j.Plan.InstanceID)
+	if err != nil || rec == nil {
+		return nil
+	}
+	return rec.Provenance.BodyPaths()
+}
+
 func (r Runner) environment(j *action.Operation) (*porterenroll.Env, error) {
 	rec, err := porterenroll.ReadRecord(r.Env.Home, j.Plan.InstanceID)
 	if err != nil || rec == nil {
@@ -252,7 +284,7 @@ func (r Runner) failed(ctx context.Context, s actionjournal.Store, j *action.Ope
 		}
 		if err == nil && !j.Published && j.LiveTreeDigest != "" {
 			var tree string
-			tree, err = actionjournal.TreeDigest(j.Plan.Live)
+			tree, err = actionjournal.TreeDigestAllow(j.Plan.Live, actionjournal.OriginalTexts(j.Plan.Links))
 			if err == nil && tree != j.LiveTreeDigest {
 				err = reject("活动配置已被外部修改，保留现场")
 			}

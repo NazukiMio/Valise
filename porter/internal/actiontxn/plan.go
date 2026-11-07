@@ -101,7 +101,13 @@ func Plan(ctx context.Context, base *porterenroll.Env, id, actionID string) (*ac
 	if err = actionjournal.CheckWrites(live, a.Transaction.Writes); err != nil {
 		return nil, reject("配置写入目标包含链接或无效路径")
 	}
-	_, size, err := actionjournal.TreeFacts(live)
+	// State links are classified by target (INSTALL.md 5.2.1); the program
+	// locations come from the recorded provenance, never from link names.
+	links, linkBytes, err := actionjournal.ScanLinks(live, rec.Provenance.BodyPaths())
+	if err != nil {
+		return nil, err
+	}
+	_, size, err := actionjournal.TreeFactsAllow(live, actionjournal.OriginalTexts(links))
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +134,7 @@ func Plan(ctx context.Context, base *porterenroll.Env, id, actionID string) (*ac
 	}
 	slices.Sort(affected)
 	affected = slices.Compact(affected)
-	plan := &action.Plan{InstanceID: id, Affected: affected, ProfileDigest: digest(p), ActionDigest: digest(a), Version: version, BinDirs: p.Detect.BinDirs, SelectionDigest: digest(rec.Env), Definition: *a, Approval: *p.ApprovalCheck, Live: live, LiveIdentity: li, Bytes: size, Services: services, Health: p.Health, Entries: p.Entries}
+	plan := &action.Plan{InstanceID: id, Affected: affected, ProfileDigest: digest(p), ActionDigest: digest(a), Version: version, BinDirs: p.Detect.BinDirs, SelectionDigest: digest(rec.Env), Definition: *a, Approval: *p.ApprovalCheck, Live: live, LiveIdentity: li, Bytes: size, Services: services, Health: p.Health, Entries: p.Entries, Links: links, LinkBytes: linkBytes}
 	plan.Digest = digest(plan)
 	return plan, nil
 }

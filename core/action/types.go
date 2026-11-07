@@ -10,11 +10,19 @@ const MethodRun = "action_run"
 type RunParams struct {
 	InstanceID string `json:"instance_id"`
 	ActionID   string `json:"action_id"`
-	// Sealed records in the audit that an escape pod was taken first.
+	// Sealed records in the audit that a backup was taken first.
 	Sealed     bool   `json:"sealed,omitempty"`
 	PlanDigest string `json:"plan_digest,omitempty"`
 	BackupID   string `json:"backup_id,omitempty"`
+	// LinkHandling is the staged link handling version the client shows
+	// in its confirmation (INSTALL.md 5.2.1). A plan with links runs only
+	// when it is at least LinkHandlingVersion; an older client is refused
+	// before any side effect.
+	LinkHandling int `json:"link_handling,omitempty"`
 }
+
+// LinkHandlingVersion is the current staged link handling.
+const LinkHandlingVersion = 1
 
 // RunResult is the outcome. Output is the tail of a text action's output;
 // Secret is set only for secret actions and is never logged.

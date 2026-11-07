@@ -42,6 +42,7 @@ case "$1" in
  fail) printf 'do-not-persist-this-output\n'; exit 7;;
  wrong) printf '{"security":"allowlist","ask":"always"}' > "$EXAMPLE_STATE_DIR/config.json";;
  outside) printf changed > "$EXAMPLE_STATE_DIR/memory.txt";;
+ touchprog) printf x > "$EXAMPLE_STATE_DIR/skills/program/cache.json";;
 esac
 `, 0700)
 	put("bin/systemctl", `#!/bin/sh
@@ -136,5 +137,77 @@ func TestStepAndApprovalFailuresNeverPublish(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// linkFixture adds an absolute link inside the state dir and a link into
+// the recorded npm package (docs/INSTALL.md 5.2.1).
+func linkFixture(t *testing.T) (Runner, *profile.Profile, enroll.Record, string) {
+	t.Helper()
+	r, p, rec := fixture(t, "active")
+	live := rec.Roots["state"]
+	prefix := filepath.Join(r.Env.Home, "prefix")
+	pkg := filepath.Join(prefix, "lib", "node_modules", "demo", "skill")
+	for _, d := range []string{pkg, filepath.Join(live, "skills"), filepath.Join(live, "inner")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.WriteFile(filepath.Join(pkg, "SKILL.md"), []byte("program skill"), 0o644)
+	os.WriteFile(filepath.Join(live, "inner", "SKILL.md"), []byte("inner skill"), 0o644)
+	os.Symlink(filepath.Join(live, "inner"), filepath.Join(live, "skills", "inner"))
+	os.Symlink(pkg, filepath.Join(live, "skills", "program"))
+	rec.Provenance = enroll.Provenance{Kind: "npm_global", NPM: &enroll.NPMRecord{Package: "demo", Version: "1.2.3", Prefix: prefix}}
+	if _, err := porterenroll.WriteRecord(r.Env.Home, rec, *p); err != nil {
+		t.Fatal(err)
+	}
+	return r, p, rec, pkg
+}
+
+func TestStagedLinksPublishAndRestore(t *testing.T) {
+	r, _, rec, pkg := linkFixture(t)
+	plan, err := Plan(context.Background(), r.Env, "demo", "approval-ask")
+	if err != nil || len(plan.Links) != 2 || plan.LinkBytes != int64(len("program skill")) {
+		t.Fatalf("%+v %v", plan, err)
+	}
+	// A client that cannot show link handling is refused before stopping anything.
+	if _, err := r.Run(context.Background(), action.RunParams{InstanceID: "demo", ActionID: "approval-ask", PlanDigest: plan.Digest}); err == nil {
+		t.Fatal("old client accepted")
+	}
+	if calls, _ := os.ReadFile(filepath.Join(r.Env.Home, "calls")); len(calls) != 0 {
+		t.Fatalf("service touched: %s", calls)
+	}
+	res, err := r.Run(context.Background(), action.RunParams{InstanceID: "demo", ActionID: "approval-ask", PlanDigest: plan.Digest, LinkHandling: action.LinkHandlingVersion})
+	if err != nil || !res.Operation.Published || res.Operation.Approval != "resolved" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	live := rec.Roots["state"]
+	for rel, want := range map[string]string{"skills/inner": filepath.Join(live, "inner"), "skills/program": pkg} {
+		if got, _ := os.Readlink(filepath.Join(live, rel)); got != want {
+			t.Fatalf("%s = %q, want original %q", rel, got, want)
+		}
+	}
+}
+
+func TestProgramCopyWriteNeverPublishes(t *testing.T) {
+	r, p, rec, pkg := linkFixture(t)
+	p.Actions[0].Steps = append(p.Actions[0].Steps, profile.ActionStep{ID: "touch", Argv: profile.Argv{"example", "touchprog"}})
+	if _, err := porterenroll.WriteRecord(r.Env.Home, rec, *p); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Plan(context.Background(), r.Env, "demo", "approval-ask")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := r.Run(context.Background(), action.RunParams{InstanceID: "demo", ActionID: "approval-ask", PlanDigest: plan.Digest, LinkHandling: action.LinkHandlingVersion})
+	if err != nil || res.Operation.Published || !strings.Contains(res.Operation.Failure, "程序代码") || res.Operation.Services != "restored" {
+		t.Fatalf("%+v %v", res.Operation, err)
+	}
+	if _, err := os.Stat(filepath.Join(pkg, "cache.json")); !os.IsNotExist(err) {
+		t.Fatal("the installed program was written")
+	}
+	b, _ := os.ReadFile(filepath.Join(rec.Roots["state"], "config.json"))
+	if !strings.Contains(string(b), "full") {
+		t.Fatal("failed stage published")
 	}
 }

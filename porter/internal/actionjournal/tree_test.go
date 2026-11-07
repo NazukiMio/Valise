@@ -25,7 +25,7 @@ func TestCopyIndependentTreeAndWriteBoundary(t *testing.T) {
 	if err != nil || n != 9 {
 		t.Fatal(n, err)
 	}
-	id, err := CopyTree(live, stage)
+	id, err := CopyTree(live, stage, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

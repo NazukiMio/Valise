@@ -59,8 +59,14 @@
 - 靶机现状：`ubuntu-vm` 的 OpenClaw 计划 revision 约 10，日程关闭，复制到 `nas`（经 Tailscale）；`debian-vm` 的 OpenClaw 计划日程开启，每天 04:40 UTC，linger 已开；`ubuntu-vm-x86` 保留一个恢复前目录 `~/.valise-prev-op_01M6TJ0J2JHBKHV2SFXHXHB56Y-state`。靶机详情见 [LAB.md](LAB.md)。
 - 本轮的验收脚本放在会话临时目录，不在仓库里；需要时按 [acceptance/N2.md](acceptance/N2.md) 的步骤重写，故障注入用 `go build -tags faultinject` 构建 porter，测完换回正式构建。
 
-## 6. 建议的下一步
+## 6. B03 进度（2026-11-07，步骤 ③）
 
-1. 步骤 ③ B03：先把 [proposals/B03_SYMLINK.md](proposals/B03_SYMLINK.md) 与 3a 第 5 条的决定写进正式规范（ARCHITECTURE、PROFILES、INSTALL 5.2），提案移入 `docs/history/`，再实现安装布局记录、链接归属分析、暂存内链接的临时指向与还原、私有代码副本与摘要核对，最后在 `ubuntu-vm` 另起测试网关验收。
+- 链接处理按 INSTALL.md 5.2.1 实现（提案已移入 history），隔离的真实网关上完成配置事务：审批 Bypass → 执行前询问，健康通过，链接还原、程序代码未变。详见 [acceptance/B03.md](acceptance/B03.md)。
+- 正式入口仍未开放：需要在真实实例上验收，再把动作登记进官方 OpenClaw profile。
+- `ubuntu-vm` 保留测试目录 `~/.cache/valise-b03-gw`（约 206 MB），待显式清理；测试单元已删除。验收驱动 `porter/cmd/b03accept`、`client/ui/cmd/n2accept`、`client/ui/tui/zz_live_test.go` 都在 `.git/info/exclude`，不入库。
+
+## 7. 建议的下一步
+
+1. B03 收尾：在 `ubuntu-vm` 的真实 OpenClaw 实例（先建立标准备份）经真实 CLI 执行审批修复；通过后把动作登记进官方 `profiles/openclaw.yaml`，开放健康页入口。这会改动该实例的审批设置，需用户同意。
 2. 步骤 ④ N3：云盘登录（3a 第 6 条）写入规范，开工 N3。
 3. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。
