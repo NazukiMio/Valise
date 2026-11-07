@@ -150,4 +150,4 @@
 
 ### Debian 13 定时器时间戳问题（2026-11-07）
 
-`debian-vm`（systemd 257）的 `systemctl --timestamp=unix show` 对下次触发时间仍输出本地时间文本，porter 读成空值，首次开启日程的计划提交被留在“已提交、待核实”，按计划备份被阻止，而健康页没有提示。修正：该查询以 `TZ=UTC LC_ALL=C` 运行并解析 UTC 文本；计划读取新增 `pending_changes`；健康页对未完成修改给红色项；新增 `valise protection resolve <服务器> <实例> --verify|--rollback`。实机：部署修正后健康页显示该项，`--verify` 完成提交、该项消失。重启后未登录时定时器是否运行的测试已启动，结果未录。
+`debian-vm`（systemd 257）的 `systemctl --timestamp=unix show` 对下次触发时间仍输出本地时间文本，porter 读成空值，首次开启日程的计划提交被留在“已提交、待核实”，按计划备份被阻止，而健康页没有提示。修正：该查询以 `TZ=UTC LC_ALL=C` 运行并解析 UTC 文本；计划读取新增 `pending_changes`；健康页对未完成修改给红色项；新增 `valise protection resolve <服务器> <实例> --verify|--rollback`。实机：部署修正后健康页显示该项，`--verify` 完成提交、该项消失。重启测试：日程设为 10:57 UTC 后重启 `debian-vm`（linger 已开），开机 10:54:35 UTC；之后只有一条开机时即结束的登录记录（时长 0），测试脚本直到 11:01 才登录。timer 在 10:57:50 运行并成功，无错过记录；日程随后改回 04:40（revision 3）。
