@@ -30,7 +30,7 @@ type Config struct {
 	// ChatEntryOff hides the terminal UI's 对话 tab (docs/UI.md 9.5).
 	ChatEntryOff bool `json:"chat_entry_off,omitempty"`
 	// Takeover lists the servers in takeover mode (default off; docs/
-	// N2_IMPLEMENTATION_2026-11-05.md F.2): the terminal UI runs a fix
+	// docs/SERVICE_CONTRACTS.md 16.F2): the terminal UI runs a fix
 	// that needs sudo itself, with sudo -n, after advanced mode is on.
 	Takeover map[string]bool `json:"takeover,omitempty"`
 	// DetachedTasks is the settings' 分离模式 (default off): when on and the

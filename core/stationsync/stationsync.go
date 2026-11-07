@@ -80,7 +80,7 @@ type Remote interface {
 	Probe(ctx context.Context, base string) error
 }
 
-// ProbeTimeout bounds a reachability check (N2 G.3).
+// ProbeTimeout bounds a reachability check (contracts 16.G3).
 const ProbeTimeout = 20 * time.Second
 
 // Entry is a file or directory relative to the listed base.

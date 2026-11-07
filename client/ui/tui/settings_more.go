@@ -184,7 +184,7 @@ func importLines(r *service.ConfigImportResult) []string {
 }
 
 // takeoverRow is the settings line of takeover mode for host (docs/
-// N2_IMPLEMENTATION_2026-11-05.md F.2; per server, default off).
+// docs/SERVICE_CONTRACTS.md 16.F2; per server, default off).
 func takeoverRow(m *Model, host string) string {
 	if m.svc.Takeover(host) {
 		return okStyle.Render("开") + dimStyle.Render("　健康页里需要 sudo 的修复，在你开启高级模式后于这里用 sudo -n 执行；sudo 需要密码时仍转到终端。按 t 关掉")

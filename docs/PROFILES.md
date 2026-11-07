@@ -2,7 +2,7 @@
 
 Profile 是 Valise 了解某种 harness **通用规则的唯一途径**：发现、路径与分类、来源、安装、服务、管理页、登录、健康检查、备份、会话记忆检查、Agent 保护技能与管理动作。服务器 dossier 补足实际安装事实，不是第二套 harness 解释器。Go 代码不得硬编码具体 harness 知识；新增适配通过 profile 与必要的通用 schema 扩展，逐能力核实。
 
-> 2026-11-05：产品默认备份收敛到保护计划，范围预设、凭据分类与本文件现有 schema 保持兼容。本轮没有新增布局、自定义范围或身份字段；实例世代与迁移关联按已定稿 N1_SERVICE_CONTRACTS_2026-11-05.md 保存于金库外的 Valise 身份记录，不向本 profile schema 添加身份字段；自定义详细语义仍留 N5b。界面用语以 PRODUCT.md 8.1 为准。
+> 2026-11-05：产品默认备份收敛到保护计划，范围预设、凭据分类与本文件现有 schema 保持兼容。本轮没有新增布局、自定义范围或身份字段；实例世代与迁移关联按已定稿 SERVICE_CONTRACTS.md 保存于金库外的 Valise 身份记录，不向本 profile schema 添加身份字段；自定义详细语义仍留 N5b。界面用语以 PRODUCT.md 8.1 为准。
 
 ## 1. 来源与信任
 
@@ -274,7 +274,7 @@ agent_kit:
 
 `approval_check` 可声明 `repair_action` 与 `repair_expect`（字段路径到目标值的 map），两者同时存在；动作必须是已核实事务，审批读法不可 pending，当前 harness 精确版本必须命中证据。每个非空 scope 必须满足 repair_expect 的全部值，空 scope、缺字段、unknown 不通过。暂存与发布后的复核都使用该目标，不能仅凭 ask 分类确认成功。步骤只能在暂存环境运行，首错停止，不自动重跑结果不明的步骤。
 
-服务启停、目录交换、失败恢复与中断记录由固定引擎执行，profile 不提供条件、循环或任意 cleanup 命令。原本 inactive 的服务不启动；命名实例仍按 ForAgent 处理。完整执行、兼容、恢复与验收语义以用户确认的 [B03 设计](B03_DESIGN_PROPOSAL_2026-11-05.md) 第 3–7 节为本次实现依据。
+服务启停、目录交换、失败恢复与中断记录由固定引擎执行，profile 不提供条件、循环或任意 cleanup 命令。原本 inactive 的服务不启动；命名实例仍按 ForAgent 处理。完整执行、兼容、恢复与验收语义以用户确认的 [B03 设计](history/B03_DESIGN_PROPOSAL_2026-11-05.md) 第 3–7 节为本次实现依据。
 
 ## 4. 子 profile
 

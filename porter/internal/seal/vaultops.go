@@ -218,7 +218,7 @@ func SetTarget(p Paths, t vaultrpc.Target) error {
 }
 
 // CheckTarget logs in to a copy location from this server and lists its
-// folder without recursing or writing (N2 G.3). A failed login is a result,
+// folder without recursing or writing (contracts 16.G3). A failed login is a result,
 // not an error. Valise-managed locations keep their own certificate probe.
 func CheckTarget(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.TargetCheckParams) (*vaultrpc.TargetCheckResult, error) {
 	var t *vaultrpc.Target

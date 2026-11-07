@@ -1,5 +1,7 @@
 # Valise 产品与架构重整方案：带着你的 Agent 去旅行
 
+> **DEPRECATED（2026-11-07）**：本文已移入 `docs/history/`，只作历史记录保留，不再更新，不作为现行依据。2026-11-05 产品重整讨论稿。已确认的决定写在 `docs/PRODUCT.md`、`docs/ARCHITECTURE.md`、`docs/UI.md` 与 `docs/SERVICE_CONTRACTS.md`，排期见 `docs/DEV_PLAN.md`。原文未改；文内链接、旧术语与当时的状态描述按写作时理解。
+
 > 已确认方向的讨论记录 · 2026-11-05
 >
 > 本稿保留产品定位、交付形态、时间轴与备份的讨论背景，取代本文件此前仅讨论备份收敛的版本。用户已确认草图与后端计划，并授权更新正式规范和开发排期；规则以 PRODUCT.md、ARCHITECTURE.md 等正式规范为准，进度以 DEV_PLAN.md N1–N5 为准。下文仍含候选细节，不能当作已发布 schema、已实现能力或新的权限授权。

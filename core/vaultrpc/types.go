@@ -17,7 +17,7 @@ const (
 	MethodFiles        = "vault_files"
 	MethodTargetSet    = "target_set"
 	// MethodTargetCheck tests a copy location from the server, read-only
-	// (N2 G.3; capability CopyCheckCapability).
+	// (contracts 16.G3; capability CopyCheckCapability).
 	MethodTargetCheck = "target_check"
 	MethodSync        = "sync"
 	// Vault tree and cloud backup (docs/VAULT_FORMAT.md section 10,
@@ -179,7 +179,7 @@ type TargetCheckParams struct {
 }
 
 // TargetCheckResult is one read-only login and listing from the server.
-// FailureCause uses the fixed copy failure causes (N2 G.1).
+// FailureCause uses the fixed copy failure causes (contracts 16.G1).
 type TargetCheckResult struct {
 	Reachable    bool   `json:"reachable"`
 	Method       string `json:"method,omitempty"`

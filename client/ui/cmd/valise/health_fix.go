@@ -14,7 +14,7 @@ import (
 // healthFix: valise health fix <服务器> <实例> <linger|clock>
 // [--advanced] [--yes] [--digest d] [--json]
 //
-// Fixes built into Valise (docs/N2_IMPLEMENTATION_2026-11-05.md addendum E):
+// Fixes built into Valise (docs/SERVICE_CONTRACTS.md 16.E):
 // the confirmation lists every command and the system setting it changes;
 // the user agrees again before anything runs. --advanced lets the user turn
 // advanced mode on here (both passphrases and the consent sentence) for a

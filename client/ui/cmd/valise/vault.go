@@ -234,7 +234,7 @@ func (c *cli) target(ctx context.Context, args []string) error {
 	if *auto != "" {
 		t.Auto = &vaultrpc.AutoSync{Every: *auto}
 	}
-	// Test from the server before saving (N2 G.3).
+	// Test from the server before saving (contracts 16.G3).
 	switch res, err := c.svc.CheckTarget(ctx, pos[0], vaultrpc.TargetCheckParams{Target: &t}); {
 	case errors.Is(err, service.ErrCheckUnsupported):
 		fmt.Fprintln(c.out, "服务器上的 porter 较旧，不能先测试连接；第一次复制时才会知道能不能连上。")

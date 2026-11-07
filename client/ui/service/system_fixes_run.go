@@ -32,7 +32,7 @@ type SystemFixStep struct {
 	// When is set for a step that runs only if the problem remains.
 	When string `json:"when,omitempty"`
 	// Destructive marks a step that deletes or overwrites data and cannot
-	// simply be undone (docs/N2_IMPLEMENTATION_2026-11-05.md F.3); a plan
+	// simply be undone (docs/SERVICE_CONTRACTS.md 16.F3); a plan
 	// with one needs an escape pod kept elsewhere first (INSTALL.md 4.2).
 	// Turning linger or time sync on and restarting time sync are not.
 	Destructive bool `json:"destructive,omitempty"`

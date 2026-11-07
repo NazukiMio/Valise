@@ -12,8 +12,8 @@ import (
 	"valise/core/valise"
 )
 
-// System settings Valise itself depends on (docs/N2_IMPLEMENTATION_2026-11-05.md
-// addendum E, docs/UI.md 9.5 health): linger, so planned backups run without
+// System settings Valise itself depends on (docs/SERVICE_CONTRACTS.md
+// 16.E, docs/UI.md 9.5 health): linger, so planned backups run without
 // a login, and the server clock's time synchronisation. Both fixes are fixed
 // commands built into Valise (not harness knowledge, never in a profile).
 

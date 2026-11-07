@@ -8,7 +8,7 @@ import (
 	"valise/ui/service"
 )
 
-// Takeover mode (docs/N2_IMPLEMENTATION_2026-11-05.md F.2): with it on for
+// Takeover mode (docs/SERVICE_CONTRACTS.md 16.F2): with it on for
 // a server, a fix that needs sudo runs here rather than in the terminal.
 // Advanced mode still has to be turned on by the user, here, through the
 // same service checks as the CLI (EnableAdvanced: the INSTALL.md 4.1

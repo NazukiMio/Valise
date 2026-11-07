@@ -15,7 +15,7 @@ import (
 const UnverifiedSourceNotice = "来源无法核实"
 
 // UnverifiedSource lists what the snapshot itself records when its source
-// instance generation cannot be verified (N2 增补决定 D). The values come
+// instance generation cannot be verified (contracts 16.D). The values come
 // from the decrypted snapshot header and the vault it was read from; none of
 // them is evidence of identity.
 type UnverifiedSource struct {

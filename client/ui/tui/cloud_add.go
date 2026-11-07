@@ -108,7 +108,7 @@ func (c *cloudScreen) stationHead(m *Model, p place, w int) string {
 	return head
 }
 
-// checkThenSave tests the location from the server first (N2 G.3); when
+// checkThenSave tests the location from the server first (contracts 16.G3); when
 // the server cannot reach it, the person decides whether to save anyway.
 func (c *cloudScreen) checkThenSave(m *Model, t vaultrpc.Target) tea.Cmd {
 	svc, ctx, host := m.svc, m.ctx, c.host

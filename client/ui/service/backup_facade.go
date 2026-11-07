@@ -87,7 +87,7 @@ const DetachHint = "任务也可以在后台跑，查看「开启分离模式」
 
 // detachCapabilities hands the backup controller the server's capabilities
 // only with 分离模式 on, so it asks for detached execution only then
-// (N2 增补决定 F4); otherwise backups stay in the connection.
+// (contracts 16.F4); otherwise backups stay in the connection.
 func (s *Service) detachCapabilities(ctx context.Context, host string) ([]string, error) {
 	if !s.Config.DetachedTasks {
 		return nil, nil

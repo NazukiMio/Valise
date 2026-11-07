@@ -11,8 +11,8 @@ import (
 	"valise/core/valise"
 )
 
-// Takeover mode and destructive steps (docs/N2_IMPLEMENTATION_2026-11-05.md
-// F.2 and F.3). With takeover on for a server, the terminal UI runs a fix
+// Takeover mode and destructive steps (docs/SERVICE_CONTRACTS.md
+// 16.F2 and 16.F3). With takeover on for a server, the terminal UI runs a fix
 // that needs sudo itself, after the user turned advanced mode on there
 // (both passphrases and the consent sentence, INSTALL.md 4.1), and only with
 // sudo -n: Valise never collects sudo's password; a server that asks for it

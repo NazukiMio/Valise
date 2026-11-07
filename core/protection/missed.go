@@ -177,7 +177,7 @@ func readRuns(dir string, agent identity.AgentRef, timerOnly bool) ([]BackupRun,
 }
 
 // CopyStatus is the latest attempt to copy to one location of the plan
-// (N2 G.2). State is succeeded, failed or unknown.
+// (contracts 16.G2). State is succeeded, failed or unknown.
 type CopyStatus struct {
 	TargetRef    LocationRef `json:"target_ref"`
 	At           time.Time   `json:"at"`

@@ -1,5 +1,7 @@
 # M12 终端 UI 草图（待用户确认）
 
+> **DEPRECATED（2026-11-07）**：本文已移入 `docs/history/`，只作历史记录保留，不再更新，不作为现行依据。原 `docs/sketches/M12-tui.md`。已确认的结论写入 `docs/INSTALL.md` 第 5 节、`docs/PROFILES.md`、`docs/UI.md` 9.2；现行 GUI/TUI 草图为 `docs/sketches/valise-journey-gui-tui-2026-11-05.html`。原文未改；文内链接、旧术语与当时的状态描述按写作时理解。
+
 > 状态：第一部分的设计点已由用户确认（2026-11-01），结论已写回 INSTALL.md 第 5 节、PROFILES.md、UI.md 9.2。第二部分的界面草图另以 Artifact 交付，确认后才写 TUI 代码。
 > GUI（M7b）仍暂停，届时另出草图。
 > 草图按 80×24 为基准（必须完整可用），另给 110 列与窄终端的样子。颜色用文字说明：图标用 profile 的 `display.color`；`!` 为黄色提醒；完全访问模式为红色。

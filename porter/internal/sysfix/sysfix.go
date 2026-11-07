@@ -1,5 +1,5 @@
 // Package sysfix reads the two system settings the health page checks for
-// Valise's own needs (docs/N2_IMPLEMENTATION_2026-11-05.md, addendum E):
+// Valise's own needs (docs/SERVICE_CONTRACTS.md, 16.E):
 // linger, so the user's timers run without a login, and the server clock's
 // time synchronisation. Reading changes nothing and runs on the daily key.
 // The fixes themselves are fixed commands the client runs on a fresh admin

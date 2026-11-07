@@ -61,7 +61,7 @@ func (c *cli) configCmd(op, path string) error {
 }
 
 // configTakeover: valise config takeover <服务器> on|off
-// (docs/N2_IMPLEMENTATION_2026-11-05.md F.2). It only changes how the
+// (docs/SERVICE_CONTRACTS.md 16.F2). It only changes how the
 // terminal UI runs a sudo fix; valise health fix itself is unchanged.
 func (c *cli) configTakeover(host, state string) error {
 	var on bool

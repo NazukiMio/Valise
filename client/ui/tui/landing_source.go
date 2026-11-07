@@ -11,7 +11,7 @@ import (
 )
 
 // sourcePick asks what to do with a snapshot whose source generation cannot
-// be verified (N2 增补决定 D), reusing the plain choice list.
+// be verified (contracts 16.D), reusing the plain choice list.
 func sourcePick(r *reviveScreen) *pickScreen {
 	us := r.plan.UnverifiedSource
 	cs := []choice{{label: "我清楚，继续", value: string(service.SourceProceed), desc: "按上面列出的快照信息自行判断后恢复"}}

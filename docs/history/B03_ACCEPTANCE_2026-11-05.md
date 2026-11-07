@@ -1,5 +1,7 @@
 # B03 配置事务：实现与验收记录（2026-11-05）
 
+> **DEPRECATED（2026-11-07）**：本文已移入 `docs/history/`，只作历史记录保留，不再更新，不作为现行依据。B03 的实现与部分验收记录；B03 整体未完成，阻塞与待定设计见 `docs/proposals/B03_SYMLINK.md`。原文未改；文内链接、旧术语与当时的状态描述按写作时理解。
+
 状态：基础实现、合成服务的真实 SSH/RPC/CLI/TUI 验收已完成；真实网关验收遇到目录隔离阻塞，**B03 整体尚未完成，正式 OpenClaw profile 不开放审批修复入口**。
 
 用户已确认 [设计与边界](B03_DESIGN_PROPOSAL_2026-11-05.md) 和 [TUI 草图](sketches/B03-approval-repair.html)。本轮没有推进 C 或 M7b，没有提交或推送修改。

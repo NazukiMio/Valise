@@ -7,7 +7,7 @@ import (
 	"valise/core/valise"
 )
 
-// Fixed copy failure causes (docs/N2_IMPLEMENTATION_2026-11-05.md G.1).
+// Fixed copy failure causes (docs/SERVICE_CONTRACTS.md 16.G1).
 const (
 	CauseHostUnknown       = "host_unknown"
 	CauseConnectRefused    = "connect_refused"

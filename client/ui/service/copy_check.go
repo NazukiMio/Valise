@@ -15,7 +15,7 @@ import (
 var ErrCheckUnsupported = errors.New("check unsupported")
 
 // CheckTarget has host log in to a copy location once, read-only, before it
-// is saved or to explain a failure (N2 G.3). A location the server cannot
+// is saved or to explain a failure (contracts 16.G3). A location the server cannot
 // reach is a result (Reachable false), not an error.
 func (s *Service) CheckTarget(ctx context.Context, host string, p vaultrpc.TargetCheckParams) (*vaultrpc.TargetCheckResult, error) {
 	var res vaultrpc.TargetCheckResult
@@ -32,7 +32,7 @@ func (s *Service) CheckTarget(ctx context.Context, host string, p vaultrpc.Targe
 }
 
 // CopyCause says, for a person, what a copy failure cause means and what
-// to do about it (N2 G.2). Locations are named as the person knows them.
+// to do about it (contracts 16.G2). Locations are named as the person knows them.
 func CopyCause(cause, name string) (what, remedy string) {
 	switch cause {
 	case stationsync.CauseConnectTimeout, stationsync.CauseConnectRefused:

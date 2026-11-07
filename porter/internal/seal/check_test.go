@@ -12,7 +12,7 @@ import (
 )
 
 // target_check logs in once, read-only, and reports a failure as a
-// classified result, not an error (N2 G.3).
+// classified result, not an error (contracts 16.G3).
 func TestCheckTarget(t *testing.T) {
 	w := newWorld(t)
 	bin := t.TempDir()

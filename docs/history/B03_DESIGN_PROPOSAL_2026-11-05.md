@@ -1,5 +1,7 @@
 # B03：审批修复与中断恢复设计提案
 
+> **DEPRECATED（2026-11-07）**：本文已移入 `docs/history/`，只作历史记录保留，不再更新，不作为现行依据。B03 设计已同步进 `docs/PROFILES.md`、`docs/INSTALL.md`、`docs/ARCHITECTURE.md`、`docs/UI.md`；B03 现状见 `docs/DEV_PLAN.md` 的未完成项。原文未改；文内链接、旧术语与当时的状态描述按写作时理解。
+
 日期：2026-11-05。状态：**用户已确认方案与草图，进入实现**。正式要求已同步至 PROFILES/INSTALL/ARCHITECTURE/UI；下文为此次确认的设计依据。
 
 本提案细化 `PRODUCT_REVIEW_PROPOSAL_2026-11-04.md` 的 B03 开工闸门。补上 PRODUCT.md 第 4 节中“新手需要自己运维”的缺口：从已核实的 Bypass 发现进入“改为执行前询问”，明确行为变化、服务中断、备份与实际结果。B02 已完成；本提案不扩展到自定义备份范围或通用任务编排。
