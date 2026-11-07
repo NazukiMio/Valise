@@ -431,6 +431,7 @@ func (c *checker) checkTop(p *Profile) {
 	}
 	c.checkActions(p.Actions)
 	c.checkApproval(p.ApprovalCheck)
+	c.checkRepair(p)
 	if id := p.Identity; id != nil {
 		c.argvVars("identity.argv", id.Argv, true, VarHome, VarStateDir)
 		if len(id.Argv) == 0 {
@@ -902,7 +903,10 @@ func (c *checker) checkActions(as []Action) {
 		if (a.Risk == RiskConfig || a.Risk == RiskDanger) && strings.TrimSpace(a.Undo) == "" {
 			c.add(f+".undo", "config 与 danger 动作必须说明能否撤销")
 		}
-		c.argvVars(f+".argv", a.Argv, true, VarHome)
+		c.checkTransaction(f, a)
+		if len(a.Steps) == 0 && a.Transaction == nil {
+			c.argvVars(f+".argv", a.Argv, true, VarHome)
+		}
 		switch a.Output {
 		case OutputText, OutputNone:
 			if a.Secret != nil {

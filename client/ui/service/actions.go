@@ -33,8 +33,10 @@ type ActionList struct {
 	Actions   []profile.Action `json:"actions"`
 	// Stale is set when the server's stored profile is another version:
 	// actions added since then need a re-enrollment.
-	Stale        bool   `json:"stale"`
-	RepairAction string `json:"repair_action,omitempty"`
+	Stale                bool                    `json:"stale"`
+	ApprovalRepairAction string                  `json:"approval_repair_action,omitempty"`
+	RepairAction         string                  `json:"repair_action,omitempty"`
+	Plans                map[string]*action.Plan `json:"plans,omitempty"`
 }
 
 // Actions lists the instance's managed actions.
@@ -44,8 +46,24 @@ func (s *Service) Actions(ctx context.Context, host, instance string) (*ActionLi
 		return nil, err
 	}
 	p := target.Profile.ForAgent(target.Record.Name)
-	list := &ActionList{Instance: instance, ProfileID: p.ID, Actions: p.Actions,
-		Stale: target.Record.ProfileVersion != p.ProfileVersion}
+	list := &ActionList{Instance: instance, ProfileID: p.ID,
+		Stale: target.Record.ProfileVersion != p.ProfileVersion, Plans: map[string]*action.Plan{}}
+	for _, a := range p.Actions {
+		if a.Transaction != nil || a.Steps != nil {
+			if list.Stale || a.Verify != "" || a.Verification == nil {
+				continue
+			}
+			plan, planErr := s.PlanAction(ctx, host, instance, a.ID)
+			if planErr != nil {
+				continue
+			}
+			list.Plans[a.ID] = plan
+		}
+		list.Actions = append(list.Actions, a)
+	}
+	if p.ApprovalCheck != nil && list.Plans[p.ApprovalCheck.RepairAction] != nil {
+		list.ApprovalRepairAction = p.ApprovalCheck.RepairAction
+	}
 	if a := serviceRepair(p); a != nil {
 		list.RepairAction = a.ID
 	}
@@ -56,6 +74,8 @@ func (s *Service) Actions(ctx context.Context, host, instance string) (*ActionLi
 type ActionOptions struct {
 	// Seal takes an escape pod first (config and danger actions).
 	Seal bool
+	// PlanDigest is the server plan shown in the user's confirmation.
+	PlanDigest string
 	// IO is the terminal of a terminal action.
 	IO       InstallIO
 	Progress func(string)
@@ -94,6 +114,12 @@ func (s *Service) RunAction(ctx context.Context, host, instance, id string, o Ac
 	if list.Stale {
 		return nil, valise.New("action_profile_stale", "本机与服务器的 harness 资料版本不同，动作没有执行", "先在设置中重新接入，再查看并确认动作")
 	}
+	if a.Transaction != nil {
+		plan := list.Plans[id]
+		if plan == nil || o.PlanDigest == "" || o.PlanDigest != plan.Digest {
+			return nil, valise.New("action_plan_changed", "配置事务计划需要重新确认，动作没有执行", "重新打开动作确认页，核对服务影响与暂存计划")
+		}
+	}
 	if a.Risk == profile.RiskConfig || a.Risk == profile.RiskDanger {
 		if err := s.RequireGate(ctx, host, instance); err != nil {
 			return nil, err
@@ -130,11 +156,14 @@ func (s *Service) RunAction(ctx context.Context, host, instance, id string, o Ac
 	} else {
 		var rr action.RunResult
 		if err := s.withSession(ctx, host, func(c caller) error {
-			return c.Call(ctx, action.MethodRun, action.RunParams{InstanceID: instance, ActionID: id, Sealed: o.Seal}, &rr)
+			return c.Call(ctx, action.MethodRun, action.RunParams{InstanceID: instance, ActionID: id, Sealed: o.Seal, PlanDigest: o.PlanDigest, BackupID: res.Snapshot}, &rr)
 		}); err != nil {
 			return nil, err
 		}
 		res.RunResult = rr
+	}
+	if res.Operation != nil {
+		return res, nil
 	}
 	if a.Risk != profile.RiskRead {
 		progress("检查服务与管理页")

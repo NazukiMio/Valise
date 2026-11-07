@@ -11,16 +11,19 @@ type RunParams struct {
 	InstanceID string `json:"instance_id"`
 	ActionID   string `json:"action_id"`
 	// Sealed records in the audit that an escape pod was taken first.
-	Sealed bool `json:"sealed,omitempty"`
+	Sealed     bool   `json:"sealed,omitempty"`
+	PlanDigest string `json:"plan_digest,omitempty"`
+	BackupID   string `json:"backup_id,omitempty"`
 }
 
 // RunResult is the outcome. Output is the tail of a text action's output;
 // Secret is set only for secret actions and is never logged.
 type RunResult struct {
-	Exit      int    `json:"exit"`
-	Output    string `json:"output,omitempty"`
-	Truncated bool   `json:"truncated,omitempty"`
-	Secret    string `json:"secret,omitempty"`
+	Exit      int        `json:"exit"`
+	Output    string     `json:"output,omitempty"`
+	Truncated bool       `json:"truncated,omitempty"`
+	Secret    string     `json:"secret,omitempty"`
+	Operation *Operation `json:"operation,omitempty"`
 }
 
 // MaxOutputLines is how much of a text action's output is kept.

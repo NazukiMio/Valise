@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"valise/core/action"
 	"valise/core/profile"
 	"valise/ui/service"
 )
@@ -24,17 +25,25 @@ func startAction(m *Model, p *instancePage, a profile.Action) tea.Cmd {
 	}
 	if a.Risk == profile.RiskConfig || a.Risk == profile.RiskDanger {
 		host, inst := p.host, p.inst.InstanceID
-		return gateThen(m, host, inst, func(m *Model) tea.Cmd { return m.push(newActionConfirm(host, inst, a)) })
+		return gateThen(m, host, inst, func(m *Model) tea.Cmd {
+			c := newActionConfirm(host, inst, a)
+			c.riskAccepted, m.riskOnce = m.riskOnce, false
+			return m.push(c)
+		})
 	}
 	return m.push(newActionConfirm(p.host, p.inst.InstanceID, a))
 }
 
 // actionConfirm is the confirmation of a manage, config or danger action.
 type actionConfirm struct {
-	host, inst string
-	a          profile.Action
-	seal       bool
-	name       textinput.Model
+	host, inst   string
+	a            profile.Action
+	seal         bool
+	name         textinput.Model
+	plan         *action.Plan
+	planErr      error
+	scroll       int
+	riskAccepted bool
 }
 
 func newActionConfirm(host, inst string, a profile.Action) *actionConfirm {
@@ -56,12 +65,21 @@ func (c *actionConfirm) help() string {
 	}
 	return menu("enter", "执行")
 }
-func (c *actionConfirm) init(m *Model) tea.Cmd { return nil }
+func (c *actionConfirm) init(m *Model) tea.Cmd { return c.loadTransactionPlan(m) }
 
 func (c *actionConfirm) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
+	if ready, ok := msg.(transactionPlanReady); ok {
+		if ready.page == c {
+			c.plan, c.planErr = ready.plan, ready.err
+		}
+		return nil, true
+	}
 	k, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil, false
+	}
+	if c.a.Transaction != nil && scrollAction(k.String(), &c.scroll, m.bodyHeight()) {
+		return nil, true
 	}
 	switch k.String() {
 	case "esc":
@@ -75,15 +93,24 @@ func (c *actionConfirm) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		if c.a.Risk == profile.RiskDanger && strings.TrimSpace(c.name.Value()) != c.a.Name {
 			return func() tea.Msg { return flashMsg("名称不一致；输入「" + c.a.Name + "」才能执行") }, true
 		}
+		if c.a.Transaction != nil && (c.plan == nil || c.planErr != nil) {
+			return nil, true
+		}
 		m.pop()
 		if c.a.Terminal {
 			args := []string{"action", c.host, c.inst, c.a.ID, "--yes"}
 			if !c.seal {
 				args = append(args, "--no-seal")
 			}
+			m.riskOnce = c.riskAccepted
 			return m.runCLI(args...), true
 		}
-		return m.push(newActionResult(m, c.host, c.inst, c.a, c.seal)), true
+		result := newActionResult(m, c.host, c.inst, c.a, c.seal)
+		result.riskAccepted = c.riskAccepted
+		if c.plan != nil {
+			result.planDigest = c.plan.Digest
+		}
+		return m.push(result), true
 	}
 	if c.a.Risk == profile.RiskDanger {
 		var cmd tea.Cmd
@@ -100,7 +127,18 @@ func (c *actionConfirm) view(m *Model) string {
 	if c.a.Undo != "" {
 		rows = append(rows, "能否撤销："+c.a.Undo)
 	}
-	rows = append(rows, "", dimStyle.Render("实际命令："+strings.Join(c.a.Argv, " ")), dimStyle.Render(m.svc.ActionAccess(c.host, c.a)))
+	if c.a.Transaction != nil {
+		if c.planErr != nil {
+			rows = append(rows, errStyle.Render(errText(c.planErr)))
+		} else if c.plan == nil {
+			rows = append(rows, dimStyle.Render("正在核实事务计划…"))
+		} else {
+			rows = append(rows, service.ActionPlanLines(c.plan)...)
+		}
+	} else {
+		rows = append(rows, "", dimStyle.Render("实际命令："+strings.Join(c.a.Argv, " ")))
+	}
+	rows = append(rows, dimStyle.Render(m.svc.ActionAccess(c.host, c.a)))
 	if c.a.Terminal {
 		rows = append(rows, dimStyle.Render("会在终端里运行；终端里的内容 Valise 不读取。"))
 	}
@@ -114,7 +152,11 @@ func (c *actionConfirm) view(m *Model) string {
 	if c.a.Risk == profile.RiskDanger {
 		rows = append(rows, "", warnStyle.Render("这是高风险动作。输入动作名称「"+c.a.Name+"」后按回车执行："), c.name.View())
 	}
-	return box("", strings.Join(rows, "\n"), w)
+	content := box("", strings.Join(rows, "\n"), w)
+	if c.a.Transaction != nil {
+		return actionViewport(m, content, &c.scroll, m.bodyHeight())
+	}
+	return content
 }
 
 func riskStyle(risk string) lipgloss.Style {
@@ -130,16 +172,18 @@ func riskStyle(risk string) lipgloss.Style {
 // actionResult runs an action and shows the outcome: exit code and the
 // instance's state apart, text output, or a secret on the clipboard.
 type actionResult struct {
-	host, inst string
-	a          profile.Action
-	seal       bool
-	running    bool
-	res        *service.ActionResult
-	err        error
-	clip       *service.SecretClip
-	copiedAt   time.Time
-	cleared    bool
-	scroll     int
+	host, inst   string
+	a            profile.Action
+	seal         bool
+	planDigest   string
+	running      bool
+	res          *service.ActionResult
+	err          error
+	clip         *service.SecretClip
+	copiedAt     time.Time
+	cleared      bool
+	scroll       int
+	riskAccepted bool
 }
 
 type actionDone struct {
@@ -163,6 +207,9 @@ func (r *actionResult) busy() string {
 	return ""
 }
 func (r *actionResult) help() string {
+	if !r.running && r.res != nil && r.res.Operation != nil {
+		return menu("r", "查看操作与恢复", "↑↓", "滚动")
+	}
 	if r.clip != nil && !r.cleared {
 		return menu("c", "立即清除剪贴板")
 	}
@@ -171,9 +218,13 @@ func (r *actionResult) help() string {
 
 func (r *actionResult) init(m *Model) tea.Cmd {
 	svc, ctx := m.svc, m.ctx
+	if r.riskAccepted {
+		ctx = service.WithRiskAccepted(ctx)
+		r.riskAccepted = false
+	}
 	host, inst, id, seal := r.host, r.inst, r.a.ID, r.seal
 	return func() tea.Msg {
-		res, err := svc.RunAction(ctx, host, inst, id, service.ActionOptions{Seal: seal})
+		res, err := svc.RunAction(ctx, host, inst, id, service.ActionOptions{Seal: seal, PlanDigest: r.planDigest})
 		return actionDone{res: res, err: err, host: host, inst: inst}
 	}
 }
@@ -195,6 +246,9 @@ func (r *actionResult) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			r.res.Secret = ""
 			return tickClip(), true
 		}
+		if r.res != nil && r.res.Operation != nil {
+			return m.refreshActionAffected(r.host, r.res.Operation), true
+		}
 		return m.refreshInstance(r.host, r.inst), true
 	case clipTick:
 		if r.clip == nil || r.cleared {
@@ -209,6 +263,10 @@ func (r *actionResult) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		return tickClip(), true
 	case tea.KeyPressMsg:
 		switch msg.String() {
+		case "r":
+			if !r.running && r.res != nil && r.res.Operation != nil {
+				return m.push(newActionOperation(r.host, r.res.Operation.ID)), true
+			}
 		case "c":
 			if r.clip != nil && !r.cleared {
 				r.clip.Clear()
@@ -249,6 +307,10 @@ func (r *actionResult) view(m *Model) string {
 	}
 	if r.err != nil {
 		return head + "\n\n" + errStyle.Render(errText(r.err))
+	}
+	if r.res.Operation != nil {
+		content := head + "\n\n" + strings.Join(service.ActionOperationLines(r.res.Operation), "\n")
+		return actionViewport(m, content, &r.scroll, m.bodyHeight()-2) + "\n\n" + dimStyle.Render("r 查看操作详情与恢复")
 	}
 	lines := []string{head, ""}
 	if r.res.Snapshot != "" {

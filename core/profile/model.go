@@ -379,7 +379,11 @@ type Action struct {
 	Secret *SecretPick `yaml:"secret" json:"secret,omitempty"`
 	// Terminal actions run in their own interactive terminal; their output
 	// never passes through Valise.
-	Terminal bool `yaml:"terminal" json:"terminal,omitempty"`
+	Terminal     bool                `yaml:"terminal" json:"terminal,omitempty"`
+	Steps        []ActionStep        `yaml:"steps" json:"steps,omitempty"`
+	Transaction  *ActionTransaction  `yaml:"transaction" json:"transaction,omitempty"`
+	Verification *ActionVerification `yaml:"verification" json:"verification,omitempty"`
+	Verify       string              `yaml:"verify" json:"verify,omitempty"`
 }
 
 // SecretPick extracts a secret from JSON output: the string at JSONField
@@ -644,8 +648,10 @@ type ApprovalCheck struct {
 	DefaultWhen []map[string]string `yaml:"default_when" json:"default_when,omitempty"`
 	// Remedy are the steps the user takes to turn approval on, shown as
 	// text; Valise never runs them (docs/UI.md 9.5).
-	Remedy []string `yaml:"remedy" json:"remedy,omitempty"`
-	Verify string   `yaml:"verify" json:"verify,omitempty"`
+	Remedy       []string          `yaml:"remedy" json:"remedy,omitempty"`
+	Verify       string            `yaml:"verify" json:"verify,omitempty"`
+	RepairAction string            `yaml:"repair_action" json:"repair_action,omitempty"`
+	RepairExpect map[string]string `yaml:"repair_expect" json:"repair_expect,omitempty"`
 }
 
 // Identity reads agent names from a read-only command's JSON output: Each

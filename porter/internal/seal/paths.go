@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"valise/core/valise"
+	"valise/porter/internal/actionjournal"
 )
 
 // Paths are the porter's files under HOME (docs/ARCHITECTURE.md section 1).
@@ -43,12 +44,23 @@ var holderNames = map[string]string{"autosync": "正在后台自动同步到云�
 // LockFor takes the vault lock and records what holds it, so a refused
 // caller can say what is running.
 func (p Paths) LockFor(holder string) (unlock func(), err error) {
+	_, unlock, err = p.acquire(holder, "")
+	return unlock, err
+}
+
+// ActionLock uses the same mutation lock; only the named pending action is exempt.
+// A child command inherits the descriptor so recovery cannot race a surviving child.
+func (p Paths) ActionLock(op string) (*os.File, func(), error) {
+	return p.acquire("action:"+op, op)
+}
+
+func (p Paths) acquire(holder, except string) (*os.File, func(), error) {
 	if err := os.MkdirAll(p.State(), 0o700); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	f, err := os.OpenFile(filepath.Join(p.State(), "vault.lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		if errors.Is(err, syscall.EWOULDBLOCK) {
@@ -57,16 +69,20 @@ func (p Paths) LockFor(holder string) (unlock func(), err error) {
 				reason = "服务器上" + holderNames[strings.TrimSpace(string(b))]
 			}
 			f.Close()
-			return nil, valise.New("vault_busy", reason, "稍等片刻再试")
+			return nil, nil, valise.New("vault_busy", reason, "稍等片刻再试")
 		}
 		f.Close()
-		return nil, err
+		return nil, nil, err
+	}
+	if err := (actionjournal.Store{Home: p.Home}).Check(except); err != nil {
+		f.Close()
+		return nil, nil, err
 	}
 	f.Truncate(0)
 	f.WriteAt([]byte(holder), 0)
-	return func() {
+	return f, func() {
 		f.Truncate(0)
-		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		// Close releases this reference; an inherited child keeps its lock.
 		f.Close()
 	}, nil
 }
@@ -74,15 +90,17 @@ func (p Paths) LockFor(holder string) (unlock func(), err error) {
 // AuditEntry is one line of audit.jsonl. It never holds file contents or
 // credentials (docs/ARCHITECTURE.md section 10).
 type AuditEntry struct {
-	Time       time.Time `json:"time"`
-	Op         string    `json:"op"`
-	Instance   string    `json:"instance,omitempty"`
-	Initiator  string    `json:"initiator"`
-	Result     string    `json:"result"`
-	SnapshotID string    `json:"snapshot_id,omitempty"`
-	Bytes      int64     `json:"bytes,omitempty"`
-	Target     string    `json:"target,omitempty"`
-	Reason     string    `json:"reason,omitempty"`
+	Time        time.Time `json:"time"`
+	Op          string    `json:"op"`
+	Instance    string    `json:"instance,omitempty"`
+	Initiator   string    `json:"initiator"`
+	Result      string    `json:"result"`
+	SnapshotID  string    `json:"snapshot_id,omitempty"`
+	Bytes       int64     `json:"bytes,omitempty"`
+	Target      string    `json:"target,omitempty"`
+	Reason      string    `json:"reason,omitempty"`
+	Tier        string    `json:"tier,omitempty"`
+	OperationID string    `json:"operation_id,omitempty"`
 }
 
 // Audit appends one entry.

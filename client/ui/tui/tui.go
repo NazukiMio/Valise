@@ -15,6 +15,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"valise/client/profiles"
+	"valise/core/action"
 	"valise/core/enroll"
 	"valise/core/profile"
 	"valise/core/vaultrpc"
@@ -41,13 +42,15 @@ type screen interface {
 
 // srvData is what the TUI knows about one recorded server.
 type srvData struct {
-	host      string
-	seq       uint64
-	loading   bool
-	loaded    bool
-	err       error // the server could not be reached
-	instances []enroll.InstanceSummary
-	status    *vaultrpc.StatusResult
+	host              string
+	seq               uint64
+	loading           bool
+	loaded            bool
+	err               error // the server could not be reached
+	instances         []enroll.InstanceSummary
+	status            *vaultrpc.StatusResult
+	pendingActions    []action.PendingAction
+	pendingActionsErr error
 }
 
 // lastSeal returns the newest snapshot of an instance.
@@ -193,6 +196,7 @@ func (m *Model) loadServer(host string) tea.Cmd {
 		nd.instances, nd.err = svc.Instances(ctx, host)
 		if nd.err == nil {
 			nd.status, _ = svc.VaultStatus(ctx, host)
+			nd.pendingActions, nd.pendingActionsErr = svc.PendingActions(ctx, host)
 		}
 		return srvLoaded{nd}
 	}

@@ -96,6 +96,10 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
                                                  查看 / 确认 agent 提出的归类提议
   action <服务器> <实例> [<动作>] [--yes] [--no-seal]
                                                  管理动作：不带动作名列出可用动作；机密结果只复制到剪贴板，20 秒后清除
+  action status <服务器> <操作>                    查看配置操作的分项结果
+  action resume <服务器> <操作> --continue|--restore-services [--yes]
+                                                 继续发布已复核的暂存配置，或恢复原服务状态（结果不明的步骤不重跑）
+  action cleanup <服务器> <操作> [--yes]           列出残留目录，确认后清理；保留操作记录
 
 钥匙、工具与设置
   porter deploy <服务器> --release <版本>         从 GitHub Release 下载、校验并部署 porter

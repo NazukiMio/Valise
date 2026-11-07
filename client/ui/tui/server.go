@@ -60,6 +60,8 @@ func (s *serverPage) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			}
 			return m.push(newInstancePage(s.host, in)), true
 		}
+	case "a":
+		return s.openPendingActions(m), true
 	case "i":
 		return s.install(m), true
 	case "n":
@@ -194,7 +196,7 @@ func (s *serverPage) view(m *Model) string {
 		// Not "nothing here" while a refresh (after an install) runs.
 		return dimStyle.Render("正在读取 " + s.host + " 上的 agent…")
 	case len(d.instances) == 0:
-		return box("", "这台服务器上还没有接入 Valise 的 agent。\n\n按 "+keyStyle.Render("n")+" 把已经装好的 agent 接入 Valise，或按 "+
+		return actionPendingBanner(d) + box("", "这台服务器上还没有接入 Valise 的 agent。\n\n按 "+keyStyle.Render("n")+" 把已经装好的 agent 接入 Valise，或按 "+
 			keyStyle.Render("i")+" 安装一个新的 harness。", min(m.width-2, 70)) + "\n\n" + subtitle("这台服务器上的 agent 还没塞进 Valise。")
 	}
 	compact := compactCards(m.width, m.height)
@@ -207,5 +209,5 @@ func (s *serverPage) view(m *Model) string {
 		}
 	}
 	head := dimStyle.Render(s.host + " · 在线 · " + itoa(len(live(d.instances))) + " 个 agent")
-	return head + "\n\n" + pager(cards, s.cursor, min(m.width, 160), s.cardWidth(m))
+	return actionPendingBanner(d) + head + "\n\n" + pager(cards, s.cursor, min(m.width, 160), s.cardWidth(m))
 }

@@ -138,8 +138,17 @@ func (s *Service) AdvancedGate(ctx context.Context, host, instance string) (*Gat
 
 // RequireGate refuses when the precondition is not met; a stale pod is
 // not a refusal (callers show Warning first).
+type riskAcceptanceKey struct{}
+
+// WithRiskAccepted carries an explicit user confirmation through one operation.
+// It does not alter the shared service or later requests.
+func WithRiskAccepted(ctx context.Context) context.Context {
+	return context.WithValue(ctx, riskAcceptanceKey{}, true)
+}
+
 func (s *Service) RequireGate(ctx context.Context, host, instance string) error {
-	if s.RiskAccepted {
+	accepted, _ := ctx.Value(riskAcceptanceKey{}).(bool)
+	if s.RiskAccepted || accepted {
 		return nil // the user accepted the risk for this one operation
 	}
 	g, err := s.AdvancedGate(ctx, host, instance)

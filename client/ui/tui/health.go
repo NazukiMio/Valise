@@ -23,6 +23,7 @@ type healthTab struct {
 	cursor     int // over rows(), then proposals
 	nrows      int // len(rows()) at the last view, for help()
 	repairName string
+	repairItem string
 	repairSeq  uint64
 
 	testing bool
@@ -45,7 +46,11 @@ func (c *healthTab) name() string { return "健康" }
 func (c *healthTab) help(p *instancePage) string {
 	items := []string{"↑↓", "选择", "t", "测试恢复", "u", "仓库与空间站", "s", "设置", "i", "忽略", "y", "复制给 agent 的话", "r", "刷新"}
 	if c.repairName != "" {
-		items = append(items, "f", "修复 · "+c.repairName)
+		label := c.repairName
+		if c.repairItem != "approval" {
+			label = "修复 · " + label
+		}
+		items = append(items, "f", label)
 	}
 	if len(c.proposals) > 0 && c.cursor >= c.nrows {
 		items = append(items, "a", "接受", "x", "拒绝")
@@ -246,6 +251,7 @@ func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 	c.repairName = ""
 	if c.cursor < len(rows) {
 		c.repairName = rows[c.cursor].ActionName
+		c.repairItem = rows[c.cursor].ID
 	}
 	problems := 0
 	for _, it := range rows {

@@ -16,6 +16,12 @@ import (
 // action: valise action <服务器> <实例> [<动作>] [--yes] [--no-seal]
 // (docs/INSTALL.md section 5).
 func (c *cli) action(ctx context.Context, args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "status", "resume", "cleanup":
+			return c.actionOperation(ctx, args)
+		}
+	}
 	fs := flag.NewFlagSet("action", flag.ContinueOnError)
 	yes := fs.Bool("yes", false, "")
 	noSeal := fs.Bool("no-seal", false, "")
@@ -44,7 +50,15 @@ func (c *cli) action(ctx context.Context, args []string) error {
 	if a.Undo != "" {
 		fmt.Fprintf(c.out, "  能否撤销：%s\n", a.Undo)
 	}
-	fmt.Fprintf(c.out, "  实际命令：%s\n", strings.Join(a.Argv, " "))
+	planDigest := ""
+	if plan := list.Plans[a.ID]; plan != nil {
+		planDigest = plan.Digest
+		for _, line := range service.ActionPlanLines(plan) {
+			fmt.Fprintln(c.out, "  "+line)
+		}
+	} else {
+		fmt.Fprintf(c.out, "  实际命令：%s\n", strings.Join(a.Argv, " "))
+	}
 	seal := service.SealsByDefault(*a) && !*noSeal
 	if service.SealsByDefault(*a) {
 		if seal {
@@ -67,7 +81,7 @@ func (c *cli) action(ctx context.Context, args []string) error {
 			return valise.New("cancelled", "名称不一致，已取消，服务器上没有任何改动", "")
 		}
 	}
-	res, err := c.svc.RunAction(ctx, host, instance, a.ID, service.ActionOptions{Seal: seal,
+	res, err := c.svc.RunAction(ctx, host, instance, a.ID, service.ActionOptions{Seal: seal, PlanDigest: planDigest,
 		IO:       service.InstallIO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
 		Progress: func(m string) { fmt.Fprintf(c.out, "[Valise] %s\n", m) }})
 	if err != nil {
@@ -104,6 +118,9 @@ func (c *cli) printActions(host string, list *service.ActionList) error {
 }
 
 func (c *cli) printActionResult(ctx context.Context, a *profile.Action, res *service.ActionResult) error {
+	if res.Operation != nil {
+		return c.printActionOperation(res.Operation, res.Exit)
+	}
 	fmt.Fprintln(c.out)
 	if res.Snapshot != "" {
 		fmt.Fprintf(c.out, "  ✓ 逃生舱：%s\n", res.Snapshot)

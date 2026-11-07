@@ -23,6 +23,9 @@ const Timeout = 2 * time.Minute
 // action's output kind. A secret that cannot be picked out is an error that
 // does not quote the output.
 func Run(ctx context.Context, e *porterenroll.Env, a *profile.Action) (*action.RunResult, error) {
+	if a.Transaction != nil || len(a.Steps) != 0 || len(a.Argv) == 0 {
+		return nil, valise.New("action_transaction_required", "此动作需要配置事务执行流程", "使用支持配置事务的客户端与 porter")
+	}
 	if a.Terminal {
 		return nil, valise.New("action_terminal", "动作「"+a.Name+"」需要交互终端", "在 Valise 打开的独立终端里运行它")
 	}

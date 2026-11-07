@@ -50,14 +50,14 @@ func (m *Model) readyRepair(v repairReady) tea.Cmd {
 		}
 		return nil
 	}
-	if v.list.RepairAction == v.actionID {
+	if v.list.RepairAction == v.actionID || v.list.ApprovalRepairAction == v.actionID {
 		for _, a := range v.list.Actions {
 			if a.ID == v.actionID {
 				return startAction(m, v.page, a)
 			}
 		}
 	}
-	return func() tea.Msg { return flashMsg("服务修复关联已变化，请刷新健康页后再试") }
+	return func() tea.Msg { return flashMsg("修复动作关联已变化，请刷新健康页后再试") }
 }
 
 // refreshInstance starts new generations while result pages are on top.

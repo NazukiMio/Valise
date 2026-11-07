@@ -107,7 +107,8 @@ const clockSkewLimit = 5 * time.Minute
 
 // Health collects independent checks; failure of one never hides another.
 func (s *Service) Health(ctx context.Context, host, instance string) (*HealthReport, error) {
-	return s.collectHealth(host, instance, healthSources{
+	var checked *action.ApprovalResult
+	report := s.collectHealth(host, instance, healthSources{
 		vault:     func() (*vaultrpc.StatusResult, error) { return s.VaultStatus(ctx, host) },
 		instances: func() ([]enroll.InstanceSummary, error) { return s.Instances(ctx, host) },
 		timer:     func() (*vaultrpc.TimerStatus, error) { return s.TimerStatus(ctx, host, instance) },
@@ -115,9 +116,16 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 		approval: func() (*action.ApprovalResult, error) {
 			var chk action.ApprovalResult
 			err := s.call(ctx, host, action.MethodApproval, action.ApprovalParams{InstanceID: instance}, &chk)
+			if err == nil {
+				checked = &chk
+			}
 			return &chk, err
 		},
-	}), nil
+	})
+	if checked != nil && checked.Declared && !checked.Pending && checked.Mode == profile.ApprovalBypass {
+		s.bindApprovalRepair(ctx, host, instance, report)
+	}
+	return report, nil
 }
 
 func (s *Service) collectHealth(host, instance string, src healthSources) *HealthReport {

@@ -11,6 +11,7 @@ import (
 	"valise/core/valise"
 	"valise/core/vaultrpc"
 	porteraction "valise/porter/internal/action"
+	"valise/porter/internal/actiontxn"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/seal"
 )
@@ -46,7 +47,17 @@ func init() {
 			return nil, err
 		}
 		rec, _ := porterenroll.ReadRecord(s.cfg.Home, p.InstanceID)
-		res, err := porteraction.Run(ctx, s.loginEnv(ctx).ForInstance(prof, rec), a)
+		var res *action.RunResult
+		if a.Transaction != nil || len(a.Steps) > 0 {
+			res, err = (actiontxn.Runner{Env: s.loginEnv(ctx)}).Run(ctx, p)
+		} else {
+			unlock, lockErr := (seal.Paths{Home: s.cfg.Home}).LockFor("action")
+			if lockErr != nil {
+				return nil, lockErr
+			}
+			defer unlock()
+			res, err = porteraction.Run(ctx, s.loginEnv(ctx).ForInstance(prof, rec), a)
+		}
 		result := "failed"
 		if res != nil {
 			result = fmt.Sprintf("exit %d", res.Exit)
@@ -55,9 +66,13 @@ func init() {
 		if p.Sealed {
 			reason += "; escape pod first"
 		}
+		operationID := ""
+		if res != nil && res.Operation != nil {
+			operationID = res.Operation.ID
+		}
 		// The output and any secret stay out of the audit.
 		seal.Paths{Home: s.cfg.Home}.AppendAudit(seal.AuditEntry{Time: time.Now().UTC(), Op: "action", Instance: p.InstanceID,
-			Initiator: vaultrpc.InitiatorClient, Result: result, Reason: reason})
+			Initiator: vaultrpc.InitiatorClient, Result: result, Reason: reason, Tier: a.AccessTier(), OperationID: operationID})
 		return res, err
 	}
 }
