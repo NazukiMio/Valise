@@ -59,6 +59,7 @@ type systemRead struct {
 	scheduled bool   // an accepted protection plan with its schedule on
 	schedule  string // that schedule in words, for the timer line
 	pending   []protection.PendingChange
+	caughtUp  []protection.MissedRun
 }
 
 var errSystemUnsupported = errors.New("system_status unsupported")
@@ -90,6 +91,11 @@ func (s *Service) readSystem(ctx context.Context, host, instance string) (*syste
 			return unsupportedOK(err)
 		}
 		out.pending = v.PendingChanges
+		for _, m := range v.MissedRuns {
+			if m.State == "caught_up" && m.RanAt != nil {
+				out.caughtUp = append(out.caughtUp, m)
+			}
+		}
 		if v.Mode == "accepted" && v.ServerPlan != nil && v.ServerPlan.Schedule.Enabled != nil && *v.ServerPlan.Schedule.Enabled {
 			out.scheduled = true
 			sc := v.ServerPlan.Schedule
@@ -155,6 +161,10 @@ func (s *Service) systemItems(r *HealthReport, host, instance string, read func(
 		for i := range r.Items {
 			if it := &r.Items[i]; it.ID == "timer" && it.Level == HealthOK {
 				it.Text = sr.schedule + "按保护计划备份一次，登出后也会运行"
+				// A quiet note (F1): a run the server made up after downtime.
+				for _, m := range sr.caughtUp {
+					it.Detail += "服务器从停机状态恢复：" + m.ScheduledAt.Local().Format("01-02 15:04") + " 的备份在 " + m.RanAt.Local().Format("01-02 15:04") + " 补跑。"
+				}
 			}
 		}
 	}
@@ -210,7 +220,7 @@ func (s *Service) bindSystemFix(it *HealthItem, host string, st *SystemStatus) {
 	if st == nil || st.User == "" {
 		return
 	}
-	if it.ID == FixClock && len(clockSteps(st, false)) == 0 {
+	if it.ID == FixClock && len(clockSteps(st, asUser)) == 0 {
 		return
 	}
 	ready := s.AdvancedReady(host)

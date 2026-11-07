@@ -177,3 +177,22 @@ func TestPrepareParamsCatchUpAndStrictDesired(t *testing.T) {
 		t.Fatal(string(b))
 	}
 }
+
+// A run that starts late within the slot's window (Persistent=true after the
+// server came back) keeps a caught_up mark with its start; one inside the
+// grace period is an ordinary on-time run.
+func TestComputeMissedCaughtUp(t *testing.T) {
+	now := utc(2026, 11, 7, 12, 0)
+	p := missedPlan("03:00", "UTC", utc(2026, 11, 5, 4, 0))
+	runs := []BackupRun{timerRun(utc(2026, 11, 6, 7, 30), "succeeded"), timerRun(utc(2026, 11, 7, 3, 10), "succeeded")}
+	got, _ := ComputeMissed(p, runs, now)
+	if len(got) != 1 || got[0].State != "caught_up" || !got[0].ScheduledAt.Equal(utc(2026, 11, 6, 3, 0)) ||
+		got[0].RanAt == nil || !got[0].RanAt.Equal(utc(2026, 11, 6, 7, 30)) {
+		t.Fatal(got)
+	}
+	// The earliest run in the window decides.
+	runs = append(runs, timerRun(utc(2026, 11, 6, 3, 1), "failed"))
+	if got, _ = ComputeMissed(p, runs, now); len(got) != 0 {
+		t.Fatal(got)
+	}
+}

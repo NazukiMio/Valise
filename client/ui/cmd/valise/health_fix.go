@@ -52,6 +52,13 @@ func (c *cli) healthFix(ctx context.Context, args []string) error {
 			ssh.Quote(host), ssh.Quote(inst), id)
 		return nil
 	}
+	// Only a plan with a destructive step needs an escape pod kept
+	// elsewhere first (docs/INSTALL.md 4.2); linger and time sync do not.
+	if f.Destructive() {
+		if err := c.gate(ctx, host, "", *yes); err != nil {
+			return err
+		}
+	}
 	digestNow := f.Digest
 	run := func(tio service.InstallIO) error {
 		res, err := c.svc.RunSystemFix(ctx, host, inst, id, digestNow, opts, tio)
@@ -79,6 +86,9 @@ func (c *cli) printSystemFix(f *service.SystemFix) {
 				fmt.Fprintf(c.out, "     %s\n", st.When)
 			}
 			fmt.Fprintf(c.out, "     改变：%s\n     撤销：%s\n", st.Change, st.Undo)
+			if st.Destructive {
+				fmt.Fprintf(c.out, "     ！%s\n", service.DestructiveLabel)
+			}
 		}
 	} else {
 		fmt.Fprintln(c.out, "\n需要在服务器上执行的命令：")

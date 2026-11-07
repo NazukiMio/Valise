@@ -25,6 +25,19 @@ func (c *cli) configCmd(op, path string) error {
 		}
 		fmt.Fprintf(c.out, "以后忽略红色提醒时，主页 %d 天后再提醒（健康页里照常显示红色）。\n", n)
 		return nil
+	case "detach":
+		if path != "on" && path != "off" {
+			return errUsage
+		}
+		if err := c.svc.SetDetachedTasks(path == "on"); err != nil {
+			return err
+		}
+		if path == "on" {
+			fmt.Fprintln(c.out, "分离模式已开启：服务器支持时，按计划备份交给服务器自己的一次性任务执行，关掉 Valise 也会继续。")
+		} else {
+			fmt.Fprintln(c.out, "分离模式已关闭：按计划备份在连接里执行，关掉 Valise 会中断正在进行的备份。")
+		}
+		return nil
 	case "export":
 		r, err := c.svc.ExportConfig(path)
 		if err != nil {
@@ -45,6 +58,29 @@ func (c *cli) configCmd(op, path string) error {
 		return nil
 	}
 	return errUsage
+}
+
+// configTakeover: valise config takeover <服务器> on|off
+// (docs/N2_IMPLEMENTATION_2026-11-05.md F.2). It only changes how the
+// terminal UI runs a sudo fix; valise health fix itself is unchanged.
+func (c *cli) configTakeover(host, state string) error {
+	var on bool
+	switch state {
+	case "on":
+		on = true
+	case "off":
+	default:
+		return errUsage
+	}
+	if err := c.svc.SetTakeover(host, on); err != nil {
+		return err
+	}
+	if on {
+		fmt.Fprintf(c.out, "%s 的接管模式已开启：终端界面里需要 sudo 的修复，在你开启高级模式（两个口令与确认句）后用 sudo -n 直接执行；sudo 需要密码时仍转到终端。\n", host)
+	} else {
+		fmt.Fprintf(c.out, "%s 的接管模式已关闭：需要 sudo 的修复转到终端执行。\n", host)
+	}
+	return nil
 }
 
 // importSummary is the plain report of an import, shared with the TUI.

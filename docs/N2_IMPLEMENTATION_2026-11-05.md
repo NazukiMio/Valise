@@ -153,6 +153,14 @@
 - **新计划已发布、未核实时崩溃**：revision 已为 9（不倒退），状态为 committed + reconcile_required，按计划备份被阻止。显式 `verify` 后完成，timer active / enabled，警告消失。
 - **备份运行中崩溃**：运行记录显示 reconciling；用同一 run_id 重试仍返回 reconciling，没有新的封存；换新 run_id 的备份正常成功。
 
+### F 节实现记录（2026-11-07）
+
+- F1：`missed_runs` 新增状态 `caught_up` 与 `ran_at`；健康页定时备份行的说明里以浅色小字写“服务器从停机状态恢复：某时的备份在某时补跑”。错过与过期的弹窗、标记已读属于 N4 界面。
+- F2：`valise config takeover <服务器> on|off` 与设置 › 高级的开关；开启后 TUI 内用 `sudo -n` 执行，确认页逐条标注 sudo 命令，需要密码时给出终端命令，从不在 TUI 收集 sudo 密码。TUI 内开启的高级模式只在这一次修复期间有效，结束即关闭（TUI 还没有顶栏“立即关闭”入口）。
+- F3：修复步骤带 `destructive`；现有 linger 与时钟步骤均为非破坏性，执行前不查别处备份；含破坏性步骤时先走 `RequireGate`。
+- F4：`valise config detach on|off`，默认关闭；关闭时按计划备份在连接内执行，任务结果带提示“任务也可以在后台跑，查看「开启分离模式」”。发起按计划备份的界面在 N4，提示目前只在服务层结果中。
+- 实机：三台靶机已部署当前 porter。`ubuntu-vm`、`debian-vm` 免密 sudo 可用，`ubuntu-vm-x86` 需要密码。接管模式与需要 sudo 的修复仍未实机执行：现有靶机都是用户自带 SSH 设置接入，不能开启高级模式。
+
 尚未在实机覆盖：DST 实际切换、客户端退出登录或重启、创建副本与恢复当前实例的关系（fake 测试已覆盖）、分离执行下复制成功（等 NAS 恢复）、需要 sudo 的时钟修复。
 
 ### Debian 13 定时器时间戳问题（2026-11-07）

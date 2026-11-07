@@ -31,28 +31,37 @@ type SystemFixStep struct {
 	Undo    string   `json:"undo"`
 	// When is set for a step that runs only if the problem remains.
 	When string `json:"when,omitempty"`
+	// Destructive marks a step that deletes or overwrites data and cannot
+	// simply be undone (docs/N2_IMPLEMENTATION_2026-11-05.md F.3); a plan
+	// with one needs an escape pod kept elsewhere first (INSTALL.md 4.2).
+	// Turning linger or time sync on and restarting time sync are not.
+	Destructive bool `json:"destructive,omitempty"`
 }
 
 // SystemFix is the confirmation page's content; Digest binds a run to it.
 type SystemFix struct {
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Host     string          `json:"host"`
-	Instance string          `json:"instance"`
-	Goal     string          `json:"goal"`
-	Impact   string          `json:"impact"`
-	Mode     string          `json:"mode"`
-	Ready    bool            `json:"ready"` // advanced: the mode is on now
-	Access   string          `json:"access"`
-	Steps    []SystemFixStep `json:"steps"`
-	Manual   [][]string      `json:"manual"`
-	Why      string          `json:"why,omitempty"`
-	Digest   string          `json:"digest"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Host     string `json:"host"`
+	Instance string `json:"instance"`
+	Goal     string `json:"goal"`
+	Impact   string `json:"impact"`
+	Mode     string `json:"mode"`
+	Ready    bool   `json:"ready"` // advanced: the mode is on now
+	// NonInteractive: advanced steps use sudo -n (takeover mode in the
+	// terminal UI); sudo asking for a password stops the fix there.
+	NonInteractive bool            `json:"non_interactive,omitempty"`
+	Access         string          `json:"access"`
+	Steps          []SystemFixStep `json:"steps"`
+	Manual         [][]string      `json:"manual"`
+	Why            string          `json:"why,omitempty"`
+	Digest         string          `json:"digest"`
 }
 
 // SystemFixOptions: Sudo asks for the advanced-mode plan even when a
 // direct one exists (linger after the system asked for administrator).
-type SystemFixOptions struct{ Sudo bool }
+// NonInteractive plans the advanced steps with sudo -n, for takeover mode.
+type SystemFixOptions struct{ Sudo, NonInteractive bool }
 
 // SystemStepResult is one command's outcome; Ran is false for a step that
 // was not needed or not reached.
@@ -71,6 +80,10 @@ type SystemFixResult struct {
 	Verification *HealthVerification `json:"verification"`
 	Next         string              `json:"next,omitempty"`
 	Audited      bool                `json:"audited"`
+	// SudoPassword: sudo -n said it needs a password; Terminal is the
+	// command that runs the fix in a terminal instead.
+	SudoPassword bool   `json:"sudo_password,omitempty"`
+	Terminal     string `json:"terminal,omitempty"`
 }
 
 // systemSettle is how long time sync may take to catch up; systemPoll the
@@ -90,32 +103,44 @@ func (s *Service) adminLoginAvailable(host string) bool {
 	return !srv.Valise() || s.HasAdminKey(host) || srv.Login == config.LoginKey || !s.NoTerminalLogin
 }
 
-func sudo(on bool, argv ...string) []string {
-	if on {
-		return append([]string{"sudo"}, argv...)
-	}
-	return argv
+// Command prefixes: none (direct), sudo, or sudo -n (takeover mode).
+var (
+	asUser  []string
+	asSudo  = []string{"sudo"}
+	asSudoN = []string{"sudo", "-n"}
+)
+
+func sudo(pre []string, argv ...string) []string {
+	return append(append([]string{}, pre...), argv...)
 }
 
-func lingerSteps(user string, root bool) []SystemFixStep {
-	return []SystemFixStep{{Command: sudo(root, "loginctl", "enable-linger", user),
+// undoPrefix is what the user would type to undo: plain sudo, never -n.
+func undoPrefix(pre []string) []string {
+	if len(pre) > 0 {
+		return asSudo
+	}
+	return asUser
+}
+
+func lingerSteps(user string, pre []string) []SystemFixStep {
+	return []SystemFixStep{{Command: sudo(pre, "loginctl", "enable-linger", user),
 		Change: "让 systemd 在你登出后继续运行你的用户服务（系统设置：用户 " + user + " 的 linger）",
-		Undo:   strings.Join(sudo(root, "loginctl", "disable-linger", user), " ")}}
+		Undo:   strings.Join(sudo(undoPrefix(pre), "loginctl", "disable-linger", user), " ")}}
 }
 
 // clockSteps: turn NTP on, then restart systemd-timesyncd only if it is
 // still off time; with NTP already on, the restart alone. Valise never sets
 // the clock from this computer's time.
-func clockSteps(st *SystemStatus, root bool) []SystemFixStep {
+func clockSteps(st *SystemStatus, pre []string) []SystemFixStep {
 	if st == nil || st.CanNTP == "no" {
 		return nil
 	}
-	restart := SystemFixStep{Command: sudo(root, "systemctl", "restart", "systemd-timesyncd"),
+	restart := SystemFixStep{Command: sudo(pre, "systemctl", "restart", "systemd-timesyncd"),
 		Change: "重启系统时间同步服务 systemd-timesyncd，让它立即重新对时", Undo: "不需要撤销（只是重启这个服务）"}
 	var steps []SystemFixStep
 	if st.NTP != "yes" {
-		steps = append(steps, SystemFixStep{Command: sudo(root, "timedatectl", "set-ntp", "true"),
-			Change: "开启系统的自动时间同步（NTP）", Undo: strings.Join(sudo(root, "timedatectl", "set-ntp", "false"), " ")})
+		steps = append(steps, SystemFixStep{Command: sudo(pre, "timedatectl", "set-ntp", "true"),
+			Change: "开启系统的自动时间同步（NTP）", Undo: strings.Join(sudo(undoPrefix(pre), "timedatectl", "set-ntp", "false"), " ")})
 		restart.When = "仅当开启后仍没有对上时间时执行"
 	}
 	if st.Timesyncd == "loaded" {
@@ -132,7 +157,7 @@ func clockManual(st *SystemStatus) []string {
 		return []string{"sudo timedatectl set-ntp true", "仍不同步时 sudo systemctl restart systemd-timesyncd"}
 	}
 	var out []string
-	for _, step := range clockSteps(st, true) {
+	for _, step := range clockSteps(st, asSudo) {
 		out = append(out, strings.Join(step.Command, " "))
 	}
 	if len(out) == 0 {
@@ -180,7 +205,7 @@ func (s *Service) PlanSystemFix(ctx context.Context, host, instance, id string, 
 		}
 		f.Goal = "让定时备份在你退出登录或服务器重启后照常运行"
 		f.Impact = "不会中断 agent 或其他服务；改的是这台服务器的系统设置，不在 agent 的备份里"
-		for _, step := range lingerSteps(st.User, true) {
+		for _, step := range lingerSteps(st.User, asSudo) {
 			f.Manual = append(f.Manual, step.Command)
 		}
 	case FixClock:
@@ -189,7 +214,7 @@ func (s *Service) PlanSystemFix(ctx context.Context, host, instance, id string, 
 		}
 		f.Goal = "让服务器自动与时间服务器对时；Valise 不会用这台电脑的时间改写服务器时钟"
 		f.Impact = "不会中断 agent；服务器时间可能跳到正确值，定时任务按新时间计算"
-		for _, step := range clockSteps(st, true) {
+		for _, step := range clockSteps(st, asSudo) {
 			f.Manual = append(f.Manual, step.Command)
 		}
 	}
@@ -214,16 +239,26 @@ func (s *Service) PlanSystemFix(ctx context.Context, host, instance, id string, 
 		f.Why = "这里不能新开管理登录（没有管理钥匙，终端界面里也不能输入服务器密码）"
 	}
 	if f.Mode != FixManual {
+		pre := asSudo
+		switch {
+		case f.Mode == FixAdvanced && o.NonInteractive && s.Takeover(host):
+			pre, f.NonInteractive = asSudoN, true
+		case f.Mode == FixDirect && id == FixLinger:
+			pre = asUser
+		}
 		if id == FixLinger {
-			f.Steps = lingerSteps(st.User, f.Mode == FixAdvanced)
+			f.Steps = lingerSteps(st.User, pre)
 		} else {
-			f.Steps = clockSteps(st, true)
+			f.Steps = clockSteps(st, pre)
 		}
 		if len(f.Steps) == 0 {
 			f.Mode, f.Why = FixManual, clockManual(st)[0]
 		}
 	}
 	f.Access = s.systemFixAccess(host, f.Mode)
+	if f.NonInteractive {
+		f.Access = takeoverAccess
+	}
 	f.Digest = systemFixDigest(f)
 	return f, nil
 }
@@ -232,7 +267,8 @@ func systemFixDigest(f *SystemFix) string {
 	b, _ := json.Marshal(struct {
 		ID, Host, Instance, Mode string
 		Steps                    []SystemFixStep
-	}{f.ID, f.Host, f.Instance, f.Mode, f.Steps})
+		NonInteractive           bool `json:",omitempty"`
+	}{f.ID, f.Host, f.Instance, f.Mode, f.Steps, f.NonInteractive})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
@@ -287,7 +323,25 @@ func (s *Service) RunSystemFix(ctx context.Context, host, instance, id, digest s
 	case SystemFixSteps(f).Refused:
 		return nil, valise.New("advanced_refused", "修复命令没有通过检查，没有执行", "")
 	}
+	if err := s.destructiveGate(ctx, host, f.Steps); err != nil {
+		return nil, err
+	}
 	res := &SystemFixResult{Fix: id, Mode: f.Mode}
+	if f.NonInteractive {
+		ok, err := s.sudoWithoutPassword(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			for _, step := range f.Steps {
+				res.Steps = append(res.Steps, SystemStepResult{Command: step.Command, Note: "这台服务器的 sudo 需要密码，没有在这里执行"})
+			}
+			s.sudoNeedsPassword(f, res)
+			res.Verification = s.verifySystem(ctx, host, id, 0)
+			s.auditSystemFix(ctx, host, f, res, nil)
+			return res, nil
+		}
+	}
 	var runErr error
 	stopped := false
 	for i, step := range f.Steps {
@@ -302,7 +356,15 @@ func (s *Service) RunSystemFix(ctx context.Context, host, instance, id, digest s
 				tio.Step(i, PlanStep{Kind: "system", Summary: strings.Join(step.Command, " "), Command: step.Command})
 			}
 			sr.Ran = true
-			sr.Exit, runErr = s.runSystemStep(ctx, host, f.Mode, step.Command, tio)
+			if f.NonInteractive {
+				var askedPassword bool
+				sr.Exit, askedPassword, runErr = s.runSudoN(ctx, host, step.Command)
+				if askedPassword {
+					s.sudoNeedsPassword(f, res)
+				}
+			} else {
+				sr.Exit, runErr = s.runSystemStep(ctx, host, f.Mode, step.Command, tio)
+			}
 			stopped = runErr != nil || sr.Exit != 0
 		}
 		res.Steps = append(res.Steps, sr)
@@ -312,7 +374,15 @@ func (s *Service) RunSystemFix(ctx context.Context, host, instance, id, digest s
 		settle = systemSettle
 	}
 	res.Verification = s.verifySystem(ctx, host, id, settle)
-	res.Next = systemNext(f, res)
+	if !res.SudoPassword {
+		res.Next = systemNext(f, res)
+	}
+	s.auditSystemFix(ctx, host, f, res, runErr)
+	return res, runErr
+}
+
+// auditSystemFix writes the fix's audit entry: commands and exit codes.
+func (s *Service) auditSystemFix(ctx context.Context, host string, f *SystemFix, res *SystemFixResult, runErr error) {
 	result := res.Verification.State
 	if runErr != nil {
 		result = "failed"
@@ -323,9 +393,8 @@ func (s *Service) RunSystemFix(ctx context.Context, host, instance, id, digest s
 			steps = append(steps, install.StepAudit{Kind: "system", Command: strings.Join(sr.Command, " "), Exit: sr.Exit})
 		}
 	}
-	audit := SystemFixAudit{Fix: id, Instance: instance, Mode: f.Mode, Steps: steps, Result: result}
+	audit := SystemFixAudit{Fix: f.ID, Instance: f.Instance, Mode: f.Mode, Steps: steps, Result: result}
 	res.Audited = s.call(context.WithoutCancel(ctx), host, MethodSystemFixAudit, audit, nil) == nil
-	return res, runErr
 }
 
 // runSystemStep opens a fresh admin connection for one command.

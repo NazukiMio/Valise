@@ -87,3 +87,39 @@ func TestServerValidate(t *testing.T) {
 		}
 	}
 }
+
+func TestTakeoverAndDetached(t *testing.T) {
+	dir := t.TempDir()
+	if c, _ := Load(dir); c.Takeover["box"] || c.DetachedTasks {
+		t.Fatalf("default not off: %+v", c)
+	}
+	if err := SetRedDismissDays(dir, 60); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetTakeover(dir, "box", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetTakeover(dir, "nas", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetDetachedTasks(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(dir)
+	if err != nil || !c.Takeover["box"] || !c.Takeover["nas"] || c.Takeover["other"] || c.RedDismissDays != 60 || !c.DetachedTasks {
+		t.Fatalf("%+v %v", c, err)
+	}
+	if err := SetTakeover(dir, "box", false); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := Load(dir); c.Takeover["box"] || !c.Takeover["nas"] {
+		t.Fatalf("%+v", c)
+	}
+	if SetTakeover(dir, "", true) == nil {
+		t.Fatal("empty server accepted")
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, ConfigFile))
+	if strings.Contains(string(b), `"box"`) {
+		t.Fatalf("off server kept: %s", b)
+	}
+}

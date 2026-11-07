@@ -131,6 +131,7 @@ func TestN2ProtectionFakeSSHFacade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	started := bt
 	// A backup-runs/2 porter returns at once; follow the task to its end.
 	updates, stopWatch, err := next.WatchBackupTask(ctx, bt.TaskRef)
 	if err != nil {
@@ -140,6 +141,10 @@ func TestN2ProtectionFakeSSHFacade(t *testing.T) {
 		bt = v
 	}
 	stopWatch()
+	// 分离模式 is off by default: the backup ran in the connection, with the hint.
+	if started.Async || started.Hint != DetachHint {
+		t.Fatalf("detach mode off: async=%v hint=%q", started.Async, started.Hint)
+	}
 	if bt.State != "succeeded" || bt.Run == nil || bt.Run.Snapshot == nil || bt.Run.Plan.Scope.Tier != "full" {
 		t.Fatalf("planned backup: %+v %v", bt, err)
 	}

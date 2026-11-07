@@ -25,9 +25,13 @@ const (
 
 // MissedRun is one scheduled time with no timer run started before the next
 // scheduled time. State "expired" means a later timer run has succeeded.
+// State "caught_up" means its run started late, after the grace period (the
+// server was down and Persistent=true ran it once on return); RanAt is then
+// the run's start, shown as "服务器从停机状态恢复".
 type MissedRun struct {
-	ScheduledAt time.Time `json:"scheduled_at"`
-	State       string    `json:"state"`
+	ScheduledAt time.Time  `json:"scheduled_at"`
+	State       string     `json:"state"`
+	RanAt       *time.Time `json:"ran_at,omitempty"`
 }
 
 // ScheduledTimes lists the daily schedule's trigger times in (from, to]. A
@@ -99,17 +103,23 @@ func ComputeMissed(plan ServerPlan, runs []BackupRun, now time.Time) ([]MissedRu
 		if i+1 < len(slots) {
 			next = slots[i+1]
 		}
-		ran, laterSuccess := false, false
+		var ranAt *time.Time
+		laterSuccess := false
 		for _, r := range timerRuns {
 			if !r.AcceptedAt.Before(slot) && (next.IsZero() || r.AcceptedAt.Before(next)) {
-				ran = true
-				break
+				if t := r.AcceptedAt; ranAt == nil || t.Before(*ranAt) {
+					ranAt = &t
+				}
+				continue
 			}
 			if r.AcceptedAt.After(slot) && r.State == "succeeded" {
 				laterSuccess = true
 			}
 		}
-		if ran {
+		if ranAt != nil {
+			if ranAt.Sub(slot) > missedGrace {
+				out = append(out, MissedRun{ScheduledAt: slot, State: "caught_up", RanAt: ranAt})
+			}
 			continue
 		}
 		state := "missed"

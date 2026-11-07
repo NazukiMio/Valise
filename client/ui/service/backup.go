@@ -56,6 +56,9 @@ type BackupTask struct {
 	ObservedAt          time.Time             `json:"observed_at"`
 	Run                 *protection.BackupRun `json:"run,omitempty"`
 	Error               *ProtectionTaskError  `json:"error,omitempty"`
+	// Hint is a quiet note for the person, not part of the task's record:
+	// with 分离模式 off, it says the backup could run in the background.
+	Hint string `json:"hint,omitempty"`
 	// Async marks a backup-runs/2 task: Start returned before completion and
 	// the run is followed by status queries. Execution mirrors the run
 	// record; attached means closing Valise interrupts this backup.

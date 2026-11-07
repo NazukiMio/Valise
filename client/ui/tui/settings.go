@@ -73,7 +73,7 @@ func (s *settingsScreen) help() string {
 	case ssUpdate:
 		items = append(items, "p", "在线更新资料包", "f", "从文件安装资料包")
 	case ssAdvanced:
-		items = append(items, "u", "从这台服务器移除我的钥匙", "c", "对话分栏 开 / 关", "d", "忽略红色提醒的时长")
+		items = append(items, "u", "从这台服务器移除我的钥匙", "t", "接管模式 开 / 关", "c", "对话分栏 开 / 关", "d", "忽略红色提醒的时长")
 	case ssAbout:
 		items = append(items, "g", "第一次使用")
 	}
@@ -241,6 +241,8 @@ func (s *settingsScreen) action(m *Model, k string) (tea.Cmd, bool) {
 			m.flash, m.flashErr = "已改为 "+itoa(n)+" 天，下次忽略时生效", false
 			return nil
 		})), true
+	case s.section == ssAdvanced && k == "t" && host != "":
+		return toggleTakeover(m, host), true
 	case s.section == ssAdvanced && k == "u" && host != "":
 		return m.runCLI("key", "unregister", host), true
 	case s.section == ssConfig && k == "e":

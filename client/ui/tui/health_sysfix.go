@@ -14,14 +14,17 @@ import (
 // each exit code apart from the re-check. A sudo fix runs through the CLI
 // in the terminal, where the user turns advanced mode on and types sudo's
 // password (docs/INSTALL.md 4.1); Valise never turns it on by itself.
+// With takeover mode on for the server (health_takeover.go) the fix runs
+// here instead, with sudo -n, after the user turned advanced mode on here.
 
 func (c *healthTab) planSystemFix(m *Model, p *instancePage, id string) tea.Cmd {
 	c.repairSeq++
 	seq := c.repairSeq
 	svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
 	m.flash, m.flashErr = "正在核对服务器状态…", false
+	opts := service.SystemFixOptions{NonInteractive: svc.Takeover(host)}
 	return func() tea.Msg {
-		f, err := svc.PlanSystemFix(ctx, host, inst, id, service.SystemFixOptions{})
+		f, err := svc.PlanSystemFix(ctx, host, inst, id, opts)
 		return repairReady{page: p, tab: c, seq: seq, actionID: id, fix: f, err: err}
 	}
 }
@@ -56,9 +59,15 @@ func (c *systemFixConfirm) init(m *Model) tea.Cmd {
 	return nil
 }
 
-// viaTerminal: sudo needs advanced mode, which this process never has on.
+// viaTerminal: sudo needs advanced mode; without takeover mode the CLI in
+// the terminal turns it on and sudo asks for its password there.
 func (c *systemFixConfirm) viaTerminal() bool {
-	return c.fix.Mode == service.FixAdvanced
+	return c.fix.Mode == service.FixAdvanced && !c.fix.NonInteractive
+}
+
+// takeover: the sudo -n plan of takeover mode, run here.
+func (c *systemFixConfirm) takeover() bool {
+	return c.fix.Mode == service.FixAdvanced && c.fix.NonInteractive
 }
 
 func (c *systemFixConfirm) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
@@ -72,11 +81,28 @@ func (c *systemFixConfirm) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	case "enter":
 		m.pop()
 		f := c.fix
-		if c.viaTerminal() {
-			return m.cliThen(m.refreshInstance(c.host, c.inst), false,
-				"health", "fix", c.host, c.inst, f.ID, "--advanced", "--yes", "--digest", f.Digest), true
+		switch {
+		case c.viaTerminal():
+			run := func(m *Model) tea.Cmd {
+				return m.cliThen(m.refreshInstance(c.host, c.inst), false,
+					"health", "fix", c.host, c.inst, f.ID, "--advanced", "--yes", "--digest", f.Digest)
+			}
+			if f.Destructive() {
+				return gateThen(m, c.host, "", run), true
+			}
+			return run(m), true
+		case c.takeover():
+			return startTakeover(m, c.host, c.inst, f), true
 		}
-		return m.push(&systemFixResult{host: c.host, inst: c.inst, fix: f, running: true}), true
+		run := func(m *Model) tea.Cmd {
+			risk := m.riskOnce
+			m.riskOnce = false
+			return m.push(&systemFixResult{host: c.host, inst: c.inst, fix: f, running: true, risk: risk})
+		}
+		if f.Destructive() {
+			return gateThen(m, c.host, "", run), true
+		}
+		return run(m), true
 	}
 	return nil, true
 }
@@ -87,15 +113,24 @@ func (c *systemFixConfirm) view(m *Model) string {
 	rows := []string{headStyle.Render(f.Name) + "    " + warnStyle.Render("系统设置"), "",
 		"会发生什么：" + f.Goal, "影响：" + f.Impact, "", "将执行的命令与改变的系统设置："}
 	for i, st := range f.Steps {
+		if c.takeover() && service.IsSudo(st.Command) {
+			rows = append(rows, "  "+warnStyle.Render(service.SudoLabel))
+		}
 		rows = append(rows, "  "+itoa(i+1)+". "+strings.Join(st.Command, " "))
 		if st.When != "" {
 			rows = append(rows, "     "+dimStyle.Render(st.When))
 		}
 		rows = append(rows, "     改变："+st.Change, "     撤销："+st.Undo)
+		if st.Destructive {
+			rows = append(rows, "     "+errStyle.Render("！"+service.DestructiveLabel))
+		}
 	}
 	rows = append(rows, "", dimStyle.Render(f.Access))
-	if c.viaTerminal() {
+	switch {
+	case c.viaTerminal():
 		rows = append(rows, warnStyle.Render("需要管理员权限：按 enter 后在终端里由你开启高级模式（Valise 口令、管理口令与确认句），sudo 密码也在终端里输入；Valise 不读取、不保存。"))
+	case c.takeover():
+		rows = append(rows, warnStyle.Render(takeoverNote(m, c.host)))
 	}
 	rows = append(rows, "", "确认上面的命令与改动后按 enter 执行；esc 取消，什么都不会改。")
 	return box("", strings.Join(rows, "\n"), w)
@@ -108,6 +143,10 @@ type systemFixResult struct {
 	running    bool
 	res        *service.SystemFixResult
 	err        error
+	// risk: the user accepted going on without an escape pod elsewhere,
+	// for this run only; endAdvanced: advanced mode was turned on for this
+	// fix and ends with it.
+	risk, endAdvanced bool
 }
 
 type systemFixDone struct {
@@ -118,7 +157,12 @@ type systemFixDone struct {
 
 func (r *systemFixResult) title() string    { return r.fix.Name }
 func (r *systemFixResult) hostName() string { return r.host }
-func (r *systemFixResult) help() string     { return "" }
+func (r *systemFixResult) help() string {
+	if r.res != nil && r.res.SudoPassword {
+		return menu("t", "转到终端执行")
+	}
+	return ""
+}
 func (r *systemFixResult) busy() string {
 	if r.running {
 		return "修复正在执行，等它结束"
@@ -127,9 +171,16 @@ func (r *systemFixResult) busy() string {
 }
 
 func (r *systemFixResult) init(m *Model) tea.Cmd {
-	svc, ctx, f := m.svc, m.ctx, r.fix
+	svc, ctx, f, end := m.svc, m.ctx, r.fix, r.endAdvanced
+	if r.risk {
+		ctx = service.WithRiskAccepted(ctx)
+	}
+	opts := service.SystemFixOptions{NonInteractive: f.NonInteractive}
 	return func() tea.Msg {
-		res, err := svc.RunSystemFix(ctx, f.Host, f.Instance, f.ID, f.Digest, service.SystemFixOptions{}, service.InstallIO{})
+		res, err := svc.RunSystemFix(ctx, f.Host, f.Instance, f.ID, f.Digest, opts, service.InstallIO{})
+		if end {
+			svc.DisableAdvanced(ctx)
+		}
 		return systemFixDone{r, res, err}
 	}
 }
@@ -146,6 +197,10 @@ func (r *systemFixResult) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		if msg.String() == "esc" && r.running {
 			return func() tea.Msg { return flashMsg("修复正在执行，等它结束") }, true
 		}
+		if msg.String() == "t" && r.res != nil && r.res.SudoPassword {
+			m.pop()
+			return m.cliThen(m.refreshInstance(r.host, r.inst), false, "health", "fix", r.host, r.inst, r.fix.ID, "--advanced"), true
+		}
 	}
 	return nil, false
 }
@@ -161,6 +216,11 @@ func (r *systemFixResult) view(m *Model) string {
 	}
 	if r.res == nil {
 		return strings.Join(lines, "\n")
+	}
+	if r.res.SudoPassword {
+		lines = append(lines, errStyle.Render("这台服务器的 sudo 需要密码"),
+			dimStyle.Render("Valise 不在终端界面里收集 sudo 密码。按 t 转到终端执行（sudo 密码在终端里输入，Valise 不读取、不保存）："),
+			"  "+r.res.Terminal, "")
 	}
 	lines = append(lines, systemFixLines(r.res)...)
 	return strings.Join(lines, "\n")

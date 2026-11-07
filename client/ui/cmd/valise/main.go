@@ -117,6 +117,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   kit tool install|uninstall <服务器> <名称> [--yes]   安装或卸载 Kit 工具（增强级要 Valise 口令；专家级要高级模式）
   config export <文件> | config import <文件>       导出 / 导入 Valise 配置：服务器列表、主机指纹、设置（不含任何钥匙）
   config red-dismiss-days <天数>                  忽略红色健康提醒后多久再在主页提醒（30–365，默认 30）
+  config detach on|off                           分离模式：服务器支持时按计划备份在服务器后台执行（默认关闭）
+  config takeover <服务器> on|off                 接管模式：终端界面里用 sudo -n 直接执行需要 sudo 的修复（默认关闭）
   admin passphrase                               修改管理口令（重新加密所有管理钥匙）
   key unregister <服务器> [--recipient age1…]     从服务器移除一把钥匙（以前的逃生舱仍可被它打开）
   key init                                       生成新的密钥（口令至少 12 个字符）
@@ -223,6 +225,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.profilesCmd(ctx, args[1:])
 	case args[0] == "server":
 		return c.server(ctx, args[1:])
+	case args[0] == "config" && len(args) == 4 && args[1] == "takeover":
+		return c.configTakeover(args[2], args[3])
 	case args[0] == "config" && len(args) == 3:
 		return c.configCmd(args[1], args[2])
 	case args[0] == "admin":

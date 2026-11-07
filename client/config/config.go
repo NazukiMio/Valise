@@ -29,6 +29,14 @@ type Config struct {
 	RedDismissDays int `json:"red_dismiss_days,omitempty"`
 	// ChatEntryOff hides the terminal UI's 对话 tab (docs/UI.md 9.5).
 	ChatEntryOff bool `json:"chat_entry_off,omitempty"`
+	// Takeover lists the servers in takeover mode (default off; docs/
+	// N2_IMPLEMENTATION_2026-11-05.md F.2): the terminal UI runs a fix
+	// that needs sudo itself, with sudo -n, after advanced mode is on.
+	Takeover map[string]bool `json:"takeover,omitempty"`
+	// DetachedTasks is the settings' 分离模式 (default off): when on and the
+	// server declares backup-runs/2, a planned backup is handed to the
+	// server's one-shot unit.
+	DetachedTasks bool `json:"detached_tasks,omitempty"`
 }
 
 // Repo is a local folder used as a repository.
@@ -94,6 +102,33 @@ func SetChatEntryOff(dir string, off bool) error { return setKey(dir, "chat_entr
 
 // SetRedDismissDays records how long a red dismissal lasts.
 func SetRedDismissDays(dir string, days int) error { return setKey(dir, "red_dismiss_days", days) }
+
+// SetDetachedTasks records the 分离模式 setting.
+func SetDetachedTasks(dir string, on bool) error { return setKey(dir, "detached_tasks", on) }
+
+// SetTakeover turns takeover mode on or off for one server, keeping the
+// other servers' settings. Off removes the server from the list.
+func SetTakeover(dir, host string, on bool) error {
+	if host == "" {
+		return errors.New("takeover: empty server name")
+	}
+	c, err := Load(dir)
+	if err != nil {
+		return err
+	}
+	m := map[string]bool{}
+	for h, v := range c.Takeover {
+		if v {
+			m[h] = true
+		}
+	}
+	if on {
+		m[host] = true
+	} else {
+		delete(m, host)
+	}
+	return setKey(dir, "takeover", m)
+}
 
 // setKey merges one key into config.json, keeping the others.
 func setKey(dir, key string, value any) error {

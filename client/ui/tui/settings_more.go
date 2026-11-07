@@ -111,6 +111,9 @@ func (s *settingsScreen) advancedView(m *Model, w int) string {
 	if m.svc.Config.ChatEntryOff {
 		chat = dimStyle.Render("关　按 c 打开")
 	}
+	if s.cursor < len(s.hosts) {
+		b.WriteString(box("接管模式 · "+s.hosts[s.cursor], takeoverRow(m, s.hosts[s.cursor]), w) + "\n")
+	}
 	b.WriteString(box("对话分栏", chat, w) + "\n")
 	b.WriteString(box("忽略红色提醒的时长", itoa(m.svc.RedDismissDays())+" 天"+dimStyle.Render("　黄色提醒忽略后不再出现；红色的忽略后只是主页不提醒，到期再提醒，健康页里一直显示。按 d 修改（30–365 天）"), w))
 	return b.String()
@@ -178,4 +181,26 @@ func importLines(r *service.ConfigImportResult) []string {
 		out = append(out, "这些用你自己的 SSH 设置，请确认 ~/.ssh/config 里有同名 Host："+strings.Join(r.NeedSSHConfig, "、"))
 	}
 	return out
+}
+
+// takeoverRow is the settings line of takeover mode for host (docs/
+// N2_IMPLEMENTATION_2026-11-05.md F.2; per server, default off).
+func takeoverRow(m *Model, host string) string {
+	if m.svc.Takeover(host) {
+		return okStyle.Render("开") + dimStyle.Render("　健康页里需要 sudo 的修复，在你开启高级模式后于这里用 sudo -n 执行；sudo 需要密码时仍转到终端。按 t 关掉")
+	}
+	return dimStyle.Render("关　健康页里需要 sudo 的修复转到终端执行。按 t 打开：开启高级模式后在这里用 sudo -n 执行（不在这里输入 sudo 密码）")
+}
+
+// toggleTakeover is the t key of the advanced settings.
+func toggleTakeover(m *Model, host string) tea.Cmd {
+	on := !m.svc.Takeover(host)
+	if err := m.svc.SetTakeover(host, on); err != nil {
+		return func() tea.Msg { return failed(err) }
+	}
+	m.flash, m.flashErr = host+" 的接管模式已关闭：需要 sudo 的修复转到终端执行", false
+	if on {
+		m.flash = host + " 的接管模式已开启：需要 sudo 的修复在你开启高级模式后于这里用 sudo -n 执行"
+	}
+	return nil
 }
