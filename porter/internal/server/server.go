@@ -9,8 +9,12 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"valise/core/action"
+	"valise/core/identity"
+	"valise/core/protection"
 	"valise/core/rpc"
 	"valise/core/valise"
+	"valise/porter/internal/actionjournal"
 	porterenroll "valise/porter/internal/enroll"
 	porterrevive "valise/porter/internal/revive"
 	"valise/porter/internal/tools"
@@ -38,6 +42,11 @@ func JournalDir(home string) string {
 // hello.
 func Serve(ctx context.Context, r io.Reader, w io.Writer, cfg Config) error {
 	conn := rpc.NewConn(r, w)
+	callCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan struct{})
+	defer close(done)
+	incoming := readAhead(done, conn, cancel)
 	helloed := false
 	s := &session{cfg: cfg}
 	if cfg.DetectTools == nil {
@@ -46,7 +55,11 @@ func Serve(ctx context.Context, r io.Reader, w io.Writer, cfg Config) error {
 		}
 	}
 	for {
-		line, err := conn.ReadLine()
+		item, ok := <-incoming
+		if !ok {
+			return nil
+		}
+		line, err := item.line, item.err
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -79,7 +92,7 @@ func Serve(ctx context.Context, r io.Reader, w io.Writer, cfg Config) error {
 			resp = errorResponse(req.ID, rpc.CodeHelloRequired, "first request must be hello", nil)
 		default:
 			id := req.ID
-			resp = s.call(rpc.WithProgress(ctx, func(stage string, done, total int64) {
+			resp = s.call(rpc.WithProgress(callCtx, func(stage string, done, total int64) {
 				p, _ := json.Marshal(rpc.ProgressParams{ID: id, Stage: stage, Done: done, Total: total})
 				_ = conn.Write(rpc.Request{JSONRPC: rpc.JSONRPCVersion, Method: rpc.MethodProgress, Params: p})
 			}), req)
@@ -104,14 +117,24 @@ func hello(ctx context.Context, req rpc.Request, cfg Config) rpc.Response {
 			"检查 ~/.local/state/valise/journal/ 的权限").WithDetail(err.Error())
 		return errorResponse(req.ID, rpc.CodeUserError, "journal unreadable", ue)
 	}
+	actions, err := (actionjournal.Store{Home: cfg.Home}).Pending()
+	if err != nil {
+		return errorResponse(req.ID, rpc.CodeUserError, "action journal unreadable", valise.New("action_journal_unreadable", "无法读取配置操作记录", "保留现场并检查 action-journal 目录"))
+	}
+	pendingActions := []action.PendingAction{}
+	for _, j := range actions {
+		pendingActions = append(pendingActions, action.PendingAction{OperationID: j.ID, InstanceID: j.Plan.InstanceID, Phase: j.Phase, Published: j.Published})
+	}
 	res := rpc.HelloResult{
-		PorterVersion: cfg.Version,
-		Protocol:      rpc.ProtocolVersion,
-		OS:            runtime.GOOS,
-		Arch:          runtime.GOARCH,
-		Home:          cfg.Home,
-		Tools:         cfg.DetectTools(ctx),
-		PendingOps:    ops,
+		Capabilities:   []string{action.CapabilityTransactions, identity.Capability, protection.Capability, protection.BackupCapability},
+		PendingActions: pendingActions,
+		PorterVersion:  cfg.Version,
+		Protocol:       rpc.ProtocolVersion,
+		OS:             runtime.GOOS,
+		Arch:           runtime.GOARCH,
+		Home:           cfg.Home,
+		Tools:          cfg.DetectTools(ctx),
+		PendingOps:     ops,
 	}
 	b, err := json.Marshal(res)
 	if err != nil {

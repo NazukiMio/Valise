@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"valise/client/ssh"
+	"valise/core/identity"
 	"valise/core/revive"
 	"valise/core/valise"
 )
@@ -40,6 +41,9 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 			"可以单独恢复嵌在里面的 agent，或恢复到另一台服务器；恢复测试不受影响")
 	}
 	plan := rp.Plan
+	if err := s.requireRecoveryIdentityCapability(ctx, rp); err != nil {
+		return nil, err
+	}
 	// A daily key gets a one-time grant to run stage-write for this op.
 	var begun struct {
 		Grant string `json:"grant"`
@@ -88,9 +92,27 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 		}
 		stopped = true
 	}
+	// Disposition comes only from this execution's actual results; there is
+	// no option for a person or automation to assert it.
+	disposition := ""
+	if plan.Identity != nil {
+		disposition = identity.Unresolved
+		switch {
+		case plan.Mode == revive.ModeClone:
+			disposition = identity.ExclusiveOmitted // excluded while planning; the target rechecks its stage
+		case plan.Mode == revive.ModeMigrate && stopped && rp.sourceStatus:
+			var st struct {
+				State string `json:"state"`
+			}
+			if s.callOwner(ctx, source, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "status"}, &st) == nil &&
+				(st.State == "inactive" || st.State == "failed") {
+				disposition = identity.StoppedVerified
+			}
+		}
+	}
 	report(ctx, StageSwap, 0, 0)
 	var res revive.SwapResult
-	err := s.callOwner(ctx, rp.target, faultEnv(fault), revive.MethodSwap, revive.OpParams{OpID: plan.OpID}, &res)
+	err := s.callOwner(ctx, rp.target, faultEnv(fault), revive.MethodSwap, revive.OpParams{OpID: plan.OpID, SourceDisposition: disposition}, &res)
 	if stopped && (err != nil || res.State == revive.StateRolledBack) {
 		if s.callOwner(ctx, source, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "start"}, nil) == nil {
 			res.Message += "；已重新启动原服务器上的 " + rp.StopSource

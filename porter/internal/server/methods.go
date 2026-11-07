@@ -97,7 +97,7 @@ var methods = map[string]handler{
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
 		}
-		path, err := porterenroll.WriteRecord(s.cfg.Home, p.Record, p.Profile)
+		path, _, err := porterenroll.AcceptRecord(s.cfg.Home, p.Record, p.Profile)
 		return enroll.InstanceWriteResult{Path: path}, err
 	},
 	enroll.MethodLabelSet: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
@@ -187,7 +187,9 @@ func init() {
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
 		}
-		return struct{}{}, seal.SetPeriodSetting(paths(s), p.InstanceID, p.Setting)
+		return struct{}{}, s.protectionStore(ctx).WithLegacyWrite(p.InstanceID, func() error {
+			return seal.SetPeriodSetting(paths(s), p.InstanceID, p.Setting)
+		})
 	}
 	methods[vaultrpc.MethodLeafDelete] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.LeafDeleteParams
@@ -258,7 +260,9 @@ func init() {
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
 		}
-		return struct{}{}, seal.SetTarget(paths(s), p.Target)
+		return struct{}{}, s.protectionStore(ctx).WithLegacyTargetsWrite(func() error {
+			return seal.SetTarget(paths(s), p.Target)
+		})
 	}
 	methods[vaultrpc.MethodStationKey] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.StationKeyParams
@@ -356,7 +360,7 @@ func (s *session) call(ctx context.Context, req rpc.Request) rpc.Response {
 		ue := err.(*valise.UserError)
 		return errorResponse(req.ID, rpc.CodeUserError, ue.Code, ue)
 	}
-	res, err := h(s, ctx, req.Params)
+	res, err := s.guardedCall(ctx, req, h)
 	if err != nil {
 		if re, ok := err.(*rpc.Error); ok {
 			return errorResponse(req.ID, re.Code, re.Message, re.Data)

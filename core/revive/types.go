@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"valise/core/enroll"
+	"valise/core/identity"
 	"valise/core/profile"
 	"valise/core/vault"
 )
@@ -164,6 +165,8 @@ type Plan struct {
 	Record *enroll.Record `json:"record,omitempty"`
 	// Supersedes are instances marked superseded when the swap succeeds.
 	Supersedes []string `json:"supersedes,omitempty"`
+	// Identity is optional provenance supported by identity/1 peers only.
+	Identity *identity.RecoveryContext `json:"identity,omitempty"`
 }
 
 // BodyMove records a body directory carried across the swap.
@@ -203,6 +206,9 @@ type Journal struct {
 	ServiceWasActive bool          `json:"service_was_active"`
 	ServiceInstalled bool          `json:"service_installed,omitempty"`
 	StageVerified    bool          `json:"stage_verified"`
+	// RecoveryDisposition is recorded only by the owner swap execution path.
+	RecoveryDisposition string          `json:"recovery_disposition,omitempty"`
+	RecoveryTarget      *identity.Agent `json:"recovery_target,omitempty"`
 	// Intruders are live paths recreated by other processes during the
 	// swap, moved aside and kept.
 	Intruders []string `json:"intruders,omitempty"`
@@ -239,6 +245,9 @@ type StageVerifyResult struct {
 // OpParams names an operation.
 type OpParams struct {
 	OpID string `json:"op_id"`
+	// SourceDisposition reports a trusted client's actual execution result;
+	// it is not a user approval, grant, or source-identity inference.
+	SourceDisposition string `json:"source_disposition,omitempty"`
 }
 
 // ResumeParams resolves an unfinished operation.

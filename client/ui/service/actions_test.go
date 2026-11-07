@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,33 @@ const demoActions = `actions:
   - { id: token, name: 复制令牌, explain: "复制", risk: read, argv: [/bin/echo, "{\"url\":\"http://127.0.0.1:1/#token=tok-9\"}"], output: secret, secret: { json_field: url, url_param: token } }
   - { id: restart, name: 重启, explain: "重启", risk: manage, argv: [/bin/echo, ok], output: none }
 `
+
+func TestAcceptedRiskIsScopedToOneAction(t *testing.T) {
+	s, _ := enrollWorld(t)
+	s.RiskAccepted = false
+	p := filepath.Join(s.Dirs.Data, "profiles", "demo.yaml")
+	definition := demoProfile + `actions:
+  - { id: configure, name: 配置, explain: "固定配置动作", undo: "恢复备份", risk: config, argv: [/bin/echo, ok], output: none }
+`
+	if err := os.WriteFile(p, []byte(definition), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.RunAction(WithRiskAccepted(ctx), "box", "demo", "configure", ActionOptions{})
+	if err != nil || res.Exit != 0 {
+		t.Fatal(res, err)
+	}
+	if s.RiskAccepted {
+		t.Fatal("single-operation acceptance changed shared service")
+	}
+	_, err = s.RunAction(ctx, "box", "demo", "configure", ActionOptions{})
+	if ue, ok := valise.As(err); !ok || ue.Code != GateCode {
+		t.Fatal("acceptance leaked into next action", err)
+	}
+}
 
 func TestActions(t *testing.T) {
 	s, _ := enrollWorld(t)
@@ -42,25 +70,28 @@ func TestActions(t *testing.T) {
 	if err != nil || res.Secret != "tok-9" || res.Output != "" {
 		t.Fatalf("%+v %v", res, err)
 	}
-	var board string
-	clipboardCopy = func(v string) error { board = v; return nil }
-	clipboardPaste = func() (string, error) { return board, nil }
+	// The clearing goroutine and the test both touch the fake clipboard.
+	var boardMu sync.Mutex
+	var boardValue string
+	board := func() string { boardMu.Lock(); defer boardMu.Unlock(); return boardValue }
+	clipboardCopy = func(v string) error { boardMu.Lock(); boardValue = v; boardMu.Unlock(); return nil }
+	clipboardPaste = func() (string, error) { return board(), nil }
 	secretWindow = 50 * time.Millisecond
 	t.Cleanup(func() { clipboardCopy, clipboardPaste, secretWindow = systemCopy, systemPaste, SecretWindow })
 	clip, err := CopySecret(ctx, res.Secret)
-	if err != nil || board != "tok-9" {
-		t.Fatalf("%q %v", board, err)
+	if err != nil || board() != "tok-9" {
+		t.Fatalf("%q %v", board(), err)
 	}
 	<-clip.Done()
-	if board != "" {
-		t.Fatalf("not cleared: %q", board)
+	if board() != "" {
+		t.Fatalf("not cleared: %q", board())
 	}
 	// Something else copied meanwhile is left alone.
 	clip, _ = CopySecret(ctx, "tok-9")
-	board = "user text"
+	_ = clipboardCopy("user text")
 	clip.Clear()
-	if board != "user text" {
-		t.Fatalf("cleared the user's clipboard: %q", board)
+	if board() != "user text" {
+		t.Fatalf("cleared the user's clipboard: %q", board())
 	}
 
 	// An action only in the local profile: the server refuses it.

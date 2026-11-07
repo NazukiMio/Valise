@@ -8,12 +8,13 @@ import (
 	"strconv"
 	"strings"
 
+	"valise/core/action"
 	"valise/core/valise"
 )
 
 // ProtocolVersion is "<major>.<minor>". Peers with a different major refuse
 // to talk; minor bumps are backwards-compatible additions.
-const ProtocolVersion = "1.2"
+const ProtocolVersion = "1.3"
 
 // JSONRPCVersion is the JSON-RPC version string.
 const JSONRPCVersion = "2.0"
@@ -76,13 +77,15 @@ type HelloParams struct {
 
 // HelloResult describes the server side.
 type HelloResult struct {
-	PorterVersion string      `json:"porter_version"`
-	Protocol      string      `json:"protocol"`
-	OS            string      `json:"os"`
-	Arch          string      `json:"arch"`
-	Home          string      `json:"home"`
-	Tools         []Tool      `json:"tools"`
-	PendingOps    []PendingOp `json:"pending_ops"`
+	PorterVersion  string                 `json:"porter_version"`
+	Protocol       string                 `json:"protocol"`
+	OS             string                 `json:"os"`
+	Arch           string                 `json:"arch"`
+	Home           string                 `json:"home"`
+	Tools          []Tool                 `json:"tools"`
+	PendingOps     []PendingOp            `json:"pending_ops"`
+	Capabilities   []string               `json:"capabilities,omitempty"`
+	PendingActions []action.PendingAction `json:"pending_actions,omitempty"`
 }
 
 // Tool names reported by hello.
@@ -116,12 +119,13 @@ type PendingOp struct {
 
 // VersionInfo is printed by `valise-porter version --json`.
 type VersionInfo struct {
-	Name       string `json:"name"`
-	Version    string `json:"version"`
-	Protocol   string `json:"protocol"`
-	OS         string `json:"os"`
-	Arch       string `json:"arch"`
-	SelfSHA256 string `json:"self_sha256"`
+	Name         string   `json:"name"`
+	Version      string   `json:"version"`
+	Protocol     string   `json:"protocol"`
+	OS           string   `json:"os"`
+	Arch         string   `json:"arch"`
+	SelfSHA256   string   `json:"self_sha256"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // Major returns the major number of a "<major>.<minor>" version.

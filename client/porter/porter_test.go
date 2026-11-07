@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 
 	"golang.org/x/crypto/blake2b"
@@ -232,5 +233,114 @@ func TestLookupSum(t *testing.T) {
 	}
 	if _, ok := lookupSum(sums, "c"); ok {
 		t.Fatal("c")
+	}
+}
+
+// oldPorter is a stand-in for a porter release that predates capability
+// declarations: it answers version --json with its own hash and no
+// capabilities.
+func oldPorter() []byte {
+	return []byte(`#!/bin/sh
+if command -v sha256sum >/dev/null 2>&1; then h=$(sha256sum "$0" | cut -d' ' -f1); else h=$(shasum -a 256 "$0" | cut -d' ' -f1); fi
+printf '{"name":"valise-porter","version":"0.0.1","protocol":"1.3","os":"` + runtime.GOOS + `","arch":"` + runtime.GOARCH + `","self_sha256":"%s"}\n' "$h"
+`)
+}
+
+func writeFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func stagedLeft(t *testing.T, home string) []string {
+	t.Helper()
+	m, _ := filepath.Glob(filepath.Join(home, ".local/bin/valise-porter.tmp*"))
+	return m
+}
+
+func TestUploadRefusesDowngradeOnceAdopted(t *testing.T) {
+	for name, rel := range map[string]string{
+		"accepted plan":       ".config/valise/protection/agent.json",
+		"pending transaction": ".local/state/valise/protection-changes/" + strings.Repeat("a", 32) + ".json",
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := fakesshenv.New(t)
+			home := e.AddHost("box")
+			installed := e.InstallPorter("box")
+			before, _ := os.ReadFile(installed)
+			writeFile(t, filepath.Join(home, rel), "{}")
+			_, err := Upload(context.Background(), transport(t, e, "box"), oldPorter(), hostPlatform)
+			wantCode(t, err, "porter_downgrade_refused")
+			after, _ := os.ReadFile(installed)
+			if string(after) != string(before) {
+				t.Fatal("installed porter replaced by a porter without the protection capability")
+			}
+			if left := stagedLeft(t, home); len(left) != 0 {
+				t.Fatalf("staged file left: %v", left)
+			}
+		})
+	}
+}
+
+func TestUploadOldPorterAllowedWithoutPlans(t *testing.T) {
+	e := fakesshenv.New(t)
+	home := e.AddHost("box")
+	e.InstallPorter("box")
+	f, err := Upload(context.Background(), transport(t, e, "box"), oldPorter(), hostPlatform)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Supports(ProtectionCapability) || f.Path != filepath.Join(home, ".local/bin/valise-porter") {
+		t.Fatalf("%+v", f)
+	}
+}
+
+func TestUploadCapablePorterWithPlan(t *testing.T) {
+	e := fakesshenv.New(t)
+	home := e.AddHost("box")
+	writeFile(t, filepath.Join(home, ".config/valise/protection/agent.json"), "{}")
+	bin, _ := os.ReadFile(e.Porter())
+	f, err := Upload(context.Background(), transport(t, e, "box"), bin, hostPlatform)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Supports(ProtectionCapability) {
+		t.Fatalf("built porter does not declare the capability: %+v", f.Info)
+	}
+	if left := stagedLeft(t, home); len(left) != 0 {
+		t.Fatalf("staged file left: %v", left)
+	}
+}
+
+// A protection transaction holding store.lock blocks publication; the check
+// and the mv never run outside that lock.
+func TestUploadWaitsForProtectionLock(t *testing.T) {
+	e := fakesshenv.New(t)
+	home := e.AddHost("box")
+	installed := e.InstallPorter("box")
+	before, _ := os.ReadFile(installed)
+	lock := filepath.Join(home, ".local/state/valise/protection-changes/store.lock")
+	writeFile(t, lock, "")
+	f, err := os.OpenFile(lock, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	bin, _ := os.ReadFile(e.Porter())
+	_, err = Upload(context.Background(), transport(t, e, "box"), bin, hostPlatform)
+	wantCode(t, err, "resource_busy")
+	after, _ := os.ReadFile(installed)
+	if string(after) != string(before) {
+		t.Fatal("porter replaced while the protection lock was held")
+	}
+	if left := stagedLeft(t, home); len(left) != 0 {
+		t.Fatalf("staged file left: %v", left)
 	}
 }

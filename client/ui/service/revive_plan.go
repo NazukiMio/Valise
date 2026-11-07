@@ -66,6 +66,9 @@ type RevivePlan struct {
 	vault  *vault.Vault
 	ident  age.Identity
 	target *ownerPorter
+	// sourceStatus: the source porter supports service_control "status"
+	// (identity/1). Older porters treat unknown actions as start.
+	sourceStatus bool
 }
 
 func (p *RevivePlan) block(code, reason, suggestion string) {
@@ -306,6 +309,9 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		plan.Record = &rec
 	}
 
+	if err := s.prepareRecoveryIdentity(ctx, rp, &plan); err != nil {
+		return nil, err
+	}
 	rp.NeedBytes = rp.Bytes
 	if plan.Carry {
 		rp.Warnings = append(rp.Warnings, "回滚会把档位以外的现有内容（凭据、缓存、未分类文件等）复制进新状态，另需相应空间；身体目录只改名搬动，不复制")

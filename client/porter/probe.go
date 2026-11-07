@@ -33,6 +33,20 @@ type Found struct {
 	Info rpc.VersionInfo `json:"info"`
 }
 
+// Supports requires an explicit capability declaration; an absent list on an
+// older porter means unsupported, regardless of its protocol minor version.
+func (f *Found) Supports(capability string) bool {
+	if f == nil {
+		return false
+	}
+	for _, c := range f.Info.Capabilities {
+		if c == capability {
+			return true
+		}
+	}
+	return false
+}
+
 // ErrNotFound reports that no porter is installed on the host.
 func ErrNotFound(host string) *valise.UserError {
 	return valise.New("porter_not_found",

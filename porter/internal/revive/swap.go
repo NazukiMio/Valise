@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"valise/core/enroll"
 	"valise/core/profile"
 	"valise/core/revive"
 	"valise/core/valise"
@@ -88,6 +87,9 @@ func (r *Runner) Resume(ctx context.Context, p revive.ResumeParams) (*revive.Swa
 		return nil, err
 	}
 	if revive.Final(j.State) {
+		if p.Action == "continue" && j.Plan.Identity != nil && (j.State == revive.StateHealthy || j.State == revive.StateRestored) {
+			return r.advance(ctx, j)
+		}
 		return nil, valise.New("op_finished", "操作已经结束（"+j.State+"）", "无需处理")
 	}
 	switch p.Action {
@@ -213,20 +215,19 @@ func (r *Runner) advance(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 				return nil, err
 			}
 		case revive.StateHealthy, revive.StateRestored:
-			if j.Plan.Record != nil {
-				rec := *j.Plan.Record
-				porterenroll.Refresh(ctx, r.Env, &j.Plan.Profile, &rec)
-				if _, err := porterenroll.WriteRecord(r.Env.Home, rec, j.Plan.Profile); err != nil {
+			if err := r.finalizeIdentity(ctx, j); err != nil {
+				return nil, err
+			}
+			if err := r.Store.Finish(j); err != nil {
+				// A completed identity-enabled operation can be queried/continued again
+				// after its journal was already moved to done; never repeat the swap.
+				if !os.IsNotExist(err) || j.Plan.Identity == nil {
 					return nil, err
 				}
-				for _, id := range j.Plan.Supersedes {
-					sup := enroll.Supersession{By: rec.InstanceID, OpID: j.Plan.OpID, At: time.Now().UTC()}
-					if err := porterenroll.MarkSuperseded(r.Env.Home, id, sup); err != nil {
-						return nil, err
-					}
+				if _, e := os.Stat(filepath.Join(r.Store.DoneDir(), j.Plan.OpID+".json")); e != nil {
+					return nil, e
 				}
 			}
-			r.Store.Finish(j)
 			r.audit(j, "ok")
 			res.State = j.State
 			for _, jr := range j.Roots {

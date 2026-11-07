@@ -5,6 +5,7 @@ package service
 import (
 	"os"
 	"path/filepath"
+	"sync"
 
 	"valise/client/config"
 	"valise/client/porter"
@@ -41,6 +42,16 @@ type Service struct {
 	agent adminAgent
 	full  advanced
 	owner ownerCache
+
+	readersMu            sync.Mutex
+	agentsReader         *AgentReader
+	journeyReader        *JourneyReader
+	journeyReposDigest   string
+	protectionController *ProtectionController
+	// ProtectionReview is a trusted, in-process human confirmation callback.
+	ProtectionReview ProtectionReview
+	backupController *BackupController
+	BackupReview     BackupReview
 }
 
 // New loads config.json from dirs.Data.

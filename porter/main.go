@@ -16,16 +16,20 @@ import (
 	"time"
 	_ "time/tzdata" // period time zones (docs/VAULT_FORMAT.md 10.2) on servers without zoneinfo
 
+	"valise/core/identity"
 	"valise/core/login"
 	"valise/core/profile"
+	"valise/core/protection"
 	"valise/core/rpc"
 	"valise/core/vaultrpc"
+	"valise/porter/internal/backuprun"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/forced"
 	porterinstall "valise/porter/internal/install"
 	"valise/porter/internal/kit"
 	porterlogin "valise/porter/internal/login"
 	"valise/porter/internal/mcp"
+	porterprotection "valise/porter/internal/protection"
 	porterrevive "valise/porter/internal/revive"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/server"
@@ -47,7 +51,8 @@ const usage = `用法：
   valise-porter path-add --dir <目录> --label <标签>（把家目录下的目录加入登录 shell 的 PATH）
   valise-porter action-exec --instance <实例> --id <动作>（在当前终端运行登记过的、需要终端的管理动作）
   valise-porter serve --tier daily           （日常钥匙的强制命令）
-  valise-porter seal-timer --instance <实例>（由定时器运行）
+  valise-porter seal-timer --instance <实例>（旧定时器）
+  valise-porter protection-timer --instance <实例>（已接受保护计划的定时器）
   valise-porter autosync                    （由封存后自动启动，同步到期的云备份）
   valise-porter vault-cat <周期> <金库内的相对路径>
   valise-porter stage-write --op <op_id>
@@ -83,6 +88,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
+		unlock, err := (seal.Paths{Home: home}).LockFor("native")
+		if err != nil {
+			fmt.Fprintln(stderr, "exec:", err)
+			return 1
+		}
+		defer unlock()
 		ctx := context.Background()
 		env := porterenroll.LoadEnv(ctx, home).For(&profile.Profile{Detect: &profile.Detect{BinDirs: dirs}})
 		if len(argv) == 1 && argv[0] == "--shell" {
@@ -123,6 +134,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "action-exec: 服务器上登记的 profile 里没有这个需要终端的动作")
 			return 1
 		}
+		unlock, err := (seal.Paths{Home: home}).LockFor("terminal-action")
+		if err != nil {
+			fmt.Fprintln(stderr, "action-exec:", err)
+			return 1
+		}
+		defer unlock()
 		seal.Paths{Home: home}.AppendAudit(seal.AuditEntry{Time: time.Now().UTC(), Op: "action", Instance: args[2],
 			Initiator: vaultrpc.InitiatorClient, Result: "started in terminal", Reason: fmt.Sprintf("%s (%s)", a.ID, a.Risk)})
 		ctx := context.Background()
@@ -238,6 +255,39 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		home, _ := os.UserHomeDir()
 		if err := porterlogin.Shim(home, os.Getenv(login.SessionEnv), args[1:]); err != nil {
 			fmt.Fprintln(stderr, "browser-shim:", err)
+			return 1
+		}
+		return 0
+	case "protection-timer":
+		if len(args) != 3 || args[1] != "--instance" {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return 1
+		}
+		ctx := context.Background()
+		env := porterenroll.LoadEnv(ctx, home)
+		validate := func(ctx context.Context, ref identity.AgentRef) error {
+			return porterenroll.ValidateIdentity(ctx, home, ref)
+		}
+		plan, err := (porterprotection.Store{Home: home, Env: env, ValidateAgent: validate}).ReadAccepted(ctx, args[2])
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		id, err := identity.NewID()
+		if err != nil {
+			return 1
+		}
+		run, err := (backuprun.Store{Home: home, Env: env, ValidateAgent: validate}).Run(ctx, protection.BackupParams{AgentRef: plan.AgentRef, ExpectedRevision: plan.Revision, RunID: id, Reason: "timer"})
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if run.State != "succeeded" {
+			fmt.Fprintln(stderr, "定时备份尚未全部完成，请查询运行记录核实")
 			return 1
 		}
 		return 0
@@ -357,6 +407,7 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 	info := rpc.VersionInfo{
 		Name: "valise-porter", Version: version, Protocol: rpc.ProtocolVersion,
 		OS: runtime.GOOS, Arch: runtime.GOARCH, SelfSHA256: sum,
+		Capabilities: []string{identity.Capability, protection.Capability, protection.BackupCapability},
 	}
 	if err := json.NewEncoder(stdout).Encode(info); err != nil {
 		return 1

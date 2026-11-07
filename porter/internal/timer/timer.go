@@ -14,9 +14,12 @@ import (
 	"time"
 
 	"valise/core/enroll"
+	"valise/core/identity"
+	protectioncore "valise/core/protection"
 	"valise/core/valise"
 	"valise/core/vaultrpc"
 	porterenroll "valise/porter/internal/enroll"
+	"valise/porter/internal/protection"
 	"valise/porter/internal/seal"
 )
 
@@ -74,9 +77,17 @@ func Linger(ctx context.Context, e *porterenroll.Env, home string) bool {
 
 // Set turns the timer on (writing both units and enabling the timer) or off
 // (disabling it and deleting both units).
-func Set(ctx context.Context, e *porterenroll.Env, home string, p vaultrpc.TimerSetParams) (*vaultrpc.TimerStatus, error) {
+func Set(ctx context.Context, e *porterenroll.Env, home string, p vaultrpc.TimerSetParams) (result *vaultrpc.TimerStatus, err error) {
+	err = (protection.Store{Home: home}).WithLegacyWrite(p.InstanceID, func() error { var callErr error; result, callErr = setLegacy(ctx, e, home, p); return callErr })
+	return result, err
+}
+
+func setLegacy(ctx context.Context, e *porterenroll.Env, home string, p vaultrpc.TimerSetParams) (*vaultrpc.TimerStatus, error) {
 	if err := enroll.ValidInstanceID(p.InstanceID); err != nil {
 		return nil, valise.New("instance_invalid", err.Error(), "检查实例名")
+	}
+	if err := (protection.Store{Home: home}).CheckLegacyWrite(p.InstanceID); err != nil {
+		return nil, err
 	}
 	if rec, err := porterenroll.ReadRecord(home, p.InstanceID); err != nil || rec == nil {
 		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+p.InstanceID, "先把这个 agent 接入 Valise")
@@ -161,8 +172,29 @@ WantedBy=timers.target
 	return Status(ctx, e, home, p.InstanceID)
 }
 
-// Seal is what the timer runs: a soul seal recorded as the timer's.
+// SealAccepted is the new fixed timer entrypoint. The accepted plan is read at
+// execution time and kept frozen until the backup has reached its safe boundary.
+func SealAccepted(ctx context.Context, e *porterenroll.Env, home, instance string, validateAgent func(context.Context, identity.AgentRef) error, runners ...func(context.Context, *protectioncore.ServerPlan) error) error {
+	store := protection.Store{Home: home, Env: e, ValidateAgent: validateAgent}
+	plan, err := store.ReadAccepted(ctx, instance)
+	if err != nil {
+		return err
+	}
+	return store.WithAccepted(ctx, plan.AgentRef, func(p *protectioncore.ServerPlan) error {
+		if !*p.Schedule.Enabled {
+			return valise.New("schedule_disabled", "保护计划未启用定时备份", "读取保护计划并确认定时设置")
+		}
+		if len(runners) != 1 || runners[0] == nil {
+			return valise.New("unsupported_capability", "按计划备份执行器不可用", "更新 porter 后重新核实保护计划")
+		}
+		return runners[0](ctx, p)
+	})
+}
+
+// Seal is what the legacy timer runs: a soul seal recorded as the timer's.
 func Seal(ctx context.Context, e *porterenroll.Env, home, instance string) error {
-	_, err := seal.Seal(ctx, e, seal.Paths{Home: home}, vaultrpc.SealParams{InstanceID: instance, Tier: "soul", Reason: "定时建立逃生舱"}, vaultrpc.InitiatorTimer)
-	return err
+	return (protection.Store{Home: home}).WithLegacyWrite(instance, func() error {
+		_, err := seal.Seal(ctx, e, seal.Paths{Home: home}, vaultrpc.SealParams{InstanceID: instance, Tier: "soul", Reason: "定时建立逃生舱"}, vaultrpc.InitiatorTimer)
+		return err
+	})
 }

@@ -68,7 +68,11 @@ func init() {
 			return nil, err
 		}
 		// The swap must not be interrupted by the client going away.
-		return s.runner(ctx).Swap(context.WithoutCancel(ctx), p.OpID)
+		runner := s.runner(ctx)
+		if err := runner.RecordDisposition(p.OpID, p.SourceDisposition); err != nil {
+			return nil, err
+		}
+		return runner.Swap(context.WithoutCancel(ctx), p.OpID)
 	}
 	methods[revive.MethodResume] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[revive.ResumeParams](raw)
@@ -121,6 +125,15 @@ func init() {
 		e := s.loginEnv(ctx)
 		if p.Action == "stop" {
 			return struct{}{}, porterrevive.StopUnit(ctx, e, p.Unit)
+		}
+		if p.Action == "status" {
+			state, err := porterrevive.SourceStatus(ctx, e, p.Unit)
+			return struct {
+				State string `json:"state"`
+			}{state}, err
+		}
+		if p.Action != "start" {
+			return nil, errInvalidParams
 		}
 		return struct{}{}, porterrevive.StartUnit(ctx, e, p.Unit)
 	}

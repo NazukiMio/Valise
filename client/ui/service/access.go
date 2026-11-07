@@ -218,13 +218,15 @@ type caller interface {
 // connection, admin methods on an admin connection opened on first use.
 // Untiered servers use a single connection.
 type porterSession struct {
-	s      *Service
-	host   string
-	tiered bool
-	daily  *ssh.RPCClient
-	owner  bool // the daily session proved the owner
-	admin  *ssh.RPCClient
-	done   func()
+	s          *Service
+	host       string
+	tiered     bool
+	daily      *ssh.RPCClient
+	hello      *rpc.HelloResult
+	owner      bool // the daily session proved the owner
+	admin      *ssh.RPCClient
+	adminHello *rpc.HelloResult
+	done       func()
 }
 
 // session dials the porter on host at the daily tier.
@@ -238,11 +240,11 @@ func (s *Service) session(ctx context.Context, host string) (*porterSession, err
 	if err != nil {
 		return nil, err
 	}
-	c, _, err := ssh.Dial(ctx, t, found.Path, s.Version)
+	c, hello, err := ssh.Dial(ctx, t, found.Path, s.Version)
 	if err != nil {
 		return nil, err
 	}
-	return &porterSession{s: s, host: host, tiered: tiered, daily: c}, nil
+	return &porterSession{s: s, host: host, tiered: tiered, daily: c, hello: hello}, nil
 }
 
 // withSession runs fn on a porter session for host.
@@ -256,6 +258,9 @@ func (s *Service) withSession(ctx context.Context, host string, fn func(caller) 
 }
 
 func (p *porterSession) Call(ctx context.Context, method string, params, result any) error {
+	if err := transactionCompatibility(p.hello, method, params); err != nil {
+		return err
+	}
 	if !p.tiered {
 		return p.daily.Call(ctx, method, params, result)
 	}
@@ -281,6 +286,9 @@ func (p *porterSession) Call(ctx context.Context, method string, params, result 
 	if err != nil {
 		return err
 	}
+	if err := transactionCompatibility(p.adminHello, method, params); err != nil {
+		return err
+	}
 	return c.Call(ctx, method, params, result)
 }
 
@@ -298,6 +306,9 @@ func (p *porterSession) ownerCall(ctx context.Context, method string, params, re
 		c, aerr := p.adminClient(ctx)
 		if aerr != nil {
 			return aerr
+		}
+		if err := transactionCompatibility(p.adminHello, method, params); err != nil {
+			return err
 		}
 		return c.Call(ctx, method, params, result)
 	}
@@ -317,12 +328,12 @@ func (p *porterSession) adminClient(ctx context.Context) (*ssh.RPCClient, error)
 		done()
 		return nil, err
 	}
-	c, _, err := ssh.Dial(ctx, t, found.Path, p.s.Version)
+	c, hello, err := ssh.Dial(ctx, t, found.Path, p.s.Version)
 	if err != nil {
 		done()
 		return nil, err
 	}
-	p.admin, p.done = c, done
+	p.admin, p.done, p.adminHello = c, done, hello
 	return c, nil
 }
 

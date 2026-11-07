@@ -174,6 +174,9 @@ type adminAgent struct {
 	mu   sync.Mutex
 	sock string
 	cmd  *exec.Cmd
+	// exited is closed when cmd exits. ProcessState is written by the Wait
+	// goroutine, so it is never read here.
+	exited chan struct{}
 	// unlocked is when each host's admin key was added, for the remaining
 	// window shown in the UI (the agent itself enforces the window).
 	unlocked map[string]time.Time
@@ -192,8 +195,12 @@ func (s *Service) agentSock(ctx context.Context) (string, error) {
 	a := &s.agent
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.cmd != nil && a.cmd.ProcessState == nil && fileExists(a.sock) {
-		return a.sock, nil
+	if a.cmd != nil && fileExists(a.sock) {
+		select {
+		case <-a.exited:
+		default:
+			return a.sock, nil
+		}
 	}
 	sock := ssh.SocketPath(s.Dirs.Cache, "agent-")
 	if sock == "" {
@@ -204,7 +211,8 @@ func (s *Service) agentSock(ctx context.Context) (string, error) {
 	if err := cmd.Start(); err != nil {
 		return "", valise.New("agent_start", "无法启动管理钥匙代理（ssh-agent）", "确认本机安装了 OpenSSH").WithDetail(err.Error())
 	}
-	go func() { _ = cmd.Wait() }()
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
 	for i := 0; i < 50 && !fileExists(sock); i++ {
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -212,7 +220,7 @@ func (s *Service) agentSock(ctx context.Context) (string, error) {
 		_ = cmd.Process.Kill()
 		return "", valise.New("agent_start", "管理钥匙代理没有按时就绪", "重试一次")
 	}
-	a.sock, a.cmd = sock, cmd
+	a.sock, a.cmd, a.exited = sock, cmd, exited
 	return sock, nil
 }
 
