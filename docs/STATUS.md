@@ -5,7 +5,7 @@
 ## 1. 代码与分支
 
 - 工作分支 `n2-agent-protection-journey`，**未推送**。N2 实现从 `305e14e` 开始，之后的提交都在这个分支上；`references/`（用户的参考 HTML）有意不纳入版本控制。
-- 全仓自检 `testbed/selfcheck.sh` 在 `021121c` 上通过（SELFCHECK_PASS）。之后只有文档整理与代码注释改动。
+- 全仓自检 `testbed/selfcheck.sh` 在 `add44a4`（用语统一）上通过（SELFCHECK_PASS）。
 - **提交署名缺口**：`c04b266`、`cfcb916`、`de37ced`、`e30a84e`、`021121c` 少了 `AGENTS.md` 第 8 节要求的两行 Co-authored-by（只有 Claude 的署名）。分支未推送，可以用非交互的 `git rebase --exec` 补上；是否改写等用户决定。更早的 `b990c75`、`6364c15`、`6c7e3c5`、`b45a883` 也没有这两行，不是本轮提交。
 - 三台靶机（`ubuntu-vm`、`ubuntu-vm-x86`、`debian-vm`）已部署 `021121c` 构建的正式 porter（声明 identity/1–2、protection-plan/1–2、backup-runs/1–2、system-fix/1、copy-check/1）。`nazukiki-cloud` 未部署本轮 porter。
 
@@ -46,7 +46,7 @@
 - **规范正文**：各规范的旧词已逐处改写；保留旧词的只有规定用语本身的条款（AGENTS.md 7.4、PRODUCT.md 8.1、AGENT_KIT.md 技能触发、UI.md 健康页措辞）与历史记录。
 - **服务契约**：第 16 节的增补已并入正文（4.4、4.5、5.4、6.3、7.5、9.4，并改写 4.1、4.3、9.1、第 10 节的冲突条款），第 16 节改为决定与位置对照。
 - 尚未做：各规范开头的“2026-11-05 同步”说明段较多且重复，可另行精简。
-- 三台靶机需重新部署本轮 porter（步骤 ① 的最后一项）。
+- 三台靶机已部署 `add44a4` 构建的 porter（`porter deploy --local`）；`debian-vm` 健康页核对：保护计划无待核实修改，定时备份照常（每天 04:40 UTC），文字为新说法。技能 `valise-enroll` 文本改了，健康页显示“2 个不是这个版本的”，属预期，需要时重新安装技能。
 
 ## 5. 演练环境
 
@@ -56,7 +56,6 @@
 
 ## 6. 建议的下一步
 
-1. 重新部署三台靶机的 porter（`porter deploy --local`），确认 `debian-vm` 计划与 timer 不受影响。
-2. **需要用户亲自操作**：在终端运行 `valise --config-dir "$HOME/.cache/valise-drill/config" server migrate debian-vm --admin-key`，在 OpenSSH 提示里输入 `debian-vm` 的登录密码、设置管理口令（Valise 不保存服务器密码）。如需脚本化实测，把管理口令写进 `$HOME/.cache/valise-drill/admin-passphrase.txt`（0600）。
-3. 第 3 节第 4 条的实测：先夏令时模拟，再 sudo 时钟修复与接管模式；`ubuntu-vm-x86` 恢复当前实例与创建副本；真实复制失败；`kill -9` 客户端。全部记入 acceptance/N2.md，然后把 N2 标 Done。
-4. B03（第 3 节第 5 条）→ N3 云盘登录写入规范并开工 N3。
+1. **需要用户亲自操作**：在终端运行 `valise --config-dir "$HOME/.cache/valise-drill/config" server migrate debian-vm --admin-key`，在 OpenSSH 提示里输入 `debian-vm` 的登录密码、设置管理口令（Valise 不保存服务器密码）。如需脚本化实测，把管理口令写进 `$HOME/.cache/valise-drill/admin-passphrase.txt`（0600）。
+2. 第 3 节第 4 条的实测：先夏令时模拟，再 sudo 时钟修复与接管模式；`ubuntu-vm-x86` 恢复当前实例与创建副本；真实复制失败；`kill -9` 客户端。全部记入 acceptance/N2.md，然后把 N2 标 Done。
+3. B03（第 3 节第 5 条）→ N3 云盘登录写入规范并开工 N3。
