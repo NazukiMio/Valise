@@ -48,4 +48,16 @@
 
 验收后保留该测试金库的快照，夹具的已接受计划文件移入同一测试目录，避免它的接管标记阻止同一服务器上其他实例的旧目标写入。
 
-尚未在实机覆盖：full 快照文件数的实机核对（fake-ssh 已核对 4 个文件含凭据与未分类）、提交中途失败回退与崩溃 pending、DST 实际切换、客户端退出登录或重启、`ubuntu-vm-x86` 与无 sudo 环境、计划内服务器复制目标。成功迁移关系的实机验证尚未进行。
+### 实机记录（2026-11-07，`ubuntu-vm-x86` x86_64，无 sudo，linger=yes）
+
+同一隔离夹具流程 9 项全部通过，另加 full 快照实机核对：按计划 full 快照 3 个文件，含声明为凭据的测试文件；旧 soul 为 2 个。客户端断开后 timer 触发并成功备份。注意：该虚拟机系统时间比实际慢约 2.5 天（NTPSynchronized=yes 但显示 11-04），timer 按其本机时钟触发，结论不受影响；未修改靶机时钟。
+
+### 真实迁移（2026-11-07，OpenClaw `ubuntu-vm` ARM64 → `ubuntu-vm-x86` x86_64）
+
+用户授权使用测试靶机上的 harness。两台以 `porter deploy --local` 正式部署当前构建（原为协议 1.2 / 1.1，部署后 1.3 并声明 identity/1、protection-plan/1、backup-runs/1）。流程：源机 `enroll --accept` 建立世代 → 采用 full 计划（日程关闭）并按计划备份，`backup_snapshot_binding` 返回 bound → `revive --mode migrate`。结果：5550 个文件 97.3 MiB 暂存校验通过，服务健康；源服务 inactive，目标 active。目标得到新世代，并写入 `migration_completed` 关系，记录源 AgentRef、源 SnapshotRef、目标 AgentRef 与 op；两端身份提交记录均为 complete。目标保留交换前的旧目录（`.valise-prev-op_…`），未删除。
+
+### 时间轴实机核对（2026-11-07）
+
+把 `ubuntu-vm-x86` 金库用 `repo sync` 复制到本机隔离仓库（4 个周期、66 个快照，复制后校验通过），时间轴不连服务器读取，分 2 页（每页 50）读完 66 个点；快照 ID 与范围与服务器 `vault_status` 逐一一致，全部为 metadata_only（材料完整性留待 N3）。
+
+尚未在实机覆盖：提交中途失败回退与崩溃 pending（fake 测试已覆盖）、DST 实际切换、客户端退出登录或重启、计划内服务器复制目标、创建副本与恢复当前实例的关系（fake 测试已覆盖）。
