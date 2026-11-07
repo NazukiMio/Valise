@@ -318,6 +318,24 @@ profile 负责通用规则，档案记录这台服务器实际探测并经用户
 - 多处读取到同一快照须核对金库与快照身份、发现冲突时停止将其作为同一副本；离线列表的明文元数据不等于解密验证通过。身份关联、查询分页/过滤、验证记录存储与失效条件采用 N1 契约第 2–5 节；不为新视图直接变更公开格式。
 - 原服务器不可达时，已有副本仍可列举与导出；历史中的服务器状态只能显示为历史值，不能假装在线。
 
+### 7.3 云盘（N3，2026-11-07 用户决定）
+
+备份位置新增“云盘”，全部经 rclone 完成，Valise 不实现任何云盘协议。首批 Google Drive、OneDrive、Dropbox；坚果云（WebDAV）与自定义云在后。
+
+- **云盘清单**：签名资料包 `kit-tools.yaml` 中 rclone 条目的 `clouds`（AGENT_KIT.md 8.4）列出每家的 `rclone_type`、固定参数、授权范围（`folder` 只能访问 rclone 自己建的文件 / `account` 能访问整个网盘）与说明。Go 代码不写任何云盘名称或参数；`verify: pending` 的条目只展示、不能添加。Google Drive 固定 `scope: drive.file`；rclone 内置的 Dropbox 与 OneDrive 应用是整盘权限，不支持用户自建应用的密钥（Valise 不经手任何应用密钥）。
+- **两种登录**，界面分别说明同步级别，可以都登录：
+  - **服务器登录**：rclone 由 Kit 安装（`~/.local/bin/rclone`，版本与 SHA-256 已核实），配置在 Valise 自己的文件 `~/.config/valise/rclone/rclone.conf`（0600），每次调用都显式 `--config`，不碰用户自己的 rclone 配置。remote 名为 `valise-<位置名>`。备份后由服务器直传，定时与自动复制依赖它，不需要 Valise 打开。
+  - **这台电脑登录**：rclone 用 PATH 里已有的（显示 `rclone version` 第一行），没有时经确认按 `kit-tools.yaml` 锁定版本下载（展示地址、大小与 SHA-256），核对后放在 `<配置目录>/tools/rclone`；配置在 `<配置目录>/rclone/rclone.conf`（0600），同样显式 `--config`。复制经本机仓库或临时目录中转，只在 Valise 打开时更新。
+  - 两种都登录时先服务器直传，失败再经这台电脑中转，结果写明路径；只有服务器登录的云盘能被保护计划的自动复制使用。
+- **授权内容**只在上述 rclone 配置文件里。Valise 不读取、不解析、不保存、不记录它；登录过程的终端字节经 Valise 转发（LOGIN_RELAY.md 第 7 节），只显示给用户，不写日志与审计。
+- **服务器登录确认页**写明：“授权保存在服务器上。服务器被攻破时，这个授权会一起暴露（备份内容本身是加密的）。” `account` 级的云盘另写“这个授权能访问整个网盘”，并建议只用这台电脑登录或改用 Google Drive；用户确认后可以继续。
+- **保存位置**：授权完成后用 `rclone lsjson --max-depth 1 valise-<名>:` 做只读连通测试，再经 `target_check`（N2 G 节）保存；`targets.json` 记 `{"name", "kind": "rclone", "dest": "valise-<名>:valise-vault/"}`，不含授权内容。
+- **同步只追加**：先 `rclone lsf -R --files-only` 列出目标已有文件，只上传缺少的，按叶子顺序（pack → index → 快照 → 元数据 → epochs/keys → PERIOD → VAULT）分批 `rclone copy --files-from … --ignore-existing --immutable`，不使用 `sync`。中断后续传。删除整个周期与 sftp 相同：先写 `DELETING`，逐个删除文件，最后删标记（VAULT_FORMAT.md 10.4）。副本校验适用 7.1 节。
+- **云端可见的明文**：目录名（服务器名、实例名、周期）与文件大小；文件内容是 age 加密的。不加 rclone crypt，保持金库公开格式：从网盘网页下载整个目录即可用 `tools/standalone-restore/` 恢复。添加时写明哪些名字云端可见。
+- **移除位置**：`rclone config delete valise-<名>`（服务器或本机各自的配置文件），界面写明“这里的授权已删除；网盘账户里的授权需要你在账户设置里撤销”。云端已有的备份不自动删除。
+- **诚实状态**：已登录（服务器 / 这台电脑）、连通测试通过、最近一次同步结果与路径分开显示；“已登录”不等于“已同步”。
+- **访问级别**：添加、登录、移除是主人操作；同步与列表沿用远程备份位置现有级别。
+
 ## 8. 复活
 
 ### 8.1 三种模式
