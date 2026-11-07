@@ -322,7 +322,7 @@ func findTarget(p Paths, name string) (*vaultrpc.Target, error) {
 			return &ts[i], nil
 		}
 	}
-	return nil, valise.New("target_unknown", "服务器上没有名为 "+name+" 的云备份位置", "先添加：valise target add <服务器> "+name+" --rsync <主机:路径>")
+	return nil, valise.New("target_unknown", "服务器上没有名为 "+name+" 的备份位置", "先添加：valise target add <服务器> "+name+" --rsync <主机:路径>")
 }
 
 // treeDest is <dest>/<server_name>.
@@ -341,7 +341,7 @@ func syncLocked(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.T
 		hasTree = hasTree || l.Leaf != vault.LegacyLeaf
 	}
 	if hasTree && st.ServerName == "" {
-		return nil, valise.New("server_name_missing", "这台服务器还没有名字，云备份不知道放进哪个文件夹", "先给服务器起名：valise server name <服务器> <名字>")
+		return nil, valise.New("server_name_missing", "这台服务器还没有名字，备份位置不知道放进哪个文件夹", "先给服务器起名：valise server name <服务器> <名字>")
 	}
 	defer func() {
 		state := vaultrpc.TargetState{Target: *t}

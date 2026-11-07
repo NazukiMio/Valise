@@ -129,7 +129,7 @@ func TestBusyNamesAutoSync(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = p.Lock()
-	if err == nil || !strings.Contains(err.Error(), "自动同步到云备份") {
+	if err == nil || !strings.Contains(err.Error(), "自动同步到备份位置") {
 		t.Fatalf("busy error does not name the holder: %v", err)
 	}
 	unlock()

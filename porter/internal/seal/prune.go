@@ -226,7 +226,7 @@ func TargetLeafDelete(ctx context.Context, e *porterenroll.Env, p Paths, name, l
 	}
 	inst, period, ok := vault.SplitLeaf(leaf)
 	if !ok {
-		return valise.New("leaf_invalid", "无效的周期："+leaf, "使用云备份列表中的名称")
+		return valise.New("leaf_invalid", "无效的周期："+leaf, "使用备份位置列表中的名称")
 	}
 	if err := refuseCurrent(p, leaf); err != nil {
 		return err

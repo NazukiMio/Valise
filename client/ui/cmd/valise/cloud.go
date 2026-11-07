@@ -90,7 +90,7 @@ func (c *cli) vaultDelete(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.out, "已删除服务器上的周期 %s，释放 %s。云备份上的副本不受影响。\n", res.Leaf, size(res.Bytes))
+	fmt.Fprintf(c.out, "已删除服务器上的周期 %s，释放 %s。备份位置上的副本不受影响。\n", res.Leaf, size(res.Bytes))
 	return nil
 }
 
@@ -174,7 +174,7 @@ func (c *cli) targetAuto(ctx context.Context, args []string) error {
 		}
 	}
 	if t == nil {
-		return fmt.Errorf("%s 上没有云备份 %s", pos[0], pos[1])
+		return fmt.Errorf("%s 上没有备份位置 %s", pos[0], pos[1])
 	}
 	if pos[2] == "off" {
 		t.Auto = nil
@@ -230,7 +230,7 @@ func (c *cli) timer(ctx context.Context, args []string) error {
 		fmt.Fprintf(c.out, "%s 的定时备份：关（服务器上没有 Valise 的定时器单元）\n", pos[1])
 		return nil
 	}
-	fmt.Fprintf(c.out, "%s 的定时备份：每 %s 一次（轻装），之后按云备份的自动同步设置顺带同步。\n", pos[1], st.Every)
+	fmt.Fprintf(c.out, "%s 的定时备份：每 %s 一次（轻装），之后按备份位置的自动同步设置顺带同步。\n", pos[1], st.Every)
 	fmt.Fprintln(c.out, "服务器上写了这两个 systemd 用户单元，关闭时会删除：")
 	for _, u := range st.Units {
 		fmt.Fprintf(c.out, "  %s\n", u)

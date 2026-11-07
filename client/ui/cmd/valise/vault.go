@@ -95,7 +95,7 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 	if len(rep.AutoSync) > 0 {
 		fmt.Fprintf(w, "状态：已写入服务器金库；正在后台顺带同步到 %s（结果见 valise vault status）\n", strings.Join(rep.AutoSync, "、"))
 	} else {
-		fmt.Fprintln(w, "状态：已写入服务器金库；尚未同步到云备份（valise sync <服务器> <目标>）")
+		fmt.Fprintln(w, "状态：已写入服务器金库；尚未同步到备份位置（valise sync <服务器> <目标>）")
 	}
 	return nil
 }
@@ -128,7 +128,7 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 		}
 		name := st.ServerName
 		if name == "" {
-			name = "（还没有名字，云备份前需要 valise server name 起名）"
+			name = "（还没有名字，同步前需要 valise server name 起名）"
 		}
 		fmt.Fprintf(c.out, "服务器名：%s　收件人指纹：%v\n", name, st.Recipients)
 		synced := map[string][]string{}
@@ -178,7 +178,7 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 			if t.Auto != nil {
 				auto = "自动同步：每 " + t.Auto.Every
 			}
-			fmt.Fprintf(c.out, "云备份 %s（%s %s，%s）：最后成功 %s", t.Name, t.Kind, t.Dest, auto, last)
+			fmt.Fprintf(c.out, "备份位置 %s（%s %s，%s）：最后成功 %s", t.Name, t.Kind, t.Dest, auto, last)
 			if t.LastError != "" {
 				fmt.Fprint(c.out, "；上次失败")
 			}
@@ -253,7 +253,7 @@ func (c *cli) target(ctx context.Context, args []string) error {
 	if err := c.svc.TargetSet(ctx, pos[0], t); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.out, "已在 %s 上添加云备份 %s（rsync → %s）。服务器需要能用自己的 SSH 配置登录该主机。\n", pos[0], pos[1], *dest)
+	fmt.Fprintf(c.out, "已在 %s 上添加备份位置 %s（rsync → %s）。服务器需要能用自己的 SSH 配置登录该主机。\n", pos[0], pos[1], *dest)
 	if t.Auto != nil {
 		fmt.Fprintf(c.out, "自动同步：每次建立备份后，距上次同步超过 %s 就顺带同步一次。\n", t.Auto.Every)
 	}

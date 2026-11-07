@@ -49,11 +49,11 @@ fake-ssh 只能验证本地协议连通性。凡是涉及真实 Linux 用户态�
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `ubuntu-vm` | ARM64 | Ubuntu 26.04.1 LTS / Linux 7.0.0-38 | `parallels` / 免密 sudo | `10.211.55.5`（Parallels 网桥，NAT 后） | 主力开发与基准靶机；**没有 rsync**（复制自动回落 sftp） | OpenClaw、Hermes、DSH |
 | `ubuntu-vm-x86` | x86_64 | Ubuntu 26.10 / Linux 7.3.0-9 | `nazukimio` / sudo 需要密码 | `192.168.101.108`（DHCP，可能变化） | 跨架构迁移目标、纯用户态部署；时钟慢约 2.5 天且由 chrony 同步（不要改） | OpenClaw（迁移来的）、Hermes |
-| `debian-vm` | ARM64 | Debian 13 / Linux 6.12 | `parallels` / 免密 sudo | `10.211.55.6` | systemd 257 兼容、重启验收、linger 一键修复；NTP 未开启 | OpenClaw |
+| `debian-vm` | ARM64 | Debian 13 / Linux 6.12 | `parallels` / 免密 sudo | `10.211.55.6` | systemd 257 兼容、重启验收、linger 与时钟一键修复、高级模式与接管模式；**由 Valise 接入**（日常钥匙 + 管理钥匙，2026-11-07）；装有 Parallels Tools，会把时钟同步回宿主时间（调钟测试要考虑）；NTP 于 2026-11-07 开启 | OpenClaw（含命名实例 `openclaw-test`）、合成实例 `n2-copy` |
 | `nazukiki-cloud` | ARM64 | Oracle Linux 9.8 / Linux 6.12 UEK | `opc` / 免密 sudo | 公网（见本机 `~/.ssh/config`） | 公网服务器场景 | OpenClaw |
 | `nas-test` | x86_64 | TrueNAS 27.0.0-RC.1（ZFS） | `nas` / 无 sudo | 局域网 `192.168.101.109`；`ubuntu-vm` 经 Tailscale `100.71.234.46` 访问 | 异地同步目标，有 rsync、rclone、restic | 不安装 harness |
 
-四台服务器目前都以“你自己的 SSH 设置”接入演练客户端（`$HOME/.cache/valise-drill/config`），因此不能开启高级模式；需要实测高级模式或接管模式时，先与用户确认把哪台改为 Valise 接入。早期另有 InstaBox `nazukiki-insta-01`（Debian 13 x86_64），见 [history/MILESTONES_M1-M17.md](history/MILESTONES_M1-M17.md) M10，是否仍可用未核实。
+`debian-vm` 以 Valise 日常钥匙 + 管理钥匙接入演练客户端（`$HOME/.cache/valise-drill/config`，管理口令文件 `$HOME/.cache/valise-drill/admin-passphrase.txt`，不要打印），可实测高级模式与接管模式；其余服务器仍是“你自己的 SSH 设置”，不能开启高级模式。演练客户端另有本机仓库 `local`（`$HOME/.cache/valise-drill/repo-local`）。早期另有 InstaBox `nazukiki-insta-01`（Debian 13 x86_64），见 [history/MILESTONES_M1-M17.md](history/MILESTONES_M1-M17.md) M10，是否仍可用未核实。
 
 ### 操控铁律
 

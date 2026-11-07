@@ -39,7 +39,7 @@ func (p Paths) DedupeKey(vaultID string) string {
 func (p Paths) Lock() (unlock func(), err error) { return p.LockFor("") }
 
 // holderNames describe a lock holder to the user.
-var holderNames = map[string]string{"autosync": "正在后台自动同步到云备份"}
+var holderNames = map[string]string{"autosync": "正在后台自动同步到备份位置"}
 
 // LockFor takes the vault lock and records what holds it, so a refused
 // caller can say what is running.
