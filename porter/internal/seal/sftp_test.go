@@ -36,6 +36,7 @@ while IFS= read -r line; do
         done; fi ;;
     mkdir) /bin/mkdir "$1" 2>/dev/null || ok=1 ;;
     put) /bin/cp "$1" "$2" || ok=1 ;;
+    get) /bin/cp "$1" "$2" || ok=1 ;;
     rename) [ -e "$2" ] && ok=1 || /bin/mv "$1" "$2" || ok=1 ;;
     chmod) /bin/chmod "$1" "$2" || ok=1 ;;
     rm) /bin/rm "$1" 2>/dev/null || ok=1 ;;
@@ -48,7 +49,7 @@ done < "$batch"
 	if err := os.WriteFile(filepath.Join(bin, "sftp"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	w.env.Vars = []string{"PATH=" + bin + ":/bin"}
+	w.env.Vars = []string{"PATH=" + bin} // no rsync, even where /bin is /usr/bin
 }
 
 func TestSyncFallsBackToSFTP(t *testing.T) {

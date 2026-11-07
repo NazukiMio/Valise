@@ -75,6 +75,8 @@ type Remote interface {
 	// DeleteDir deletes parent/name: the DELETING marker first, then
 	// everything else, the marker last.
 	DeleteDir(ctx context.Context, parent, name string) error
+	// Fetch downloads base/<rel> for each rel into dir/<rel>.
+	Fetch(ctx context.Context, base string, rels []string, dir string) error
 	// Probe logs in and lists base without recursing, within ProbeTimeout;
 	// a missing base still counts as reachable (copies create it).
 	Probe(ctx context.Context, base string) error
@@ -88,6 +90,9 @@ type Entry struct {
 	Path string
 	Size int64
 	Dir  bool
+	// Stamp is the listed modification time as text; it only detects
+	// change (docs/ARCHITECTURE.md 7.1.1).
+	Stamp string
 }
 
 // Methods reported to the user.
@@ -299,7 +304,7 @@ func (r *rsyncRemote) List(ctx context.Context, base string) ([]Entry, error) {
 		if err != nil {
 			continue
 		}
-		res = append(res, Entry{Path: name, Size: size, Dir: f[0][0] == 'd'})
+		res = append(res, Entry{Path: name, Size: size, Dir: f[0][0] == 'd', Stamp: f[2] + " " + f[3]})
 	}
 	return res, nil
 }
@@ -432,7 +437,7 @@ func (r *sftpRemote) List(ctx context.Context, base string) ([]Entry, error) {
 			if e.Dir {
 				dirs = append(dirs, e.Path)
 			}
-			res = append(res, Entry{Path: rel, Size: e.Size, Dir: e.Dir})
+			res = append(res, Entry{Path: rel, Size: e.Size, Dir: e.Dir, Stamp: e.Stamp})
 		}
 	}
 	return res, nil
@@ -452,7 +457,7 @@ func parseLongList(out string) []Entry {
 			continue
 		}
 		size, _ := strconv.ParseInt(f[4], 10, 64)
-		res = append(res, Entry{Path: name, Size: size, Dir: f[0][0] == 'd'})
+		res = append(res, Entry{Path: name, Size: size, Dir: f[0][0] == 'd', Stamp: strings.Join(f[5:8], " ")})
 	}
 	return res
 }

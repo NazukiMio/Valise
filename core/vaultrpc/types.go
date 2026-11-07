@@ -382,3 +382,56 @@ const (
 	SealStagePack   = "pack"
 	SealStageCommit = "commit"
 )
+
+// Strict copies (docs/ARCHITECTURE.md 7.1.1; capability CopyVerifyCapability).
+const (
+	CopyVerifyCapability = "copy-verify/1"
+	MethodLeafMaterials  = "leaf_materials"
+	MethodTargetVerify   = "target_verify"
+)
+
+// LeafMaterialsParams names one leaf on the server.
+type LeafMaterialsParams struct {
+	Leaf string `json:"leaf"`
+}
+
+// LeafMaterialsResult is the server leaf's material list, the basis other
+// locations are compared with, and its own no-key check.
+type LeafMaterialsResult struct {
+	Leaf      string           `json:"leaf"`
+	Exists    bool             `json:"exists"`
+	Current   bool             `json:"current,omitempty"`
+	Deleting  bool             `json:"deleting,omitempty"`
+	Materials []vault.Material `json:"materials"`
+	Digest    string           `json:"digest,omitempty"`
+	Integrity []vault.Problem  `json:"integrity"`
+	CheckedAt time.Time        `json:"checked_at"`
+}
+
+// TargetVerifyParams reads one leaf on a location the server reaches.
+// Packs asks for pack contents to be hashed; Known are packs hashed
+// before at this location (path, size, stamp, sha256).
+type TargetVerifyParams struct {
+	Target string           `json:"target"`
+	Leaf   string           `json:"leaf"`
+	Packs  bool             `json:"packs,omitempty"`
+	Known  []vault.Material `json:"known,omitempty"`
+}
+
+// TargetVerifyResult is what was read at the location. Materials carry a
+// SHA-256 where it was established (downloaded, known, or equal by rsync
+// checksum to the server's file); PendingBytes is what hashing the
+// remaining packs would download.
+type TargetVerifyResult struct {
+	Target       string           `json:"target"`
+	Leaf         string           `json:"leaf"`
+	Method       string           `json:"method"`
+	Exists       bool             `json:"exists"`
+	Deleting     bool             `json:"deleting,omitempty"`
+	Materials    []vault.Material `json:"materials"`
+	Hashed       []string         `json:"hashed,omitempty"`
+	Integrity    []vault.Problem  `json:"integrity"`
+	PendingBytes int64            `json:"pending_bytes"`
+	FetchedBytes int64            `json:"fetched_bytes"`
+	CheckedAt    time.Time        `json:"checked_at"`
+}

@@ -275,6 +275,20 @@ func init() {
 		}
 		return seal.CheckTarget(ctx, s.loginEnv(ctx), paths(s), p)
 	}
+	methods[vaultrpc.MethodLeafMaterials] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.LeafMaterialsParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.LeafMaterials(paths(s), p.Leaf)
+	}
+	methods[vaultrpc.MethodTargetVerify] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.TargetVerifyParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.TargetVerify(ctx, s.loginEnv(ctx), paths(s), p)
+	}
 	methods[vaultrpc.MethodStationKey] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.StationKeyParams
 		if err := json.Unmarshal(raw, &p); err != nil {

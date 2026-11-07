@@ -60,6 +60,8 @@ var dailyMethods = map[string]bool{
 	"target_change_prepare":   true,
 	"system_status":           true,
 	"target_check":            true,
+	"leaf_materials":          true,
+	"target_verify":           true,
 	"system_fix_audit":        true,
 	"backup_run_cancel":       true,
 	"checkup":                 true,
