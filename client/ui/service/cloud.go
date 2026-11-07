@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"os/exec"
-	"sort"
 
 	"valise/client/porter"
 	"valise/core/login"
@@ -76,71 +75,6 @@ func (s *Service) TimerStatus(ctx context.Context, host, instance string) (*vaul
 	var res vaultrpc.TimerStatus
 	err := s.call(ctx, host, vaultrpc.MethodTimerStatus, vaultrpc.TimerStatusParams{InstanceID: instance}, &res)
 	return &res, err
-}
-
-// Copy is where else a leaf exists, and whether that copy is complete.
-type Copy struct {
-	// Where is "server" or a target name.
-	Where    string `json:"where"`
-	Complete bool   `json:"complete"`
-	Deleting bool   `json:"deleting,omitempty"`
-}
-
-// LeafCopies lists every place a leaf of host exists: the server and each
-// cloud backup. A copy is complete when it holds the same snapshots and
-// packs as the most complete copy (docs/VAULT_FORMAT.md 10.4). Targets that
-// cannot be listed are left out and reported in errs.
-func (s *Service) LeafCopies(ctx context.Context, host, leaf string) (copies []Copy, errs map[string]error, err error) {
-	st, err := s.VaultStatus(ctx, host)
-	if err != nil {
-		return nil, nil, err
-	}
-	type set struct {
-		snaps, packs map[string]bool
-		deleting     bool
-	}
-	found := map[string]set{}
-	for _, l := range st.Leaves {
-		if l.Leaf == leaf {
-			sn := map[string]bool{}
-			for _, id := range l.Snapshots {
-				sn[id] = true
-			}
-			found["server"] = set{snaps: sn, deleting: l.Deleting}
-		}
-	}
-	errs = map[string]error{}
-	for _, t := range st.Targets {
-		list, err := s.TargetList(ctx, host, t.Name)
-		if err != nil {
-			errs[t.Name] = err
-			continue
-		}
-		for _, l := range list.Leaves {
-			if l.Leaf != leaf {
-				continue
-			}
-			sn, pk := map[string]bool{}, map[string]bool{}
-			for _, id := range l.Snapshots {
-				sn[id] = true
-			}
-			for _, id := range l.Packs {
-				pk[id] = true
-			}
-			found[t.Name] = set{snaps: sn, packs: pk, deleting: l.Deleting}
-		}
-	}
-	best := 0
-	for _, f := range found {
-		if len(f.snaps) > best {
-			best = len(f.snaps)
-		}
-	}
-	for where, f := range found {
-		copies = append(copies, Copy{Where: where, Complete: !f.deleting && len(f.snaps) == best && best > 0, Deleting: f.deleting})
-	}
-	sort.Slice(copies, func(i, j int) bool { return copies[i].Where < copies[j].Where })
-	return copies, errs, nil
 }
 
 // ShellCommand returns an unstarted interactive login shell on host over

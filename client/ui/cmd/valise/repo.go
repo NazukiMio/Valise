@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"valise/ui/service"
 )
 
 // repo: valise repo add|list|remove|sync (docs/ARCHITECTURE.md section 7,
@@ -50,6 +51,9 @@ func (c *cli) repo(ctx context.Context, args []string) error {
 				return err
 			}
 			fmt.Fprintf(c.out, "仓库 %s（%s）：%d 个周期、%d 个备份，这次新复制 %d 个文件，校验通过。\n", n, res.Dir, len(res.Leaves), len(res.Snapshots), res.Downloaded)
+			if t := service.CheckSummary(res.Checks); t != "" {
+				fmt.Fprintln(c.out, "  "+t)
+			}
 		}
 		return nil
 	}

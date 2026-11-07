@@ -48,7 +48,11 @@ func PackIDOf(rel string) string {
 }
 
 // Materials reads every file of the leaf at dir with its SHA-256.
-func Materials(dir string) ([]Material, error) {
+func Materials(dir string) ([]Material, error) { return ListMaterials(dir, true) }
+
+// ListMaterials lists the leaf at dir; packs are hashed only when packs is
+// set (small files always are).
+func ListMaterials(dir string, packs bool) ([]Material, error) {
 	var out []Material
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -76,6 +80,10 @@ func Materials(dir string) ([]Material, error) {
 		st, err := f.Stat()
 		if err != nil {
 			return err
+		}
+		if !packs && IsPackPath(rel) {
+			out = append(out, Material{Path: rel, Size: st.Size(), Stamp: st.ModTime().UTC().Format(time.RFC3339Nano)})
+			return nil
 		}
 		h := sha256.New()
 		n, err := io.Copy(h, f)
@@ -123,7 +131,8 @@ func (d MaterialDiff) OK() bool {
 
 // CompareMaterials checks a location's list against the basis: every path
 // present with the same size; small files must carry the same SHA-256, and
-// a pack hash, when given, must match too.
+// a pack hash, when given, must equal the pack's name (the basis may list
+// packs without hashes).
 func CompareMaterials(basis, have []Material) MaterialDiff {
 	var d MaterialDiff
 	at := map[string]Material{}
@@ -141,7 +150,9 @@ func CompareMaterials(basis, have []Material) MaterialDiff {
 			d.Different = append(d.Different, b.Path)
 		case h.SHA256 == "" && !IsPackPath(b.Path):
 			d.Unhashed = append(d.Unhashed, b.Path)
-		case h.SHA256 != "" && h.SHA256 != b.SHA256:
+		case IsPackPath(b.Path) && h.SHA256 != "" && h.SHA256 != PackIDOf(b.Path):
+			d.Different = append(d.Different, b.Path)
+		case !IsPackPath(b.Path) && h.SHA256 != b.SHA256:
 			d.Different = append(d.Different, b.Path)
 		}
 	}
@@ -177,6 +188,7 @@ func IntegrityCheck(list []Material, read func(rel string) ([]byte, error)) []Pr
 			add(m.Path, "文件名不符合格式")
 		case m.SHA256 == "":
 			add(m.Path, "内容未核对")
+			packs[id] = m.Size // ranges can still be checked
 		case m.SHA256 != id:
 			add(m.Path, "SHA-256 与 pack_id 不一致（文件被篡改或损坏）")
 		default:

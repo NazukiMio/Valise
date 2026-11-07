@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"valise/core/valise"
 	"valise/core/vault"
@@ -12,43 +13,29 @@ import (
 	"valise/ui/service"
 )
 
-// describeCopies prints where else a leaf exists and reports whether any
-// complete copy remains besides the one being deleted.
-func (c *cli) describeCopies(ctx context.Context, host, leaf, deleting string) (bool, error) {
-	copies, errs, err := c.svc.LeafCopies(ctx, host, leaf)
+// describeCopies checks every other place of a leaf again (docs/ARCHITECTURE.md
+// 7.1.1), prints the result and reports whether a complete copy remains
+// besides the one being deleted. skip names places not to check.
+func (c *cli) describeCopies(ctx context.Context, host, leaf, deleting string, skip map[string]bool, yes bool) (bool, error) {
+	o := service.VerifyOptions{Packs: true, Skip: skip}
+	if !yes {
+		o.Confirm = func(where string, bytes int64) bool {
+			return c.confirm(fmt.Sprintf("核对 %s 的数据包要下载约 %s，现在下载核对？（不核对则这一处按未核对处理）", where, size(bytes)))
+		}
+	}
+	fmt.Fprintf(c.out, "正在核对周期 %s 在各处的副本…\n", leaf)
+	rep, err := c.svc.VerifyCopies(ctx, host, leaf, o)
 	if err != nil {
 		return false, err
 	}
-	other := false
 	fmt.Fprintf(c.out, "周期 %s 的副本：\n", leaf)
-	for _, cp := range copies {
-		where := cp.Where
-		if where == "server" {
-			where = "服务器"
-		}
-		state := "完整"
-		switch {
-		case cp.Deleting:
-			state = "删除未完成"
-		case !cp.Complete:
-			state = "不完整"
-		}
-		fmt.Fprintf(c.out, "  %s：%s\n", where, state)
-		if cp.Where != deleting && cp.Complete {
-			other = true
-		}
+	for _, l := range rep.Lines() {
+		fmt.Fprintln(c.out, "  "+l)
 	}
-	for name, e := range errs {
-		reason := e.Error()
-		if ue, ok := valise.As(e); ok {
-			reason = ue.Reason + "；" + ue.Suggestion
-		}
-		fmt.Fprintf(c.out, "  %s：无法列出，不知道那里是否有副本（%s）\n", name, reason)
-	}
-	return other, nil
+	return rep.CompleteElsewhere(deleting), nil
 }
 
-func (c *cli) confirmDelete(ctx context.Context, host, leaf, where string, yes bool) (bool, error) {
+func (c *cli) confirmDelete(ctx context.Context, host, leaf, where string, skip map[string]bool, yes bool) (bool, error) {
 	st, err := c.svc.VaultStatus(ctx, host)
 	if err != nil {
 		return false, err
@@ -58,7 +45,7 @@ func (c *cli) confirmDelete(ctx context.Context, host, leaf, where string, yes b
 			return false, valise.New("leaf_current", "周期 "+leaf+" 是当前正在写入的周期，不能删除", "等这个周期结束后再删除")
 		}
 	}
-	other, err := c.describeCopies(ctx, host, leaf, where)
+	other, err := c.describeCopies(ctx, host, leaf, where, skip, yes)
 	if err != nil {
 		return false, err
 	}
@@ -66,7 +53,7 @@ func (c *cli) confirmDelete(ctx context.Context, host, leaf, where string, yes b
 		return true, nil
 	}
 	if !other {
-		fmt.Fprintln(c.out, "⚠ 其他地方都没有这个周期的完整副本。删除后，这些备份将无法恢复。")
+		fmt.Fprintln(c.out, "⚠ 其他地方都没有核对过的完整副本。删除后，这些备份将无法恢复。")
 		if !c.confirm("确定要删除？") {
 			return false, nil
 		}
@@ -74,15 +61,59 @@ func (c *cli) confirmDelete(ctx context.Context, host, leaf, where string, yes b
 	return c.confirm("删除周期 " + leaf + "？"), nil
 }
 
-// vaultDelete deletes one whole period on the server.
-func (c *cli) vaultDelete(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("vault delete", flag.ContinueOnError)
-	yes := fs.Bool("yes", false, "")
+// vaultCopies checks one period everywhere it is kept (docs/ARCHITECTURE.md
+// 7.1.1); with --packs pack contents are checked too, asking before each
+// download.
+func (c *cli) vaultCopies(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("vault copies", flag.ContinueOnError)
+	packs := fs.Bool("packs", false, "")
+	skip := fs.String("skip", "", "")
+	asJSON := fs.Bool("json", false, "")
 	pos, err := parseArgs(fs, args, 2)
 	if err != nil {
 		return err
 	}
-	ok, err := c.confirmDelete(ctx, pos[0], pos[1], "server", *yes)
+	o := service.VerifyOptions{Packs: *packs, Skip: skipSet(*skip)}
+	if *packs && !*asJSON {
+		o.Confirm = func(where string, bytes int64) bool {
+			return c.confirm(fmt.Sprintf("核对 %s 的数据包要下载约 %s，现在下载核对？", where, size(bytes)))
+		}
+	}
+	rep, err := c.svc.VerifyCopies(ctx, pos[0], pos[1], o)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return c.printJSON(rep)
+	}
+	fmt.Fprintf(c.out, "周期 %s 的副本：\n", pos[1])
+	for _, l := range rep.Lines() {
+		fmt.Fprintln(c.out, "  "+l)
+	}
+	return nil
+}
+
+// skipSet reads --skip a,b into a set.
+func skipSet(v string) map[string]bool {
+	out := map[string]bool{}
+	for _, n := range strings.Split(v, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			out[n] = true
+		}
+	}
+	return out
+}
+
+// vaultDelete deletes one whole period on the server.
+func (c *cli) vaultDelete(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("vault delete", flag.ContinueOnError)
+	yes := fs.Bool("yes", false, "")
+	skip := fs.String("skip", "", "")
+	pos, err := parseArgs(fs, args, 2)
+	if err != nil {
+		return err
+	}
+	ok, err := c.confirmDelete(ctx, pos[0], pos[1], "server", skipSet(*skip), *yes)
 	if err != nil || !ok {
 		return err
 	}
@@ -143,11 +174,12 @@ func (c *cli) targetList(ctx context.Context, args []string) error {
 func (c *cli) targetDelete(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("target delete", flag.ContinueOnError)
 	yes := fs.Bool("yes", false, "")
+	skip := fs.String("skip", "", "")
 	pos, err := parseArgs(fs, args, 3)
 	if err != nil {
 		return err
 	}
-	ok, err := c.confirmDelete(ctx, pos[0], pos[2], pos[1], *yes)
+	ok, err := c.confirmDelete(ctx, pos[0], pos[2], pos[1], skipSet(*skip), *yes)
 	if err != nil || !ok {
 		return err
 	}

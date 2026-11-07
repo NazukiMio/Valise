@@ -107,6 +107,9 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 	if args[0] == "delete" {
 		return c.vaultDelete(ctx, args[1:])
 	}
+	if args[0] == "copies" {
+		return c.vaultCopies(ctx, args[1:])
+	}
 	fs := flag.NewFlagSet("vault", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "")
 	pos, err := parseArgs(fs, args[1:], 1)
@@ -274,6 +277,9 @@ func (c *cli) sync(ctx context.Context, args []string) error {
 		if r.Note != "" {
 			fmt.Fprintln(c.out, r.Note+"。")
 		}
+		if t := service.CheckSummary(r.Checks); t != "" {
+			fmt.Fprintln(c.out, t)
+		}
 		return nil
 	}
 	res, err := c.svc.Sync(ctx, pos[0], pos[1])
@@ -283,6 +289,9 @@ func (c *cli) sync(ctx context.Context, args []string) error {
 	fmt.Fprintf(c.out, "已同步到 %s（%s），%d 个周期、%d 个备份。\n", res.Target, res.Dest, len(res.Leaves), len(res.Snapshots))
 	if res.Note != "" {
 		fmt.Fprintln(c.out, res.Note+"。")
+	}
+	if t := service.CheckSummary(res.Checks); t != "" {
+		fmt.Fprintln(c.out, t)
 	}
 	return nil
 }

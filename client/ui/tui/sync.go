@@ -143,7 +143,7 @@ func syncPlace(ctx context.Context, svc *service.Service, host string, p place) 
 		if err != nil {
 			return "", err
 		}
-		return p.label() + "：" + itoa(len(r.Snapshots)) + " 个备份，新复制 " + size(r.Bytes) + "，校验通过 · " + r.Dir, nil
+		return p.label() + "：" + itoa(len(r.Snapshots)) + " 个备份，新复制 " + size(r.Bytes) + "，校验通过 · " + r.Dir + checkLine(r.Checks), nil
 	}
 	if p.station {
 		r, err := svc.SyncStation(ctx, host, p.name)
@@ -154,7 +154,7 @@ func syncPlace(ctx context.Context, svc *service.Service, host string, p place) 
 		if r.Note != "" {
 			line += "\n  " + r.Note
 		}
-		return line, nil
+		return line + checkLine(r.Checks), nil
 	}
 	r, err := svc.Sync(ctx, host, p.name)
 	if err != nil {
@@ -164,7 +164,15 @@ func syncPlace(ctx context.Context, svc *service.Service, host string, p place) 
 	if r.Note != "" {
 		line += "\n  " + r.Note
 	}
-	return line, nil
+	return line + checkLine(r.Checks), nil
+}
+
+// checkLine is the after-copy check under a copy result.
+func checkLine(checks []service.CopyCheck) string {
+	if t := service.CheckSummary(checks); t != "" {
+		return "\n  " + t
+	}
+	return ""
 }
 
 func (s *syncScreen) animating(m *Model) bool { return s.rocket != nil }

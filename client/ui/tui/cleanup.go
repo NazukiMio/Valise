@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"context"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	"valise/core/revive"
 	"valise/core/vault"
+	"valise/ui/service"
 )
 
 // cleanupScreen gathers what can be deleted on a server to save space,
@@ -157,60 +159,83 @@ func (c *cleanupScreen) view(m *Model) string {
 	return head + "\n\n" + scrollLines(rows, c.cursor, m.bodyHeight()-6) + "\n\n" + detail
 }
 
-// confirmLeafDelete lists the other copies of a period, then asks; with no
-// other complete copy it asks twice (docs/VAULT_FORMAT.md 10.4). where is
-// "server" or a target name.
+// confirmLeafDelete checks every other copy of a period again
+// (docs/ARCHITECTURE.md 7.1.1), then asks; with no other complete copy it
+// asks twice (docs/VAULT_FORMAT.md 10.4). where is "server" or a target
+// name. Places that need pack downloads are first read without them; the
+// person then chooses to download and check, or to go on with those places
+// unchecked.
 func confirmLeafDelete(m *Model, host, leaf, where string, after func(m *Model) tea.Cmd) tea.Cmd {
+	return verifyThenAsk(m, host, leaf, where, false, after)
+}
+
+func verifyThenAsk(m *Model, host, leaf, where string, download bool, after func(m *Model) tea.Cmd) tea.Cmd {
 	svc, ctx := m.svc, m.ctx
-	m.flash, m.flashErr = "正在查看这个周期在其他地方有没有副本…", false
+	m.flash, m.flashErr = "正在核对这个周期在各处的副本…", false
 	return func() tea.Msg {
-		copies, errs, err := svc.LeafCopies(ctx, host, leaf)
+		var pending []string
+		var total int64
+		o := service.VerifyOptions{Packs: true, Skip: map[string]bool{where: true}}
+		if !download {
+			o.Confirm = func(place string, bytes int64) bool {
+				pending, total = append(pending, place), total+bytes
+				return false
+			}
+		}
+		rep, err := svc.VerifyCopies(ctx, host, leaf, o)
 		if err != nil {
 			return failed(err)
 		}
-		other := false
-		var detail []string
-		for _, cp := range copies {
-			name := cp.Where
-			if name == "server" {
-				name = "服务器"
-			}
-			state := okStyle.Render("完整")
-			if !cp.Complete {
-				state = warnStyle.Render("不完整")
-			}
-			detail = append(detail, "  "+name+"："+state)
-			if cp.Where != where && cp.Complete {
-				other = true
-			}
-		}
-		for name := range errs {
-			detail = append(detail, "  "+name+"："+warnStyle.Render("无法列出，不知道那里有没有副本"))
-		}
-		place := "服务器上"
-		if where != "server" {
-			place = where + " 上"
-		}
-		doDelete := func(m *Model) tea.Cmd {
-			return func() tea.Msg {
-				var err error
-				if where == "server" {
-					_, err = svc.LeafDelete(ctx, host, leaf)
-				} else {
-					err = svc.TargetLeafDelete(ctx, host, where, leaf)
+		detail := append([]string{"这个周期在各处的副本："}, indent(rep.Lines())...)
+		if len(pending) > 0 {
+			return pushMsg{pick("核对 "+strings.Join(pending, "、")+" 的数据包要下载约 "+size(total), []choice{
+				{label: "下载并核对", value: "download"},
+				{label: "不核对，继续", value: "skip", desc: "这些位置按未核对处理，不算完整副本"},
+			}, func(m *Model, v string) tea.Cmd {
+				if v == "download" {
+					return verifyThenAsk(m, host, leaf, where, true, after)
 				}
-				if err != nil {
-					return failed(err)
-				}
-				m.send(flashMsg("已删除" + place + "的周期 " + leaf))
-				return after(m)()
-			}
+				return m.push(deleteAsk(svc, ctx, host, leaf, where, rep, detail, after))
+			})}
 		}
-		ask := confirm("删除"+place+"的周期 "+leaf+"？", append([]string{"这个周期的副本："}, detail...), doDelete)
-		if !other {
-			return pushMsg{confirm("其他地方都没有这个周期的完整副本。删除后，这些备份将无法恢复。确定继续？",
-				append([]string{"这个周期的副本："}, detail...), func(m *Model) tea.Cmd { return m.push(ask) })}
-		}
-		return pushMsg{ask}
+		return pushMsg{deleteAsk(svc, ctx, host, leaf, where, rep, detail, after)}
 	}
+}
+
+func indent(lines []string) []string {
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = "  " + l
+	}
+	return out
+}
+
+// deleteAsk is the confirmation itself, doubled when no other place holds
+// a complete copy.
+func deleteAsk(svc *service.Service, ctx context.Context, host, leaf, where string, rep *service.CopyReport, detail []string, after func(m *Model) tea.Cmd) screen {
+	place := "服务器上"
+	if where != "server" {
+		place = where + " 上"
+	}
+	doDelete := func(m *Model) tea.Cmd {
+		return func() tea.Msg {
+			var err error
+			if where == "server" {
+				_, err = svc.LeafDelete(ctx, host, leaf)
+			} else {
+				err = svc.TargetLeafDelete(ctx, host, where, leaf)
+			}
+			if err != nil {
+				return failed(err)
+			}
+			m.send(flashMsg("已删除" + place + "的周期 " + leaf))
+			return after(m)()
+		}
+	}
+	ask := confirm("删除"+place+"的周期 "+leaf+"？", detail, doDelete)
+	if !rep.CompleteElsewhere(where) {
+		return confirm("其他地方都没有核对过的完整副本。删除后，这些备份将无法恢复。确定继续？", detail,
+			func(m *Model) tea.Cmd { return m.push(ask) })
+	}
+	return ask
 }

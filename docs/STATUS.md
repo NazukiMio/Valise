@@ -68,7 +68,12 @@
 - 官方 `profiles/openclaw.yaml` 升到 22，登记 `approval-ask`；健康页入口开放。演练客户端的 profile 副本在 `~/.cache/valise-drill/config/profiles/`，换 profile 后要同步复制。
 - 待用户显式清理：`ubuntu-vm` 的 `~/.valise-action-act_9efa2532dcb538d7e770453ebb99c7d2/prev`（执行前的活动目录，约 1.4 GB）与 `~/.cache/valise-b03-gw`（约 206 MB）。验收驱动 `porter/cmd/b03accept`、`client/ui/cmd/n2accept`、`client/ui/tui/zz_live_test.go` 在 `.git/info/exclude`，不入库。
 
+## 6a. N3 严格副本（2026-11-07）
+
+已实现并实机验证（`ubuntu-vm` 的服务器金库、`nas`、本机仓库），详见 [acceptance/N3.md](acceptance/N3.md)。旧的按快照数判断已删除；删除周期前当场核对各处。只有 `ubuntu-vm` 部署了本轮 porter（声明 `copy-verify/1`）。未完成：Valise 管理的远程备份位置未实机验证；TUI 备份位置页的“核对副本”入口（N4）；服务器自己的自动复制完成后不自动核对。
+
 ## 7. 建议的下一步
 
-1. N3 第一项“严格副本”：按 ARCHITECTURE.md 7.1 与 VAULT_FORMAT.md 替换只比较快照数的 `LeafCopies.Complete`，先定证据记录的存储与失效条件（N1 契约第 2–5 节），不清楚处先问用户。
-2. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。
+1. 决定服务器自己的自动复制完成后要不要由 porter 自动核对清单（目前不做，见 acceptance/N3.md 1.4）。
+2. N3 第二项“云盘”：按 ARCHITECTURE.md 7.3 实现，先核实 `kit/tools.yaml` 的 rclone（含 macOS 条目）与 `clouds` 清单。
+3. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。

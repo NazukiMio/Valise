@@ -30,6 +30,8 @@ func n2Compatibility(hello *rpc.HelloResult, method string, params any) error {
 		capability = protection.CapabilityV2
 	case vaultrpc.MethodTargetCheck:
 		capability = vaultrpc.CopyCheckCapability
+	case vaultrpc.MethodLeafMaterials, vaultrpc.MethodTargetVerify:
+		capability = vaultrpc.CopyVerifyCapability
 	case protection.MethodRunCancel:
 		capability = protection.BackupCapabilityV2
 	case protection.MethodBackup, protection.MethodRunStatus, protection.MethodSnapshotBinding:

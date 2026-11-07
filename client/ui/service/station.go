@@ -317,6 +317,8 @@ type StationSyncResult struct {
 	Snapshots []string `json:"snapshots"`
 	// Direct says why the direct copy was not used.
 	Direct string `json:"direct,omitempty"`
+	// Checks compare the copied periods with the server's lists.
+	Checks []CopyCheck `json:"checks,omitempty"`
 }
 
 // SyncStation copies host's escape pods to a station: directly from the
@@ -342,10 +344,11 @@ func (s *Service) SyncStation(ctx context.Context, host, name string) (*StationS
 		directErr = s.attachStation(ctx, host, *st, status)
 	}
 	if directErr == nil {
-		r, err := s.Sync(ctx, host, name)
+		r, err := s.syncOnly(ctx, host, name)
 		if err == nil {
 			res.Path, res.Method, res.Note, res.Leaves, res.Snapshots = PathDirect, r.Method, strings.ReplaceAll(r.Note, "这里", "服务器上"), r.Leaves, r.Snapshots
 			res.Dest = st.Address + ":" + strings.TrimRight(st.Path, "/") + "/" + status.ServerName
+			res.Checks = s.CheckAfterCopy(ctx, host, name, res.Leaves)
 			return res, nil
 		}
 		ue, ok := valise.As(err)
@@ -355,7 +358,11 @@ func (s *Service) SyncStation(ctx context.Context, host, name string) (*StationS
 		directErr = err
 	}
 	res.Direct = errText1(directErr)
-	return s.relay(ctx, host, *st, status, res)
+	out, err := s.relay(ctx, host, *st, status, res)
+	if err == nil && out != nil {
+		out.Checks = s.CheckAfterCopy(ctx, host, name, out.Leaves)
+	}
+	return out, err
 }
 
 func errText1(err error) string {

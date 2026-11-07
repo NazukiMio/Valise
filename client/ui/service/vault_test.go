@@ -73,8 +73,8 @@ func TestSealPullVerifyOverFakeSSH(t *testing.T) {
 	} else {
 		wantCode(t, err, "leaf_current")
 	}
-	if copies, _, err := s.LeafCopies(ctx, "box", rep.Leaf); err != nil || len(copies) != 1 || !copies[0].Complete {
-		t.Fatal(copies, err)
+	if cr, err := s.VerifyCopies(ctx, "box", rep.Leaf, VerifyOptions{Packs: true}); err != nil || len(cr.Checks) != 1 || cr.Checks[0].State != CopyComplete {
+		t.Fatal(cr, err)
 	}
 	if res, err := s.VaultVerifyRemote(ctx, "box"); err != nil || len(res.Problems) != 0 {
 		t.Fatal(res, err)

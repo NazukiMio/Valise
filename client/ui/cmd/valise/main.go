@@ -61,12 +61,14 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   seal <服务器> <实例> [--tier soul|soul-secrets|full|raw] [--reason 原因]
                                                  建立一个备份（soul=轻装、soul-secrets=标准、full=完整、raw=原样）
   vault status <服务器> [--json]                   按周期列出备份与备份位置状态（不需要私钥）
-  vault delete <服务器> <周期> [--yes]             删除服务器上一整个已结束的周期（先列出其他副本）
+  vault copies <服务器> <周期> [--packs] [--skip 位置,…] [--json]
+                                                 核对一个周期在服务器、备份位置与本机仓库的副本（--packs 连数据包内容一起核对）
+  vault delete <服务器> <周期> [--skip 位置,…] [--yes]  删除服务器上一整个已结束的周期（先核对其他各处副本；--skip 跳过的位置按未核对处理）
   target add <服务器> <名称> --rsync <主机:路径> [--auto 1d] [--force]
                                                  添加复制位置：先从服务器测试能否登录，连不上时不保存（--force 仍然保存；--auto：备份后顺带复制的最短间隔）
   target auto <服务器> <名称> <间隔|off>            开关自动同步
   target list <服务器> <名称> [--json]              列出备份位置上的周期，并与服务器对照
-  target delete <服务器> <名称> <周期> [--yes]      删除备份位置上一整个已结束的周期
+  target delete <服务器> <名称> <周期> [--skip 位置,…] [--yes]  删除备份位置上一整个已结束的周期（先核对其他各处副本）
   sync <服务器> <目标>                            把服务器金库同步到备份位置
   pull <服务器> [--leaf 周期] [--to 目录]          把金库拉取到本机（默认全部周期）
   period <服务器> <实例> week|month|quarter [--tz 时区]

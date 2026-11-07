@@ -90,6 +90,8 @@ type RepoSyncResult struct {
 	Downloaded int             `json:"downloaded"`
 	Bytes      int64           `json:"bytes"`
 	Problems   []vault.Problem `json:"problems"`
+	// Checks compare the copied periods with the server's lists.
+	Checks []CopyCheck `json:"checks,omitempty"`
 }
 
 // RepoSync copies host's escape pods the repository lacks, then verifies
@@ -131,6 +133,7 @@ func (s *Service) RepoSync(ctx context.Context, host, name string) (res *RepoSyn
 		res.Leaves = append(res.Leaves, l.Leaf)
 		res.Snapshots = append(res.Snapshots, l.Snapshots...)
 	}
+	res.Checks = s.CheckAfterCopy(ctx, host, name, res.Leaves)
 	if len(res.Problems) > 0 {
 		return res, valise.New("repo_verify_failed", "仓库 "+name+" 里的副本没有通过校验", "检查硬盘后重新同步；有问题的文件不会被覆盖，需要时删掉那个周期的文件夹再同步")
 	}

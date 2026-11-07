@@ -20,7 +20,7 @@ import (
 // list is the basis; a location is read and hashed, never trusted by count.
 
 // LeafMaterials lists and checks one leaf of the server's vault.
-func LeafMaterials(p Paths, leaf string) (*vaultrpc.LeafMaterialsResult, error) {
+func LeafMaterials(p Paths, leaf string, packs bool) (*vaultrpc.LeafMaterialsResult, error) {
 	dir, err := p.LeafDir(leaf)
 	if err != nil {
 		return nil, err
@@ -34,10 +34,14 @@ func LeafMaterials(p Paths, leaf string) (*vaultrpc.LeafMaterialsResult, error) 
 	if _, err := os.Stat(filepath.Join(dir, vault.DeletingFile)); err == nil {
 		res.Deleting = true
 	}
-	if res.Materials, err = vault.Materials(dir); err != nil {
+	if res.Materials, err = vault.ListMaterials(dir, packs); err != nil {
 		return nil, err
 	}
 	res.Digest = vault.MaterialsDigest(res.Materials)
+	if !packs {
+		return res, nil
+	}
+	res.Checked = true
 	if probs := vault.IntegrityCheck(res.Materials, localReader(dir)); probs != nil {
 		res.Integrity = probs
 	}

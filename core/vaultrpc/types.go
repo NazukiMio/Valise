@@ -390,9 +390,12 @@ const (
 	MethodTargetVerify   = "target_verify"
 )
 
-// LeafMaterialsParams names one leaf on the server.
+// LeafMaterialsParams names one leaf on the server. Packs hashes the
+// server's packs and runs its no-key check; without it pack contents are
+// not read (a quick list after a copy).
 type LeafMaterialsParams struct {
-	Leaf string `json:"leaf"`
+	Leaf  string `json:"leaf"`
+	Packs bool   `json:"packs,omitempty"`
 }
 
 // LeafMaterialsResult is the server leaf's material list, the basis other
@@ -404,8 +407,10 @@ type LeafMaterialsResult struct {
 	Deleting  bool             `json:"deleting,omitempty"`
 	Materials []vault.Material `json:"materials"`
 	Digest    string           `json:"digest,omitempty"`
-	Integrity []vault.Problem  `json:"integrity"`
-	CheckedAt time.Time        `json:"checked_at"`
+	// Checked is set when packs were hashed and Integrity is meaningful.
+	Checked   bool            `json:"checked,omitempty"`
+	Integrity []vault.Problem `json:"integrity"`
+	CheckedAt time.Time       `json:"checked_at"`
 }
 
 // TargetVerifyParams reads one leaf on a location the server reaches.

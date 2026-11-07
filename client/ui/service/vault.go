@@ -67,8 +67,24 @@ func (s *Service) TargetSet(ctx context.Context, host string, t vaultrpc.Target)
 	})
 }
 
-// Sync copies host's vault to one of its targets.
-func (s *Service) Sync(ctx context.Context, host, target string) (*vaultrpc.SyncResult, error) {
+// Sync copies host's vault to one of its targets, then compares the copied
+// periods with the server's lists (recorded; see CopyEvidenceFor).
+func (s *Service) Sync(ctx context.Context, host, target string) (*TargetSyncResult, error) {
+	res, err := s.syncOnly(ctx, host, target)
+	if err != nil {
+		return nil, err
+	}
+	return &TargetSyncResult{SyncResult: *res, Checks: s.CheckAfterCopy(ctx, host, target, res.Leaves)}, nil
+}
+
+// TargetSyncResult is a copy to a server-configured place and the check of
+// what was copied.
+type TargetSyncResult struct {
+	vaultrpc.SyncResult
+	Checks []CopyCheck `json:"checks,omitempty"`
+}
+
+func (s *Service) syncOnly(ctx context.Context, host, target string) (*vaultrpc.SyncResult, error) {
 	var res vaultrpc.SyncResult
 	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, vaultrpc.MethodSync, vaultrpc.SyncParams{Target: target}, &res)

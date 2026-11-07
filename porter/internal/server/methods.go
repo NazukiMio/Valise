@@ -280,7 +280,7 @@ func init() {
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
 		}
-		return seal.LeafMaterials(paths(s), p.Leaf)
+		return seal.LeafMaterials(paths(s), p.Leaf, p.Packs)
 	}
 	methods[vaultrpc.MethodTargetVerify] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.TargetVerifyParams

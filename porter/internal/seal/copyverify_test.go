@@ -41,7 +41,7 @@ func TestTargetVerifyBySFTPDownload(t *testing.T) {
 	fakeSFTP(t, w)
 	cloud, leaf := syncedCloud(t, w)
 	ctx := context.Background()
-	basis, err := LeafMaterials(w.p, leaf)
+	basis, err := LeafMaterials(w.p, leaf, true)
 	if err != nil || !basis.Exists || len(basis.Integrity) != 0 || !basis.Current {
 		t.Fatalf("%+v %v", basis, err)
 	}
@@ -96,7 +96,7 @@ func TestTargetVerifyByRsyncChecksum(t *testing.T) {
 	fakeRsync(t, w)
 	cloud, leaf := syncedCloud(t, w)
 	ctx := context.Background()
-	basis, _ := LeafMaterials(w.p, leaf)
+	basis, _ := LeafMaterials(w.p, leaf, true)
 	res, err := TargetVerify(ctx, w.env, w.p, vaultrpc.TargetVerifyParams{Target: "nas", Leaf: leaf})
 	if err != nil || res.FetchedBytes != 0 || len(res.Integrity) != 0 || !vault.CompareMaterials(basis.Materials, res.Materials).OK() {
 		t.Fatalf("%+v %v", res, err)
