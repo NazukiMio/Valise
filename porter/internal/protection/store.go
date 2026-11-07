@@ -245,6 +245,7 @@ func (s Store) Get(ctx context.Context, p cp.GetParams) (*cp.View, error) {
 			return nil, err
 		}
 		v.Warnings = append(v.Warnings, "保护设置有未完成事务，需要核实；按计划备份已阻止")
+		v.PendingChanges = s.pendingChanges(p.AgentRef.InstanceID)
 	}
 	if plan != nil {
 		s.missed(v, *plan)
@@ -270,4 +271,28 @@ func (s Store) missed(v *cp.View, plan cp.ServerPlan) {
 	if clockDoubt {
 		v.Warnings = append(v.Warnings, "服务器时钟可能不准确：记录时间晚于服务器当前时间，错过统计按服务器时钟计算")
 	}
+}
+
+// pendingChanges lists the instance's unsettled plan changes, read-only.
+// Unreadable records were already reported by CheckPending.
+func (s Store) pendingChanges(instance string) []cp.PendingChange {
+	es, err := os.ReadDir(s.state())
+	if err != nil {
+		return nil
+	}
+	var out []cp.PendingChange
+	for _, e := range es {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		var r record
+		if read(filepath.Join(s.state(), e.Name()), &r) != nil || r.valid() != nil {
+			continue
+		}
+		if r.AgentRef.InstanceID == instance && (r.State == "pending" || r.ReconcileRequired) {
+			out = append(out, cp.PendingChange{ChangeID: r.ChangeID, State: r.State, Committed: r.Committed,
+				OldRevision: r.OldRevision, NewRevision: r.NewRevision, ErrorCode: r.ErrorCode})
+		}
+	}
+	return out
 }

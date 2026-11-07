@@ -27,6 +27,18 @@ func (s Store) run(ctx context.Context, args ...string) (string, error) {
 	}
 	return strings.TrimSpace(string(out.Stdout)), nil
 }
+
+// runUTC runs a read whose timestamps must be unambiguous.
+func (s Store) runUTC(ctx context.Context, args ...string) (string, error) {
+	if s.Env == nil {
+		return "", fail("timer_failed", "无法读取服务器命令环境")
+	}
+	out, err := s.Env.With(map[string]string{"TZ": "UTC", "LC_ALL": "C"}).Run(ctx, commandTimeout, s.Home, args...)
+	if err != nil || out.Code != 0 {
+		return "", fail("timer_failed", "服务器日程命令未成功，执行结果需要核实")
+	}
+	return strings.TrimSpace(string(out.Stdout)), nil
+}
 func (s Store) control(ctx context.Context, args ...string) error {
 	_, err := s.run(ctx, append([]string{"systemctl", "--user"}, args...)...)
 	return err
@@ -40,7 +52,9 @@ func (s Store) calendar(ctx context.Context, d cp.Desired) (string, error) {
 func (s Store) observe(ctx context.Context, instance string) cp.TimerObservation {
 	_, timer := names(instance)
 	v := cp.TimerObservation{Status: "unknown"}
-	out, err := s.run(ctx, "systemctl", "--user", "--timestamp=unix", "show", timer, "--property=LoadState,ActiveState,UnitFileState,LastTriggerUSec,NextElapseUSecRealtime")
+	// Some systemd versions (Debian 13: 257) ignore --timestamp=unix for
+	// show; TZ=UTC makes their fallback "Day YYYY-MM-DD HH:MM:SS UTC" exact.
+	out, err := s.runUTC(ctx, "systemctl", "--user", "--timestamp=unix", "show", timer, "--property=LoadState,ActiveState,UnitFileState,LastTriggerUSec,NextElapseUSecRealtime")
 	if err == nil {
 		values := map[string]string{}
 		for _, line := range strings.Split(out, "\n") {
@@ -69,6 +83,10 @@ func (s Store) observe(ctx context.Context, instance string) cp.TimerObservation
 }
 func unixTimestamp(s string) string {
 	if !strings.HasPrefix(s, "@") {
+		// Fallback form under TZ=UTC; any other zone is not trusted.
+		if t, err := time.Parse("Mon 2006-01-02 15:04:05 MST", s); err == nil && strings.HasSuffix(s, " UTC") {
+			return t.UTC().Format(time.RFC3339Nano)
+		}
 		return ""
 	}
 	seconds, fraction, _ := strings.Cut(strings.TrimPrefix(s, "@"), ".")

@@ -237,9 +237,17 @@ func TestCrashPendingBlocksAndStatusNeverReplays(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("status executed systemctl")
 	}
+	// The plan view names the unsettled change, so a client can offer to settle it.
+	view, err := s.Get(ctx, cp.GetParams{AgentRef: a})
+	if err != nil || len(view.PendingChanges) != 1 || view.PendingChanges[0].ChangeID != r.ChangeID || view.PendingChanges[0].Committed {
+		t.Fatal(view, err)
+	}
 	recovered, err := s.Reconcile(ctx, cp.ReconcileParams{AgentRef: a, ChangeID: r.ChangeID, Action: "verify"})
 	if err != nil || !recovered.RollbackSucceeded {
 		t.Fatal(recovered, err)
+	}
+	if view, err := s.Get(ctx, cp.GetParams{AgentRef: a}); err != nil || len(view.PendingChanges) != 0 {
+		t.Fatal("settled change still listed", view, err)
 	}
 	if err := s.CheckPending(a.InstanceID); err != nil {
 		t.Fatal(err)

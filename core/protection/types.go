@@ -196,6 +196,20 @@ type View struct {
 	// schedule and timer run records, by the server clock in ServerNow.
 	MissedRuns []MissedRun `json:"missed_runs"`
 	ServerNow  time.Time   `json:"server_now"`
+	// PendingChanges lists this instance's plan changes that a crash or a
+	// failed verification left for the person to settle with Reconcile.
+	PendingChanges []PendingChange `json:"pending_changes,omitempty"`
+}
+
+// PendingChange is one unsettled plan change. Committed means the new
+// revision is already published: only verify can complete it.
+type PendingChange struct {
+	ChangeID    string   `json:"change_id"`
+	State       string   `json:"state"`
+	Committed   bool     `json:"committed"`
+	OldRevision Revision `json:"old_revision"`
+	NewRevision Revision `json:"new_revision"`
+	ErrorCode   string   `json:"error_code,omitempty"`
 }
 type Change struct {
 	Schema            string            `json:"schema"`

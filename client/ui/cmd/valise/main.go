@@ -93,6 +93,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   verify --vault <目录> [--key]                   校验本机金库；--key 用私钥解密并逐个文件校验
   checkup <服务器> <实例> [--json]                 会话与记忆检查（只读）
   health <服务器> <实例> [--json]                  健康：备份、恢复测试、服务、定时备份、审批（只读）
+  protection resolve <服务器> <实例> --verify|--rollback
+                                                 确认一次没完成的保护设置修改：核实后完成，或放弃并恢复旧设置（只在新设置写入前可放弃）
   health fix <服务器> <实例> <linger|clock> [--advanced] [--yes] [--json]
                                                  修复 linger 或服务器时钟：先列出要执行的命令与改动，再次同意后执行并复核
   proposals <服务器> <实例> [--accept id,…|all] [--accept-demotion id,…] [--reject id,…|all]
@@ -201,6 +203,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.revive(ctx, args[1:])
 	case args[0] == "prev" && len(args) > 1:
 		return c.prev(ctx, args[1:])
+	case args[0] == "protection" && len(args) > 1 && args[1] == "resolve":
+		return c.protectionResolve(ctx, args[2:])
 	case args[0] == "old" && len(args) > 1:
 		return c.old(ctx, args[1:])
 	case args[0] == "agent" && len(args) > 1 && args[1] == "name":

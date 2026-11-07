@@ -434,3 +434,20 @@ func TestTargetChangeCorruptRecordFailsClosed(t *testing.T) {
 		t.Fatal("corrupt target change record ignored")
 	}
 }
+
+// Debian 13 (systemd 257) prints show timestamps as local text despite
+// --timestamp=unix; under TZ=UTC that text is exact.
+func TestTimestampFallbackFormats(t *testing.T) {
+	cases := map[string]string{
+		"@1793934000":                 "2026-11-06T03:00:00Z",
+		"Sun 2026-11-08 04:40:00 UTC": "2026-11-08T04:40:00Z",
+		"Sun 2026-11-08 05:40:00 CET": "",
+		"":                            "",
+		"n/a":                         "",
+	}
+	for in, want := range cases {
+		if got := unixTimestamp(in); got != want {
+			t.Errorf("%q: got %q want %q", in, got, want)
+		}
+	}
+}

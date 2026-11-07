@@ -147,3 +147,7 @@
 - **备份运行中崩溃**：运行记录显示 reconciling；用同一 run_id 重试仍返回 reconciling，没有新的封存；换新 run_id 的备份正常成功。
 
 尚未在实机覆盖：DST 实际切换、客户端退出登录或重启、创建副本与恢复当前实例的关系（fake 测试已覆盖）、分离执行下复制成功（等 NAS 恢复）、需要 sudo 的时钟修复。
+
+### Debian 13 定时器时间戳问题（2026-11-07）
+
+`debian-vm`（systemd 257）的 `systemctl --timestamp=unix show` 对下次触发时间仍输出本地时间文本，porter 读成空值，首次开启日程的计划提交被留在“已提交、待核实”，按计划备份被阻止，而健康页没有提示。修正：该查询以 `TZ=UTC LC_ALL=C` 运行并解析 UTC 文本；计划读取新增 `pending_changes`；健康页对未完成修改给红色项；新增 `valise protection resolve <服务器> <实例> --verify|--rollback`。实机：部署修正后健康页显示该项，`--verify` 完成提交、该项消失。重启后未登录时定时器是否运行的测试已启动，结果未录。

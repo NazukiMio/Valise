@@ -58,6 +58,7 @@ type systemRead struct {
 	statusErr error  // nil, errSystemUnsupported, or a read failure
 	scheduled bool   // an accepted protection plan with its schedule on
 	schedule  string // that schedule in words, for the timer line
+	pending   []protection.PendingChange
 }
 
 var errSystemUnsupported = errors.New("system_status unsupported")
@@ -88,6 +89,7 @@ func (s *Service) readSystem(ctx context.Context, host, instance string) (*syste
 		if err := c.Call(ctx, protection.MethodGet, protection.GetParams{AgentRef: b.Agent.Ref}, &v); err != nil {
 			return unsupportedOK(err)
 		}
+		out.pending = v.PendingChanges
 		if v.Mode == "accepted" && v.ServerPlan != nil && v.ServerPlan.Schedule.Enabled != nil && *v.ServerPlan.Schedule.Enabled {
 			out.scheduled = true
 			sc := v.ServerPlan.Schedule
@@ -143,6 +145,9 @@ func (s *Service) systemItems(r *HealthReport, host, instance string, read func(
 		linger = st.Linger
 	case legacyTimer && !legacyLinger:
 		linger = "no"
+	}
+	for _, pc := range sr.pending {
+		r.Items = append(r.Items, pendingPlanItem(host, instance, pc))
 	}
 	if sr.schedule != "" {
 		// The legacy timer reader knows only intervals; a plan runs at a
