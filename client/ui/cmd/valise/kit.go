@@ -104,7 +104,7 @@ func (c *cli) proposals(ctx context.Context, args []string) error {
 				}
 				fmt.Fprintf(c.out, "  %s  %s:%s → %s\n      理由（agent 提供）：%s\n", p.ID, p.Rule.Root, p.Rule.Glob, p.Rule.Category, p.Reason)
 				if p.Unclassified > 0 {
-					fmt.Fprintf(c.out, "      注意：其中 %d 个文件目前未分类（按凭据对待），接受后将进入轻装逃生舱；请确认里面没有凭据\n", p.Unclassified)
+					fmt.Fprintf(c.out, "      注意：其中 %d 个文件目前未分类（按凭据对待），接受后将进入轻装备份；请确认里面没有凭据\n", p.Unclassified)
 				}
 			}
 		}
@@ -137,7 +137,7 @@ func (c *cli) proposals(ctx context.Context, args []string) error {
 		fmt.Fprintf(c.out, "已拒绝 %s\n", id)
 	}
 	if len(res.Accepted) > 0 {
-		fmt.Fprintln(c.out, "从下一次建立逃生舱起生效。")
+		fmt.Fprintln(c.out, "从下一次建立备份起生效。")
 	}
 	fmt.Fprintf(c.out, "剩余待确认：%d\n", res.Remaining)
 	return nil
@@ -171,7 +171,7 @@ func (c *cli) kit(ctx context.Context, args []string) error {
 		return err
 	}
 	if plan.Result != nil && len(plan.Result.Written) > 0 {
-		fmt.Fprintf(c.out, "将把逃生舱技能写入 %s：\n", plan.Result.Dir)
+		fmt.Fprintf(c.out, "将把 Agent 保护技能写入 %s：\n", plan.Result.Dir)
 		for _, p := range plan.Result.Written {
 			fmt.Fprintf(c.out, "  %s\n", p)
 		}
@@ -209,7 +209,7 @@ func (c *cli) kit(ctx context.Context, args []string) error {
 		fmt.Fprintf(c.out, "  配置说明：%s\n", plan.MCPDoc)
 	}
 	fmt.Fprintf(c.out, "  或者把这句话转告 agent：\n    %s\n", plan.AgentLine)
-	fmt.Fprintln(c.out, "\n接入后对 agent 说：我给你装了一个逃生舱，你学习一下。")
+	fmt.Fprintln(c.out, "\n接入后对 agent 说：我给你装了 Valise 保护技能，你学习一下。")
 	return nil
 }
 
@@ -268,7 +268,7 @@ func (c *cli) kitUninstall(ctx context.Context, args []string) error {
 		return err
 	}
 	if len(plan.Result.Removed) == 0 {
-		fmt.Fprintln(c.out, "没有可删除的逃生舱技能文件。")
+		fmt.Fprintln(c.out, "没有可删除的 Agent 保护技能文件。")
 	} else {
 		fmt.Fprintln(c.out, "将删除：")
 		for _, p := range plan.Result.Removed {
@@ -301,6 +301,6 @@ func (c *cli) kitUninstall(ctx context.Context, args []string) error {
 	default:
 		fmt.Fprintf(c.out, "  在 harness 的 MCP 配置中删除名为 %s 的服务器，或请 agent 删除。\n", plan.MCPServerName)
 	}
-	fmt.Fprintln(c.out, "另外，agent 学习逃生舱时可能在它的常驻指令里加过一行提及 valise_seal 的提醒，请自行删除或让 agent 删除。")
+	fmt.Fprintln(c.out, "另外，agent 学习保护技能时可能在它的常驻指令里加过一行提及 valise_seal 的提醒，请自行删除或让 agent 删除。")
 	return nil
 }

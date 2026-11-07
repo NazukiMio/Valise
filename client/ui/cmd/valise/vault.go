@@ -27,7 +27,7 @@ func (c *cli) keyRegister(ctx context.Context, args []string) error {
 		return err
 	}
 	if res.Added {
-		fmt.Fprintf(c.out, "已把公钥（指纹 %s）登记到 %s。之后的逃生舱都能用它打开。\n", info.Fingerprint, pos[0])
+		fmt.Fprintf(c.out, "已把公钥（指纹 %s）登记到 %s。之后的备份都能用它打开。\n", info.Fingerprint, pos[0])
 	} else {
 		fmt.Fprintf(c.out, "公钥（指纹 %s）已经登记在 %s 上。\n", info.Fingerprint, pos[0])
 	}
@@ -57,7 +57,7 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 		return c.printJSON(rep)
 	}
 	w := c.out
-	fmt.Fprintf(w, "已为 %s 上的 %s 建立逃生舱（%s）\n逃生舱：%s（epoch %d", pos[0], rep.InstanceID, tierLabel(rep.Tier), rep.SnapshotID, rep.Epoch)
+	fmt.Fprintf(w, "已为 %s 上的 %s 建立备份（%s）\n备份：%s（epoch %d", pos[0], rep.InstanceID, tierLabel(rep.Tier), rep.SnapshotID, rep.Epoch)
 	if rep.NewEpoch {
 		fmt.Fprint(w, "，新 epoch")
 	}
@@ -74,10 +74,10 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 		}
 	}
 	if rep.BodyPatch {
-		fmt.Fprintln(w, "  身体有本地修改，已把 body_patch 装进逃生舱")
+		fmt.Fprintln(w, "  身体有本地修改，已把 body_patch 装进备份")
 	}
 	if rep.UnclassifiedCount > 0 && rep.Tier == vault.TierSoul {
-		fmt.Fprintf(w, "未分类文件 %d 个，按\"未知即敏感\"不进轻装逃生舱（标准、完整、原样会装；可在接入时用 --assign 归类）\n", rep.UnclassifiedCount)
+		fmt.Fprintf(w, "未分类文件 %d 个，按\"未知即敏感\"不进轻装备份（标准、完整、原样会装；可在接入时用 --assign 归类）\n", rep.UnclassifiedCount)
 	}
 	if rep.Tier == vault.TierRaw {
 		fmt.Fprintln(w, "raw 档：实例目录下的全部文件，整体按凭据层对待；其中的身体只能在同架构、同路径下原样使用")
@@ -123,7 +123,7 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 			return c.printJSON(st)
 		}
 		if !st.Exists {
-			fmt.Fprintf(c.out, "%s 上还没有逃生舱。收件人指纹：%v\n", pos[0], st.Recipients)
+			fmt.Fprintf(c.out, "%s 上还没有备份。收件人指纹：%v\n", pos[0], st.Recipients)
 			return nil
 		}
 		name := st.ServerName
@@ -153,7 +153,7 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 			case l.Current:
 				extra = "，当前周期"
 			}
-			fmt.Fprintf(c.out, "\n周期 %s（%d 个逃生舱，%s%s）\n", label, len(l.Snapshots), size(l.Bytes), extra)
+			fmt.Fprintf(c.out, "\n周期 %s（%d 个备份，%s%s）\n", label, len(l.Snapshots), size(l.Bytes), extra)
 			ids := append([]string(nil), l.Snapshots...)
 			sort.Sort(sort.Reverse(sort.StringSlice(ids)))
 			for _, id := range ids {
@@ -162,7 +162,7 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 				if t := synced[id]; len(t) > 0 {
 					where += " + " + strings.Join(t, "、")
 				} else {
-					where += "（尚未上云）"
+					where += "（尚未同步）"
 				}
 				fmt.Fprintf(c.out, "  %s  %-10s %-13s %s  %5d 个文件 %10s  %s\n", id, m.InstanceID, tierLabel(m.Tier),
 					m.CreatedAt.Local().Format("2006-01-02 15:04"), m.FileCount, size(m.PlainBytes), where)
@@ -255,7 +255,7 @@ func (c *cli) target(ctx context.Context, args []string) error {
 	}
 	fmt.Fprintf(c.out, "已在 %s 上添加云备份 %s（rsync → %s）。服务器需要能用自己的 SSH 配置登录该主机。\n", pos[0], pos[1], *dest)
 	if t.Auto != nil {
-		fmt.Fprintf(c.out, "自动同步：每次建立逃生舱后，距上次同步超过 %s 就顺带同步一次。\n", t.Auto.Every)
+		fmt.Fprintf(c.out, "自动同步：每次建立备份后，距上次同步超过 %s 就顺带同步一次。\n", t.Auto.Every)
 	}
 	return nil
 }
@@ -270,7 +270,7 @@ func (c *cli) sync(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(c.out, "已同步到 %s（%s），%d 个周期、%d 个逃生舱；%s。\n", r.Station, r.Dest, len(r.Leaves), len(r.Snapshots), r.PathText())
+		fmt.Fprintf(c.out, "已同步到 %s（%s），%d 个周期、%d 个备份；%s。\n", r.Station, r.Dest, len(r.Leaves), len(r.Snapshots), r.PathText())
 		if r.Note != "" {
 			fmt.Fprintln(c.out, r.Note+"。")
 		}
@@ -280,7 +280,7 @@ func (c *cli) sync(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.out, "已同步到 %s（%s），%d 个周期、%d 个逃生舱。\n", res.Target, res.Dest, len(res.Leaves), len(res.Snapshots))
+	fmt.Fprintf(c.out, "已同步到 %s（%s），%d 个周期、%d 个备份。\n", res.Target, res.Dest, len(res.Leaves), len(res.Snapshots))
 	if res.Note != "" {
 		fmt.Fprintln(c.out, res.Note+"。")
 	}
@@ -341,7 +341,7 @@ func (c *cli) verify(args []string) error {
 	}
 	what := "本机金库（不需要私钥的校验）"
 	if res.WithKey {
-		what = fmt.Sprintf("本机金库（用钥匙打开并校验了 %d 个逃生舱中的 %d 个文件）", res.Snapshots, res.Files)
+		what = fmt.Sprintf("本机金库（用钥匙打开并校验了 %d 个备份中的 %d 个文件）", res.Snapshots, res.Files)
 	}
 	return c.printProblems(what, res.Problems)
 }

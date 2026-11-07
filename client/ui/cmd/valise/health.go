@@ -44,7 +44,7 @@ func (c *cli) health(ctx context.Context, args []string) error {
 		if it.Group != group {
 			group = it.Group
 			if group == service.HealthPods {
-				fmt.Fprintln(c.out, "\n逃生舱状态")
+				fmt.Fprintln(c.out, "\n备份状态")
 			} else {
 				fmt.Fprintln(c.out, "\nagent 健康")
 			}
@@ -75,7 +75,7 @@ func (c *cli) restoreTest(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(c.out, "在这台电脑和服务器上各解开一次逃生舱并逐个核对文件；不切换、不碰 agent，结束后删除临时文件。")
+	fmt.Fprintln(c.out, "在这台电脑和服务器上各解开一次备份并逐个核对文件；不切换、不碰 agent，结束后删除临时文件。")
 	r, err := c.svc.RunRestoreTest(c.withProgress(ctx), pos[0], pos[1], *snap)
 	if err != nil {
 		return err
@@ -84,7 +84,7 @@ func (c *cli) restoreTest(ctx context.Context, args []string) error {
 		where := map[string]string{service.TestLocal: "这台电脑上", service.TestServer: "服务器上"}[r.Step]
 		return fmt.Errorf("恢复测试没有通过（%s）：%s", where, r.Problem)
 	}
-	fmt.Fprintf(c.out, "✓ 恢复测试通过：%s 的逃生舱（%s），两边都解开并核对了 %d 个文件，没有切换，临时文件已删除。\n",
+	fmt.Fprintf(c.out, "✓ 恢复测试通过：%s 的备份（%s），两边都解开并核对了 %d 个文件，没有切换，临时文件已删除。\n",
 		r.Created.Local().Format("01-02 15:04"), r.Tier, r.Files)
 	if r.Downtime != "" {
 		fmt.Fprintf(c.out, "  真正恢复时还要：%s\n", r.Downtime)

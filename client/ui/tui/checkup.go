@@ -13,7 +13,7 @@ import (
 var findingInfo = map[string]struct{ title, why, generic string }{
 	agentkit.FindingLongSession: {"有一个会话太长了",
 		"会话越长，agent 每次回复要读的上下文越多：回复变慢、花费变高，也更容易忘记早期的约定。",
-		"开一个新会话；想保留上下文就先让 agent 做一次交接（逃生舱技能 valise-handoff）"},
+		"开一个新会话；想保留上下文就先让 agent 做一次交接（Agent 保护技能 valise-handoff）"},
 	agentkit.FindingCostGrowth: {"花费连续几天在涨",
 		"最近几天每天用掉的 token 越来越多，通常是会话越积越长，或 agent 在反复读大文件。",
 		"看看最近的会话是否过长；需要时开新会话，并让 agent 交接"},
@@ -21,7 +21,7 @@ var findingInfo = map[string]struct{ title, why, generic string }{
 		"记忆文件每次都会被读进上下文，太长会挤占对话空间，也会让重要的约定被淹没。",
 		"让 agent 把记忆整理成要点，过时的内容归档到单独的文件"},
 	agentkit.FindingSessionPileup: {"旧会话堆积",
-		"很久没碰过的会话占了大部分空间；它们也会进入逃生舱，让每次建立更慢、更大。",
+		"很久没碰过的会话占了大部分空间；它们也会进入备份，让每次建立更慢、更大。",
 		"用 harness 自己的功能归档或清理很久不用的会话"},
 	agentkit.FindingNoMemoryMechanism: {"没有长期记忆",
 		"这个 agent 没有任何长期记忆文件或记忆插件，换会话后它会忘记你说过的偏好。",

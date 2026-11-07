@@ -16,7 +16,7 @@ Profile 是 Valise 了解某种 harness **通用规则的唯一途径**：发现
 - **发布**：每个资料包是一个 GitHub Release，tag 为 `profiles-<version>`（例如 `profiles-2026.10.31`），资产为 `valise-profiles.tar.gz` 与 `.minisig`。客户端经 GitHub API 列出 Release，取最新的 `profiles-*`；也可以指定 tag。打包工具：`go run ./cmd/profilepack`（`client/` 下），签名用 minisign 命令行在发布时完成。
 - **安装**（设置 › 更新，或 `valise profiles install`）：在线拉取，或选择本地文件。客户端用内置的 Release 公钥验签，再逐个核对 `PACK.json` 中的 sha256 并对整包运行 lint；任何一步失败都整包拒绝。通过后把压缩包与签名原样保存到 `<客户端数据目录>/profile-pack/`，**每次加载都重新验签**。
 - **没有签名或签名不对的本地文件**：不作为资料包安装；经用户同意后把其中的 profile 作为"本地 profile"写入本地目录。同意之前列出每份 profile 中会被执行的命令（服务安装、身体重建、管理页令牌等 argv），界面标"未经审核"。
-- **没有安装资料包时**：登记无法识别任何 harness，界面与 CLI 引导安装。已经登记的实例不受影响：服务器上保存着登记时的 profile，逃生舱里也带着完整的 profile（`profile_doc`），因此着陆不依赖资料包。
+- **没有安装资料包时**：登记无法识别任何 harness，界面与 CLI 引导安装。已经登记的实例不受影响：服务器上保存着登记时的 profile，备份里也带着完整的 profile（`profile_doc`），因此恢复不依赖资料包。
 - 开发构建没有 Release 公钥，只能把仓库的 `profiles/` 作为本地 profile 使用（演练脚本即如此）。
 - `status: draft` 表示至少有一个条目尚未在靶机上核实。每一条无法从官方文档或真实安装中确认的规则，都必须标注 `verify: pending`。**宁可留空，不可猜测。**
 
@@ -29,14 +29,14 @@ capabilities:
   install:  { status: tested, versions: ["2026.10.9"], env: "Ubuntu 26.04 arm64, npm 用户级前缀", date: 2026-11-xx }
   manage:   { status: tested, versions: [...], env: "...", note: "管理页连接测试通过" }
   backup:   { status: tested, ... }
-  restore:  { status: untested, note: "着陆尚未在此版本演练" }
+  restore:  { status: untested, note: "恢复尚未在此版本演练" }
   login:    { status: partial, note: "OpenAI 回环登录已测；其他供应商未测" }
 ```
 
-- 能力项：`install`（官方方案）、`manage`（发现、状态、管理页、动作）、`backup`（登记与建立逃生舱）、`restore`（着陆）、`login`（登录授权）、`checkup`（体检）、`kit`（逃生舱技能）。状态：`tested` / `partial` / `untested` / `failed`；`tested` 必须写 `versions` 与 `env`。
-- 官方列表区分"可安装"与"可管理"；列表用概览等级，详情按能力展示，例如"管理页连接测试通过""备份已测试""着陆尚未演练"。不因存在 YAML 就宣称全面支持。
+- 能力项：`install`（官方方案）、`manage`（发现、状态、管理页、动作）、`backup`（登记与建立备份）、`restore`（恢复）、`login`（登录授权）、`checkup`（体检）、`kit`（Agent 保护技能）。状态：`tested` / `partial` / `untested` / `failed`；`tested` 必须写 `versions` 与 `env`。
+- 官方列表区分"可安装"与"可管理"；列表用概览等级，详情按能力展示，例如"管理页连接测试通过""备份已测试""恢复尚未演练"。不因存在 YAML 就宣称全面支持。
 - 用户本地 profile 不用笼统的"未验证"制造压力：展示来源（本地、未经审核）、已测试与未测试的能力、失败项及具体影响。
-- **着陆保护按能力判断**（2026-11-02 用户决定）：只看 `capabilities.restore`。它是 `tested` 时直接着陆，不因整份 profile 仍是 `status: draft`（例如体检条目还有 `verify: pending`）而拦截；不是 `tested` 时，复活必须显式传入 `--allow-draft-profile`；技能安装同理只看 `kit`，且属于主人操作（ARCHITECTURE.md 2.2）。核实证据的细化（官方测试、在用户这里成功过、用户标记通过）另行讨论；界面写明"着陆尚未在此版本测试"与可能的影响，而不是只写"未核实"。旧 profile 没有 `capabilities` 时，按 `status` 推断：`verified` 视为全部 `tested`，`draft` 视为全部 `untested`。
+- **恢复保护按能力判断**（2026-11-02 用户决定）：只看 `capabilities.restore`。它是 `tested` 时直接恢复，不因整份 profile 仍是 `status: draft`（例如体检条目还有 `verify: pending`）而拦截；不是 `tested` 时，复活必须显式传入 `--allow-draft-profile`；技能安装同理只看 `kit`，且属于主人操作（ARCHITECTURE.md 2.2）。核实证据的细化（官方测试、在用户这里成功过、用户标记通过）另行讨论；界面写明"恢复尚未在此版本测试"与可能的影响，而不是只写"未核实"。旧 profile 没有 `capabilities` 时，按 `status` 推断：`verified` 视为全部 `tested`，`draft` 视为全部 `untested`。
 
 - **审批状态检查**（2026-11-02 用户决定）：profile 可以声明 `approval_check`，用一条只读命令或一个配置键读出 harness 执行风险命令时是否需要用户批准，结果为"需要批准"或"无需批准（Bypass）"；与其他条目一样，未在靶机上核实时标 `verify: pending`。没有声明时，退回到 agent 经 MCP `valise_declare` 的申报（AGENT_KIT.md 第 3 节），界面标"未经核实"。
   - **schema**（M12 实现，2026-11-02 用户同意）：`approval_check: { argv, each, bypass_when, ask_when, verify }`。`argv` 是一条只读命令（只能引用 `${HOME}`），输出 JSON，由 porter 按服务器上保存的 profile 副本执行，走日常钥匙；`each` 可选，指向一个数组，逐项判断、取最差的结果；`bypass_when` 是"字段路径: 值"，全部相等才算无需批准；`ask_when` 是若干组条件，任一组全部相等就算需要批准；都不匹配为"不确定"。只做相等比较，不是解释器。读配置键的方式（不运行命令）留待需要时再加。
@@ -46,7 +46,7 @@ capabilities:
 - **一个状态目录里的多个 agent**（2026-11-02 用户决定）：有的 harness 在一个状态目录里放多个 agent（OpenClaw 的 `agents.entries`，共用设置与网关）。暂时仍以一个状态目录为一个 Valise agent 备份与恢复，界面只列出其中的 agent 名单；是否拆开，等在靶机上研究清楚再定。
   - **与声明对照**：核实结果优先；agent 的声明与设置不符时两者都显示（设置为 Bypass 时红色，设置为需要批准而 agent 声称无需批准时黄色）。
   - **OpenClaw**：`openclaw exec-policy show --json` 的 `effectivePolicy.scopes[]`，`security.effective = full` 且 `ask.effective = off` 为无需批准。2026.10.9 默认即为此状态；预设 cautious（allowlist / on-miss）、deny-all（deny / off）以及 allowlist / off、full / always 都读作需要批准（均在 debian-vm 上读出，修改设置时需先停止网关）。
-- **核实证据**（2026-11-02 用户决定，细节随 profile 专题与 M17 定稿）："已核实"按能力看三种证据：官方测试过（维护者在靶机上的记录，随资料包签名）、在用户这里成功过（Valise 自动记录这个 profile 版本与 harness 版本下的成功操作，如着陆或着陆演练）、用户标记通过（用户亲自试过后手动确认，与前两种区分显示）。官方 profile 与第三方 profile 同样适用，后者只是没有官方签名。
+- **核实证据**（2026-11-02 用户决定，细节随 profile 专题与 M17 定稿）："已核实"按能力看三种证据：官方测试过（维护者在靶机上的记录，随资料包签名）、在用户这里成功过（Valise 自动记录这个 profile 版本与 harness 版本下的成功操作，如恢复或恢复演练）、用户标记通过（用户亲自试过后手动确认，与前两种区分显示）。官方 profile 与第三方 profile 同样适用，后者只是没有官方签名。
 
 ### 1.3 多实例（M12，2026-11-02 用户决定）
 
@@ -54,9 +54,9 @@ capabilities:
 
 - **发现**：`state_dir_candidates` 中第一个有标记文件的目录是默认实例；`detect.named` 每条 glob 匹配到、并且有标记文件的目录各是一个命名实例，名字取 `*` 匹配到的部分（小写字母、数字、连字符）。一个目录只算一个实例（按真实路径去重，真实目录优先于指向它的软链）。没有 `markers_any` 时，只有 `skills/`、日志、缓存的目录不算实例。
 - **实例 id**：默认实例为 profile id，命名实例为 `<profile id>-<名字>`（如 `openclaw-work`），接入时可改。
-- **选择变量**：`named[].env` 必须写明怎样让 harness 自己的命令针对这个实例（值只能引用 `${NAME}`、`${STATE_DIR}`）。登记时记入实例记录（`name`、`env`）与逃生舱头；之后读取目录、管理动作、审批检查、登录都带上。必须在靶机上核实（OpenClaw 2026.10.9 只认 `OPENCLAW_STATE_DIR`，不认环境变量 `OPENCLAW_PROFILE`）。
+- **选择变量**：`named[].env` 必须写明怎样让 harness 自己的命令针对这个实例（值只能引用 `${NAME}`、`${STATE_DIR}`）。登记时记入实例记录（`name`、`env`）与备份头；之后读取目录、管理动作、审批检查、登录都带上。必须在靶机上核实（OpenClaw 2026.10.9 只认 `OPENCLAW_STATE_DIR`，不认环境变量 `OPENCLAW_PROFILE`）。
 - **命名实例共用安装**：按 agent 的有效 profile（`ForAgent`，由通用 profile 与实例档案现算；存的 profile 副本保持原样）去掉 `entries`、`body`、`provenance`（身体由默认实例负责）。`service`：`named[].service: shared` 表示命名实例运行在默认实例的服务里（一个网关服务所有实例），保留；不写时服务单元尚未核实（profile 里写的是默认实例的），去掉，Valise 不显示、不控制，恢复时也不停止或启动任何服务。恢复共用服务的命名实例会短暂停止这个服务，同一安装里的所有实例一起停下，计划里写明。
-- **嵌套**：一个实例的状态目录里如果嵌着其他实例（Hermes 的 bot 都在 `~/.hermes/profiles/` 下；也包括其他已接入实例），它们不装进这个实例的逃生舱。
+- **嵌套**：一个实例的状态目录里如果嵌着其他实例（Hermes 的 bot 都在 `~/.hermes/profiles/` 下；也包括其他已接入实例），它们不装进这个实例的备份。
   - 嵌套的都是本 profile 共用服务的命名实例时（2026-11-02 用户决定先核实服务名；Hermes v0.22.5 已核实），交换照常进行：停止共用服务即停下它们，交换窗口内把它们的目录原样改名搬进新活目录（计划的 `keep`，与身体目录同一套交换日志，失败时搬回），不复制、不替换，回滚复制档位外内容时跳过它们。
   - 其他情况（服务未核实的命名实例、别的 profile 的实例）仍拒绝原地交换，porter 在交换前再检查一次；恢复测试、单独恢复嵌在里面的实例、恢复到另一台服务器不受影响。
 - **迁移或克隆命名实例**：Valise 不猜目标目录（默认目录属于另一个 agent），必须用 `--root state=<路径>` 指定；路径型的选择变量随新目录改写。

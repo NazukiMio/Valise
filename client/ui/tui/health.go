@@ -44,7 +44,7 @@ type testProgress struct{}
 
 func (c *healthTab) name() string { return "健康" }
 func (c *healthTab) help(p *instancePage) string {
-	items := []string{"↑↓", "选择", "t", "测试恢复", "u", "仓库与空间站", "s", "设置", "i", "忽略", "y", "复制给 agent 的话", "r", "刷新"}
+	items := []string{"↑↓", "选择", "t", "测试恢复", "u", "备份位置", "s", "设置", "i", "忽略", "y", "复制给 agent 的话", "r", "刷新"}
 	if c.repairName != "" {
 		label := c.repairName
 		if c.repairItem != "approval" {
@@ -105,7 +105,7 @@ func (c *healthTab) decide(m *Model, p *instancePage, d agentkit.DecideParams) t
 		if err != nil {
 			return failed(err)
 		}
-		send(flashMsg(fmt.Sprintf("已接受 %d 条、拒绝 %d 条；接受的规则从下一次建立逃生舱起生效", len(res.Accepted), len(res.Rejected))))
+		send(flashMsg(fmt.Sprintf("已接受 %d 条、拒绝 %d 条；接受的规则从下一次建立备份起生效", len(res.Accepted), len(res.Rejected))))
 		l, err := svc.Proposals(ctx, host, d.InstanceID)
 		return proposalsLoaded{l, err}
 	}
@@ -213,7 +213,7 @@ func (c *healthTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, boo
 			if pr.Demotion {
 				return m.push(confirm("接受这条降级建议？", []string{
 					pr.Rule.Root + ":" + pr.Rule.Glob + " → " + categoryName(pr.Rule.Category),
-					"接受后这些文件不再装进轻装、标准、完整逃生舱（原样逃生舱仍包含它们）。",
+					"接受后这些文件不再装进轻装、标准、完整备份（原样备份仍包含它们）。",
 				}, func(m *Model) tea.Cmd { return c.decide(m, p, agentkit.DecideParams{AcceptDemotions: []string{pr.ID}}) })), true
 			}
 			return c.decide(m, p, agentkit.DecideParams{Accept: []string{pr.ID}}), true
@@ -285,7 +285,7 @@ func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 	for i, it := range rows {
 		if it.Group != group {
 			group = it.Group
-			title := "逃生舱状态"
+			title := "备份状态"
 			if group == service.HealthAgent {
 				title = "agent 健康"
 			}
@@ -368,19 +368,19 @@ func (c *healthTab) detail(p *instancePage, it service.HealthItem) string {
 func (c *healthTab) proposalsView(w, sel int) (string, int, int) {
 	var b strings.Builder
 	from, to := -1, -1
-	b.WriteString(dimStyle.Render("agent 认为这些文件也该装进逃生舱，或应该换一类：") + "\n")
+	b.WriteString(dimStyle.Render("agent 认为这些文件也该装进备份，或应该换一类：") + "\n")
 	for i, pr := range c.proposals {
 		if i == sel {
 			from = strings.Count(b.String(), "\n") + 1
 		}
 		line := pr.Rule.Root + ":" + pr.Rule.Glob + " → " + categoryName(pr.Rule.Category)
 		if pr.Demotion {
-			line += warnStyle.Render("  降级：不再进轻装逃生舱，需要单独确认")
+			line += warnStyle.Render("  降级：不再进轻装备份，需要单独确认")
 		}
 		b.WriteString(cursorLine(i == sel, line) + "\n")
 		b.WriteString(dimStyle.Render("    理由（agent 提供）："+pr.Reason) + "\n")
 		if pr.Unclassified > 0 {
-			b.WriteString(warnStyle.Render(fmt.Sprintf("    其中 %d 个文件现在没有归类（按凭据对待），接受后会进入轻装逃生舱；请确认里面没有密钥", pr.Unclassified)) + "\n")
+			b.WriteString(warnStyle.Render(fmt.Sprintf("    其中 %d 个文件现在没有归类（按凭据对待），接受后会进入轻装备份；请确认里面没有密钥", pr.Unclassified)) + "\n")
 		}
 		if i == sel {
 			to = strings.Count(b.String(), "\n")

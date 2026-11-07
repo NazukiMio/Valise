@@ -131,7 +131,7 @@ func setLegacy(ctx context.Context, e *porterenroll.Env, home string, p vaultrpc
 	}
 	service := fmt.Sprintf(`# Written by Valise; turned off and deleted from the instance settings.
 [Unit]
-Description=Valise timed escape pod for %[1]s
+Description=Valise scheduled backup for %[1]s
 
 [Service]
 Type=oneshot
@@ -141,7 +141,7 @@ NoNewPrivileges=yes
 	secs := int64(every / time.Second)
 	timerUnit := fmt.Sprintf(`# Written by Valise; turned off and deleted from the instance settings.
 [Unit]
-Description=Valise timed escape pod for %[1]s
+Description=Valise scheduled backup for %[1]s
 
 [Timer]
 OnActiveSec=%[2]ds
@@ -189,7 +189,7 @@ func SealAccepted(ctx context.Context, e *porterenroll.Env, home, instance strin
 // Seal is what the legacy timer runs: a soul seal recorded as the timer's.
 func Seal(ctx context.Context, e *porterenroll.Env, home, instance string) error {
 	return (protection.Store{Home: home}).WithLegacyWrite(instance, func() error {
-		_, err := seal.Seal(ctx, e, seal.Paths{Home: home}, vaultrpc.SealParams{InstanceID: instance, Tier: "soul", Reason: "定时建立逃生舱"}, vaultrpc.InitiatorTimer)
+		_, err := seal.Seal(ctx, e, seal.Paths{Home: home}, vaultrpc.SealParams{InstanceID: instance, Tier: "soul", Reason: "定时备份"}, vaultrpc.InitiatorTimer)
 		return err
 	})
 }

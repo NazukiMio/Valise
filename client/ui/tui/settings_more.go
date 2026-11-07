@@ -81,13 +81,13 @@ func (s *settingsScreen) updateView(m *Model, w int) string {
 	if len(kits) == 0 {
 		kits = append(kits, dimStyle.Render("读取中…"))
 	}
-	b.WriteString(box("逃生舱技能", strings.Join(kits, "\n")+"\n"+dimStyle.Render("在 实例 › 设置 中更新。"), w))
+	b.WriteString(box("Agent 保护技能", strings.Join(kits, "\n")+"\n"+dimStyle.Render("在 实例 › 设置 中更新。"), w))
 	return b.String()
 }
 
 func (s *settingsScreen) advancedView(m *Model, w int) string {
 	var b strings.Builder
-	b.WriteString(warnStyle.Render("这里的操作会影响谁能打开逃生舱，请先读清楚说明。") + "\n\n")
+	b.WriteString(warnStyle.Render("这里的操作会影响谁能打开备份，请先读清楚说明。") + "\n\n")
 	var rows []string
 	for i, h := range s.hosts {
 		d := m.server(h)
@@ -104,9 +104,9 @@ func (s *settingsScreen) advancedView(m *Model, w int) string {
 		}
 		rows = append(rows, cursorLine(s.inBody && i == s.cursor, padRight(h, 20)+state))
 	}
-	b.WriteString(box("每台服务器上能打开逃生舱的钥匙（指纹）", strings.Join(rows, "\n"), w) + "\n")
-	b.WriteString(dimStyle.Render("从服务器移除一把钥匙后，以后的逃生舱不再给它；以前的逃生舱它仍然能打开，加密没法追溯撤销。最后一把钥匙不能移除。") + "\n\n")
-	b.WriteString(box("生成一把新钥匙", dimStyle.Render("只在钥匙泄露时使用。旧钥匙仍然是打开以前逃生舱的唯一方式，请先备份。需要时在终端运行 valise key init（会先要求处理现有钥匙）。"), w) + "\n")
+	b.WriteString(box("每台服务器上能打开备份的钥匙（指纹）", strings.Join(rows, "\n"), w) + "\n")
+	b.WriteString(dimStyle.Render("从服务器移除一把钥匙后，以后的备份不再给它；以前的备份它仍然能打开，加密没法追溯撤销。最后一把钥匙不能移除。") + "\n\n")
+	b.WriteString(box("生成一把新钥匙", dimStyle.Render("只在钥匙泄露时使用。旧钥匙仍然是打开以前备份的唯一方式，请先备份。需要时在终端运行 valise key init（会先要求处理现有钥匙）。"), w) + "\n")
 	chat := okStyle.Render("开") + dimStyle.Render("　agent 页的「对话」分栏：打开 harness 自己的对话、复制技能提示词。按 c 关掉")
 	if m.svc.Config.ChatEntryOff {
 		chat = dimStyle.Render("关　按 c 打开")

@@ -68,7 +68,7 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 	r.Roots = resolveRoots(ctx, e, p, params.StateDir, &r.Warnings)
 	nested := NestedInstances(e, p, params.InstanceID, params.StateDir)
 	for _, n := range nested {
-		r.Warnings = append(r.Warnings, "状态目录里嵌着另一个 agent："+n+"；它不会装进这个 agent 的逃生舱，要单独接入")
+		r.Warnings = append(r.Warnings, "状态目录里嵌着另一个 agent："+n+"；它不会装进这个 agent 的备份，要单独接入")
 	}
 	classify(r, p, params.Overrides, nested)
 	r.Provenance = Provenance(ctx, e, p, r.Roots)

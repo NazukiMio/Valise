@@ -132,7 +132,7 @@ func (s *Service) RunAction(ctx context.Context, host, instance, id string, o Ac
 	}
 	res := &ActionResult{}
 	if o.Seal {
-		progress("建立逃生舱（改动之前）")
+		progress("建立备份（改动之前）")
 		rep, err := s.Seal(ctx, host, vaultrpc.SealParams{InstanceID: instance, Tier: vault.TierSoulSecrets, Reason: "管理动作之前：" + a.Name})
 		if err != nil {
 			return nil, err

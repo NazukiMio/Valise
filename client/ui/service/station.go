@@ -34,7 +34,7 @@ func (s *Service) station(name string) (*config.Station, error) {
 			return &st, nil
 		}
 	}
-	return nil, valise.New("station_unknown", "没有叫 "+name+" 的空间站", "用 valise station list 查看")
+	return nil, valise.New("station_unknown", "没有叫 "+name+" 的远程备份位置", "用 valise station list 查看")
 }
 
 // IsStation reports whether name is a station Valise manages.
@@ -65,7 +65,7 @@ func (s *Service) StationScan(ctx context.Context, st config.Station) ([]HostKey
 func stationInvalid(err error) error {
 	what := map[string]string{"name": "名字只能包含小写字母、数字和连字符", "address": "地址无效", "port": "端口无效",
 		"user": "用户名无效", "path": "路径必须是绝对路径，只含字母、数字和 . _ - /"}[err.Error()]
-	return valise.New("station_invalid", "空间站的"+what, "例如 名字 nas、地址 192.168.1.20、用户 valise、路径 /volume1/valise")
+	return valise.New("station_invalid", "远程备份位置的"+what, "例如 名字 nas、地址 192.168.1.20、用户 valise、路径 /volume1/valise")
 }
 
 // StationAddResult reports what adding a station found.
@@ -93,7 +93,7 @@ func (s *Service) stationAdd(ctx context.Context, st config.Station, confirmed [
 	}
 	list := s.Stations()
 	if slices.ContainsFunc(list, func(x config.Station) bool { return x.Name == st.Name }) {
-		return nil, valise.New("station_exists", "已经有一个叫 "+st.Name+" 的空间站", "换一个名字，或先移除旧的")
+		return nil, valise.New("station_exists", "已经有一个叫 "+st.Name+" 的远程备份位置", "换一个名字，或先移除旧的")
 	}
 	if err := s.TrustHostKeys(ctx, stationServer(st), confirmed); err != nil {
 		return nil, err
@@ -115,7 +115,7 @@ func (s *Service) stationAdd(ctx context.Context, st config.Station, confirmed [
 		}
 		if err := runTool(ctx, s.toolPath("ssh-keygen"), []string{"-q", "-t", "ed25519", "-N", "", "-C", "valise-station@" + localName(), "-f", key}, os.Environ()); err != nil {
 			undo()
-			return nil, valise.New("keygen_failed", "无法生成空间站钥匙", "确认本机安装了 OpenSSH 的 ssh-keygen").WithDetail(err.Error())
+			return nil, valise.New("keygen_failed", "无法生成远程备份位置钥匙", "确认本机安装了 OpenSSH 的 ssh-keygen").WithDetail(err.Error())
 		}
 	}
 	pub, err := os.ReadFile(key + ".pub")
@@ -134,7 +134,7 @@ func (s *Service) stationAdd(ctx context.Context, st config.Station, confirmed [
 	}
 	if _, err := s.stationTransport(st).Run(ctx, "true", nil); err != nil {
 		undo()
-		return nil, valise.New("station_key_unusable", "空间站钥匙装好了，但用它登录失败", "检查空间站 SSH 是否允许公钥登录").WithDetail(err.Error())
+		return nil, valise.New("station_key_unusable", "远程备份位置钥匙装好了，但用它登录失败", "检查远程备份位置 SSH 是否允许公钥登录").WithDetail(err.Error())
 	}
 	// Server keys only ever log in with Valise's certificates.
 	if err := s.installStationKey(ctx, s.stationTransport(st), caPub, `cert-authority,restrict,principals="`+st.User+`"`); err != nil {
@@ -143,15 +143,15 @@ func (s *Service) stationAdd(ctx context.Context, st config.Station, confirmed [
 	}
 	st.RRsync, st.SFTPServer = s.stationTools(ctx, st)
 	if !st.RRsync && st.SFTPServer == "" {
-		res.Warnings = append(res.Warnings, "空间站上没有 rrsync 也没有 sftp-server，Valise 不会给服务器凭据：上云一律经这台电脑中转。")
+		res.Warnings = append(res.Warnings, "远程备份位置上没有 rrsync 也没有 sftp-server，Valise 不会给服务器凭据：同步一律经这台电脑中转。")
 	} else if !st.RRsync {
-		res.Warnings = append(res.Warnings, "空间站上没有 rrsync，服务器的证书限定为禁止删除的 sftp：它仍可能覆盖已有文件，建议在 NAS 上开启定时快照。")
+		res.Warnings = append(res.Warnings, "远程备份位置上没有 rrsync，服务器的证书限定为禁止删除的 sftp：它仍可能覆盖已有文件，建议在 NAS 上开启定时快照。")
 	}
 	if err := config.SaveStations(s.Dirs.Data, append(slices.Clone(list), st)); err != nil {
 		return nil, err
 	}
 	res.Station = st
-	res.Warnings = append(res.Warnings, "建议在 NAS 上为 Valise 的目录开启定时快照：即使有人拿到这台电脑上的钥匙删了逃生舱，也能找回。")
+	res.Warnings = append(res.Warnings, "建议在 NAS 上为 Valise 的目录开启定时快照：即使有人拿到这台电脑上的钥匙删了备份，也能找回。")
 	return res, nil
 }
 
@@ -178,7 +178,7 @@ func (s *Service) StationRemove(name string) error {
 	list := s.Stations()
 	i := slices.IndexFunc(list, func(x config.Station) bool { return x.Name == name })
 	if i < 0 {
-		return valise.New("station_unknown", "没有叫 "+name+" 的空间站", "用 valise station list 查看")
+		return valise.New("station_unknown", "没有叫 "+name+" 的远程备份位置", "用 valise station list 查看")
 	}
 	return config.SaveStations(s.Dirs.Data, slices.Delete(list, i, i+1))
 }
@@ -188,7 +188,7 @@ func (s *Service) StationRemove(name string) error {
 func (s *Service) installStationKey(ctx context.Context, t *ssh.Transport, pub, options string) error {
 	f := strings.Fields(pub)
 	if len(f) < 2 {
-		return valise.New("station_key_invalid", "空间站钥匙的公钥格式不对", "重试；仍不行请报告")
+		return valise.New("station_key_invalid", "远程备份位置钥匙的公钥格式不对", "重试；仍不行请报告")
 	}
 	comment := "valise-station"
 	if len(f) > 2 {
@@ -203,7 +203,7 @@ func (s *Service) installStationKey(ctx context.Context, t *ssh.Transport, pub, 
 		return err
 	}
 	if res.ExitCode != 0 {
-		return valise.New("install_keys_failed", "没能把钥匙写进空间站的 ~/.ssh/authorized_keys", "检查空间站上 ~/.ssh 的权限与磁盘空间").
+		return valise.New("install_keys_failed", "没能把钥匙写进远程备份位置的 ~/.ssh/authorized_keys", "检查远程备份位置上 ~/.ssh 的权限与磁盘空间").
 			WithDetail(strings.TrimSpace(string(res.Stderr)))
 	}
 	return nil
@@ -252,7 +252,7 @@ func asExit(err error, exit **exec.ExitError) bool {
 func (s *Service) attachStation(ctx context.Context, host string, st config.Station, status *vaultrpc.StatusResult) error {
 	_, kind, rooted, ok := certLimit(st, status.ServerName)
 	if !ok {
-		return valise.New(stationsync.UnreachableCode, "空间站 "+st.Name+" 无法限制服务器的钥匙，Valise 不给服务器凭据", "经这台电脑中转")
+		return valise.New(stationsync.UnreachableCode, "备份位置 "+st.Name+" 无法限制服务器的钥匙，Valise 不给服务器凭据", "经这台电脑中转")
 	}
 	var key vaultrpc.StationKeyResult
 	if err := s.call(ctx, host, vaultrpc.MethodStationKey, vaultrpc.StationKeyParams{Name: st.Name}, &key); err != nil {
@@ -264,7 +264,7 @@ func (s *Service) attachStation(ctx context.Context, host string, st config.Stat
 		folder := strings.TrimRight(st.Path, "/") + "/" + status.ServerName
 		r, err := s.stationTransport(st).Run(ctx, "mkdir -p "+ssh.Quote(folder), nil)
 		if err == nil && r.ExitCode != 0 {
-			err = valise.New("station_mkdir_failed", "无法在空间站上创建 "+folder, "检查空间站上这个目录的权限").WithDetail(strings.TrimSpace(string(r.Stderr)))
+			err = valise.New("station_mkdir_failed", "无法在远程备份位置上创建 "+folder, "检查远程备份位置上这个目录的权限").WithDetail(strings.TrimSpace(string(r.Stderr)))
 		}
 		if err != nil {
 			return err
@@ -334,7 +334,7 @@ func (s *Service) SyncStation(ctx context.Context, host, name string) (*StationS
 		return nil, err
 	}
 	if status.ServerName == "" {
-		return nil, valise.New("server_name_missing", host+" 还没有名字，空间站不知道放进哪个文件夹", "先给服务器起名（服务器设置里按 n）")
+		return nil, valise.New("server_name_missing", host+" 还没有名字，远程备份位置不知道放进哪个文件夹", "先给服务器起名（服务器设置里按 n）")
 	}
 	res := &StationSyncResult{Station: name}
 	var directErr error
@@ -400,7 +400,7 @@ func (s *Service) relay(ctx context.Context, host string, st config.Station, sta
 				return nil, err
 			}
 			if len(pr.Problems) > 0 {
-				return nil, valise.New("relay_verify_failed", "取回的逃生舱没有通过校验，没有上传", "检查网络后重试")
+				return nil, valise.New("relay_verify_failed", "取回的备份没有通过校验，没有上传", "检查网络后重试")
 			}
 		}
 	}

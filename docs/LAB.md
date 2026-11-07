@@ -13,7 +13,7 @@ valise/
 │   ├── STATUS.md             # 当前状态与交接（每次交接覆盖更新）
 │   ├── PRODUCT.md            # 定位、用户、非目标、术语与界面用语
 │   ├── ARCHITECTURE.md       # 传输、钥匙与登录、接入、备份、恢复、交换日志
-│   ├── SERVICE_CONTRACTS.md  # 共享服务契约（N1 定稿 + 第 16 节增补决定）
+│   ├── SERVICE_CONTRACTS.md  # 共享服务契约（N1 定稿，2026-11-07 增补已并入正文）
 │   ├── VAULT_FORMAT.md       # 金库公开格式
 │   ├── PROFILES.md           # Harness Profile 规范
 │   ├── LOGIN_RELAY.md        # 登录中继、管理页与本地页面转发

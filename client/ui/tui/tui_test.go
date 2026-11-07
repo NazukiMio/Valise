@@ -166,33 +166,33 @@ func openInstance(t *testing.T, m *Model) {
 	key(t, m, "enter")
 	wantText(t, m, "demo", "Demo", "harness 资料未核实")
 	key(t, m, "enter")
-	wantText(t, m, "1 概览", "2 对话", "3 管理", "4 健康", "5 逃生舱", "6 设置")
+	wantText(t, m, "1 概览", "2 对话", "3 管理", "4 健康", "5 备份", "6 设置")
 }
 
 func TestHomeServerInstanceAndSeal(t *testing.T) {
 	m, _ := world(t)
 	openInstance(t, m)
-	wantText(t, m, "需要处理", "详见 4 健康", "快捷操作", "建立逃生舱", "支持程度", "备份")
+	wantText(t, m, "需要处理", "详见 4 健康", "快捷操作", "建立备份", "支持程度", "备份")
 	// Build an escape pod: what to pack, then why.
 	key(t, m, "b")
 	wantText(t, m, "轻装", "标准", "完整", "原样")
 	key(t, m, "enter")
 	typeText(t, m, "升级前")
 	key(t, m, "enter")
-	wantText(t, m, "逃生舱建好了", "轻装")
+	wantText(t, m, "备份建好了", "轻装")
 	key(t, m, "enter")
-	if !strings.Contains(m.flash, "逃生舱已建立") || m.flashErr {
+	if !strings.Contains(m.flash, "备份已建立") || m.flashErr {
 		t.Fatalf("flash %q", m.flash)
 	}
 	key(t, m, "5")
-	wantText(t, m, "你手动建立", "升级前", "轻装", "共 2 个逃生舱")
+	wantText(t, m, "你手动建立", "升级前", "轻装", "共 2 个备份")
 	// Search narrows the list.
 	key(t, m, "/")
 	typeText(t, m, "升级")
 	wantText(t, m, "1 / 2")
 	key(t, m, "enter")
 	key(t, m, "enter")
-	wantText(t, m, "的逃生舱", "谁建立的", "你手动建立", "原因", "升级前")
+	wantText(t, m, "的备份", "谁建立的", "你手动建立", "原因", "升级前")
 	if strings.Contains(screenText(m), "s_") {
 		t.Fatal("snapshot id shown before the technical details are opened")
 	}
@@ -207,7 +207,7 @@ func TestLandingRollback(t *testing.T) {
 	key(t, m, "5")
 	key(t, m, "enter")
 	key(t, m, "l")
-	wantText(t, m, "逃生舱着陆", "原地着陆")
+	wantText(t, m, "恢复", "恢复当前实例")
 	key(t, m, "d")     // allow the draft profile
 	key(t, m, "enter") // passphrase prompt
 	wantText(t, m, "口令")
@@ -243,7 +243,7 @@ func TestLandingRollback(t *testing.T) {
 		t.Fatal("success shown before the rocket landed")
 	}
 	key(t, m, "enter") // skip the animation
-	wantText(t, m, "逃生舱登陆成功！", "健康检查")
+	wantText(t, m, "恢复成功！", "健康检查")
 	if b, _ := os.ReadFile(filepath.Join(home, ".demo/memory/a.md")); string(b) != "m" {
 		t.Fatalf("memory not rolled back: %q", b)
 	}
@@ -256,8 +256,8 @@ func TestHealthTab(t *testing.T) {
 	m, _ := world(t)
 	openInstance(t, m)
 	key(t, m, "4")
-	wantText(t, m, "逃生舱状态", "agent 健康", "都只在服务器上", "还没有测试过")
-	if v := screenText(m); strings.Contains(v, "着陆") || strings.Contains(v, "上云") {
+	wantText(t, m, "备份状态", "agent 健康", "都只在服务器上", "还没有测试过")
+	if v := screenText(m); strings.Contains(v, "着陆") || strings.Contains(v, "上云") || strings.Contains(v, "逃生舱") || strings.Contains(v, "空间站") {
 		t.Fatal("themed words on the health tab")
 	}
 	// i dismisses the selected warn (the first problem: the backup).
@@ -310,7 +310,7 @@ func TestCloudCleanupServerSettings(t *testing.T) {
 	drive(t, m, m.Init())
 	key(t, m, "enter")
 	key(t, m, "c")
-	wantText(t, m, "还没有仓库或空间站")
+	wantText(t, m, "还没有备份位置")
 	key(t, m, "esc")
 	key(t, m, "k")
 	wantText(t, m, "没有可以清理的东西") // the only period is current
@@ -325,7 +325,7 @@ func TestSettingsSections(t *testing.T) {
 	key(t, m, "s")
 	wantText(t, m, "你的钥匙已创建", "备份钥匙", "只能上锁")
 	// The sidebar is vertical: ↓ moves through the sections.
-	for _, want := range []string{"box", "还没有空间站", "不包含", "harness 资料包", "能打开逃生舱的钥匙", "不用 Valise 也能恢复"} {
+	for _, want := range []string{"box", "还没有远程备份位置", "不包含", "harness 资料包", "能打开备份的钥匙", "不用 Valise 也能恢复"} {
 		key(t, m, "down")
 		wantText(t, m, want)
 	}
@@ -335,7 +335,7 @@ func TestSettingsSections(t *testing.T) {
 	wantText(t, m, "回到分栏")
 	key(t, m, "left")
 	key(t, m, "down")
-	wantText(t, m, "还没有空间站")
+	wantText(t, m, "还没有远程备份位置")
 }
 
 func TestFirstRunGuide(t *testing.T) {
@@ -348,7 +348,7 @@ func TestFirstRunGuide(t *testing.T) {
 		t.Fatal(err)
 	}
 	m = New(context.Background(), Options{Service: svc})
-	wantText(t, m, "欢迎使用 Valise", "安装和管理 agent", "第一次建立逃生舱时再设")
+	wantText(t, m, "欢迎使用 Valise", "安装和管理 agent", "第一次建立备份时再设")
 	key(t, m, "enter")
 	wantText(t, m, "harness 资料包")
 	key(t, m, "enter") // skip

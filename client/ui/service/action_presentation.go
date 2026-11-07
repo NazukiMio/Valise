@@ -71,7 +71,7 @@ func ActionOperationLines(j *action.Operation) []string {
 		lines = append(lines, "服务恢复问题："+j.RecoveryFailure)
 	}
 	if j.BackupID != "" {
-		lines = append(lines, "修改前逃生舱："+j.BackupID)
+		lines = append(lines, "修改前备份："+j.BackupID)
 	}
 	return lines
 }

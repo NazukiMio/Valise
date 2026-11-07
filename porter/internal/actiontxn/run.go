@@ -64,7 +64,7 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 		return nil, err
 	}
 	if len(pending) != 0 {
-		return nil, reject("有未完成的着陆操作，先处理后再修改配置")
+		return nil, reject("有未完成的恢复操作，先处理后再修改配置")
 	}
 	plan, err := Plan(ctx, r.Env, p.InstanceID, p.ActionID)
 	if err != nil {

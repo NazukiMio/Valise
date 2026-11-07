@@ -31,14 +31,14 @@ func flourishServer(agents int) string {
 }
 
 func flourishConnected(instance string) string {
-	return "把 " + instance + " 塞进 Valise 了。之后它的运行状态、管理页和逃生舱都在这里。"
+	return "把 " + instance + " 塞进 Valise 了。之后它的运行状态、管理页和备份都在这里。"
 }
 
 const (
 	flourishOverview = "它在路上，一切安好。"
 	flourishManage   = "工具都在箱子的夹层里。"
-	flourishPods     = "每一个逃生舱，都是一张回程票。"
+	flourishPods     = "每一份备份，都是一张回程票。"
 	flourishSealed   = "又多了一张回程票。"
-	flourishLanded   = "安全着陆。"
+	flourishLanded   = "平安抵达。"
 	flourishKeys     = "钥匙只在你手里。"
 )

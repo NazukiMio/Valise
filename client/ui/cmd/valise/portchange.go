@@ -31,9 +31,9 @@ func (c *cli) changePort(ctx context.Context, host, instance, entry string, to i
 		fmt.Fprintf(c.out, "  %s\n", strings.Join(st, " "))
 	}
 	if noSeal {
-		fmt.Fprintln(c.out, "⚠ 已选择跳过逃生舱：出了问题时没有改动之前的配置可以着陆。")
+		fmt.Fprintln(c.out, "⚠ 已选择跳过备份：出了问题时没有改动之前的配置可以恢复。")
 	} else {
-		fmt.Fprintln(c.out, "改动之前先建立一个逃生舱；出了问题可以从它原地着陆。")
+		fmt.Fprintln(c.out, "改动之前先建立一个备份；出了问题可以从它恢复当前实例。")
 	}
 	fmt.Fprintf(c.out, "想改回去：再运行 valise open %s %s --change-port --to %d\n", host, instance, p.From)
 	if !yes && !c.confirm(fmt.Sprintf("把端口改成 %d？", p.To)) {

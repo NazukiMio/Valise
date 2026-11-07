@@ -23,7 +23,7 @@ const AdvancedConsent = "我知道高级模式可能损坏服务器，后果由�
 // AdvancedRisks are shown before the consent sentence.
 var AdvancedRisks = []string{
 	"Valise 将以你的身份、包括管理员权限修改服务器",
-	"系统包与运行时的改动不在 agent 的逃生舱里，Valise 无法撤销",
+	"系统包与运行时的改动不在 agent 的备份里，Valise 无法撤销",
 	"疑点检查只能发现明显的问题，不能保证安全",
 	"Valise 不为任何第三方软件背书",
 }

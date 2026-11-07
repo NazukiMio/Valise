@@ -124,7 +124,7 @@ func With(ctx context.Context, run Runner, st Station, op func(Remote) error) (m
 	}
 	if st.Kind == MethodRRsync {
 		// The station only takes rrsync from this key: no sftp fallback.
-		return MethodRsync, "", valise.New(UnreachableCode, "这里没有可用的 rsync，而空间站只接受 rsync", "经这台电脑中转").WithDetail(missing.why)
+		return MethodRsync, "", valise.New(UnreachableCode, "这里没有可用的 rsync，而远程备份位置只接受 rsync", "经这台电脑中转").WithDetail(missing.why)
 	}
 	note = "rsync 不可用（" + missing.why + "），改用 sftp，速度会慢一些"
 	return MethodSFTP, note, op(&sftpRemote{run: run, st: st})
@@ -162,11 +162,11 @@ func failure(st Station, what, stderr string) *valise.UserError {
 	reason, hint := what, "确认能用 SSH 登录 "+host+"，然后重试；金库只追加，可以断点续传"
 	switch {
 	case strings.Contains(stderr, "Could not resolve hostname"):
-		reason, hint = what+"：不认识主机名 "+host, "检查空间站的地址；服务器自己配置的空间站要在它的 ~/.ssh/config 里写上 Host "+host
+		reason, hint = what+"：不认识主机名 "+host, "检查远程备份位置的地址；服务器自己配置的远程备份位置要在它的 ~/.ssh/config 里写上 Host "+host
 	case strings.Contains(stderr, "Permission denied"):
-		reason, hint = what+"："+host+" 拒绝了登录", "在空间站设置里重新装一次钥匙（需要空间站的密码）"
+		reason, hint = what+"："+host+" 拒绝了登录", "在远程备份位置设置里重新装一次钥匙（需要远程备份位置的密码）"
 	case strings.Contains(stderr, "Host key verification failed"):
-		reason, hint = what+"：还没有确认过 "+host+" 的身份", "在空间站设置里重新核对指纹"
+		reason, hint = what+"：还没有确认过 "+host+" 的身份", "在远程备份位置设置里重新核对指纹"
 	case strings.Contains(stderr, "Connection refused"), strings.Contains(stderr, "timed out"), strings.Contains(stderr, "No route to host"), strings.Contains(stderr, "Network is unreachable"):
 		reason, hint = what+"：连不上 "+host, "确认 "+host+" 已开机、网络可达、SSH 服务在运行"
 	}

@@ -69,7 +69,7 @@ func TestAdvancedGate(t *testing.T) {
 }
 
 func TestGateWarning(t *testing.T) {
-	g := &GateResult{Agents: []GateAgent{{Instance: "a", Pod: nil, Reason: "还没有逃生舱"}}}
+	g := &GateResult{Agents: []GateAgent{{Instance: "a", Pod: nil, Reason: "还没有备份"}}}
 	if g.OK() || g.Err() == nil {
 		t.Fatal("no pod passed")
 	}

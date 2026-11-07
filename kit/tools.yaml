@@ -7,7 +7,7 @@ tools:
     tier: enhanced
     name: rclone
     purpose: 同步到网盘（Google Drive、OneDrive 等）
-    without: 不能同步到网盘；本机仓库与空间站不受影响
+    without: 不能同步到网盘；本机备份位置不受影响
     check: { binary: rclone }
     # SHA-256 from https://downloads.rclone.org/v1.75.2/SHA256SUMS.
     binary:
@@ -21,7 +21,7 @@ tools:
   - id: rsync
     tier: expert
     name: rsync
-    purpose: 同步到仓库与空间站时更快（只传变化的部分）
+    purpose: 同步到备份位置时更快（只传变化的部分）
     without: 改用 sftp，速度慢一些
     check: { binary: rsync }
     install:

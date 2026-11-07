@@ -202,7 +202,7 @@ func (s *Service) systemItems(r *HealthReport, host, instance string, read func(
 	}
 	if len(parts) > 0 {
 		it := HealthItem{ID: FixClock, Group: HealthAgent, Level: HealthWarn, Title: "服务器时钟", Text: strings.Join(parts, "；"),
-			Detail: "时钟偏差会让空间站的短期证书失效，也会让备份时间与定时备份不准。Valise 不会用这台电脑的时间改写服务器时钟。自己在服务器上执行：" +
+			Detail: "时钟偏差会让远程备份位置的短期证书失效，也会让备份时间与定时备份不准。Valise 不会用这台电脑的时间改写服务器时钟。自己在服务器上执行：" +
 				strings.Join(clockManual(st), "；") + "。"}
 		s.bindSystemFix(&it, host, st)
 		r.Items = append(r.Items, it)

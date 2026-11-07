@@ -272,7 +272,7 @@ func (t *agentsTab) view(m *Model, p *instancePage, height int) string {
 	case t.err != nil:
 		b.WriteString("\n" + warnStyle.Render("检测失败：") + errText(t.err) + "\n")
 	}
-	b.WriteString("\n" + dimStyle.Render("管理页、服务和管理动作属于整个安装，在 2 管理；每个 "+agentTerm(m, p.inst.ProfileID)+" 的备份和逃生舱在它自己的页面里。") + "\n")
+	b.WriteString("\n" + dimStyle.Render("管理页、服务和管理动作属于整个安装，在 2 管理；每个 "+agentTerm(m, p.inst.ProfileID)+" 的备份在它自己的页面里。") + "\n")
 	return b.String()
 }
 

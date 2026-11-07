@@ -28,10 +28,10 @@ func agentTabs(rest ...tab) []tab {
 
 // skillPrompts are the words that start each Valise skill (agent-kit/skills).
 var skillPrompts = []struct{ skill, label, say string }{
-	{"valise-enroll", "让 agent 认识它的逃生舱", "我给你装了一个逃生舱，你学习一下"},
+	{"valise-enroll", "让 agent 认识它的保护技能", "我给你装了 Valise 保护技能，你学习一下"},
 	{"valise-checkup", "检查会话与记忆", "请用 valise-checkup 技能检查会话与记忆，提出建议，等我确认后再修改"},
 	{"valise-handoff", "交接到一个新会话", "交接一下，我们换个新会话"},
-	{"valise-upkeep", "提醒它改动前先建逃生舱", "以后改记忆、设置或装插件之前，先用 Valise 给自己建一个逃生舱"},
+	{"valise-upkeep", "提醒它改动前先建立备份", "以后改记忆、设置或装插件之前，先用 Valise 给自己建一个备份"},
 }
 
 type chatEntry struct {
@@ -106,7 +106,7 @@ func (c *chatTab) view(m *Model, p *instancePage, height int) string {
 		b.WriteString("  " + cursorLine(i == c.cursor, e.label) + "\n")
 	}
 	if len(es) == 0 {
-		b.WriteString(dimStyle.Render("这个 harness 没有登记原生对话或管理页，逃生舱技能也还没装好。") + "\n")
+		b.WriteString(dimStyle.Render("这个 harness 没有登记原生对话或管理页，Agent 保护技能也还没装好。") + "\n")
 	}
 	b.WriteString("\n" + dimStyle.Render("用哪种方式和 agent 说话都一样，它收到的是同一句话；Valise 不附加提示词，也不保存聊天记录。") + "\n")
 	b.WriteString(faintStyle.Render("不需要这个分栏时，可以在 设置 › 高级 里关掉。"))

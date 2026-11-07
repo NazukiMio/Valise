@@ -11,7 +11,7 @@ import (
 )
 
 // sealScreen builds an escape pod with the assembly scene above and the
-// stages below (docs/UI.md 9.5 "建立逃生舱的进度"). esc leaves it running:
+// stages below (docs/UI.md 9.5 "建立备份的进度"). esc leaves it running:
 // the result then reaches the page underneath as a sealDone.
 type sealScreen struct {
 	host, inst, tier string
@@ -25,9 +25,9 @@ func newSealScreen(m *Model, host, inst, tier string) *sealScreen {
 	return &sealScreen{host: host, inst: inst, tier: tier, began: m.now(), scene: newAssembly(m.now())}
 }
 
-var sealSteps = []step{{service.StageSealScan, "清点文件"}, {service.StageSealPack, "读取、加密并写入"}, {service.StageSealCommit, "写入逃生舱目录"}}
+var sealSteps = []step{{service.StageSealScan, "清点文件"}, {service.StageSealPack, "读取、加密并写入"}, {service.StageSealCommit, "写入备份目录"}}
 
-func (s *sealScreen) title() string    { return "建立逃生舱" }
+func (s *sealScreen) title() string    { return "建立备份" }
 func (s *sealScreen) hostName() string { return s.host }
 func (s *sealScreen) help() string {
 	if s.done == nil {
@@ -63,7 +63,7 @@ func (s *sealScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		switch k := msg.String(); {
 		case s.done == nil && (k == "esc" || k == "q"):
 			m.pop()
-			m.flash, m.flashErr = "逃生舱在后台继续建立，完成后这里会提示", false
+			m.flash, m.flashErr = "备份在后台继续建立，完成后这里会提示", false
 			return nil, true
 		case s.done != nil && (k == "enter" || k == "esc" || k == "q"):
 			d := *s.done
@@ -81,7 +81,7 @@ func (s *sealScreen) view(m *Model) string {
 	if !hudFits(m.width, h) {
 		return s.plainView(now)
 	}
-	l := hudLayout{title: "建立逃生舱 · " + tierNames[s.tier], captionStyle: hudBig}
+	l := hudLayout{title: "建立备份 · " + tierNames[s.tier], captionStyle: hudBig}
 	l.telemetry = [][2]string{{"已用时", clock(upTo(now, s.ended).Sub(s.began))}, {"agent", s.inst + " · " + s.host}}
 	p := s.prog.get()
 	cur := 0
@@ -92,11 +92,11 @@ func (s *sealScreen) view(m *Model) string {
 	}
 	switch {
 	case s.done != nil && s.done.err != nil:
-		l.caption, l.captionStyle = "逃生舱没有建成", hudBad
+		l.caption, l.captionStyle = "备份没有建成", hudBad
 		l.body = errText(s.done.err) + "\n\n" + hudDim.Render("agent 没有受到影响。")
 	case s.done != nil:
 		r := s.done.rep
-		l.caption, l.captionStyle = "逃生舱建好了", hudGood
+		l.caption, l.captionStyle = "备份建好了", hudGood
 		l.body = hudRows([][2]string{{"档位", tierNames[r.Tier]}, {"文件", itoa(r.Files) + " 个 · " + size(r.PlainBytes)},
 			{"新写入", size(r.AddedBytes) + "（和以前相同的内容不重复存）"}, {"存在", "服务器 " + s.host}}, 46)
 		l.telemetry[0][0] = "用时"
@@ -119,10 +119,10 @@ func (s *sealScreen) view(m *Model) string {
 func (s *sealScreen) plainView(now time.Time) string {
 	switch {
 	case s.done != nil && s.done.err != nil:
-		return errStyle.Render("逃生舱没有建成") + "\n\n" + errText(s.done.err)
+		return errStyle.Render("备份没有建成") + "\n\n" + errText(s.done.err)
 	case s.done != nil:
 		r := s.done.rep
-		return okStyle.Render("逃生舱建好了") + "\n\n" + kv("档位", tierNames[r.Tier], "文件", itoa(r.Files)+" 个 · "+size(r.PlainBytes), "新写入", size(r.AddedBytes))
+		return okStyle.Render("备份建好了") + "\n\n" + kv("档位", tierNames[r.Tier], "文件", itoa(r.Files)+" 个 · "+size(r.PlainBytes), "新写入", size(r.AddedBytes))
 	}
 	return dimStyle.Render("agent 照常运行，不会被停下或改动。") + "\n\n" + stepsView(sealSteps, s.prog.get(), now, s.began)
 }

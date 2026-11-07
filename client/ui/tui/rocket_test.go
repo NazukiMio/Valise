@@ -94,7 +94,7 @@ func TestLandingHUD(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 40}, {200, 58}} {
 		m.width, m.height = size[0], size[1]
 		out := screenText(m)
-		for _, want := range []string{"逃生舱正在进入预备轨道…", "将备份取回本机", "37%", "已用时", "遥测", "⣿"} {
+		for _, want := range []string{"正在进入预备轨道…", "将备份取回本机", "37%", "已用时", "遥测", "⣿"} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("%dx%d lacks %q:\n%s", size[0], size[1], want, out)
 			}
@@ -136,19 +136,19 @@ func TestLandingRevealAfterTouchdown(t *testing.T) {
 	}
 	r.update(m, reviveFinished{res: &revive.SwapResult{State: revive.StateHealthy}})
 	out := screenText(m)
-	if strings.Contains(out, "登陆成功") || !strings.Contains(out, "逃生舱即将登陆…") {
+	if strings.Contains(out, "登陆成功") || !strings.Contains(out, "即将完成…") {
 		t.Fatalf("success shown before touchdown:\n%s", out)
 	}
 	if !strings.Contains(m.top().help(), "跳过动画") {
 		t.Fatal("no skip once finished")
 	}
 	r.key(m, "enter")
-	if out := screenText(m); !strings.Contains(out, "逃生舱登陆成功！") {
+	if out := screenText(m); !strings.Contains(out, "恢复成功！") {
 		t.Fatalf("skip did not reveal:\n%s", out)
 	}
 	// A rolled-back landing shows at once.
 	r.result, r.rocket = &revive.SwapResult{State: revive.StateRolledBack, Message: "健康检查失败"}, newRocket(sceneLanding, m.now())
-	if out := screenText(m); !strings.Contains(out, "着陆中止") {
+	if out := screenText(m); !strings.Contains(out, "恢复中止") {
 		t.Fatalf("rollback not shown:\n%s", out)
 	}
 }

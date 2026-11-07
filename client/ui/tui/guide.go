@@ -183,7 +183,7 @@ func guideFor(m *Model, hosts []string, it service.GuideItem) screen {
 	}
 	switch it.ID {
 	case service.GuidePrep:
-		g.pages = []string{"准备工作包括：安装 harness 资料包、添加第一台服务器。加密钥匙在第一次建立逃生舱时再设。\n\n" +
+		g.pages = []string{"准备工作包括：安装 harness 资料包、添加第一台服务器。加密钥匙在第一次建立备份时再设。\n\n" +
 			"还没做完的，可以在 设置 里补上：更新（资料包）、服务器。"}
 	case service.GuideFirstAgent:
 		g.pages = []string{
@@ -199,11 +199,11 @@ func guideFor(m *Model, hosts []string, it service.GuideItem) screen {
 		}
 	case service.GuideFirstPod:
 		g.pages = []string{
-			"一个逃生舱保存所选内容在此刻的状态：记忆、设置、会话等；是否包含凭据和工作区，由你选择的备份内容决定。\n" +
+			"一个备份保存所选内容在此刻的状态：记忆、设置、会话等；是否包含凭据和工作区，由你选择的备份内容决定。\n" +
 				"它用你的钥匙加密后存在服务器上，只能追加，不会被覆盖或悄悄删掉。\n\n" +
 				"升级 harness、让 agent 做大改动、或者只是想留个底的时候，建一个。\n" +
-				"出了问题，可以把 agent 退回到任何一个逃生舱的样子（原地恢复），也能搬到另一台服务器。",
-			"这一步会：为 " + in.InstanceID + " 建一个逃生舱，备份内容由你选（推荐\"标准\"，带凭据）。\n\n" +
+				"出了问题，可以把 agent 退回到任何一个备份的样子（原地恢复），也能搬到另一台服务器。",
+			"这一步会：为 " + in.InstanceID + " 建一个备份，备份内容由你选（推荐\"标准\"，带凭据）。\n\n" +
 				"不会：停下 agent，或改动它的任何文件。建立时 agent 照常运行。",
 		}
 		g.then = needAgent
@@ -215,11 +215,11 @@ func guideFor(m *Model, hosts []string, it service.GuideItem) screen {
 		}
 	case service.GuideOffsite:
 		g.pages = []string{
-			"逃生舱默认存在服务器上。服务器坏了、被删了，它们也就没了。所以要在别处再存一份：\n\n" +
+			"备份默认存在服务器上。服务器坏了、被删了，它们也就没了。所以要在别处再存一份：\n\n" +
 				"  · 本机仓库：这台电脑上的一个文件夹（外接硬盘、网盘同步文件夹都行）。只在 Valise 打开时更新。\n" +
-				"  · 空间站：另一台机器（比如 NAS）。服务器可以直接把逃生舱发过去，连不上时经这台电脑中转。\n\n" +
+				"  · 远程备份位置：另一台机器（比如 NAS）。服务器可以直接把备份发过去，连不上时经这台电脑中转。\n\n" +
 				"两种可以同时用。复制只追加，不会删掉那边已有的东西。",
-			"接下来会打开「仓库与空间站」页：按 " + keyStyle.Render("a") + " 添加，然后上云一次。",
+			"接下来会打开「备份位置」页：按 " + keyStyle.Render("a") + " 添加，然后同步一次。",
 		}
 		g.then = needAgent
 		if hasAgent {
@@ -227,7 +227,7 @@ func guideFor(m *Model, hosts []string, it service.GuideItem) screen {
 		}
 	case service.GuideRestoreTest:
 		g.pages = []string{
-			"恢复测试确认逃生舱真的能打开：在这台电脑和服务器上各解开一次最新的逃生舱，逐个核对文件。\n\n" +
+			"恢复测试确认备份真的能打开：在这台电脑和服务器上各解开一次最新的备份，逐个核对文件。\n\n" +
 				"不会：切换 agent、停下服务、改动它的任何文件。结束后临时文件都会删掉。需要 Valise 口令。",
 			"接下来会打开 " + in.InstanceID + " 的健康页，按 " + keyStyle.Render("t") + " 开始恢复测试。",
 		}
@@ -265,7 +265,7 @@ func guideFor(m *Model, hosts []string, it service.GuideItem) screen {
 				"在哪里：服务器设置 › Kit 工具（" + keyStyle.Render("t") + "）。",
 			"高级模式让 Valise 代你装运行时和依赖，包括需要 sudo 的命令。默认关闭。\n\n" +
 				"开启要过两道口令（Valise 口令和管理口令）并确认免责；明显有害的命令任何时候都不执行。\n" +
-				"开启前，最近 7 天内要有一份逃生舱存在仓库或空间站。\n\n" +
+				"开启前，最近 7 天内要有一份备份存在备份位置。\n\n" +
 				"在哪里：安装 harness 或 Kit 专家工具时，缺少依赖会提示开启。读完这一页就算完成。",
 		}
 	}

@@ -41,7 +41,7 @@ agent-kit 是可选的保护与健康辅助，**不是灾难恢复的依赖**。
 | `valise_checkup` | 无 | 运行代码体检（见 ARCHITECTURE.md 第 9 节），返回各项指标和 finding id | 只读，最短间隔 10 分钟 |
 | `valise_seal` | `{ "reason": string }` | 封存一次 `soul` 档，返回快照 id | 只能封存 `soul` 档，最短间隔 10 分钟，`reason` 写入审计记录 |
 | `valise_propose_enrollment` | `{ "items": [{ "root", "path", "category", "reason" }] }` | 由代码校验路径确实存在、没有路径穿越、类别合法，然后以"待确认"状态保存；确认后写入该实例的 `local_overrides` | 不得提议 `secrets` 以外的类别去覆盖已有的 `secrets` 规则；把文件移出 `soul` 档的提议（改为 `ignore`、`cache`、`body`）标记为"降级"；所有提议都需要用户在客户端确认 |
-| `valise_declare`（2026-11-02 用户决定，M12 实现） | `{ "security_skills": [{ "name", "purpose" }], "approval_mode": "ask" \| "bypass" \| "unknown" }` | agent 申报自己装了哪些安全类技能、执行风险命令是否需要用户批准；声明连同时间保存在服务器上，界面一律标"agent 声明（未经核实）"；profile 有 `approval_check` 时以核实结果为准 | 只写声明本身；最短间隔 10 分钟；逃生舱技能在体检时提醒 agent 更新 |
+| `valise_declare`（2026-11-02 用户决定，M12 实现） | `{ "security_skills": [{ "name", "purpose" }], "approval_mode": "ask" \| "bypass" \| "unknown" }` | agent 申报自己装了哪些安全类技能、执行风险命令是否需要用户批准；声明连同时间保存在服务器上，界面一律标"agent 声明（未经核实）"；profile 有 `approval_check` 时以核实结果为准 | 只写声明本身；最短间隔 10 分钟；Agent 保护技能在体检时提醒 agent 更新 |
 | `valise_handoff_begin` | 无 | 先封存一次 `soul` 档（包含当前会话），再返回快照 id、当前会话的统计数据、profile 中的 `handoff.targets`、每个目标的行数上限，以及 `new_session_hint` | 每次交接只能调用一次 |
 | `valise_handoff_finish` | `{ "snapshot_id" }` | 由代码检查交接目标文件确实被修改、没有超过行数上限，并且只有指定的区段发生了变化；写入审计记录，返回给用户看的下一步提示 | 检查失败时返回具体原因，原文件可以从快照中恢复 |
 
@@ -184,7 +184,7 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 
 | 级别 | 内容 | 安装方式 | 访问级别 |
 | :--- | :--- | :--- | :--- |
-| 基础 | 四个逃生舱技能与 MCP 接入（8.5 节） | 默认提供，在管理页一键安装 | 主人 |
+| 基础 | 四个Agent 保护技能与 MCP 接入（8.5 节） | 默认提供，在管理页一键安装 | 主人 |
 | 增强 | 官方记忆技能（`valise-memory`，规划中）、官方辅助技能、不需要 root 的工具（如 rclone） | 逐项选择、逐项安装 | 主人 |
 | 专家 | harness 插件、需要 root 的工具（如经系统包管理器装 rsync） | 逐项安装，先说明风险、用户确认知晓 | 开发者模式 › 高级模式，并受 INSTALL.md 4.2 的前提约束 |
 
@@ -194,9 +194,9 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 
 | id | 级别 | 用途 | 不装会怎样 | 安装方式 |
 | :--- | :--- | :--- | :--- | :--- |
-| `rclone` | 增强 | 云盘（M13） | 不能上云到网盘 | 官方二进制，锁定版本 |
-| `rsync` | 专家 | 上云、仓库同步更快 | 改用 sftp，速度慢一些 | 系统包管理器（apt / dnf），需要 sudo |
-| `linger` | 专家 | 用户登出或服务器重启后，定时封存、自动上云与以 systemd 用户服务运行的 harness 继续运行 | 这些会在登出或重启后停下，不报错 | `loginctl enable-linger <用户>`，需要 sudo；卸载为 `disable-linger` |
+| `rclone` | 增强 | 云盘（M13） | 不能同步到网盘 | 官方二进制，锁定版本 |
+| `rsync` | 专家 | 同步、仓库同步更快 | 改用 sftp，速度慢一些 | 系统包管理器（apt / dnf），需要 sudo |
+| `linger` | 专家 | 用户登出或服务器重启后，定时封存、自动同步与以 systemd 用户服务运行的 harness 继续运行 | 这些会在登出或重启后停下，不报错 | `loginctl enable-linger <用户>`，需要 sudo；卸载为 `disable-linger` |
 
 不放进 Kit：zstd 与 age（porter 自带，独立恢复在用户电脑上进行）、harness 的运行时（由 profile 的 `requires` 与高级模式负责）、与 Valise 功能无关的运维工具。
 

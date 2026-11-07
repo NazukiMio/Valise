@@ -91,7 +91,7 @@ func TestManageActions(t *testing.T) {
 	key(t, m, "enter")
 	// config needs a backup in a repository or on a station
 	// (docs/INSTALL.md 4.2); refused, it offers to back up there first.
-	wantText(t, m, "这一步要先在仓库或空间站里有一份能独立恢复的备份", "先去添加仓库或空间站")
+	wantText(t, m, "这一步要先在备份位置里有一份能独立恢复的备份", "先去添加备份位置")
 	key(t, m, "esc")
 	m.svc.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
 	if _, err := m.svc.RepoAdd("usb", filepath.Join(t.TempDir(), "usb")); err != nil {
@@ -103,9 +103,9 @@ func TestManageActions(t *testing.T) {
 	key(t, m, "enter")
 	wantText(t, m, "备份并复制到仓库 usb（记忆与人格 + 凭据，推荐）")
 	key(t, m, "enter")
-	wantText(t, m, "能否撤销：无法撤销", "[x] 执行前先建立逃生舱")
+	wantText(t, m, "能否撤销：无法撤销", "[x] 执行前先建立备份")
 	key(t, m, "space")
-	wantText(t, m, "[ ] 不建逃生舱")
+	wantText(t, m, "[ ] 不建立备份")
 	key(t, m, "esc")
 	key(t, m, "down")
 	key(t, m, "enter")

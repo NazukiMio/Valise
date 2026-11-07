@@ -23,7 +23,7 @@ type settingsScreen struct {
 	kits    map[string]*agentkit.KitStatusResult // host/instance
 }
 
-var settingsSections = []string{"加密钥匙", "服务器", "仓库与空间站", "导入导出", "更新", "高级", "关于"}
+var settingsSections = []string{"加密钥匙", "服务器", "备份位置", "导入导出", "更新", "高级", "关于"}
 
 const (
 	ssKey = iota
@@ -67,7 +67,7 @@ func (s *settingsScreen) help() string {
 	case ssServers:
 		items = append(items, "a", "添加服务器", "x", "移除")
 	case ssCloud:
-		items = append(items, "enter", "打开仓库与空间站")
+		items = append(items, "enter", "打开备份位置")
 	case ssConfig:
 		items = append(items, "e", "导出 Valise 配置", "i", "导入 Valise 配置")
 	case ssUpdate:
@@ -301,9 +301,9 @@ func (s *settingsScreen) keyView(w int) string {
 		return box("加密钥匙", warnStyle.Render("这台电脑上还没有钥匙。"), w)
 	}
 	return box(okStyle.Render("✓")+" 你的钥匙已创建", kv("存放在", s.key.Path, "保护方式", "你的口令（Valise 不保存口令）", "指纹", s.key.Fingerprint), w) + "\n\n" +
-		"· 所有逃生舱都用这把钥匙加密。\n" +
-		"· 服务器只拿到\"只能上锁、不能开锁\"的那一半，服务器被攻破也打不开逃生舱。\n" +
-		"· 换电脑时，在新电脑上导入同一把钥匙并输入口令，就能打开以前所有的逃生舱。\n" +
+		"· 所有备份都用这把钥匙加密。\n" +
+		"· 服务器只拿到\"只能上锁、不能开锁\"的那一半，服务器被攻破也打不开备份。\n" +
+		"· 换电脑时，在新电脑上导入同一把钥匙并输入口令，就能打开以前所有的备份。\n" +
 		"· 这台电脑坏了或丢了，钥匙也就没了：" + headStyle.Render("请备份一份恢复套件") + "。\n\n" +
 		keyStyle.Render("b") + " 备份钥匙（导出恢复套件）     " + keyStyle.Render("i") + " 在这台电脑上导入钥匙"
 }
@@ -334,7 +334,7 @@ func (s *settingsScreen) cloudView(m *Model, w int) string {
 		state := dimStyle.Render("读取中")
 		if d.status != nil {
 			if len(d.status.Targets) == 0 {
-				state = warnStyle.Render("还没有空间站")
+				state = warnStyle.Render("还没有远程备份位置")
 			} else {
 				var parts []string
 				for _, t := range d.status.Targets {
@@ -363,6 +363,6 @@ func (s *settingsScreen) cloudView(m *Model, w int) string {
 		}
 		repos = strings.Join(parts, "\n")
 	}
-	return box("仓库（本机文件夹，所有服务器共用）", repos, w) + "\n" + box("空间站", strings.Join(rows, "\n"), w) + "\n" +
-		dimStyle.Render("仓库在 Valise 打开时补齐；空间站配置在每台服务器上；新 agent 的周期默认按月。")
+	return box("仓库（本机文件夹，所有服务器共用）", repos, w) + "\n" + box("远程备份位置", strings.Join(rows, "\n"), w) + "\n" +
+		dimStyle.Render("仓库在 Valise 打开时补齐；远程备份位置配置在每台服务器上；新 agent 的周期默认按月。")
 }

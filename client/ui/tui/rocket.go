@@ -1,7 +1,7 @@
 package tui
 
 // The escape pod's rocket: two braille scenes ported from the pieces in
-// assets/TUI/rocket ("静海 · 着陆" and "地球 · 启航", by the Valise authors).
+// assets/TUI/rocket ("静海 · 恢复" and "地球 · 启航", by the Valise authors).
 //
 // Two clocks drive a scene: ambient (stars, planets, meteors, sea) always
 // runs; the rocket's part follows a pose computed by rocketPlayer (anim.go).

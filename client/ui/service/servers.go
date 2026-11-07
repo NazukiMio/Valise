@@ -177,7 +177,7 @@ func (s *Service) setupOn(ctx context.Context, t *ssh.Transport, hc ssh.HostConf
 		}
 		o.step(SetupStep{Step: SetupRegister, OK: true})
 	} else {
-		o.step(SetupStep{Step: SetupRegister, OK: true, Detail: "还没有加密钥匙，第一次建立逃生舱前再登记"})
+		o.step(SetupStep{Step: SetupRegister, OK: true, Detail: "还没有加密钥匙，第一次建立备份前再登记"})
 	}
 	name := o.Name
 	if name == "" {

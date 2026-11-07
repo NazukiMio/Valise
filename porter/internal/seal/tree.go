@@ -81,7 +81,7 @@ func SetServerName(p Paths, name string) error {
 		return nil
 	}
 	if cur != "" {
-		return valise.New("server_name_set", "这台服务器已经叫 "+cur, "要改名请用 valise server rename（会一并改仓库与空间站里的文件夹）")
+		return valise.New("server_name_set", "这台服务器已经叫 "+cur, "要改名请用 valise server rename（会一并改备份位置里的文件夹）")
 	}
 	b, _ := json.MarshalIndent(ServerInfo{Name: name}, "", "  ")
 	if err := writeAtomic(p.ServerFile(), append(b, '\n'), 0o600); err != nil {

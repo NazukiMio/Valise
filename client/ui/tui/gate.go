@@ -18,7 +18,7 @@ import (
 func gateThen(m *Model, host, instance string, next func(m *Model) tea.Cmd) tea.Cmd {
 	svc, ctx := m.svc, m.ctx
 	m.riskOnce = false
-	m.flash, m.flashErr = "正在确认仓库或空间站里有能独立恢复的备份…", false
+	m.flash, m.flashErr = "正在确认备份位置里有能独立恢复的备份…", false
 	return func() tea.Msg {
 		g, err := svc.AdvancedGate(ctx, host, instance)
 		if err != nil {
@@ -28,7 +28,7 @@ func gateThen(m *Model, host, instance string, next func(m *Model) tea.Cmd) tea.
 			return pushMsg{gateRefused(m, host, instance, g, next)}
 		}
 		if w := g.Warning(); w != "" {
-			return pushMsg{confirm("仓库或空间站里的备份有些旧了，知道这个风险，仍然继续？", strings.Split(w, "\n"), next)}
+			return pushMsg{confirm("备份位置里的备份有些旧了，知道这个风险，仍然继续？", strings.Split(w, "\n"), next)}
 		}
 		return contMsg{next}
 	}
@@ -44,17 +44,17 @@ func gateRefused(m *Model, host, instance string, g *service.GateResult, next fu
 			detail = append(detail, "  "+a.Instance+"："+dimStyle.Render(a.Reason))
 		}
 	}
-	detail = append([]string{dimStyle.Render("这一步会以你的身份直接改动服务器。为了出事时能恢复，先把 agent 备份到仓库或空间站。")}, detail...)
+	detail = append([]string{dimStyle.Render("这一步会以你的身份直接改动服务器。为了出事时能恢复，先把 agent 的备份复制到备份位置。")}, detail...)
 	var cs []choice
 	for _, r := range m.svc.Repos() {
 		cs = append(cs,
 			choice{label: "备份并复制到仓库 " + r.Name + "（记忆与人格 + 凭据，推荐）", value: vault.TierSoulSecrets + "|" + r.Name, desc: "恢复后开箱即用"},
 			choice{label: "备份并复制到仓库 " + r.Name + "（只要记忆与人格）", value: vault.TierSoul + "|" + r.Name, desc: "恢复后要重新填写凭据"})
 	}
-	cs = append(cs, choice{label: "先去添加仓库或空间站", value: "add"},
+	cs = append(cs, choice{label: "先去添加备份位置", value: "add"},
 		choice{label: "自己承担风险，继续这一次", value: "risk", desc: "没有充足备份时，数据丢失是永久性的"},
 		choice{label: "取消", value: "cancel"})
-	p := pick("这一步要先在仓库或空间站里有一份能独立恢复的备份", cs, func(m *Model, v string) tea.Cmd {
+	p := pick("这一步要先在备份位置里有一份能独立恢复的备份", cs, func(m *Model, v string) tea.Cmd {
 		switch v {
 		case "cancel":
 			return nil

@@ -119,7 +119,7 @@ func Verify(p Paths) (*vaultrpc.VerifyResult, error) {
 		checked++
 	}
 	if checked == 0 && len(res.Problems) == 0 {
-		return nil, valise.New("vault_missing", "服务器上还没有金库", "先建立一个逃生舱：valise seal <服务器> <实例>")
+		return nil, valise.New("vault_missing", "服务器上还没有金库", "先建立一个备份：valise seal <服务器> <实例>")
 	}
 	return res, nil
 }
@@ -271,11 +271,11 @@ func validTarget(t vaultrpc.Target) error {
 	if c := t.Station; c != nil {
 		if !stationAddrRe.MatchString(c.Address) || c.Port < 1 || c.Port > 65535 || !stationUserRe.MatchString(c.User) || len(c.KnownHosts) == 0 ||
 			!strings.HasPrefix(t.Dest, c.Address+":") {
-			return valise.New("station_invalid", "空间站的连接信息无效", "在 Valise 里重新添加这个空间站")
+			return valise.New("station_invalid", "远程备份位置的连接信息无效", "在 Valise 里重新添加这个远程备份位置")
 		}
 		for _, l := range c.KnownHosts {
 			if strings.ContainsAny(l, "\n\r") || len(strings.Fields(l)) < 3 {
-				return valise.New("station_invalid", "空间站的指纹记录无效", "在 Valise 里重新核对指纹")
+				return valise.New("station_invalid", "远程备份位置的指纹记录无效", "在 Valise 里重新核对指纹")
 			}
 		}
 	}
@@ -302,7 +302,7 @@ func Sync(ctx context.Context, e *porterenroll.Env, p Paths, name, initiator str
 		return nil, err
 	}
 	if !st.Exists {
-		return nil, valise.New("vault_missing", "服务器上还没有金库", "先建立一个逃生舱：valise seal <服务器> <实例>")
+		return nil, valise.New("vault_missing", "服务器上还没有金库", "先建立一个备份：valise seal <服务器> <实例>")
 	}
 	unlock, err := p.Lock()
 	if err != nil {

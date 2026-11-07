@@ -256,12 +256,12 @@ func (o *overviewTab) quicks(p *instancePage) []quick {
 			return gatedCLI(m, host, "native", host, "--profile", pid)
 		}})
 	}
-	return append(qs, quick{"建立逃生舱", func(m *Model, p *instancePage) tea.Cmd { return startSeal(m, p) }})
+	return append(qs, quick{"建立备份", func(m *Model, p *instancePage) tea.Cmd { return startSeal(m, p) }})
 }
 
 func (o *overviewTab) name() string { return "概览" }
 func (o *overviewTab) help(p *instancePage) string {
-	return menu("↑↓", "选择", "enter", "执行", "b", "建立逃生舱")
+	return menu("↑↓", "选择", "enter", "执行", "b", "建立备份")
 }
 func (o *overviewTab) load(m *Model, p *instancePage) tea.Cmd { return nil }
 func (o *overviewTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, bool) {
@@ -285,7 +285,7 @@ func (o *overviewTab) update(m *Model, p *instancePage, msg tea.Msg) (tea.Cmd, b
 
 // capLabels are the plain names of profile capabilities (PROFILES.md 1.2).
 var capLabels = []struct{ name, label string }{
-	{"install", "安装"}, {"manage", "管理"}, {"backup", "备份"}, {"restore", "着陆"}, {"login", "登录"},
+	{"install", "安装"}, {"manage", "管理"}, {"backup", "备份"}, {"restore", "恢复"}, {"login", "登录"},
 }
 
 func capMark(status string) string {
@@ -331,7 +331,7 @@ func (o *overviewTab) view(m *Model, p *instancePage, height int) string {
 
 		rows = append(rows, "备份", backup)
 		if p.kit != nil && p.kit.LastMCP != nil {
-			rows = append(rows, "agent 上次联系", ago(*p.kit.LastMCP, m.now())+dimStyle.Render("，通过逃生舱技能"))
+			rows = append(rows, "agent 上次联系", ago(*p.kit.LastMCP, m.now())+dimStyle.Render("，通过 Agent 保护技能"))
 		}
 		b.WriteString(kv(rows...))
 	}

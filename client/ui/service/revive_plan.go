@@ -117,7 +117,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	}
 	leaf := st.LeafOf(o.SnapshotID)
 	if leaf == "" {
-		return nil, valise.New("snapshot_unknown", o.From+" 上没有逃生舱 "+o.SnapshotID, "用 valise vault status "+o.From+" 列出现有的逃生舱")
+		return nil, valise.New("snapshot_unknown", o.From+" 上没有备份 "+o.SnapshotID, "用 valise vault status "+o.From+" 列出现有的备份")
 	}
 	// The key comes first: which packs to fetch is in the encrypted file
 	// list (review F03).
@@ -171,19 +171,19 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		}
 	} else {
 		return nil, valise.New("profile_version", fmt.Sprintf("快照使用 harness 资料 %s v%d，客户端中没有同一版本，快照里也没有保存副本", head.Profile.ID, head.Profile.Version),
-			"升级客户端，或用当前 harness 资料重新接入并建立逃生舱后再着陆")
+			"升级客户端，或用当前 harness 资料重新接入并建立备份后再恢复")
 	}
 	// A named instance's service and entries are not verified: never
 	// stopped, started or shown (profile.ForAgent).
 	prof = prof.ForAgent(head.Name)
 	if head.Name != "" && o.Mode != revive.ModeRollback && o.Roots[profile.StateRoot] == "" {
-		return nil, valise.New("named_needs_root", "这是命名实例 "+head.Name+" 的逃生舱，迁移或克隆时 Valise 不猜目标目录（默认目录属于另一个 agent）",
+		return nil, valise.New("named_needs_root", "这是命名实例 "+head.Name+" 的备份，迁移或克隆时 Valise 不猜目标目录（默认目录属于另一个 agent）",
 			"用 --root state=<路径> 指定目标目录")
 	}
 	// Landing is judged by the restore capability alone (docs/PROFILES.md
 	// 1.2), not by the profile's overall draft status.
 	if st := prof.CapabilityStatus("restore"); st != "tested" && !o.AllowDraft {
-		rp.block("profile_draft", "harness 资料 "+prof.ID+" v"+strconv.Itoa(prof.ProfileVersion)+" 的着陆尚未在此版本测试（"+st+"），复活需要显式同意",
+		rp.block("profile_draft", "harness 资料 "+prof.ID+" v"+strconv.Itoa(prof.ProfileVersion)+" 的恢复尚未在此版本测试（"+st+"），复活需要显式同意",
 			"确认风险后加上 --allow-draft-profile")
 	}
 
@@ -236,7 +236,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	}
 	if o.Mode == revive.ModeRollback {
 		if facts.Record == nil {
-			rp.block("not_enrolled", "目标服务器上没有接入 Valise 的实例 "+instance, "原地着陆针对已接入的实例；跨服务器请用 migrate")
+			rp.block("not_enrolled", "目标服务器上没有接入 Valise 的实例 "+instance, "恢复当前实例针对已接入的实例；跨服务器请用 migrate")
 		} else if sup := facts.Record.Superseded; sup != nil {
 			rp.block("superseded", "实例 "+instance+" 的目录已被实例 "+sup.By+" 取代（操作 "+sup.OpID+"）",
 				"回滚 "+sup.By+"；不再需要旧实例时用 valise old cleanup 清理")
@@ -435,7 +435,7 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 	case pv.NPM != nil && pv.NPM.Version == "":
 		// Nothing was recorded at enrollment: say so, not "changed".
 		rp.block("provenance_missing", "接入时没有记下 "+pv.NPM.Package+" 的来源版本，无法核对目标上的身体",
-			"在原服务器上重新接入（让 Valise 记下来源），再建立逃生舱；或按官方文档在目标上全新安装："+freshDoc(prof))
+			"在原服务器上重新接入（让 Valise 记下来源），再建立备份；或按官方文档在目标上全新安装："+freshDoc(prof))
 		return
 	case pv.NPM != nil:
 		installed := facts.Provenance.NPM != nil && facts.Provenance.NPM.Version == pv.NPM.Version
@@ -450,7 +450,7 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 		}
 		if pv.NPM.Integrity == "" {
 			rp.block("provenance_missing", "接入时没有记下 "+pv.NPM.Package+"@"+pv.NPM.Version+" 的 integrity，无法核对 registry 上的版本",
-				"在原服务器上重新接入，再建立逃生舱；或按官方文档全新安装："+freshDoc(prof))
+				"在原服务器上重新接入，再建立备份；或按官方文档全新安装："+freshDoc(prof))
 			return
 		}
 		if facts.RegistryCheck != pv.NPM.Integrity {

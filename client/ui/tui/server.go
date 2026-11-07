@@ -21,7 +21,7 @@ func newServerPage(host string) *serverPage { return &serverPage{host: host} }
 func (s *serverPage) title() string    { return s.host }
 func (s *serverPage) hostName() string { return s.host }
 func (s *serverPage) help() string {
-	return menu("←→", "选择", "enter", "进入", "i", "安装 harness", "n", "接入 Valise", "c", "空间站", "k", "空间清理", "t", "服务器设置", "r", "刷新")
+	return menu("←→", "选择", "enter", "进入", "i", "安装 harness", "n", "接入 Valise", "c", "备份位置", "k", "空间清理", "t", "服务器设置", "r", "刷新")
 }
 
 func (s *serverPage) flourish(m *Model) string {

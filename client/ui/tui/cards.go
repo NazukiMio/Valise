@@ -138,9 +138,9 @@ func attention(m *Model, d *srvData, in enroll.InstanceSummary) []string {
 	t, ok := d.lastSeal(in.InstanceID)
 	switch {
 	case !ok:
-		out = append(out, "还没有逃生舱")
+		out = append(out, "还没有备份")
 	case m.now().Sub(t) > 7*24*time.Hour:
-		out = append(out, itoa(int(m.now().Sub(t).Hours()/24))+" 天没有建立逃生舱")
+		out = append(out, itoa(int(m.now().Sub(t).Hours()/24))+" 天没有建立备份")
 	}
 	return out
 }
@@ -149,11 +149,11 @@ func attention(m *Model, d *srvData, in enroll.InstanceSummary) []string {
 func backupLine(m *Model, d *srvData, in enroll.InstanceSummary, short bool) string {
 	t, ok := d.lastSeal(in.InstanceID)
 	if !ok {
-		return warnStyle.Render("还没有逃生舱")
+		return warnStyle.Render("还没有备份")
 	}
 	station := ""
 	if d.status != nil && len(d.status.Targets) > 0 {
-		station = " · 空间站 " + mark(d.synced(lastSnapshotID(d, in.InstanceID)), true)
+		station = " · 备份位置 " + mark(d.synced(lastSnapshotID(d, in.InstanceID)), true)
 	}
 	if short {
 		return dimStyle.Render("备份 " + ago(t, m.now()) + station)

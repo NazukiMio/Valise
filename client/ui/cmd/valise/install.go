@@ -208,9 +208,9 @@ func (c *cli) existingAgent(ctx context.Context, plan *service.InstallPlan, yes 
 	}
 	if yes {
 		return valise.New("install_existing", "服务器上已经有 "+plan.ProfileID+" 的数据，没有开始安装",
-			"不带 --yes 运行，选择先给旧数据建逃生舱，或确认让新程序接管")
+			"不带 --yes 运行，选择先给旧数据建立备份，或确认让新程序接管")
 	}
-	fmt.Fprintln(c.out, "\n  1  先给旧数据建一个逃生舱（标准档位），再安装")
+	fmt.Fprintln(c.out, "\n  1  先给旧数据建一个备份（标准档位），再安装")
 	fmt.Fprintln(c.out, "  2  直接安装，新程序接管这份数据")
 	fmt.Fprintln(c.out, "  3  取消")
 	fmt.Fprint(c.errOut, "选择 [1/2/3] ")
@@ -225,7 +225,7 @@ func (c *cli) existingAgent(ctx context.Context, plan *service.InstallPlan, yes 
 			if err := c.enroll(ctx, []string{plan.Host, "--profile", plan.ProfileID}); err != nil {
 				return err
 			}
-			if !c.confirm("先把旧数据接入 Valise（只读取和记录），然后建逃生舱？") {
+			if !c.confirm("先把旧数据接入 Valise（只读取和记录），然后建立备份？") {
 				return valise.New("cancelled", "已取消，服务器上没有任何改动", "")
 			}
 			if err := c.enroll(ctx, []string{plan.Host, "--profile", plan.ProfileID, "--accept"}); err != nil {
@@ -234,12 +234,12 @@ func (c *cli) existingAgent(ctx context.Context, plan *service.InstallPlan, yes 
 			inst = ex.ID
 			ex.Enrolled = inst
 		}
-		fmt.Fprintln(c.out, "正在建立逃生舱…")
+		fmt.Fprintln(c.out, "正在建立备份…")
 		rep, err := c.svc.Seal(c.withProgress(ctx), plan.Host, vaultrpc.SealParams{InstanceID: inst, Tier: vault.TierSoulSecrets, Reason: "安装前"})
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(c.out, "逃生舱已建立：%d 个文件，%s。\n\n", rep.Files, size(rep.PlainBytes))
+		fmt.Fprintf(c.out, "备份已建立：%d 个文件，%s。\n\n", rep.Files, size(rep.PlainBytes))
 		return nil
 	case "2":
 		return nil

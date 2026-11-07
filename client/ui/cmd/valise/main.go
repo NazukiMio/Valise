@@ -31,7 +31,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   native <服务器> --profile <id>                   打开 harness 自己的原生界面（独立的管理连接）
   enroll <服务器> [--profile id] [--name 命名实例] [--id 实例] [--assign root:glob=类别]... [--report-json] [--accept]
                                                  登记 agent：展示登记报告，加 --accept 才写入实例记录
-  tui                                            终端界面：服务器、agent、逃生舱、健康、管理页、登录授权、设置
+  tui                                            终端界面：服务器、agent、备份、健康、管理页、登录授权、设置
   agent name <服务器> <实例> [名字]                 在 Valise 里给 agent 起名字；不写名字就跟随 harness 里的名字
   profiles status                                查看 harness 资料包与本地 profile
   profiles install [--tag profiles-…] [--file <文件>] [--yes]
@@ -44,8 +44,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   server migrate <别名> [--admin-key]              把 ~/.ssh/config 中的服务器改用 Valise 日常钥匙
   server setup <别名> [--name 名字] [--release 版本 | --local 文件]
                                                  用你自己的 SSH 设置添加服务器：检查 → 部署 porter（缺少时）→ 登记钥匙 → 起名 → 记录
-  server name <别名> <名字>                       给服务器起名（仓库与空间站里的文件夹名）
-  server rename <别名> <新名字> [--yes]            改服务器名：仓库与空间站里的文件夹一并改名
+  server name <别名> <名字>                       给服务器起名（备份位置里的文件夹名）
+  server rename <别名> <新名字> [--yes]            改服务器名：备份位置里的文件夹一并改名
   server list | add <别名>… | remove <别名> | import [<别名>…]
                                                  已记录服务器（add/import 记录 ~/.ssh/config 中的别名）
   login <服务器> <实例> [--method id]              登录授权：在本机浏览器中完成服务器上 agent 的登录
@@ -59,8 +59,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
 
 备份与异地副本
   seal <服务器> <实例> [--tier soul|soul-secrets|full|raw] [--reason 原因]
-                                                 建立一个逃生舱（soul=轻装、soul-secrets=标准、full=完整、raw=原样）
-  vault status <服务器> [--json]                   按周期列出逃生舱与云备份状态（不需要私钥）
+                                                 建立一个备份（soul=轻装、soul-secrets=标准、full=完整、raw=原样）
+  vault status <服务器> [--json]                   按周期列出备份与云备份状态（不需要私钥）
   vault delete <服务器> <周期> [--yes]             删除服务器上一整个已结束的周期（先列出其他副本）
   target add <服务器> <名称> --rsync <主机:路径> [--auto 1d] [--force]
                                                  添加复制位置：先从服务器测试能否登录，连不上时不保存（--force 仍然保存；--auto：备份后顺带复制的最短间隔）
@@ -71,20 +71,20 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   pull <服务器> [--leaf 周期] [--to 目录]          把金库拉取到本机（默认全部周期）
   period <服务器> <实例> week|month|quarter [--tz 时区]
                                                  设置备份分组（从下一组开始生效）
-  timer <服务器> <实例> <间隔|off|status>          定时建立逃生舱（systemd 用户定时器）
+  timer <服务器> <实例> <间隔|off|status>          定时备份（systemd 用户定时器）
   station add <名称> --address <地址> --user <用户> --path <路径> [--port 22] [--login password|key:<私钥>] [--any-source]
-  station list | station remove <名称>               Valise 管理的空间站（服务器连不上时经这台电脑中转）
-  repo add <名称> <文件夹> | repo list | repo remove <名称>    本机仓库（逃生舱另存到本机文件夹）
-  repo sync <服务器> [名称]                          把服务器上的逃生舱补到仓库（不指定名称时同步全部仓库）
+  station list | station remove <名称>               Valise 管理的远程备份位置（服务器连不上时经这台电脑中转）
+  repo add <名称> <文件夹> | repo list | repo remove <名称>    本机仓库（备份另存到本机文件夹）
+  repo sync <服务器> [名称]                          把服务器上的备份补到仓库（不指定名称时同步全部仓库）
 
 恢复与迁移
   revive <服务器> --snapshot <id> [--mode rollback|migrate|clone] [--from <服务器>] [--id 新实例]
          [--root id=路径]... [--allow-draft-profile] [--allow-snapshot-profile] [--backup-first] [--dry-run] [--yes]
-                                                 逃生舱着陆（rollback=原地着陆、migrate=着陆到另一台服务器、clone=着陆成一个新的 agent）：先出计划，暂存校验后再确认交换
-  revive resume <服务器> <op> --continue|--back   处理未完成的着陆
+                                                 恢复（rollback=恢复当前实例、migrate=迁移到另一台服务器、clone=创建副本（新的 agent））：先出计划，暂存校验后再确认交换
+  revive resume <服务器> <op> --continue|--back   处理未完成的恢复
   prev list <服务器> | prev drop <服务器> <op>    查看 / 删除交换前保留的旧状态
   old list <服务器> | old cleanup <服务器> <实例>  查看 / 清理被迁移或克隆取代的旧实例
-  restore-test <服务器> <实例> [--snapshot id]     恢复测试：两边各解开一次逃生舱并核对，不切换，过后删除
+  restore-test <服务器> <实例> [--snapshot id]     恢复测试：两边各解开一次备份并核对，不切换，过后删除
 
 检查与修复
   doctor <服务器> [--json]                       检查服务器：架构、porter 版本、可用工具
@@ -109,10 +109,10 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
 钥匙、工具与设置
   porter deploy <服务器> --release <版本>         从 GitHub Release 下载、校验并部署 porter
   porter deploy <服务器> --local <文件>           上传本地构建的 porter
-  key register <服务器> [--label 说明]            把本机钥匙登记到服务器（之后的逃生舱都能用它打开）
-  kit install <服务器> <实例>                      安装逃生舱技能，并给出接入 MCP 的方法
+  key register <服务器> [--label 说明]            把本机钥匙登记到服务器（之后的备份都能用它打开）
+  kit install <服务器> <实例>                      安装 Agent 保护技能，并给出接入 MCP 的方法
   kit status <服务器> <实例>                       查看技能安装状态与最近一次 agent 经 MCP 的调用
-  kit uninstall <服务器> <实例> [--force]          删除逃生舱技能（被修改过的需 --force），并给出撤除 MCP 的方法
+  kit uninstall <服务器> <实例> [--force]          删除 Agent 保护技能（被修改过的需 --force），并给出撤除 MCP 的方法
   kit tools <服务器>                               Kit 工具：这台服务器上有没有、用途、不装会怎样
   kit tool install|uninstall <服务器> <名称> [--yes]   安装或卸载 Kit 工具（增强级要 Valise 口令；专家级要高级模式）
   config export <文件> | config import <文件>       导出 / 导入 Valise 配置：服务器列表、主机指纹、设置（不含任何钥匙）
@@ -120,7 +120,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   config detach on|off                           分离模式：服务器支持时按计划备份在服务器后台执行（默认关闭）
   config takeover <服务器> on|off                 接管模式：终端界面里用 sudo -n 直接执行需要 sudo 的修复（默认关闭）
   admin passphrase                               修改管理口令（重新加密所有管理钥匙）
-  key unregister <服务器> [--recipient age1…]     从服务器移除一把钥匙（以前的逃生舱仍可被它打开）
+  key unregister <服务器> [--recipient age1…]     从服务器移除一把钥匙（以前的备份仍可被它打开）
   key init                                       生成新的密钥（口令至少 12 个字符）
   key import --file <身份文件>                    导入已有的 age 身份
   key show                                       显示公钥与指纹
@@ -297,9 +297,9 @@ func (c *cli) printProblem(err error) {
 	if !ok {
 		ue = valise.New("unexpected", "发生了未预期的错误", "加上 -v 查看细节，并向项目报告").WithDetail(err.Error())
 	}
-	fmt.Fprintf(c.errOut, "失败：%s\n", ue.Reason)
+	fmt.Fprintf(c.errOut, "失败：%s\n", service.PlainWording(ue.Reason))
 	if ue.Suggestion != "" {
-		fmt.Fprintf(c.errOut, "建议：%s\n", ue.Suggestion)
+		fmt.Fprintf(c.errOut, "建议：%s\n", service.PlainWording(ue.Suggestion))
 	}
 	if c.verbose && ue.Detail != "" {
 		fmt.Fprintf(c.errOut, "细节：\n%s\n", ue.Detail)

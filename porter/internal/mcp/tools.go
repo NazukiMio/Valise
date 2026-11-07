@@ -203,20 +203,20 @@ type offsitePod struct {
 func protection(r *statusResult) string {
 	var b strings.Builder
 	if len(r.Targets) == 0 {
-		b.WriteString("这台服务器没有配置空间站或其他同步位置。")
+		b.WriteString("这台服务器没有配置远程备份位置或其他同步位置。")
 	} else {
 		b.WriteString("已配置 " + strconv.Itoa(len(r.Targets)) + " 个同步位置（" + strings.Join(r.Targets, "、") + "）。")
 	}
 	switch {
 	case r.LastSeal == nil:
-		b.WriteString("还没有逃生舱。")
+		b.WriteString("还没有备份。")
 	case len(r.SyncedTo) > 0:
-		b.WriteString("最新的逃生舱已经复制到 " + strings.Join(r.SyncedTo, "、") + "。")
+		b.WriteString("最新的备份已经复制到 " + strings.Join(r.SyncedTo, "、") + "。")
 	case r.LastOffsite != nil:
-		b.WriteString("最新的逃生舱还只在服务器上（" + strconv.Itoa(r.WaitingSync) + " 个在等同步）；别处最新的一份是 " +
+		b.WriteString("最新的备份还只在服务器上（" + strconv.Itoa(r.WaitingSync) + " 个在等同步）；别处最新的一份是 " +
 			r.LastOffsite.CreatedAt.Local().Format("2006-01-02 15:04") + " 的（" + strings.Join(r.LastOffsite.Targets, "、") + "）。")
 	default:
-		b.WriteString("逃生舱都只在服务器上，还没有复制到别处。")
+		b.WriteString("备份都只在服务器上，还没有复制到别处。")
 	}
 	b.WriteString("用户电脑上的本机仓库由 Valise 客户端管理，这里看不到。")
 	return b.String()

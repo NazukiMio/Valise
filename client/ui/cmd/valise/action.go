@@ -62,9 +62,9 @@ func (c *cli) action(ctx context.Context, args []string) error {
 	seal := service.SealsByDefault(*a) && !*noSeal
 	if service.SealsByDefault(*a) {
 		if seal {
-			fmt.Fprintln(c.out, "  执行前先建立一个逃生舱；出了问题可以从它原地着陆。")
+			fmt.Fprintln(c.out, "  执行前先建立一个备份；出了问题可以从它恢复当前实例。")
 		} else {
-			fmt.Fprintln(c.out, "  ⚠ 已选择不建逃生舱：出了问题时没有改动之前的状态可以着陆。")
+			fmt.Fprintln(c.out, "  ⚠ 已选择不建立备份：出了问题时没有改动之前的状态可以恢复。")
 		}
 	}
 	if a.Risk == profile.RiskConfig || a.Risk == profile.RiskDanger {
@@ -123,7 +123,7 @@ func (c *cli) printActionResult(ctx context.Context, a *profile.Action, res *ser
 	}
 	fmt.Fprintln(c.out)
 	if res.Snapshot != "" {
-		fmt.Fprintf(c.out, "  ✓ 逃生舱：%s\n", res.Snapshot)
+		fmt.Fprintf(c.out, "  ✓ 备份：%s\n", res.Snapshot)
 	}
 	mark := "✓"
 	if res.Exit != 0 {

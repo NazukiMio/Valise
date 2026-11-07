@@ -12,7 +12,7 @@ func TestChecklist(t *testing.T) {
 	// world has a key, a server, an enrolled and sealed agent: three done.
 	wantText(t, m, "第一次使用", "已完成 3 / 5", "下一步：存一份到别处")
 	key(t, m, "g")
-	v := wantText(t, m, "准备工作", "建立第一个逃生舱", "做一次恢复测试", "认识 Kit 与高级模式")
+	v := wantText(t, m, "准备工作", "建立第一个备份", "做一次恢复测试", "认识 Kit 与高级模式")
 	if strings.Count(v, "✓") != 3 {
 		t.Fatalf("ticks:\n%s", v)
 	}
@@ -41,5 +41,5 @@ func TestChecklist(t *testing.T) {
 	wantText(t, m, "保存所选内容在此刻的状态", "1 / 2")
 	key(t, m, "enter")
 	key(t, m, "enter")
-	wantText(t, m, "建立逃生舱（备份）· 选择内容")
+	wantText(t, m, "建立备份 · 选择内容")
 }

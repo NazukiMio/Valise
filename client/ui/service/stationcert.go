@@ -55,7 +55,7 @@ func (s *Service) ensureCA(ctx context.Context) (pub string, err error) {
 	}
 	info, err := s.KeyShow()
 	if err != nil {
-		return "", valise.New("key_missing", "还没有加密钥匙，无法给空间站签发证书", "先创建加密钥匙：valise key init")
+		return "", valise.New("key_missing", "还没有加密钥匙，无法给远程备份位置签发证书", "先创建加密钥匙：valise key init")
 	}
 	rcpt, err := age.ParseX25519Recipient(info.Recipient)
 	if err != nil {
@@ -68,7 +68,7 @@ func (s *Service) ensureCA(ctx context.Context) (pub string, err error) {
 	defer os.RemoveAll(tmp)
 	key := filepath.Join(tmp, caName)
 	if err := runTool(ctx, s.toolPath("ssh-keygen"), []string{"-q", "-t", "ed25519", "-N", "", "-C", "valise-ca@" + localName(), "-f", key}, os.Environ()); err != nil {
-		return "", valise.New("keygen_failed", "无法生成空间站签发钥匙", "确认本机安装了 OpenSSH 的 ssh-keygen").WithDetail(err.Error())
+		return "", valise.New("keygen_failed", "无法生成远程备份位置签发钥匙", "确认本机安装了 OpenSSH 的 ssh-keygen").WithDetail(err.Error())
 	}
 	plain, err := os.ReadFile(key)
 	if err != nil {
@@ -125,11 +125,11 @@ func (s *Service) signCert(ctx context.Context, host, id, pub string, o certOpti
 	}
 	enc, err := os.ReadFile(s.caPath() + ".age")
 	if err != nil {
-		return "", valise.New("ca_missing", "找不到空间站签发钥匙", "在这台电脑上重新添加空间站")
+		return "", valise.New("ca_missing", "找不到远程备份位置签发钥匙", "在这台电脑上重新添加远程备份位置")
 	}
 	r, err := age.Decrypt(bytes.NewReader(enc), ident)
 	if err != nil {
-		return "", valise.New("ca_locked", "空间站签发钥匙解不开：它不是用你现在的加密钥匙保护的", "在这台电脑上重新添加空间站").WithDetail(err.Error())
+		return "", valise.New("ca_locked", "远程备份位置签发钥匙解不开：它不是用你现在的加密钥匙保护的", "在这台电脑上重新添加远程备份位置").WithDetail(err.Error())
 	}
 	plain, err := io.ReadAll(r)
 	if err != nil {
@@ -155,7 +155,7 @@ func (s *Service) signCert(ctx context.Context, host, id, pub string, o certOpti
 		args = append(args, "-O", "source-address="+o.source)
 	}
 	if err := runTool(ctx, s.toolPath("ssh-keygen"), append(args, key+".pub"), os.Environ()); err != nil {
-		return "", valise.New("cert_sign_failed", "签发空间站证书失败", "重试；仍不行请报告").WithDetail(err.Error())
+		return "", valise.New("cert_sign_failed", "签发远程备份位置证书失败", "重试；仍不行请报告").WithDetail(err.Error())
 	}
 	cert, err := os.ReadFile(key + "-cert.pub")
 	if err != nil {
@@ -217,7 +217,7 @@ func (s *Service) certFresh(host, station string) bool {
 func (s *Service) issueCert(ctx context.Context, host, serverName, pub string, st config.Station) error {
 	command, _, _, ok := certLimit(st, serverName)
 	if !ok {
-		return valise.New("station_unlimited", "空间站 "+st.Name+" 没有 rrsync 也没有 sftp-server，无法限制服务器的钥匙", "Valise 不给服务器凭据，改由这台电脑中转")
+		return valise.New("station_unlimited", "备份位置 "+st.Name+" 没有 rrsync 也没有 sftp-server，无法限制服务器的钥匙", "Valise 不给服务器凭据，改由这台电脑中转")
 	}
 	id := "valise:" + serverName + ":" + st.Name
 	source := ""
@@ -231,7 +231,7 @@ func (s *Service) issueCert(ctx context.Context, host, serverName, pub string, s
 		}
 		var res vaultrpc.StationProbeResult
 		if err := s.call(ctx, host, vaultrpc.MethodStationProbe, vaultrpc.StationKeyParams{Name: st.Name}, &res); err != nil {
-			return valise.New(stationsync.UnreachableCode, "服务器连不上空间站 "+st.Name, "经这台电脑中转").WithDetail(errText1(err))
+			return valise.New(stationsync.UnreachableCode, "服务器连不上远程备份位置 "+st.Name, "经这台电脑中转").WithDetail(errText1(err))
 		}
 		if f := strings.Fields(res.Output); len(f) > 0 && hostRe(f[0]) {
 			source = f[0]

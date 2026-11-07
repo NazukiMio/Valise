@@ -10,6 +10,7 @@ import (
 
 	"valise/core/vault"
 	"valise/core/vaultrpc"
+	"valise/ui/service"
 )
 
 // Tier names in the UI (docs/PRODUCT.md 8.1).
@@ -46,10 +47,10 @@ func reasonText(e vaultrpc.SealLogEntry) string {
 	case e.Reason == "handoff":
 		return "开新会话前的交接"
 	}
-	return e.Reason
+	return service.PlainWording(e.Reason)
 }
 
-// podsTab lists the instance's escape pods (docs/UI.md 9.4 "逃生舱").
+// podsTab lists the instance's escape pods (docs/UI.md 9.4 "备份").
 type podsTab struct {
 	cursor    int
 	search    textinput.Model
@@ -63,13 +64,13 @@ func newPodsTab() *podsTab {
 	return &podsTab{search: ti}
 }
 
-func (t *podsTab) name() string { return "逃生舱" }
+func (t *podsTab) name() string { return "备份" }
 func (t *podsTab) typing() bool { return t.searching }
 func (t *podsTab) help(p *instancePage) string {
 	if t.searching {
 		return menu("enter", "完成", "esc", "清空")
 	}
-	return menu("/", "搜索", "enter", "查看", "b", "建立逃生舱", "u", "上云")
+	return menu("/", "搜索", "enter", "查看", "b", "建立备份", "u", "同步")
 }
 func (t *podsTab) load(m *Model, p *instancePage) tea.Cmd { return nil }
 
@@ -164,12 +165,12 @@ func (t *podsTab) view(m *Model, p *instancePage, height int) string {
 	t.cursor = min(t.cursor, max(0, len(list)-1))
 	searchLine := t.search.View() + "  " + dimStyle.Render(itoa(len(list))+" / "+itoa(all))
 	if !t.searching && t.search.Value() == "" {
-		searchLine = dimStyle.Render("按 / 搜索 · 共 " + itoa(all) + " 个逃生舱")
+		searchLine = dimStyle.Render("按 / 搜索 · 共 " + itoa(all) + " 个备份")
 	}
 	if len(list) == 0 {
-		msg := "还没有逃生舱。按 " + keyStyle.Render("b") + " 建立第一个。"
+		msg := "还没有备份。按 " + keyStyle.Render("b") + " 建立第一个。"
 		if all > 0 {
-			msg = "没有匹配的逃生舱。"
+			msg = "没有匹配的备份。"
 		}
 		return searchLine + "\n\n" + msg
 	}
@@ -200,9 +201,9 @@ func podRow(d *srvData, p *instancePage, s vault.Meta, selected bool, width int)
 	case "agent 自己建立", "交接前 agent":
 		whoSt = infoStyle
 	}
-	cloud := warnStyle.Render("☁ 未上云")
+	cloud := warnStyle.Render("☁ 未同步")
 	if d.synced(s.SnapshotID) {
-		cloud = okStyle.Render("☁ 已上云")
+		cloud = okStyle.Render("☁ 已同步")
 	}
 	reasonW := max(10, min(width, 120)-62)
 	reason := reasonText(e)
@@ -250,7 +251,7 @@ func startSeal(m *Model, p *instancePage) tea.Cmd {
 }
 
 func pickSeal(m *Model, p *instancePage) tea.Cmd {
-	return m.push(pick("建立逃生舱（备份）· 选择内容", tierChoices, func(m *Model, tier string) tea.Cmd {
+	return m.push(pick("建立备份 · 选择内容", tierChoices, func(m *Model, tier string) tea.Cmd {
 		return m.push(newInput("原因（可选，以后在列表里能看到，例如\"升级前\"）", "", false, func(m *Model, reason string) tea.Cmd {
 			sc := newSealScreen(m, p.host, p.inst.InstanceID, tier)
 			return tea.Batch(m.push(sc), sc.run(m, reason))
@@ -263,7 +264,7 @@ func sealResult(m *Model, p *instancePage, msg sealDone) tea.Cmd {
 	if msg.err != nil {
 		return func() tea.Msg { return failed(msg.err) }
 	}
-	text := "逃生舱已建立（" + tierNames[msg.rep.Tier] + "，" + size(msg.rep.PlainBytes) + "，这次新写入 " + size(msg.rep.AddedBytes) + "），已写入服务器"
+	text := "备份已建立（" + tierNames[msg.rep.Tier] + "，" + size(msg.rep.PlainBytes) + "，这次新写入 " + size(msg.rep.AddedBytes) + "），已写入服务器"
 	if len(msg.rep.AutoSync) > 0 {
 		text += "；正在后台顺带同步到 " + strings.Join(msg.rep.AutoSync, "、")
 	}

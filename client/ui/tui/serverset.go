@@ -104,7 +104,7 @@ func (s *serverSettings) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 				"换电脑、导入配置后，或日常钥匙被从服务器上移除时使用。"},
 				func(m *Model) tea.Cmd { return m.cliThen(s.init(m), false, "server", "rekey", host) })), true
 		case "x":
-			return m.push(confirm("不再在这台电脑上显示 "+host+"？", []string{"只从列表中移除，服务器上的 agent、逃生舱和 porter 都不动。随时可以重新添加。"},
+			return m.push(confirm("不再在这台电脑上显示 "+host+"？", []string{"只从列表中移除，服务器上的 agent、备份和 porter 都不动。随时可以重新添加。"},
 				func(m *Model) tea.Cmd {
 					if _, err := svc.RemoveServer(host); err != nil {
 						return func() tea.Msg { return failed(err) }
@@ -127,13 +127,13 @@ func (s *serverSettings) view(m *Model) string {
 		return dimStyle.Render("正在检查 " + s.host + " …")
 	}
 	d := m.server(s.host)
-	name := warnStyle.Render("还没有名字（上云前需要起名）；按 n 起名")
+	name := warnStyle.Render("还没有名字（同步前需要起名）；按 n 起名")
 	keyState := dimStyle.Render("读取中…")
 	if d.status != nil {
 		if d.status.ServerName != "" {
-			name = d.status.ServerName + dimStyle.Render("（仓库和空间站里的文件夹名；按 n 改名，文件夹会一起改）")
+			name = d.status.ServerName + dimStyle.Render("（备份位置里的文件夹名；按 n 改名，文件夹会一起改）")
 		}
-		keyState = warnStyle.Render("没有登记（这台服务器建立的逃生舱你打不开）；按 k 登记")
+		keyState = warnStyle.Render("没有登记（这台服务器建立的备份你打不开）；按 k 登记")
 		if info, err := m.svc.KeyShow(); err == nil && slices.Contains(d.status.Recipients, info.Fingerprint) {
 			keyState = okStyle.Render("已登记到这台服务器")
 		}
@@ -173,7 +173,7 @@ func (s *serverSettings) view(m *Model) string {
 // nameServer asks for the server name (its cloud backup folder, set once)
 // and records it; then runs after it is saved.
 func nameServer(m *Model, host string, then func(m *Model) tea.Cmd) tea.Cmd {
-	return m.push(newInput("给 "+host+" 起名：仓库和空间站里的文件夹名，只能用小写字母、数字和连字符；之后可以改名", host, false,
+	return m.push(newInput("给 "+host+" 起名：备份位置里的文件夹名，只能用小写字母、数字和连字符；之后可以改名", host, false,
 		func(m *Model, v string) tea.Cmd {
 			name := strings.TrimSpace(v)
 			if name == "" {
@@ -206,7 +206,7 @@ func (s *serverSettings) migrate(m *Model) tea.Cmd {
 			args = append(args, "--admin-key")
 		}
 		return m.push(confirm("把 "+host+" 改用 Valise 钥匙？", []string{
-			"现在你的钥匙能在服务器上做任何事。改用后，Valise 日常只用一把受限的钥匙：看状态、建逃生舱、打开管理页；拿不到 shell。",
+			"现在你的钥匙能在服务器上做任何事。改用后，Valise 日常只用一把受限的钥匙：看状态、建立备份、打开管理页；拿不到 shell。",
 			"安装、恢复、删除周期等敏感操作，要再出示一次管理登录。",
 			"会用你现在的登录方式在服务器上写入钥匙；你自己的 ~/.ssh/config 不会改动。"},
 			func(m *Model) tea.Cmd { return m.cliThen(tea.Batch(s.init(m), m.loadServer(host)), false, args...) }))
@@ -235,7 +235,7 @@ func (s *serverSettings) adminKey(m *Model) tea.Cmd {
 // adminKeyIntro explains daily and admin logins (also the guide's page).
 func adminKeyIntro(m *Model, host string) []string {
 	return []string{
-		"Valise 平时用「日常钥匙」连服务器：它只能做安全的事，看状态、建逃生舱、打开管理页。",
+		"Valise 平时用「日常钥匙」连服务器：它只能做安全的事，看状态、建立备份、打开管理页。",
 		"敏感的事（安装、恢复、删除周期、原生界面）要再出示一次「管理登录」，有两种：",
 		"  · 每次输服务器密码：默认，什么都不用准备，但要切到终端里输入。",
 		"  · 管理钥匙：用单独的管理口令加密（和 Valise 口令不同）。解锁一次，" + itoa(int(m.svc.AdminWindow().Minutes())) + " 分钟内不再询问，在终端界面里就能完成；随时可以移除。",

@@ -18,10 +18,10 @@ type podScreen struct {
 func newPodScreen(p *instancePage, s vault.Meta) *podScreen { return &podScreen{page: p, snap: s} }
 
 func (s *podScreen) title() string {
-	return s.snap.CreatedAt.Local().Format("01-02 15:04") + " 的逃生舱"
+	return s.snap.CreatedAt.Local().Format("01-02 15:04") + " 的备份"
 }
 func (s *podScreen) help() string {
-	return menu("l", "逃生舱着陆", "u", "上云", "t", "技术信息")
+	return menu("l", "恢复", "u", "同步", "t", "技术信息")
 }
 func (s *podScreen) init(m *Model) tea.Cmd { return nil }
 
@@ -69,14 +69,14 @@ func (s *podScreen) view(m *Model) string {
 					mark = okStyle.Render("✓")
 				}
 			}
-			where += "　空间站 " + t.Name + " " + mark
+			where += "　备份位置 " + t.Name + " " + mark
 		}
 	}
 	reason := reasonText(e)
 	if reason == "" {
 		reason = dimStyle.Render("（没有填写）")
 	}
-	main := box(dayLabel(s.snap.CreatedAt, m.now())+" "+s.snap.CreatedAt.Local().Format("15:04")+" 的逃生舱", kv(
+	main := box(dayLabel(s.snap.CreatedAt, m.now())+" "+s.snap.CreatedAt.Local().Format("15:04")+" 的备份", kv(
 		"谁建立的", whoText(e),
 		"原因", reason,
 		"装了什么", tierNames[s.snap.Tier]+"："+tierContents[s.snap.Tier],
@@ -85,7 +85,7 @@ func (s *podScreen) view(m *Model) string {
 	), w)
 	var b strings.Builder
 	b.WriteString(main + "\n")
-	b.WriteString(dimStyle.Render("想让 agent 回到这个时刻、搬到另一台服务器，或复制一个新的：按 ") + keyStyle.Render("l") + dimStyle.Render(" 逃生舱着陆。") + "\n\n")
+	b.WriteString(dimStyle.Render("想让 agent 回到这个时刻、搬到另一台服务器，或复制一个新的：按 ") + keyStyle.Render("l") + dimStyle.Render(" 恢复。") + "\n\n")
 	if s.tech {
 		leaf := ""
 		if d.status != nil {

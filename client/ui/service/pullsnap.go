@@ -130,13 +130,13 @@ func (s *Service) PullSnapshot(ctx context.Context, host, leaf, snapshot string,
 	report(ctx, StageOpen, 0, 0)
 	head, err := v.SnapshotHeader(snapshot, id)
 	if err != nil {
-		return nil, res, valise.New("snapshot_unreadable", "无法解密逃生舱 "+snapshot, "确认本机钥匙是这个逃生舱的收件人").WithDetail(err.Error())
+		return nil, res, valise.New("snapshot_unreadable", "无法解密备份 "+snapshot, "确认本机钥匙是这个备份的收件人").WithDetail(err.Error())
 	}
 	used := map[string]bool{}
 	ensure := func(blobs []string) error {
 		packs, unknown := v.PacksOf(blobs)
 		if len(unknown) > 0 {
-			return valise.New("pull_blob_unknown", "逃生舱用到的数据块不在这个周期的索引里", "在服务器上运行 valise vault verify；必要时取回整个周期").
+			return valise.New("pull_blob_unknown", "备份用到的数据块不在这个周期的索引里", "在服务器上运行 valise vault verify；必要时取回整个周期").
 				WithDetail(strings.Join(unknown[:min(3, len(unknown))], " "))
 		}
 		var missing []vaultrpc.VaultFile
@@ -149,7 +149,7 @@ func (s *Service) PullSnapshot(ctx context.Context, host, leaf, snapshot string,
 			rel := vault.PackPath(p)
 			f, ok := byPath[rel]
 			if !ok {
-				return valise.New("pull_pack_missing", "服务器上缺少逃生舱用到的数据包 "+p[:12], "在服务器上运行 valise vault verify")
+				return valise.New("pull_pack_missing", "服务器上缺少备份用到的数据包 "+p[:12], "在服务器上运行 valise vault verify")
 			}
 			res.Packs++
 			res.PackBytes += f.Size
@@ -178,7 +178,7 @@ func (s *Service) PullSnapshot(ctx context.Context, host, leaf, snapshot string,
 	}
 	_, files, err := v.Snapshot(snapshot, id)
 	if err != nil {
-		return nil, res, valise.New("snapshot_unreadable", "无法读出逃生舱 "+snapshot+" 的文件清单", "取回整个周期后再试").WithDetail(err.Error())
+		return nil, res, valise.New("snapshot_unreadable", "无法读出备份 "+snapshot+" 的文件清单", "取回整个周期后再试").WithDetail(err.Error())
 	}
 	var blobs []string
 	for _, f := range files.Files {
@@ -237,7 +237,7 @@ func markPartial(dir, snapshot string, partial bool) (err error) {
 	} else if !os.IsNotExist(readErr) {
 		return readErr
 	}
-	m.Note = "这是尚未通过完整周期校验的本机缓存；下面仅列出已成功取回恢复材料的逃生舱，清单为空时可能仍在取回或已中断"
+	m.Note = "这是尚未通过完整周期校验的本机缓存；下面仅列出已成功取回恢复材料的备份，清单为空时可能仍在取回或已中断"
 	if snapshot != "" && !containsStr(m.Snapshots, snapshot) {
 		m.Snapshots = append(m.Snapshots, snapshot)
 	}
@@ -282,10 +282,10 @@ func (t *SnapshotPull) Summary() string {
 	if t == nil {
 		return ""
 	}
-	line := fmt.Sprintf("取回：周期共 %s，这个逃生舱 %s，用到 %d 个数据包 %s；这次下载 %s，复用本机已有 %s",
+	line := fmt.Sprintf("取回：周期共 %s，这个备份 %s，用到 %d 个数据包 %s；这次下载 %s，复用本机已有 %s",
 		sizeText(t.PeriodBytes), sizeText(t.PodBytes), t.Packs, sizeText(t.PackBytes), sizeText(t.Downloaded), sizeText(t.Reused))
 	if t.Partial {
-		line += "（本机缓存是这个逃生舱的恢复材料，尚未通过完整周期校验）"
+		line += "（本机缓存是这个备份的恢复材料，尚未通过完整周期校验）"
 	}
 	return line
 }

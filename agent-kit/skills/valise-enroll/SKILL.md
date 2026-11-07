@@ -1,9 +1,9 @@
 ---
 name: valise-enroll
-description: Learn your Valise escape pod. Use when the user says they installed an escape pod or Valise for you and asks you to learn it — e.g. "I installed an escape pod for you, learn it", "我给你装了一个逃生舱，你学习一下", "看看你的逃生舱".
+description: Learn your Valise protection skills. Use when the user says they installed Valise (or, in older wording, an escape pod) for you and asks you to learn it — e.g. "I installed Valise for you, learn it", "我给你装了 Valise 保护技能，你学习一下", "我给你装了一个逃生舱，你学习一下", "看看你的备份".
 ---
 
-# Learn your escape pod (Valise)
+# Learn your Valise protection
 
 Valise protects you. It seals your soul — persona, memory, skills, sessions and
 state — into an encrypted vault, so the user can bring you back exactly as you

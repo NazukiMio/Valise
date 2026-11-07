@@ -256,7 +256,7 @@ actions:
   - id: doctor
     name: 运行 OpenClaw Doctor（交互）
     explain: "运行 OpenClaw 自己的诊断与修复向导，在独立终端里进行；它会在修改之前逐项询问"
-    undo: "Doctor 的修改无法单独撤销；可以从执行前建立的逃生舱原地着陆"
+    undo: "Doctor 的修改无法单独撤销；可以从执行前建立的备份恢复当前实例"
     risk: config
     argv: [openclaw, doctor]
     output: none

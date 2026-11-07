@@ -189,18 +189,18 @@ func (s *Service) ChangeEntryPort(ctx context.Context, p *PortChangePlan, o Port
 		}
 		hint := what + "。可以在原生界面里检查 harness 的设置"
 		if !o.SkipSeal {
-			hint += "，或从刚才的逃生舱原地着陆，回到改动之前"
+			hint += "，或从刚才的备份恢复当前实例，回到改动之前"
 		}
 		return valise.New(ue.Code, ue.Reason, hint).WithDetail(ue.Detail)
 	}
 	if !o.SkipSeal {
-		progress("建立逃生舱（改动之前的配置）")
+		progress("建立备份（改动之前的配置）")
 		rep, err := s.Seal(ctx, p.Host, vaultrpc.SealParams{InstanceID: p.Instance, Tier: vault.TierSoulSecrets,
 			Reason: fmt.Sprintf("改端口之前（%s %d → %d）", p.Entry, p.From, p.To)})
 		if err != nil {
 			return err
 		}
-		progress("逃生舱已建立：" + rep.SnapshotID)
+		progress("备份已建立：" + rep.SnapshotID)
 	}
 	t, done, err := s.adminTransport(ctx, p.Host)
 	if err != nil {

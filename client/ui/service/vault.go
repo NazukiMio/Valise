@@ -262,7 +262,7 @@ type VerifyLocalResult struct {
 func (s *Service) VerifyLocal(dir string, passphrase *string) (*VerifyLocalResult, error) {
 	res := &VerifyLocalResult{Dir: dir, Problems: []vault.Problem{}}
 	if _, err := os.Stat(partialFile(dir)); err == nil {
-		return nil, valise.New("vault_partial", dir+" 只取回了部分数据包（恢复单个逃生舱时的缓存），不能整体校验", "先取回整个周期：valise pull <服务器> --leaf <周期>")
+		return nil, valise.New("vault_partial", dir+" 只取回了部分数据包（恢复单个备份时的缓存），不能整体校验", "先取回整个周期：valise pull <服务器> --leaf <周期>")
 	}
 	probs, err := vault.VerifyNoKey(dir)
 	if err != nil {

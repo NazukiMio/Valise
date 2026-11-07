@@ -66,7 +66,7 @@ func (c *cli) confirmDelete(ctx context.Context, host, leaf, where string, yes b
 		return true, nil
 	}
 	if !other {
-		fmt.Fprintln(c.out, "⚠ 其他地方都没有这个周期的完整副本。删除后，这些逃生舱将无法恢复。")
+		fmt.Fprintln(c.out, "⚠ 其他地方都没有这个周期的完整副本。删除后，这些备份将无法恢复。")
 		if !c.confirm("确定要删除？") {
 			return false, nil
 		}
@@ -130,11 +130,11 @@ func (c *cli) targetList(ctx context.Context, args []string) error {
 		if l.Deleting {
 			where = "删除未完成"
 		}
-		fmt.Fprintf(c.out, "  %-32s %3d 个逃生舱 %10s  %s\n", l.Leaf, len(l.Snapshots), size(l.Bytes), where)
+		fmt.Fprintf(c.out, "  %-32s %3d 个备份 %10s  %s\n", l.Leaf, len(l.Snapshots), size(l.Bytes), where)
 	}
 	for _, l := range st.Leaves {
 		if !seen[l.Leaf] && len(l.Snapshots) > 0 {
-			fmt.Fprintf(c.out, "  %-32s %3d 个逃生舱 %10s  只在服务器（尚未同步）\n", l.Leaf, len(l.Snapshots), size(l.Bytes))
+			fmt.Fprintf(c.out, "  %-32s %3d 个备份 %10s  只在服务器（尚未同步）\n", l.Leaf, len(l.Snapshots), size(l.Bytes))
 		}
 	}
 	return nil
@@ -187,7 +187,7 @@ func (c *cli) targetAuto(ctx context.Context, args []string) error {
 	if t.Auto == nil {
 		fmt.Fprintf(c.out, "已关闭 %s 的自动同步。\n", t.Name)
 	} else {
-		fmt.Fprintf(c.out, "已开启 %s 的自动同步：每次建立逃生舱后，距上次同步超过 %s 就顺带同步一次。\n", t.Name, t.Auto.Every)
+		fmt.Fprintf(c.out, "已开启 %s 的自动同步：每次建立备份后，距上次同步超过 %s 就顺带同步一次。\n", t.Name, t.Auto.Every)
 	}
 	return nil
 }
@@ -227,10 +227,10 @@ func (c *cli) timer(ctx context.Context, args []string) error {
 		return err
 	}
 	if !st.Enabled {
-		fmt.Fprintf(c.out, "%s 的定时建立逃生舱：关（服务器上没有 Valise 的定时器单元）\n", pos[1])
+		fmt.Fprintf(c.out, "%s 的定时备份：关（服务器上没有 Valise 的定时器单元）\n", pos[1])
 		return nil
 	}
-	fmt.Fprintf(c.out, "%s 的定时建立逃生舱：每 %s 一次（轻装），之后按云备份的自动同步设置顺带同步。\n", pos[1], st.Every)
+	fmt.Fprintf(c.out, "%s 的定时备份：每 %s 一次（轻装），之后按云备份的自动同步设置顺带同步。\n", pos[1], st.Every)
 	fmt.Fprintln(c.out, "服务器上写了这两个 systemd 用户单元，关闭时会删除：")
 	for _, u := range st.Units {
 		fmt.Fprintf(c.out, "  %s\n", u)

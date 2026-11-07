@@ -19,8 +19,8 @@ import (
 func ensureKey(m *Model, host string, then func(m *Model) tea.Cmd) tea.Cmd {
 	info, err := m.svc.KeyShow()
 	if err != nil {
-		return m.push(confirm("建立逃生舱要先有一把加密钥匙，现在设口令？", []string{
-			"逃生舱用这把钥匙加密，口令用来保护钥匙。Valise 不保存口令，" + warnStyle.Render("口令丢了，以前的逃生舱就打不开了。"),
+		return m.push(confirm("建立备份要先有一把加密钥匙，现在设口令？", []string{
+			"备份用这把钥匙加密，口令用来保护钥匙。Valise 不保存口令，" + warnStyle.Render("口令丢了，以前的备份就打不开了。"),
 			dimStyle.Render("在别的电脑上已经有钥匙？取消后在 设置 › 加密钥匙 里导入恢复套件。"),
 		}, func(m *Model) tea.Cmd {
 			return askPassphrase(m, func(m *Model, k *service.KeyInfo) tea.Cmd {

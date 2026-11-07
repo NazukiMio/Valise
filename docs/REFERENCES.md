@@ -54,7 +54,7 @@ https://github.com/yetone/magpie （MIT，阅读时的提交 `4d55a0a`，2026-11
 | 可以学 | `internal/sessions` | 只读解析会话记录得到真实 token 数；大文件按路径缓存解析结果 | 健康页（替换按字节估算） |
 | 可以学 | `internal/library` | 按各 harness 自己的格式写入技能与 MCP，卸载时只拿回自己写的部分 | Valise Kit 的安装与卸载 |
 | 可以学 | `LESSONS.md`、`docs/code-standards.md` | 核实、对待用户文件、测试与发布的经验 | 开发习惯 |
-| 以后再看 | `internal/davsync`（WebDAV、S3 兼容、ETag 条件写入） | 不靠 rclone 的空间站种类 | M13 空间站，需要时再读 |
+| 以后再看 | `internal/davsync`（WebDAV、S3 兼容、ETag 条件写入） | 不靠 rclone 的远程备份位置种类 | M13 远程备份位置，需要时再读 |
 | 以后再看 | `lastgood`、`steady`、`filelock` | 状态文件抗损坏、多进程互斥写入 | 客户端与 porter 的状态文件 |
 | 以后再看 | `internal/edit`、`claudelock`、`internal/update`（packaged.go）、`internal/uninstall`、`docs/session-relocation.md`、`agentenv`、`dirent`、`netguard` | 保留格式改配置、遵守 harness 的锁、识别包管理器安装的程序、完整撤销、绑定文件状态的确认令牌、测试沙箱、符号链接、下载地址限制 | 遇到对应问题时再读 |
 | 不要碰 | `gateway`、`provider`、路由相关 | 代管模型凭据，违反"不代管模型凭据" | — |

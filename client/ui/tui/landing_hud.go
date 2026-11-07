@@ -11,8 +11,8 @@ import (
 // The landing told as a flight (docs/UI.md section 8): themed steps, each
 // with a plain line saying what really happens.
 var (
-	landNames    = []string{"逃生舱进入预备轨道", "逃生舱进入轨道", "联络母星", "呼叫地面指挥", "逃生舱登陆"}
-	landCaptions = []string{"逃生舱正在进入预备轨道…", "逃生舱正在进入轨道…", "正在联络母星…", "正在呼叫地面指挥…", "逃生舱即将登陆…"}
+	landNames    = []string{"进入预备轨道", "进入轨道", "联络母星", "呼叫地面指挥", "登陆"}
+	landCaptions = []string{"正在进入预备轨道…", "正在进入轨道…", "正在联络母星…", "正在呼叫地面指挥…", "即将完成…"}
 	landPlain    = []string{"将备份取回本机", "解密备份，检查里面的文件和目标服务器", "把备份写入服务器的暂存目录（agent 现在的文件不会被改动）",
 		"核对暂存的文件（SHA-256、SQLite）", "把 agent 换成备份里的版本，并做健康检查"}
 )
@@ -50,7 +50,7 @@ func (r *reviveScreen) landed() bool {
 
 func (r *reviveScreen) hudView(m *Model) string {
 	now := m.now()
-	l := hudLayout{title: "着陆遥测", captionStyle: hudBig}
+	l := hudLayout{title: "恢复遥测", captionStyle: hudBig}
 	target := r.opts.Target + " · " + modeNames[r.opts.Mode]
 	l.telemetry = [][2]string{{"已用时", clock(upTo(now, r.ended).Sub(r.t0))}, {"目标", target}}
 	cur := r.landStep()
@@ -58,7 +58,7 @@ func (r *reviveScreen) hudView(m *Model) string {
 	meterW := m.width - 16
 	switch r.step {
 	case rvPlan:
-		l.caption, l.body = "轨道就绪 · 请确认着陆计划", r.planBody()
+		l.caption, l.body = "轨道就绪 · 请确认恢复计划", r.planBody()
 		if len(r.plan.Blockers) > 0 {
 			l.caption, l.captionStyle = "计划无法执行", hudBad
 		}
@@ -68,11 +68,11 @@ func (r *reviveScreen) hudView(m *Model) string {
 			l.caption, l.plain = landCaptions[4], landPlain[4]
 			l.body = hudSteps(landNames, 4, now)
 		case r.landed():
-			l.caption, l.captionStyle = "逃生舱登陆成功！", hudGood
+			l.caption, l.captionStyle = "恢复成功！", hudGood
 			l.body = r.hudResult()
 			l.telemetry[0][0] = "用时"
 		default:
-			l.caption, l.captionStyle = "着陆中止", hudBad
+			l.caption, l.captionStyle = "恢复中止", hudBad
 			l.body = strings.TrimRight(resultText(r.result, r.err), "\n")
 			l.telemetry[0][0] = "用时"
 		}
@@ -92,8 +92,8 @@ func (r *reviveScreen) hudView(m *Model) string {
 			l.plain = "暂存的文件已核对，等你下令"
 			l.bottom = "第 4/5 步  等待你的指令"
 			l.body += "\n\n" + okStyle.Render(fmt.Sprintf("暂存与校验都通过了：%d 个文件，%s。", r.verify.Files, size(r.verify.Bytes))) +
-				"\n" + warnStyle.Bold(true).Render("把 agent 换成逃生舱里的版本？") + hudDim.Render("会停止服务；失败会自动退回。") +
-				"\n\n" + menu("y", "下令着陆", "n", "放弃（暂存保留）")
+				"\n" + warnStyle.Bold(true).Render("把 agent 换成备份里的版本？") + hudDim.Render("会停止服务；失败会自动退回。") +
+				"\n\n" + menu("y", "确认恢复", "n", "放弃（暂存保留）")
 			l.telemetry = append(l.telemetry, [2]string{"暂存", size(r.verify.Bytes) + " ✓"})
 		}
 		if r.step == rvSwapping {
@@ -112,7 +112,7 @@ func (r *reviveScreen) planBody() string {
 	if r.scroll > 0 {
 		body = hudFaint.Render("↑ 上面还有") + "\n" + body
 	}
-	keys := menu("enter", "开始着陆（先暂存并校验，agent 现在的文件不会被改动）", "b", "返回修改选项")
+	keys := menu("enter", "开始恢复（先暂存并校验，agent 现在的文件不会被改动）", "b", "返回修改选项")
 	if len(r.plan.Blockers) > 0 {
 		keys = menu("b", "返回修改选项")
 	}
@@ -127,7 +127,7 @@ func (r *reviveScreen) hudResult() string {
 	}
 	out := []string{hudRows([][2]string{{"实例", r.snap.InstanceID}, {"服务器", r.opts.Target}, {"健康检查", health}}, 46)}
 	for _, p := range r.result.Prev {
-		out = append(out, "", hudDim.Render("着陆前的样子保留在 "+p+"（不需要时在 服务器 › 空间清理 中删除）"))
+		out = append(out, "", hudDim.Render("恢复前的样子保留在 "+p+"（不需要时在 服务器 › 空间清理 中删除）"))
 	}
 	for _, p := range r.result.Intruders {
 		out = append(out, warnStyle.Render("注意：交换期间有其他进程重新创建了活动目录，已挪到 "+p))

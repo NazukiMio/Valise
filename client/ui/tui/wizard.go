@@ -132,7 +132,7 @@ func (w *wizardScreen) view(m *Model) string {
 			"Valise 在你的服务器上安装和管理 agent，并替它做好备份。\n" +
 			"装好的 agent 会出现在这里：它是否在跑、怎么打开它的管理页、有没有要处理的事，一眼就能看到。\n\n" +
 			dimStyle.Render("接下来几步：安装 harness 资料包 → 添加第一台服务器 → 安装或接入第一个 agent。\n"+
-				"加密钥匙在你第一次建立逃生舱时再设；想现在就设，按 k。")
+				"加密钥匙在你第一次建立备份时再设；想现在就设，按 k。")
 	case wzPack:
 		body = headStyle.Render("安装 harness 资料包") + "\n\n" +
 			"资料包告诉 Valise 各种 agent（OpenClaw、Hermes 等）的文件放在哪里、怎么安装和启动。它单独发布、带官方签名，Valise 会先验签再安装。\n\n" +

@@ -50,16 +50,16 @@ func (c *cleanupScreen) items(m *Model) []cleanItem {
 	if c.prev != nil {
 		for _, e := range c.prev.Entries {
 			e := e
-			out = append(out, cleanItem{kind: "着陆前的旧状态", label: e.Path + dimStyle.Render("（"+e.Created.Local().Format("01-02 15:04")+"）"), bytes: e.Bytes,
-				what: "这是某次着陆之前 agent 的样子。删除后就不能再撤回那次着陆；逃生舱不受影响。",
+			out = append(out, cleanItem{kind: "恢复前的旧状态", label: e.Path + dimStyle.Render("（"+e.Created.Local().Format("01-02 15:04")+"）"), bytes: e.Bytes,
+				what: "这是某次恢复之前 agent 的样子。删除后就不能再撤回那次恢复；备份不受影响。",
 				act: func(m *Model) tea.Cmd {
-					return m.push(confirm("删除这份着陆前的旧状态？", []string{e.Path}, func(m *Model) tea.Cmd {
+					return m.push(confirm("删除这份恢复前的旧状态？", []string{e.Path}, func(m *Model) tea.Cmd {
 						svc, ctx := m.svc, m.ctx
 						return func() tea.Msg {
 							if _, err := svc.PrevDrop(ctx, host, e.OpID); err != nil {
 								return failed(err)
 							}
-							return refreshed{host, "已删除着陆前的旧状态"}
+							return refreshed{host, "已删除恢复前的旧状态"}
 						}
 					}))
 				}})
@@ -73,7 +73,7 @@ func (c *cleanupScreen) items(m *Model) []cleanItem {
 				n += l.Bytes
 			}
 			out = append(out, cleanItem{kind: "已被取代的旧实例", label: e.InstanceID + dimStyle.Render("（被 "+e.Superseded.By+" 取代）"), bytes: n,
-				what: "删除它的实例记录和那次操作保留的旧目录；它的逃生舱还在金库里。",
+				what: "删除它的实例记录和那次操作保留的旧目录；它的备份还在金库里。",
 				act: func(m *Model) tea.Cmd {
 					return m.push(confirm("永久删除旧实例 "+e.InstanceID+" 的记录和旧目录？", nil, func(m *Model) tea.Cmd {
 						svc, ctx := m.svc, m.ctx
@@ -97,8 +97,8 @@ func (c *cleanupScreen) items(m *Model) []cleanItem {
 			if l.Leaf == vault.LegacyLeaf {
 				label = "分档之前的旧金库"
 			}
-			out = append(out, cleanItem{kind: "服务器上已结束的周期", label: label + dimStyle.Render("（"+itoa(len(l.Snapshots))+" 个逃生舱）"), bytes: l.Bytes,
-				what: "只删除服务器上的这一份；仓库和空间站上的副本不受影响。删除前会告诉你其他地方有没有完整副本。",
+			out = append(out, cleanItem{kind: "服务器上已结束的周期", label: label + dimStyle.Render("（"+itoa(len(l.Snapshots))+" 个备份）"), bytes: l.Bytes,
+				what: "只删除服务器上的这一份；备份位置上的副本不受影响。删除前会告诉你其他地方有没有完整副本。",
 				act: func(m *Model) tea.Cmd {
 					return confirmLeafDelete(m, host, l.Leaf, "server", func(m *Model) tea.Cmd { return m.loadServer(host) })
 				}})
@@ -208,7 +208,7 @@ func confirmLeafDelete(m *Model, host, leaf, where string, after func(m *Model) 
 		}
 		ask := confirm("删除"+place+"的周期 "+leaf+"？", append([]string{"这个周期的副本："}, detail...), doDelete)
 		if !other {
-			return pushMsg{confirm("其他地方都没有这个周期的完整副本。删除后，这些逃生舱将无法恢复。确定继续？",
+			return pushMsg{confirm("其他地方都没有这个周期的完整副本。删除后，这些备份将无法恢复。确定继续？",
 				append([]string{"这个周期的副本："}, detail...), func(m *Model) tea.Cmd { return m.push(ask) })}
 		}
 		return pushMsg{ask}

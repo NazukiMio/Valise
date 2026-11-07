@@ -35,7 +35,7 @@ func TestInstallPage(t *testing.T) {
 	wantText(t, m, "1 agent", "2 管理", "3 健康", "4 设置", "默认 profile", "profile two", "profile three", "还没接入 Valise")
 	key(t, m, "down")
 	key(t, m, "enter")
-	v := wantText(t, m, "1 概览", "2 对话", "3 健康", "4 逃生舱", "5 设置")
+	v := wantText(t, m, "1 概览", "2 对话", "3 健康", "4 备份", "5 设置")
 	if strings.Contains(v, "管理页、服务") || strings.Contains(v, "6 ") {
 		t.Fatalf("agent page:\n%s", v)
 	}

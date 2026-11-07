@@ -64,7 +64,7 @@ func init() {
 		}
 		reason := fmt.Sprintf("%s (%s)", a.ID, a.Risk)
 		if p.Sealed {
-			reason += "; escape pod first"
+			reason += "; backup first"
 		}
 		operationID := ""
 		if res != nil && res.Operation != nil {

@@ -47,7 +47,7 @@ func TestHealth(t *testing.T) {
 		t.Fatalf("order: %+v", r.Items)
 	}
 	for _, it := range r.Items {
-		for _, w := range []string{"着陆", "上云", "演练"} {
+		for _, w := range []string{"逃生舱", "空间站", "着陆", "上云", "演练"} {
 			if strings.Contains(it.Text+it.Detail, w) {
 				t.Fatalf("themed word %q in %+v", w, it)
 			}

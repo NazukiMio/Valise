@@ -13,7 +13,7 @@ import (
 )
 
 // cloudScreen is a server's repositories and stations (docs/UI.md 9.4
-// "仓库与空间站"): repositories (local folders) first, then stations.
+// "备份位置"): repositories (local folders) first, then stations.
 type cloudScreen struct {
 	host   string
 	target int // index into places
@@ -34,15 +34,15 @@ func newCloud(host string) *cloudScreen {
 	return &cloudScreen{host: host, lists: map[string]*vaultrpc.TargetListResult{}, errs: map[string]error{}}
 }
 
-func (c *cloudScreen) title() string { return "仓库与空间站" }
+func (c *cloudScreen) title() string { return "备份位置" }
 func (c *cloudScreen) help() string {
 	if c.m == nil || len(places(c.m, c.host)) == 0 {
-		return menu("+", "添加仓库或空间站")
+		return menu("+", "添加备份位置")
 	}
 	if c.current(c.m).repo {
 		return menu("s", "立即同步", "x", "从列表移除仓库", "+", "添加", "tab", "换位置", "r", "刷新")
 	}
-	return menu("s", "立即同步", "a", "自动同步", "d", "删除这个周期（空间站）", "+", "添加", "tab", "换位置", "r", "刷新")
+	return menu("s", "立即同步", "a", "自动同步", "d", "删除这个周期（远程备份位置）", "+", "添加", "tab", "换位置", "r", "刷新")
 }
 
 // current is the place shown.
@@ -190,7 +190,7 @@ func (c *cloudScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			}
 			if p.station {
 				return func() tea.Msg {
-					return flashMsg("先上云一次：Valise 会让这台服务器认识这个空间站，之后才能设置自动同步")
+					return flashMsg("先同步一次：Valise 会让这台服务器认识这个远程备份位置，之后才能设置自动同步")
 				}, true
 			}
 			return func() tea.Msg {
@@ -200,13 +200,13 @@ func (c *cloudScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			if !p.repo {
 				return nil, false
 			}
-			return m.push(confirm("从列表中移除仓库 "+p.name+"？", []string{"只是不再往这里复制；文件夹里已有的逃生舱不会删除。"},
+			return m.push(confirm("从列表中移除仓库 "+p.name+"？", []string{"只是不再往这里复制；文件夹里已有的备份不会删除。"},
 				func(m *Model) tea.Cmd {
 					if err := m.svc.RepoRemove(p.name); err != nil {
 						return func() tea.Msg { return failed(err) }
 					}
 					c.target = 0
-					return func() tea.Msg { return flashMsg("已移除仓库 " + p.name + "，文件夹里的逃生舱保留") }
+					return func() tea.Msg { return flashMsg("已移除仓库 " + p.name + "，文件夹里的备份保留") }
 				})), true
 		case "d":
 			if p.repo {
@@ -229,7 +229,7 @@ func (c *cloudScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (c *cloudScreen) chooseAuto(m *Model, t vaultrpc.Target) tea.Cmd {
-	return m.push(pick("自动同步到 "+t.Name+"（每次建立逃生舱后，距上次同步超过这个间隔就顺带同步；不常驻）", []choice{
+	return m.push(pick("自动同步到 "+t.Name+"（每次建立备份后，距上次同步超过这个间隔就顺带同步；不常驻）", []choice{
 		{label: "关", value: "off"}, {label: "每 6 小时最多一次", value: "6h"}, {label: "每天最多一次", value: "1d"}, {label: "每周最多一次", value: "7d"},
 	}, func(m *Model, every string) tea.Cmd {
 		t.Auto = nil
@@ -256,9 +256,9 @@ func (c *cloudScreen) view(m *Model) string {
 	w := min(m.width-2, 110)
 	ps := places(m, c.host)
 	if len(ps) == 0 {
-		return box("", "还没有仓库或空间站。\n\n逃生舱先写在服务器上；再放一份到别处，服务器坏了也不怕：\n"+
+		return box("", "还没有备份位置。\n\n备份先写在服务器上；再放一份到别处，服务器坏了也不怕：\n"+
 			"  仓库：这台电脑上的文件夹（外接硬盘、网盘同步文件夹都行），不需要任何工具。\n"+
-			"  空间站：另一台机器（NAS、VPS），由服务器直接传过去。\n按 "+keyStyle.Render("+")+" 添加。", w)
+			"  远程备份位置：另一台机器（NAS、VPS），由服务器直接传过去。\n按 "+keyStyle.Render("+")+" 添加。", w)
 	}
 	p := c.current(m)
 	var tabs []string
@@ -329,7 +329,7 @@ func (c *cloudScreen) view(m *Model) string {
 		lines = append(lines, cursorLine(i == c.cursor, cloudLine(r)))
 	}
 	if len(lines) == 0 {
-		lines = append(lines, dimStyle.Render("  还没有逃生舱"))
+		lines = append(lines, dimStyle.Render("  还没有备份"))
 	}
 	b.WriteString(scrollLines(lines, c.cursor, m.bodyHeight()-lipgloss.Height(head)-4))
 	return b.String()

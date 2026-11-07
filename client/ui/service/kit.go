@@ -95,7 +95,7 @@ func (s *Service) KitInstall(ctx context.Context, host, instance string, dryRun 
 	}
 	serverCmd := porterPath + " mcp --instance " + instance
 	plan.AgentLine = "Add an MCP server named \"valise\" (stdio) that runs: " + serverCmd +
-		" — then use the valise-enroll skill: 我给你装了一个逃生舱，你学习一下。"
+		" — then use the valise-enroll skill: 我给你装了 Valise 保护技能，你学习一下。"
 	if ak := target.Profile.AgentKit; ak != nil {
 		plan.MCPDoc = ak.MCPConfigDoc
 		plan.MCPSnippet = strings.NewReplacer("${PORTER}", porterPath, "${INSTANCE}", instance).Replace(ak.MCPConfigSnippet)

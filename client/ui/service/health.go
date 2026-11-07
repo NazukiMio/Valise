@@ -32,7 +32,7 @@ const (
 
 // Health groups.
 const (
-	HealthPods  = "pods"  // 逃生舱状态
+	HealthPods  = "pods"  // 备份状态
 	HealthAgent = "agent" // agent 健康
 )
 
@@ -172,14 +172,14 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 		switch {
 		case !ts.Enabled:
 			it.Level, it.Text, it.Key = HealthInfo, "没有开启", "s"
-			it.Detail = "定时建立逃生舱让备份不靠你记得。按 s 打开这个 agent 的设置，在「定时建立逃生舱」里开启。"
+			it.Detail = "定时备份让你不用记着手动备份。按 s 打开这个 agent 的设置，在「定时备份」里开启。"
 		default:
 			it.Level, it.Text = HealthOK, "每 "+everyText(ts.Every)+"一次，登出后也会运行"
 		}
 		add(it)
 	}
 	k, err := src.kit()
-	r.read("kit", "逃生舱技能", err)
+	r.read("kit", "Agent 保护技能", err)
 	var declaration *agentkit.Declaration
 	if err == nil {
 		declaration = k.Declaration
@@ -190,9 +190,9 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 			}
 		}
 		if stale > 0 {
-			add(HealthItem{ID: "skills", Group: HealthAgent, Level: HealthInfo, Title: "逃生舱技能", Key: "s",
+			add(HealthItem{ID: "skills", Group: HealthAgent, Level: HealthInfo, Title: "Agent 保护技能", Key: "s",
 				Text:   strconv.Itoa(stale) + " 个不是这个版本的（未安装或被改过）",
-				Detail: "按 s 打开这个 agent 的设置，在「逃生舱技能」里重新安装。"})
+				Detail: "按 s 打开这个 agent 的设置，在「Agent 保护技能」里重新安装。"})
 		}
 	}
 	chk, err := src.approval()
@@ -237,8 +237,8 @@ func (s *Service) backupItem(host, instance, server string, metas []vault.Meta, 
 		}
 	}
 	if len(pods) == 0 {
-		it.Level, it.Text = HealthBad, "还没有逃生舱"
-		it.Detail = "出了问题没有可以恢复的东西。先建立一个逃生舱（推荐\"记忆与人格 + 凭据\"），再复制到仓库或空间站。"
+		it.Level, it.Text = HealthBad, "还没有备份"
+		it.Detail = "出了问题没有可以恢复的东西。先建立一个备份（推荐\"记忆与人格 + 凭据\"），再复制到备份位置。"
 		return it
 	}
 	sort.Slice(pods, func(i, j int) bool { return pods[i].CreatedAt.After(pods[j].CreatedAt) })
@@ -256,18 +256,18 @@ func (s *Service) backupItem(host, instance, server string, metas []vault.Meta, 
 	for _, t := range targets {
 		for _, id := range t.LastSynced {
 			if _, ok := elsewhere[id]; !ok {
-				elsewhere[id] = "空间站 " + t.Name
+				elsewhere[id] = "备份位置 " + t.Name
 			}
 		}
 	}
-	newest := "最新逃生舱 " + agoPlain(now.Sub(pods[0].CreatedAt)) + "前"
+	newest := "最新备份 " + agoPlain(now.Sub(pods[0].CreatedAt)) + "前"
 	for i, m := range pods {
 		where, ok := elsewhere[m.SnapshotID]
 		if !ok {
 			continue
 		}
 		age := now.Sub(m.CreatedAt)
-		it.Text = newest + "；仓库或空间站里最新的是 " + agoPlain(age) + "前（" + where + "）"
+		it.Text = newest + "；备份位置里最新的是 " + agoPlain(age) + "前（" + where + "）"
 		it.Level = HealthOK
 		if i > 0 {
 			it.Text += "，还有 " + strconv.Itoa(i) + " 个没同步"
@@ -275,13 +275,13 @@ func (s *Service) backupItem(host, instance, server string, metas []vault.Meta, 
 		}
 		if age > staleAfter {
 			it.Level = HealthWarn
-			it.Detail = "服务器出问题时，只能用仓库或空间站里的备份恢复：会丢掉这 " + agoPlain(age) + "的记忆、会话与配置改动。按 u 打开「仓库与空间站」，在那里复制过去（只追加，不改动已有的文件）。"
+			it.Detail = "服务器出问题时，只能用备份位置里的备份恢复：会丢掉这 " + agoPlain(age) + "的记忆、会话与配置改动。按 u 打开「备份位置」，在那里复制过去（只追加，不改动已有的文件）。"
 		}
 		return it
 	}
 	it.Level, it.Key = HealthWarn, "u"
 	it.Text = newest + "，但都只在服务器上"
-	it.Detail = "服务器坏了或被删光时，只在服务器上的逃生舱会一起丢失。按 u 打开「仓库与空间站」：还没有就先添加一个（本机文件夹就可以），然后复制过去。"
+	it.Detail = "服务器坏了或被删光时，只在服务器上的备份会一起丢失。按 u 打开「备份位置」：还没有就先添加一个（本机文件夹就可以），然后复制过去。"
 	return it
 }
 
@@ -291,14 +291,14 @@ func (s *Service) restoreTestItem(host, instance string, now time.Time) HealthIt
 	switch {
 	case !ok:
 		it.Level, it.Text = HealthWarn, "还没有测试过"
-		it.Detail = "恢复测试在这台电脑和服务器上各解开一次最新的逃生舱并逐个核对文件，不切换、不碰 agent，结束后删除临时文件。需要 Valise 口令。"
+		it.Detail = "恢复测试在这台电脑和服务器上各解开一次最新的备份并逐个核对文件，不切换、不碰 agent，结束后删除临时文件。需要 Valise 口令。"
 	case !t.OK:
 		it.Level = HealthBad
 		it.Text = "上次测试 " + agoPlain(now.Sub(t.At)) + "前，没有通过：" + t.Problem
-		it.Detail = "可以换一个更早的逃生舱再测试；如果更早的也不行，请报告问题。"
+		it.Detail = "可以换一个更早的备份再测试；如果更早的也不行，请报告问题。"
 	default:
 		it.Level = HealthOK
-		it.Text = "上次测试 " + agoPlain(now.Sub(t.At)) + "前，通过（" + t.Created.Local().Format("01-02 15:04") + " 的逃生舱，" + strconv.Itoa(t.Files) + " 个文件）"
+		it.Text = "上次测试 " + agoPlain(now.Sub(t.At)) + "前，通过（" + t.Created.Local().Format("01-02 15:04") + " 的备份，" + strconv.Itoa(t.Files) + " 个文件）"
 	}
 	return it
 }

@@ -40,9 +40,9 @@ func (m *Model) repoAuto(d *srvData) tea.Cmd {
 			case err != nil:
 				return repoSynced{host: host, err: err}
 			case len(done) > 0:
-				return repoSynced{host: host, text: host + " 到空间站 " + joinNames(done) + " 的证书已续期"}
+				return repoSynced{host: host, text: host + " 到远程备份位置 " + joinNames(done) + " 的证书已续期"}
 			}
-			return repoSynced{host: host, text: host + " 到空间站 " + joinNames(exp) + " 的证书快到期了：上云一次即可续期（自动同步才不会中断）"}
+			return repoSynced{host: host, text: host + " 到远程备份位置 " + joinNames(exp) + " 的证书快到期了：同步一次即可续期（自动同步才不会中断）"}
 		})
 	}
 	return tea.Batch(cmds...)
@@ -68,7 +68,7 @@ func repoSyncAll(m *Model, host string) tea.Cmd {
 		if len(done) == 0 {
 			return repoSynced{host: host}
 		}
-		return repoSynced{host: host, text: host + " 的新逃生舱已补到仓库 " + joinNames(done)}
+		return repoSynced{host: host, text: host + " 的新备份已补到仓库 " + joinNames(done)}
 	}
 }
 

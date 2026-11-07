@@ -171,7 +171,7 @@ func (t *isetTab) choosePeriod(m *Model, p *instancePage) tea.Cmd {
 }
 
 func (t *isetTab) chooseTimer(m *Model, p *instancePage) tea.Cmd {
-	return m.push(pick("定时建立逃生舱（轻装）", []choice{
+	return m.push(pick("定时备份（轻装）", []choice{
 		{label: "关", value: "off"}, {label: "每 6 小时", value: "6h"}, {label: "每天", value: "1d"}, {label: "每周", value: "7d"},
 	}, func(m *Model, every string) tea.Cmd {
 		svc, ctx, host, inst := m.svc, m.ctx, p.host, p.inst.InstanceID
@@ -189,9 +189,9 @@ func (t *isetTab) view(m *Model, p *instancePage, height int) string {
 	w := min(m.width-2, 100)
 	sections := []struct{ title, body string }{
 		{"名字", nameText(p.inst)},
-		{"逃生舱技能", t.kitText(p)},
+		{"Agent 保护技能", t.kitText(p)},
 		{"备份分组", t.periodText(m, p)},
-		{"定时建立逃生舱", t.timerText()},
+		{"定时备份", t.timerText()},
 		{"归类规则", t.rulesText(p)},
 		{"重新接入", dimStyle.Render("harness 升级、目录变化后使用；会先显示接入报告。")},
 	}
@@ -214,7 +214,7 @@ func (t *isetTab) view(m *Model, p *instancePage, height int) string {
 
 func (t *isetTab) kitText(p *instancePage) string {
 	var b strings.Builder
-	b.WriteString(dimStyle.Render("让 agent 自己知道什么时候该建立逃生舱、怎么交接、怎么检查会话与记忆。") + "\n")
+	b.WriteString(dimStyle.Render("让 agent 自己知道什么时候该建立备份、怎么交接、怎么检查会话与记忆。") + "\n")
 	switch k := p.kit; {
 	case k == nil:
 		b.WriteString(dimStyle.Render("读取中…"))
@@ -278,7 +278,7 @@ func (t *isetTab) timerText() string {
 func (t *isetTab) rulesText(p *instancePage) string {
 	s := "profile " + p.inst.ProfileID + " v" + itoa(p.inst.ProfileVersion)
 	if p.inst.ProfileStatus != "verified" {
-		s += warnStyle.Render("　未核实（可以建立逃生舱；着陆时需要你确认）")
+		s += warnStyle.Render("　未核实（可以建立备份；恢复时需要你确认）")
 	}
 	if p.target != nil && p.target.Record != nil {
 		n := len(p.target.Record.LocalOverrides)
@@ -287,7 +287,7 @@ func (t *isetTab) rulesText(p *instancePage) string {
 			s += "\n  " + o.Root + ":" + o.Glob + " → " + categoryName(o.Category)
 		}
 	}
-	return s + "\n" + dimStyle.Render("按 enter 查看每一类文件进哪些逃生舱，以及怎么修改。")
+	return s + "\n" + dimStyle.Render("按 enter 查看每一类文件进哪些备份，以及怎么修改。")
 }
 
 // nameText is the name section: the agent's name and where it comes from.

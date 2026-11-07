@@ -37,7 +37,7 @@ func (c *cli) actionOperation(ctx context.Context, args []string) error {
 			fmt.Fprintln(c.out, "没有待清理目录。")
 			return nil
 		}
-		fmt.Fprintln(c.out, "将删除以下暂存或旧目录；保留活动目录、逃生舱和操作记录：")
+		fmt.Fprintln(c.out, "将删除以下暂存或旧目录；保留活动目录、备份和操作记录：")
 		for _, p := range paths {
 			fmt.Fprintln(c.out, "  "+p)
 		}

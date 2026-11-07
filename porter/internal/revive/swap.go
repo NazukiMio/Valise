@@ -437,7 +437,7 @@ func (r *Runner) switchBody(ctx context.Context, j *revive.Journal) error {
 		case !exists(from):
 			return valise.New("body_missing", "交换前的状态中没有身体目录 "+m.Rel, "身体不在原位，无法保持不变")
 		case exists(to) && m.Keep:
-			return valise.New("keep_conflict", "新状态里已经有 "+m.Rel+"，不能把另一个 agent 的目录搬进去", "检查这个逃生舱是否装进了别的 agent")
+			return valise.New("keep_conflict", "新状态里已经有 "+m.Rel+"，不能把另一个 agent 的目录搬进去", "检查这个备份是否装进了别的 agent")
 		case exists(to):
 			continue // the snapshot (raw tier) brought its own body
 		}

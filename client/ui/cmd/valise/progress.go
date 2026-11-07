@@ -15,11 +15,11 @@ import (
 var stageLabels = map[string]string{
 	service.StagePull:      "复制整个周期到这台电脑（已有的文件不再下载）",
 	service.StagePullMeta:  "取回周期的索引与清单（很小）",
-	service.StagePullPacks: "只取回这个逃生舱用到的数据包（已有的核对 SHA-256 后复用）",
+	service.StagePullPacks: "只取回这个备份用到的数据包（已有的核对 SHA-256 后复用）",
 	service.StageOpen:      "在这台电脑上解密", service.StageInspect: "检查目标服务器",
 	service.StageStage: "写入服务器的暂存目录", service.StageVerify: "核对暂存的文件",
 	service.StageSwap: "停止服务 → 交换 → 启动 → 健康检查", service.TestLocal: "在这台电脑上解开并核对",
-	service.StageSealScan: "清点文件", service.StageSealPack: "读取、加密并写入", service.StageSealCommit: "写入逃生舱目录",
+	service.StageSealScan: "清点文件", service.StageSealPack: "读取、加密并写入", service.StageSealCommit: "写入备份目录",
 }
 
 // withProgress prints each stage once, then its amount at most every two

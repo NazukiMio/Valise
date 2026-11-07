@@ -15,9 +15,9 @@ import (
 // details stay folded (they are in the CLI with -v).
 func errText(err error) string {
 	if ue, ok := valise.As(err); ok && ue != nil {
-		s := "失败：" + ue.Reason
+		s := "失败：" + service.PlainWording(ue.Reason)
 		if ue.Suggestion != "" {
-			s += "\n建议：" + ue.Suggestion
+			s += "\n建议：" + service.PlainWording(ue.Suggestion)
 		}
 		return s
 	}

@@ -31,7 +31,7 @@ const StaleAcceptedEnv = "VALISE_STALE_BACKUP_ACCEPTED"
 const RiskAcceptedEnv = "VALISE_RISK_ACCEPTED"
 
 // RiskWarning is said whenever the user goes on at their own risk.
-const RiskWarning = "如果没有充足的备份，数据丢失将是永久性的。建议先备份到仓库或空间站，或在云厂商、虚拟化平台那里给服务器做一份快照（Valise 不做整机备份）。"
+const RiskWarning = "如果没有充足的备份，数据丢失将是永久性的。建议先把备份复制到备份位置，或在云厂商、虚拟化平台那里给服务器做一份快照（Valise 不做整机备份）。"
 
 // GateCode is the error code when the precondition is not met.
 const GateCode = "offsite_pod_required"
@@ -46,7 +46,7 @@ const repoTrialFile = "repo-trial.json"
 type GateAgent struct {
 	Instance string      `json:"instance"`
 	Pod      *vault.Meta `json:"pod,omitempty"`
-	// Where names the place, e.g. "仓库 home" or "空间站 nas".
+	// Where names the place, e.g. "仓库 home" or "远程备份位置 nas".
 	Where string `json:"where,omitempty"`
 	// Reason says why there is none, when Pod is nil.
 	Reason string `json:"reason,omitempty"`
@@ -82,8 +82,8 @@ func (g *GateResult) Err() error {
 			lines = append(lines, a.Instance+"："+a.Reason)
 		}
 	}
-	return valise.New(GateCode, "这一步要先有一份放在别处、能独立恢复的逃生舱（只在服务器上的不算）",
-		"建立逃生舱（推荐\"记忆与人格 + 凭据\"），再放进本机仓库或空间站；也可以自己承担风险继续这一次（valise --accept-risk …）").WithDetail(strings.Join(lines, "\n"))
+	return valise.New(GateCode, "这一步要先有一份放在别处、能独立恢复的备份（只在服务器上的不算）",
+		"建立备份（推荐\"记忆与人格 + 凭据\"），再放进备份位置；也可以自己承担风险继续这一次（valise --accept-risk …）").WithDetail(strings.Join(lines, "\n"))
 }
 
 // Warning describes stale offsite pods, "" when none.
@@ -91,7 +91,7 @@ func (g *GateResult) Warning() string {
 	var lines []string
 	for _, a := range g.Agents {
 		if a.Pod != nil && a.Stale {
-			lines = append(lines, a.Instance+" 放在别处的最新逃生舱是 "+agoText(a.Age)+"前的（"+a.Where+"）；出了问题恢复时，会丢失这段时间的内容")
+			lines = append(lines, a.Instance+" 放在别处的最新备份是 "+agoText(a.Age)+"前的（"+a.Where+"）；出了问题恢复时，会丢失这段时间的内容")
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -182,10 +182,10 @@ func (s *Service) offsitePlaces(ctx context.Context, host string, st *vaultrpc.S
 		out = append(out, p)
 	}
 	for _, t := range st.Targets {
-		p := offsitePlace{label: "空间站 " + t.Name, leaf: map[string]string{}}
+		p := offsitePlace{label: "备份位置 " + t.Name, leaf: map[string]string{}}
 		list, err := s.TargetList(ctx, host, t.Name)
 		if err != nil {
-			p.err = "列不出空间站 " + t.Name + " 上的内容：" + errText1(err)
+			p.err = "列不出远程备份位置 " + t.Name + " 上的内容：" + errText1(err)
 			out = append(out, p)
 			continue
 		}
@@ -218,7 +218,7 @@ func (s *Service) gateAgent(host, instance, server string, metas []vault.Meta, p
 		}
 	}
 	if len(pods) == 0 {
-		a.Reason = "还没有逃生舱"
+		a.Reason = "还没有备份"
 		return a
 	}
 	sort.Slice(pods, func(i, j int) bool { return pods[i].CreatedAt.After(pods[j].CreatedAt) })
@@ -247,9 +247,9 @@ func (s *Service) gateAgent(host, instance, server string, metas []vault.Meta, p
 			return a
 		}
 	}
-	a.Reason = "逃生舱都只在服务器上"
+	a.Reason = "备份都只在服务器上"
 	if len(places) == 0 {
-		a.Reason += "；还没有本机仓库或空间站"
+		a.Reason += "；还没有备份位置"
 	}
 	if len(why) > 0 {
 		a.Reason += "（" + strings.Join(why, "；") + "）"

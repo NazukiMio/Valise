@@ -161,7 +161,7 @@ func serverCard(m *Model, d *srvData, selected bool, w int) string {
 	if d.status != nil {
 		for _, t := range d.status.Targets {
 			if t.LastError != "" {
-				issues = append(issues, "空间站 "+t.Name+" 上次同步失败")
+				issues = append(issues, "备份位置 "+t.Name+" 上次同步失败")
 			}
 		}
 	}
@@ -173,7 +173,7 @@ func serverCard(m *Model, d *srvData, selected bool, w int) string {
 	if len(agents) > 0 && !never && !oldest.IsZero() {
 		backup := "  备份正常 · " + ago(oldest, m.now())
 		if d.status != nil && len(d.status.Targets) > 0 {
-			backup += " · 空间站 " + mark(!stationBad, true)
+			backup += " · 备份位置 " + mark(!stationBad, true)
 		}
 		lines = append(lines, dimStyle.Render(backup))
 	}

@@ -61,7 +61,7 @@ func (c *actionConfirm) hostName() string { return c.host }
 func (c *actionConfirm) typing() bool     { return c.a.Risk == profile.RiskDanger }
 func (c *actionConfirm) help() string {
 	if service.SealsByDefault(c.a) && c.a.Risk != profile.RiskDanger {
-		return menu("enter", "执行", "space", "逃生舱 开/关")
+		return menu("enter", "执行", "space", "先备份 开/关")
 	}
 	return menu("enter", "执行")
 }
@@ -143,9 +143,9 @@ func (c *actionConfirm) view(m *Model) string {
 		rows = append(rows, dimStyle.Render("会在终端里运行；终端里的内容 Valise 不读取。"))
 	}
 	if service.SealsByDefault(c.a) {
-		box := "[x] 执行前先建立逃生舱（推荐）"
+		box := "[x] 执行前先建立备份（推荐）"
 		if !c.seal {
-			box = warnStyle.Render("[ ] 不建逃生舱：出了问题时没有改动之前的状态可以着陆")
+			box = warnStyle.Render("[ ] 不建立备份：出了问题时没有改动之前的状态可以恢复")
 		}
 		rows = append(rows, "", box)
 	}
@@ -301,7 +301,7 @@ func (r *actionResult) view(m *Model) string {
 	if r.running {
 		step := "正在执行…"
 		if r.seal {
-			step = "正在建立逃生舱，然后执行…"
+			step = "正在建立备份，然后执行…"
 		}
 		return head + "\n\n" + dimStyle.Render(step)
 	}
@@ -314,7 +314,7 @@ func (r *actionResult) view(m *Model) string {
 	}
 	lines := []string{head, ""}
 	if r.res.Snapshot != "" {
-		lines = append(lines, "  "+okStyle.Render("✓")+" 逃生舱：已建立")
+		lines = append(lines, "  "+okStyle.Render("✓")+" 备份：已建立")
 	}
 	lines = append(lines, "  "+mark(r.res.Exit == 0, true)+" 命令：退出码 "+itoa(r.res.Exit))
 	if v := r.res.Verification; v != nil {

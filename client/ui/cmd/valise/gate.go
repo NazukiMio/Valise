@@ -28,7 +28,7 @@ func (c *cli) gate(ctx context.Context, host, instance string, yes bool) error {
 		}
 		fmt.Fprintln(c.out, "  "+service.RiskWarning)
 		if os.Getenv(service.RiskAcceptedEnv) != "1" && !c.confirm("我自己承担数据丢失的风险，继续这一次？") {
-			return valise.New("cancelled", "已取消，服务器上没有任何改动", "先建立逃生舱再放进仓库或空间站")
+			return valise.New("cancelled", "已取消，服务器上没有任何改动", "先建立备份再放进备份位置")
 		}
 		c.svc.RiskAccepted = true
 		return nil
@@ -36,7 +36,7 @@ func (c *cli) gate(ctx context.Context, host, instance string, yes bool) error {
 	if w := g.Warning(); w != "" {
 		fmt.Fprintln(c.out, "⚠ "+w)
 		if !yes && os.Getenv(service.StaleAcceptedEnv) != "1" && !c.confirm("知道这个风险，仍然继续？") {
-			return valise.New("cancelled", "已取消，服务器上没有任何改动", "先建立逃生舱再放进仓库或空间站")
+			return valise.New("cancelled", "已取消，服务器上没有任何改动", "先建立备份再放进备份位置")
 		}
 	}
 	return nil

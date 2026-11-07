@@ -15,7 +15,7 @@ func (c *cli) repo(ctx context.Context, args []string) error {
 			return err
 		}
 		fmt.Fprintf(c.out, "已添加仓库 %s：%s\n", r.Name, r.Path)
-		fmt.Fprintln(c.out, "逃生舱会在你上云、打开 Valise 或在界面里建立逃生舱之后补到这里；Valise 不常驻，关着的时候不会更新。")
+		fmt.Fprintln(c.out, "备份会在你同步、打开 Valise 或在界面里建立备份之后补到这里；Valise 不常驻，关着的时候不会更新。")
 		return nil
 	case args[0] == "list" && len(args) == 1:
 		if len(c.svc.Repos()) == 0 {
@@ -29,7 +29,7 @@ func (c *cli) repo(ctx context.Context, args []string) error {
 		if err := c.svc.RepoRemove(args[1]); err != nil {
 			return err
 		}
-		fmt.Fprintf(c.out, "已从列表中移除仓库 %s；文件夹里的逃生舱没有删除。\n", args[1])
+		fmt.Fprintf(c.out, "已从列表中移除仓库 %s；文件夹里的备份没有删除。\n", args[1])
 		return nil
 	case args[0] == "sync" && (len(args) == 2 || len(args) == 3):
 		names := []string{}
@@ -49,7 +49,7 @@ func (c *cli) repo(ctx context.Context, args []string) error {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(c.out, "仓库 %s（%s）：%d 个周期、%d 个逃生舱，这次新复制 %d 个文件，校验通过。\n", n, res.Dir, len(res.Leaves), len(res.Snapshots), res.Downloaded)
+			fmt.Fprintf(c.out, "仓库 %s（%s）：%d 个周期、%d 个备份，这次新复制 %d 个文件，校验通过。\n", n, res.Dir, len(res.Leaves), len(res.Snapshots), res.Downloaded)
 		}
 		return nil
 	}

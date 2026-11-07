@@ -157,10 +157,10 @@ func (s *Service) renameStation(ctx context.Context, host, name, old, newName st
 		return err
 	}
 	if r.ExitCode == 3 {
-		return valise.New("rename_taken", "空间站 "+name+" 上已经有 "+newName+" 文件夹", "先处理那个文件夹，再上云一次会接着改名")
+		return valise.New("rename_taken", "备份位置 "+name+" 上已经有 "+newName+" 文件夹", "先处理那个文件夹，再同步一次会接着改名")
 	}
 	if r.ExitCode != 0 {
-		return valise.New("rename_station_failed", "没能在空间站 "+name+" 上改名", "检查空间站后再上云一次，会接着改名").WithDetail(strings.TrimSpace(string(r.Stderr)))
+		return valise.New("rename_station_failed", "没能在远程备份位置 "+name+" 上改名", "检查远程备份位置后再同步一次，会接着改名").WithDetail(strings.TrimSpace(string(r.Stderr)))
 	}
 	var d vault.TreeDesc
 	if json.Unmarshal(r.Stdout, &d) == nil && d.ServerName != "" {
@@ -169,7 +169,7 @@ func (s *Service) renameStation(ctx context.Context, host, name, old, newName st
 			err = errors.New(strings.TrimSpace(string(w.Stderr)))
 		}
 		if err != nil {
-			return valise.New("rename_station_failed", "空间站 "+name+" 上的 TREE 没有改好", "再上云一次会接着改").WithDetail(err.Error())
+			return valise.New("rename_station_failed", "备份位置 "+name+" 上的 TREE 没有改好", "再同步一次会接着改").WithDetail(err.Error())
 		}
 	}
 	st, err := s.VaultStatus(ctx, host)
