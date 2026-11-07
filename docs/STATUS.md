@@ -74,7 +74,12 @@
 
 已实现并实机验证（`ubuntu-vm` 的服务器金库、`nas`、本机仓库），详见 [acceptance/N3.md](acceptance/N3.md)。旧的按快照数判断已删除；删除周期前当场核对各处。只有 `ubuntu-vm` 部署了本轮 porter（声明 `copy-verify/1`）。服务器发起的复制完成后由 porter 核对清单有变化的周期（2026-11-08 用户决定，已实机验证）。未完成：Valise 管理的远程备份位置未实机验证；TUI 备份位置页的“核对副本”入口（N4）。
 
+## 6b. N3 云盘（2026-11-08）
+
+实现完成并通过自动化测试（详见 [acceptance/N3.md](acceptance/N3.md) 第 2 节）；`ubuntu-vm` 已部署 porter 并经 Kit 装好 rclone。真实 Google Drive 验收需要用户亲自在浏览器授权，尚未进行。三家云盘仍为 `verify: pending`（使用时需 `--allow-pending`）。TUI 的云盘入口属 N4。
+
 ## 7. 建议的下一步
 
-1. N3 第二项“云盘”：按 ARCHITECTURE.md 7.3 实现，先核实 `kit/tools.yaml` 的 rclone（含 macOS 条目）与 `clouds` 清单。
-2. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。
+1. 用户用 Google Drive 测试账户完成 acceptance/N3.md 2.4 的实机验收，通过后去掉 gdrive 的 pending。
+2. N3 第三项：本机仓库自动同步收入共享服务；第四项：源服务器失联恢复。
+3. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。
