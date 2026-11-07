@@ -494,3 +494,28 @@ func TestSwapCarriesNestedSharedInstance(t *testing.T) {
 		}
 	}
 }
+
+// A planned root inside another instance's root supersedes nothing: at the
+// profile's named-instance location it is the normal nested layout and
+// passes; anywhere else it is listed as inside and refused by the plan
+// (docs/ARCHITECTURE.md 8.2).
+func TestCloneIntoAnotherInstanceDir(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.p.Detect = &profile.Detect{StateDirCandidates: []string{"${HOME}/.demo"}, MarkersAny: []string{"SOUL.md"},
+		Named: []profile.Named{{Glob: "${HOME}/.demo/profiles/*", Service: "shared"}}}
+	def := enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": w.state}}
+	if _, err := porterenroll.WriteRecord(w.home, def, w.p); err != nil {
+		t.Fatal(err)
+	}
+	named := []revive.RootPlan{{ID: "state", Path: filepath.Join(w.state, "profiles", "copy")}}
+	facts, err := Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{Profile: w.p, InstanceID: "demo-copy", Roots: named})
+	if err != nil || len(facts.Overlapping) != 0 || len(facts.Inside) != 0 {
+		t.Fatalf("named location: overlapping %v inside %v %v", facts.Overlapping, facts.Inside, err)
+	}
+	elsewhere := []revive.RootPlan{{ID: "state", Path: filepath.Join(w.state, "cache", "copy")}}
+	facts, err = Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{Profile: w.p, InstanceID: "demo-copy", Roots: elsewhere})
+	if err != nil || len(facts.Overlapping) != 0 || len(facts.Inside) != 1 || facts.Inside[0] != "demo" {
+		t.Fatalf("elsewhere: overlapping %v inside %v %v", facts.Overlapping, facts.Inside, err)
+	}
+}

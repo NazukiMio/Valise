@@ -193,6 +193,13 @@ func TestCloneToAnotherServer(t *testing.T) {
 	if _, err := s.Seal(ctx, "box2", vaultrpc.SealParams{InstanceID: "demo-clone", Tier: vault.TierSoul}); err == nil {
 		t.Fatal("sealed a superseded instance")
 	}
+	// A copy placed inside another instance's directory (not a named-instance
+	// location of the profile) is refused, not marked as superseding it.
+	rp, err = s.PlanRevive(ctx, ReviveOptions{Target: "box2", From: "box", SnapshotID: ss, Mode: revive.ModeClone, InstanceID: "demo-inner",
+		Roots: map[string]string{"state": filepath.Join(home2, ".demo", "inner")}, AllowDraft: true}, pass)
+	if err != nil || len(rp.Plan.Supersedes) != 0 || !hasBlockerCode(rp, "root_inside_other") {
+		t.Fatalf("inner clone: %+v %+v %v", rp.Plan.Supersedes, rp.Blockers, err)
+	}
 	removed, err := s.OldCleanup(ctx, "box2", "demo-clone")
 	if err != nil || len(removed) != 2 {
 		t.Fatalf("%v %v", removed, err)
@@ -291,4 +298,13 @@ func TestRollbackOnDailyKey(t *testing.T) {
 	if _, err := s.PrevDrop(ctx, "vps", res.OpID); err == nil {
 		t.Fatal("fresh leftovers dropped without developer mode")
 	}
+}
+
+func hasBlockerCode(rp *RevivePlan, code string) bool {
+	for _, b := range rp.Blockers {
+		if b.Code == code {
+			return true
+		}
+	}
+	return false
 }

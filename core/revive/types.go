@@ -107,9 +107,14 @@ type InspectResult struct {
 	Record     *enroll.Record        `json:"record,omitempty"`
 	PendingOps []string              `json:"pending_ops"`
 	Busy       []Process             `json:"busy,omitempty"`
-	// Overlapping lists other enrolled instances whose roots overlap the
-	// planned roots (they would be superseded by a migrate or clone).
-	Overlapping   []string `json:"overlapping,omitempty"`
+	// Overlapping lists other enrolled instances whose roots equal or lie
+	// inside the planned roots (they would be superseded by a migrate or
+	// clone).
+	Overlapping []string `json:"overlapping,omitempty"`
+	// Inside lists enrolled instances one of whose roots holds a planned
+	// root, outside the profile's named-instance locations: the plan is
+	// refused (docs/ARCHITECTURE.md 8.2).
+	Inside        []string `json:"inside,omitempty"`
 	RegistryCheck string   `json:"registry_integrity,omitempty"`
 	// Nested lists other agents inside the target state dir (named
 	// instances, other enrolled instances). A swap would carry them off,

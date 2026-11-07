@@ -243,7 +243,11 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		} else {
 			plan.Overrides = facts.Record.LocalOverrides
 		}
-	} else if len(facts.Overlapping) > 0 {
+	} else if len(facts.Inside) > 0 {
+		rp.block("root_inside_other", "目标目录位于已接入的实例 "+strings.Join(facts.Inside, "、")+" 的目录之内，不能把一个实例放进另一个实例的目录里",
+			"换一个不在其他实例目录里的目标目录（--root）；如果是这个 harness 的命名实例，放到它声明的命名实例位置")
+	}
+	if o.Mode != revive.ModeRollback && len(facts.Overlapping) > 0 {
 		plan.Supersedes = facts.Overlapping
 		rp.Warnings = append(rp.Warnings, "目标上已接入的实例 "+strings.Join(facts.Overlapping, "、")+
 			" 使用同一目录：交换成功后它的旧目录保留为 prev，记录标记为\"已被取代\"，不再能封存；用 valise old list 查看，valise old cleanup 清理")

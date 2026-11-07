@@ -90,7 +90,7 @@ func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.Inspect
 	if enroll.ValidInstanceID(p.InstanceID) == nil {
 		res.Record, _ = porterenroll.ReadRecord(e.Home, p.InstanceID)
 	}
-	res.Overlapping = overlapping(e.Home, p.InstanceID, p.Roots)
+	res.Overlapping, res.Inside = overlapping(e, &p.Profile, p.InstanceID, p.Roots)
 	for _, rp := range p.Roots {
 		if rp.ID == profile.StateRoot {
 			res.Nested = porterenroll.NestedInstances(e, &p.Profile, p.InstanceID, rp.Path)
@@ -440,26 +440,38 @@ func classifierFor(p revive.Plan) *profile.Classifier {
 	return profile.NewClassifier(&p.Profile, p.Overrides)
 }
 
-// overlapping lists other enrolled, not yet superseded instances with a root
-// equal to, inside or containing one of the planned roots.
-func overlapping(home, self string, roots []revive.RootPlan) []string {
-	recs, _ := porterenroll.ListRecords(home)
-	var out []string
+// overlapping sorts the other enrolled, not yet superseded instances whose
+// roots meet the planned roots (docs/ARCHITECTURE.md 8.2). replaced: a root
+// equal to or inside a planned root, so the swap takes its files away; the
+// instance is marked superseded. inside: a planned root inside one of its
+// roots, which is refused, unless the planned state root is where the
+// profile keeps named instances (the normal nested layout).
+func overlapping(e *porterenroll.Env, p *profile.Profile, self string, roots []revive.RootPlan) (replaced, inside []string) {
+	recs, _ := porterenroll.ListRecords(e.Home)
 	for _, r := range recs {
 		if r.InstanceID == self || r.Superseded != nil {
 			continue
 		}
-	match:
+		rep, in := false, false
 		for _, a := range r.Roots {
 			for _, b := range roots {
-				if within(a, b.Path) || within(b.Path, a) {
-					out = append(out, r.InstanceID)
-					break match
+				switch {
+				case within(a, b.Path):
+					rep = true
+				case within(b.Path, a):
+					if !(b.ID == profile.StateRoot && porterenroll.NamedLocation(e, p, b.Path)) {
+						in = true
+					}
 				}
 			}
 		}
+		if rep {
+			replaced = append(replaced, r.InstanceID)
+		} else if in {
+			inside = append(inside, r.InstanceID)
+		}
 	}
-	return out
+	return replaced, inside
 }
 
 // within reports whether path is dir or inside it.

@@ -145,6 +145,33 @@ func NamedDirs(e *Env, p *profile.Profile) map[string]string {
 
 var namedRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
 
+// NamedLocation reports whether dir is where the profile keeps a named
+// instance (a detect.named glob with a valid name), whether or not the
+// directory exists yet.
+func NamedLocation(e *Env, p *profile.Profile, dir string) bool {
+	if p.Detect == nil {
+		return false
+	}
+	home := harnessHome(e, p)
+	dir = filepath.Clean(dir)
+	for _, n := range p.Detect.Named {
+		g, ok := e.expandHome(n.Glob, home)
+		if !ok {
+			continue
+		}
+		g = filepath.Clean(g)
+		if m, err := filepath.Match(g, dir); err != nil || !m {
+			continue
+		}
+		before, after, _ := strings.Cut(filepath.Base(g), "*")
+		name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(dir), before), after)
+		if namedRe.MatchString(name) {
+			return true
+		}
+	}
+	return false
+}
+
 func isLink(p string) bool {
 	st, err := os.Lstat(p)
 	return err == nil && st.Mode()&os.ModeSymlink != 0
