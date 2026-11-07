@@ -75,9 +75,13 @@ type Plan struct {
 	Services        []Service             `json:"services"`
 	Health          *profile.Health       `json:"health,omitempty"`
 	Entries         []profile.Entry       `json:"entries,omitempty"`
-	// Links are the state symlinks needing staged handling (INSTALL.md
-	// 5.2.1), frozen into the plan digest; LinkBytes is the size of the
-	// private program copies.
+	// Programs are the recorded program locations links may lead into;
+	// they are part of the confirmation (INSTALL.md 5.2.1).
+	Programs []string `json:"programs,omitempty"`
+	// Bytes (above), Links and LinkBytes are readings of a state directory
+	// a running instance keeps writing: shown at confirmation, outside the
+	// confirmation digest, read again after the stop and frozen into the
+	// operation record.
 	Links     []Link `json:"links,omitempty"`
 	LinkBytes int64  `json:"link_bytes,omitempty"`
 }
@@ -119,17 +123,20 @@ type Operation struct {
 	Published       bool            `json:"published"`
 	StageVerified   bool            `json:"stage_verified"`
 	StageTreeDigest string          `json:"stage_tree_digest"`
-	LiveTreeDigest  string          `json:"live_tree_digest"`
-	Approval        string          `json:"approval"`
-	Services        string          `json:"services"`
-	Health          string          `json:"health"`
-	Failure         string          `json:"failure,omitempty"`
-	RecoveryFailure string          `json:"recovery_failure,omitempty"`
-	Created         time.Time       `json:"created"`
-	Updated         time.Time       `json:"updated"`
-	Done            bool            `json:"done"`
-	CleanupStarted  bool            `json:"cleanup_started,omitempty"`
-	Cleaned         bool            `json:"cleaned"`
+	// WriteLinks are the link texts the steps left in declared write areas
+	// and the checks accepted (INSTALL.md 5.2.1), by slash path.
+	WriteLinks      map[string]string `json:"write_links,omitempty"`
+	LiveTreeDigest  string            `json:"live_tree_digest"`
+	Approval        string            `json:"approval"`
+	Services        string            `json:"services"`
+	Health          string            `json:"health"`
+	Failure         string            `json:"failure,omitempty"`
+	RecoveryFailure string            `json:"recovery_failure,omitempty"`
+	Created         time.Time         `json:"created"`
+	Updated         time.Time         `json:"updated"`
+	Done            bool              `json:"done"`
+	CleanupStarted  bool              `json:"cleanup_started,omitempty"`
+	Cleaned         bool              `json:"cleaned"`
 }
 
 type PendingAction struct {

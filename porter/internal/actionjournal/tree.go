@@ -3,10 +3,12 @@ package actionjournal
 import (
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -251,24 +253,52 @@ func CheckWrites(root string, writes []string) error {
 	}
 	return nil
 }
-func CheckChanges(before, after map[string]FileFact, writes []string) error {
-	allowed := func(k string) bool {
-		for _, w := range writes {
-			if k == w || strings.HasPrefix(k, w+"/") {
-				return true
-			}
+
+// WithoutAreas drops the facts at or below the given areas.
+func WithoutAreas(facts map[string]FileFact, areas []string) map[string]FileFact {
+	out := map[string]FileFact{}
+	for k, v := range facts {
+		if !InAreas(k, areas) {
+			out[k] = v
 		}
-		return false
 	}
+	return out
+}
+
+func CheckChanges(before, after map[string]FileFact, writes []string) error {
+	allowed := func(k string) bool { return InAreas(k, writes) }
+	var changed, created []string
 	for k, v := range before {
 		if next, ok := after[k]; (!ok || v != next) && !allowed(k) {
-			return errors.New("configuration command changed undeclared path")
+			changed = append(changed, k)
 		}
 	}
 	for k := range after {
 		if _, ok := before[k]; !ok && !allowed(k) {
-			return errors.New("configuration command created undeclared path")
+			created = append(created, k)
 		}
 	}
-	return nil
+	if len(changed)+len(created) == 0 {
+		return nil
+	}
+	// Paths only, never contents (AGENTS.md 7.3), so the profile's declared
+	// writes can be checked against what the command really touched.
+	sort.Strings(changed)
+	sort.Strings(created)
+	return &UndeclaredWrites{Paths: firstN(append(changed, created...), 12)}
+}
+
+// UndeclaredWrites names the paths a configuration command touched outside
+// its declared writes (paths only, never contents).
+type UndeclaredWrites struct{ Paths []string }
+
+func (u *UndeclaredWrites) Error() string {
+	return "configuration command touched undeclared paths: " + strings.Join(u.Paths, ", ")
+}
+
+func firstN(s []string, n int) []string {
+	if len(s) > n {
+		return append(s[:n:n], fmt.Sprintf("… %d more", len(s)-n))
+	}
+	return s
 }

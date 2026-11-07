@@ -8,7 +8,7 @@
 
 本轮复用 Go service、系统 OpenSSH、按需 porter、age/zstd、分块周期金库、暂存交换及恢复/配置事务各自的 journal。统一任务状态与前端契约，不重写为万能执行引擎。GUI 是最终用户交付，TUI 面向资源紧凑环境，CLI 面向自动化、诊断和高级用户，不作为普通用户必须学习的前置。
 
-当前真实基线：B02 已有隔离实例验收；B03 的链接处理已实现并在隔离真实网关上验收通过（2026-11-07），正式入口仍未开放（待真实实例验收与官方 profile 登记动作）；C 自定义范围未实现。timer 当前写死 `soul`；部分本机仓库自动同步在 TUI；GUI/mygo 依赖未引入，管理方 MCP 不存在。正常 `PlanRevive` 仍依赖源服务器，原服务器失联后的完整副本恢复未完成；`LeafCopies.Complete` 当前仅比较快照数，不能证明副本完整。下列阶段不能以旧实测记录替代新闭环验收。
+当前真实基线：B02 已有隔离实例验收；B03 的链接处理已实现，隔离真实网关与 `ubuntu-vm` 真实 OpenClaw 实例经真实 CLI 验收通过（2026-11-07），动作已登记进官方 OpenClaw profile，健康页入口开放；C 自定义范围未实现。timer 当前写死 `soul`；部分本机仓库自动同步在 TUI；GUI/mygo 依赖未引入，管理方 MCP 不存在。正常 `PlanRevive` 仍依赖源服务器，原服务器失联后的完整副本恢复未完成；`LeafCopies.Complete` 当前仅比较快照数，不能证明副本完整。下列阶段不能以旧实测记录替代新闭环验收。
 
 | 新阶段 | 状态 | 交付依赖与旧里程碑关系 |
 | --- | --- | --- |
@@ -71,7 +71,7 @@
 
 M1–M17 的原文与实测证据已移到 [history/MILESTONES_M1-M17.md](history/MILESTONES_M1-M17.md)。仍未完成、且不属于 N1–N5 某一交付的事项集中在这里：
 
-- **B03 审批修复事务**（原 M12 补充决策）：事务实现与合成服务验收已完成；状态目录链接的处理（INSTALL.md 5.2.1）已实现，并于 2026-11-07 在隔离的真实网关上完成配置事务验收（[acceptance/B03.md](acceptance/B03.md)）。正式入口仍不开放：还需在非最小配置的真实实例上验收，再把动作与核实证据登记进官方 OpenClaw profile。旧验收记录见 [history/B03_ACCEPTANCE_2026-11-05.md](history/B03_ACCEPTANCE_2026-11-05.md)。
+- **B03 审批修复事务**（原 M12 补充决策）：事务实现与合成服务验收已完成；状态目录链接的处理（INSTALL.md 5.2.1）已实现，2026-11-07 在隔离的真实网关与 `ubuntu-vm` 的真实 OpenClaw 实例上经真实 CLI 完成验收（[acceptance/B03.md](acceptance/B03.md)），动作 `approval-ask` 与核实证据已登记进官方 OpenClaw profile（22），健康页入口开放。尚未验收：命名实例与共享服务。旧验收记录见 [history/B03_ACCEPTANCE_2026-11-05.md](history/B03_ACCEPTANCE_2026-11-05.md)。
 - **M12 日常管理**：既有实现与证据保留；未完成的真实渠道与 TUI 验收各自保留，新导航由 N2/N4 承接。
 - **M7a.2 TUI 重做**：2026-11-01 冻结，TUI 与 GUI 的对齐并入 N4。
 - **Kit 工具清单**：`kit/tools.yaml` 中三个条目仍为 `verify: pending`（含 rclone 的版本与 SHA-256），N3 云盘的服务器登录依赖其核实。

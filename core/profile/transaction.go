@@ -17,7 +17,17 @@ type ActionTransaction struct {
 	Root   string            `yaml:"root" json:"root"`
 	Env    map[string]string `yaml:"env" json:"env"`
 	Writes []string          `yaml:"writes" json:"writes"`
+	// Scratch are areas every run of the harness CLI rewrites (INSTALL.md
+	// 5.2.1): writable like Writes, and ignored when checking that the
+	// approval read left the stage unchanged.
+	Scratch []string `yaml:"scratch,omitempty" json:"scratch,omitempty"`
 }
+
+// Areas are all declared write areas: Writes then Scratch.
+func (t *ActionTransaction) Areas() []string {
+	return append(append([]string{}, t.Writes...), t.Scratch...)
+}
+
 type ActionVerification struct {
 	Versions []string `yaml:"versions" json:"versions"`
 	Env      string   `yaml:"env" json:"env"`
@@ -111,6 +121,16 @@ func (c *checker) checkTransaction(f string, a Action) {
 		for _, w := range t.Writes {
 			if !SafeWritePath(w) {
 				c.add(f+".transaction.writes", "必须为安全的明确相对路径")
+			}
+		}
+		for _, w := range t.Scratch {
+			if !SafeWritePath(w) {
+				c.add(f+".transaction.scratch", "必须为安全的明确相对路径")
+			}
+			for _, x := range t.Writes {
+				if x == w || strings.HasPrefix(x, w+"/") || strings.HasPrefix(w, x+"/") {
+					c.add(f+".transaction.scratch", "不能与 writes 重叠：%s", w)
+				}
 			}
 		}
 	}

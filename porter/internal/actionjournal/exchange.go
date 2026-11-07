@@ -97,7 +97,7 @@ func (s Store) Publish(j *action.Operation) error {
 	if err != nil || j.LiveTreeDigest == "" || liveTree != j.LiveTreeDigest {
 		return invalid()
 	}
-	tree, err := TreeDigestAllow(j.Stage, allow)
+	tree, err := TreeDigestAllow(j.Stage, Merged(allow, j.WriteLinks))
 	if err != nil || j.StageTreeDigest == "" || tree != j.StageTreeDigest {
 		return invalid()
 	}

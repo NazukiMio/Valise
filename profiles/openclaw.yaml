@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 20
+profile_version: 22
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -261,6 +261,28 @@ actions:
     argv: [openclaw, doctor]
     output: none
     terminal: true
+  # B03 configuration transaction (docs/INSTALL.md 5.2, 5.2.1). Writes OBS
+  # (2026-11-07, ubuntu-vm, 2026.10.9): preset rewrites openclaw.json, adds
+  # openclaw.json.bak and updates the SQLite store; the first `show` after it
+  # still touches the store, so it runs as a staged step. OPENCLAW_HOME is
+  # redirected so the CLI's own caches land in the stage, never in HOME.
+  - id: approval-ask
+    name: 改为执行前询问
+    explain: "把 OpenClaw 的执行审批改为 cautious 预设：白名单里的命令直接执行，其他命令先问你"
+    undo: "从执行前建立的备份恢复当前实例；或在原生界面里改回原来的预设"
+    risk: config
+    output: none
+    steps:
+      - { id: preset, argv: [openclaw, exec-policy, preset, cautious] }
+      - { id: settle, argv: [openclaw, exec-policy, show, --json] }
+    transaction:
+      root: state
+      env: { OPENCLAW_STATE_DIR: "${STAGE_DIR}", OPENCLAW_CONFIG_PATH: "${STAGE_DIR}/openclaw.json", OPENCLAW_HOME: "${STAGE_DIR}" }
+      writes: [openclaw.json, openclaw.json.bak, openclaw.json.bak.1, openclaw.json.bak.2, openclaw.json.bak.3, openclaw.json.bak.4, state/openclaw.sqlite, state/openclaw.sqlite-wal, state/openclaw.sqlite-shm]
+      # Every OpenClaw CLI call rebuilds its plugin captures, links included
+      # (B03 real gateway, 2026-11-07; INSTALL.md 5.2.1).
+      scratch: [tmp/plugin-captures]
+    verification: { versions: ["OpenClaw 2026.10.9 (8b18b55)"], env: "ubuntu-vm 隔离真实网关（docs/acceptance/B03.md 第 3 节）", date: "2026-11-07" }
 
 # Whether exec asks before risky commands (docs/PROFILES.md 1). Read on
 # 2026.10.9 (debian-vm, gateway stopped while changing it): defaults are
@@ -270,6 +292,8 @@ approval_check:
   argv: [openclaw, exec-policy, show, --json]
   each: effectivePolicy.scopes
   bypass_when: { security.effective: full, ask.effective: "off" }
+  repair_action: approval-ask
+  repair_expect: { security.effective: allowlist, ask.effective: on-miss }
   ask_when:
     - { ask.effective: always }
     - { ask.effective: on-miss }

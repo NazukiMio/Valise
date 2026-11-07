@@ -355,13 +355,127 @@ func firstDifference(a, b map[string]FileFact) string {
 	return keys[0]
 }
 
+// InAreas reports whether the slash path rel is a declared write area or
+// lies below one.
+func InAreas(rel string, areas []string) bool {
+	for _, w := range areas {
+		if rel == w || strings.HasPrefix(rel, w+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // RestoreLinks puts every original link text back in stage, checking that
-// each link still holds its staged text.
-func RestoreLinks(stage string, links []action.Link, staged map[string]string) error {
+// each link still holds its staged text. Inside a declared write area a
+// link the command removed or rewrote is left as the command left it
+// (INSTALL.md 5.2.1); WriteAreaLinks has checked any new text.
+func RestoreLinks(stage string, links []action.Link, staged map[string]string, areas []string) error {
 	for _, l := range links {
-		if err := swapLink(filepath.Join(stage, filepath.FromSlash(l.Rel)), staged[l.Rel], l.Text); err != nil {
+		p := filepath.Join(stage, filepath.FromSlash(l.Rel))
+		if InAreas(l.Rel, areas) {
+			if cur, err := os.Readlink(p); err != nil || cur != staged[l.Rel] {
+				continue
+			}
+		}
+		if err := swapLink(p, staged[l.Rel], l.Text); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// WriteAreaLinks checks the links the steps created or rewrote inside the
+// declared write areas of stage (INSTALL.md 5.2.1). An absolute text must
+// lead into the live state root (taken over by the stage's counterpart,
+// which must exist) or into a recorded program location; one leading into
+// the private area, dangling or anywhere else is refused. Relative texts
+// are left to TreeFacts. It returns the accepted texts by slash path.
+func WriteAreaLinks(stage, live, private string, areas []string, staged map[string]string, bodies []string) (map[string]string, error) {
+	var realBodies []string
+	for _, b := range bodies {
+		if r, err := filepath.EvalSymlinks(b); err == nil {
+			realBodies = append(realBodies, r)
+		}
+	}
+	realStage, err := filepath.EvalSymlinks(stage)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, area := range areas {
+		top := filepath.Join(stage, filepath.FromSlash(area))
+		if _, err := os.Lstat(top); os.IsNotExist(err) {
+			continue
+		}
+		err := filepath.WalkDir(top, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.Type()&fs.ModeSymlink == 0 {
+				return nil
+			}
+			r, err := filepath.Rel(stage, p)
+			if err != nil {
+				return err
+			}
+			rel := filepath.ToSlash(r)
+			text, err := os.Readlink(p)
+			if err != nil {
+				return err
+			}
+			if want, ok := staged[rel]; (ok && want == text) || !filepath.IsAbs(text) {
+				return nil
+			}
+			clean := filepath.Clean(text)
+			got, gotErr := filepath.EvalSymlinks(clean)
+			if inside(clean, private) || (gotErr == nil && inside(got, private)) {
+				return linkError("配置命令新建的链接 " + rel + " 指向本次暂存（" + text + "），交换后会失效")
+			}
+			var lr string
+			switch {
+			case inside(clean, live):
+				lr, _ = filepath.Rel(live, clean)
+			case gotErr == nil && inside(got, live):
+				lr, _ = filepath.Rel(live, got)
+			}
+			if lr != "" {
+				at, err := filepath.EvalSymlinks(filepath.Join(stage, lr))
+				if err != nil || !inside(at, realStage) {
+					return linkError("配置命令新建的链接 " + rel + " 指向状态目录内不存在的位置：" + text)
+				}
+				out[rel] = text
+				return nil
+			}
+			if gotErr != nil {
+				return linkError("配置命令新建的链接 " + rel + " 悬空或循环（指向 " + text + "）")
+			}
+			ok := false
+			for _, b := range realBodies {
+				ok = ok || inside(got, b)
+			}
+			st, err := os.Stat(got)
+			if !ok || err != nil || (!st.IsDir() && !st.Mode().IsRegular()) {
+				return linkError("配置命令新建的链接 " + rel + " 指向状态目录与已登记程序目录之外：" + text)
+			}
+			out[rel] = text
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// Merged is a with b's entries added, b winning.
+func Merged(a, b map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
 }

@@ -99,7 +99,7 @@ func TestStageLinksRoundTrip(t *testing.T) {
 	if err := CheckPrograms(private, links); err != nil {
 		t.Fatal(err)
 	}
-	if err := RestoreLinks(stage, links, staged); err != nil {
+	if err := RestoreLinks(stage, links, staged, nil); err != nil {
 		t.Fatal(err)
 	}
 	live, _ := TreeDigestAllow(root, allow)

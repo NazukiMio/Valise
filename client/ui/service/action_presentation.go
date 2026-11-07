@@ -12,7 +12,7 @@ func ActionPlanLines(p *action.Plan) []string {
 	if p == nil {
 		return nil
 	}
-	lines := []string{"目标：" + p.Definition.Explain, "配置只在暂存副本中修改，复核通过后交换目录。", fmt.Sprintf("完整状态目录复制：%d 字节", p.Bytes), "受影响实例：" + strings.Join(p.Affected, "、")}
+	lines := []string{"目标：" + p.Definition.Explain, "配置只在暂存副本中修改，复核通过后交换目录。", fmt.Sprintf("完整状态目录复制：约 %d 字节（停服后按实际重新计算）", p.Bytes), "受影响实例：" + strings.Join(p.Affected, "、")}
 	for _, sv := range p.Services {
 		state := "原本停止，保持停止"
 		if sv.Original == "active" {
@@ -105,7 +105,12 @@ func linkLines(p *action.Plan) []string {
 	if body > 0 {
 		out = append(out, fmt.Sprintf("链接：%d 个指向程序代码的链接，执行期间改用私有副本（%d 字节）；副本或原代码被改动就不发布", body, p.LinkBytes))
 	}
-	for _, l := range p.Links {
+	const shown = 5
+	for i, l := range p.Links {
+		if i == shown {
+			out = append(out, fmt.Sprintf("  另有 %d 个链接，处理方式相同", len(p.Links)-shown))
+			break
+		}
 		out = append(out, "  "+l.Rel+" → "+l.Target)
 	}
 	return out

@@ -59,14 +59,14 @@
 - 靶机现状：`ubuntu-vm` 的 OpenClaw 计划 revision 约 10，日程关闭，复制到 `nas`（经 Tailscale）；`debian-vm` 的 OpenClaw 计划日程开启，每天 04:40 UTC，linger 已开；`ubuntu-vm-x86` 保留一个恢复前目录 `~/.valise-prev-op_01M6TJ0J2JHBKHV2SFXHXHB56Y-state`。靶机详情见 [LAB.md](LAB.md)。
 - 本轮的验收脚本放在会话临时目录，不在仓库里；需要时按 [acceptance/N2.md](acceptance/N2.md) 的步骤重写，故障注入用 `go build -tags faultinject` 构建 porter，测完换回正式构建。
 
-## 6. B03 进度（2026-11-07，步骤 ③）
+## 6. B03 完成（2026-11-07，步骤 ③）
 
-- 链接处理按 INSTALL.md 5.2.1 实现（提案已移入 history），隔离的真实网关上完成配置事务：审批 Bypass → 执行前询问，健康通过，链接还原、程序代码未变。详见 [acceptance/B03.md](acceptance/B03.md)。
-- 正式入口仍未开放：需要在真实实例上验收，再把动作登记进官方 OpenClaw profile。
-- `ubuntu-vm` 保留测试目录 `~/.cache/valise-b03-gw`（约 206 MB），待显式清理；测试单元已删除。验收驱动 `porter/cmd/b03accept`、`client/ui/cmd/n2accept`、`client/ui/tui/zz_live_test.go` 都在 `.git/info/exclude`，不入库。
+- 链接处理按 INSTALL.md 5.2.1 实现；隔离真实网关与 `ubuntu-vm` 的真实 OpenClaw 实例都经真实 CLI 验收通过：审批 Bypass → 执行前询问，健康通过。详见 [acceptance/B03.md](acceptance/B03.md)。
+- 本轮用户决定（已写进 INSTALL.md 5.2.1）：确认只绑定动作与规则，状态目录大小与链接清单停服后重读并冻结；写入区域内的链接按规则放行；新增 `scratch`（命令每次运行都会重写的区域，审批读法改它不算改配置）。
+- 官方 `profiles/openclaw.yaml` 升到 22，登记 `approval-ask`；健康页入口开放。演练客户端的 profile 副本在 `~/.cache/valise-drill/config/profiles/`，换 profile 后要同步复制。
+- 待用户显式清理：`ubuntu-vm` 的 `~/.valise-action-act_9efa2532dcb538d7e770453ebb99c7d2/prev`（执行前的活动目录，约 1.4 GB）与 `~/.cache/valise-b03-gw`（约 206 MB）。验收驱动 `porter/cmd/b03accept`、`client/ui/cmd/n2accept`、`client/ui/tui/zz_live_test.go` 在 `.git/info/exclude`，不入库。
 
 ## 7. 建议的下一步
 
-1. B03 收尾：在 `ubuntu-vm` 的真实 OpenClaw 实例（先建立标准备份）经真实 CLI 执行审批修复；通过后把动作登记进官方 `profiles/openclaw.yaml`，开放健康页入口。这会改动该实例的审批设置，需用户同意。
-2. 步骤 ④ N3：云盘登录（3a 第 6 条）写入规范，开工 N3。
-3. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。
+1. 步骤 ④ N3：云盘登录（3a 第 6 条）写入规范，开工 N3。
+2. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。

@@ -270,7 +270,7 @@ agent_kit:
 
 ### 3.1 B03 配置事务（2026-11-05 用户确认）
 
-动作的 `argv` 与 `steps` 互斥。`steps` 为 1–16 个 `{id, argv}` 固定步骤，必须同时声明 `transaction: {root: state, env: {变量名: "${STAGE_DIR}[/相对路径]"}, writes: [相对文件或目录]}`；只允许非交互、`output: none`、`risk: config` 且有 `undo` 的动作。`verification: {versions: [精确版本], env, date}` 记录完整事务证据；未核实时写 `verify: pending`，不提供执行入口。重定向与 writes 必须覆盖所有副作用，不把声明当成系统沙箱。
+动作的 `argv` 与 `steps` 互斥。`steps` 为 1–16 个 `{id, argv}` 固定步骤，必须同时声明 `transaction: {root: state, env: {变量名: "${STAGE_DIR}[/相对路径]"}, writes: [相对文件或目录], scratch: [可选，命令每次运行都会重写的相对目录]}`（scratch 规则见 INSTALL.md 5.2.1）；只允许非交互、`output: none`、`risk: config` 且有 `undo` 的动作。`verification: {versions: [精确版本], env, date}` 记录完整事务证据；未核实时写 `verify: pending`，不提供执行入口。重定向与 writes 必须覆盖所有副作用，不把声明当成系统沙箱。
 
 `approval_check` 可声明 `repair_action` 与 `repair_expect`（字段路径到目标值的 map），两者同时存在；动作必须是已核实事务，审批读法不可 pending，当前 harness 精确版本必须命中证据。每个非空 scope 必须满足 repair_expect 的全部值，空 scope、缺字段、unknown 不通过。暂存与发布后的复核都使用该目标，不能仅凭 ask 分类确认成功。步骤只能在暂存环境运行，首错停止，不自动重跑结果不明的步骤。
 

@@ -106,12 +106,32 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 	if err = r.idle(plan.Live); err != nil {
 		return r.failed(ctx, s, j, "活动目录仍被使用", err)
 	}
-	// Re-check the link layout once the service is stopped: a change after
-	// confirmation stops the operation (INSTALL.md 5.2.1).
-	if again, _, scanErr := actionjournal.ScanLinks(plan.Live, r.bodies(j)); scanErr != nil || digest(again) != digest(plan.Links) {
-		return r.failed(ctx, s, j, "停服后状态目录里的链接与确认时不同", scanErr)
+	// Read the state directory again now that the service is stopped and
+	// freeze the readings into the record (INSTALL.md 5.2.1): the program
+	// locations must be those confirmed, and every link must be handled.
+	if digest(r.bodies(j)) != digest(plan.Programs) {
+		return r.failed(ctx, s, j, "程序目录与确认时不同", nil)
 	}
-	allow := actionjournal.OriginalTexts(plan.Links)
+	links, linkBytes, err := actionjournal.ScanLinks(plan.Live, plan.Programs)
+	if err != nil {
+		return r.failed(ctx, s, j, "停服后状态目录里有无法处理的链接", err)
+	}
+	if len(links) > 0 && p.LinkHandling < action.LinkHandlingVersion {
+		return r.failed(ctx, s, j, "停服后状态目录里出现需要特别处理的链接，这个客户端版本不能显示处理方式", nil)
+	}
+	allow := actionjournal.OriginalTexts(links)
+	_, size, err := actionjournal.TreeFactsAllow(plan.Live, allow)
+	if err != nil {
+		return r.failed(ctx, s, j, "停服后无法读取完整状态目录", err)
+	}
+	if err = syscall.Statfs(filepath.Dir(plan.Live), &disk); err != nil || uint64(disk.Bavail)*uint64(disk.Bsize) < uint64(size+linkBytes)+16<<20 {
+		return r.failed(ctx, s, j, "可用空间不足以复制完整状态目录", err)
+	}
+	j.Plan.Links, j.Plan.LinkBytes, j.Plan.Bytes = links, linkBytes, size
+	if err = s.Save(j); err != nil {
+		return r.failed(ctx, s, j, "无法保存停服后的目录读数", err)
+	}
+	plan = &j.Plan
 	j.LiveTreeDigest, err = actionjournal.TreeDigestAllow(plan.Live, allow)
 	if err != nil {
 		return r.failed(ctx, s, j, "无法固定活动目录内容", err)
@@ -137,7 +157,8 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 	if err != nil {
 		return r.failed(ctx, s, j, "无法核实暂存文件", err)
 	}
-	if err = actionjournal.CheckWrites(j.Stage, plan.Definition.Transaction.Writes); err != nil {
+	areas := plan.Definition.Transaction.Areas()
+	if err = actionjournal.CheckWrites(j.Stage, areas); err != nil {
 		return r.failed(ctx, s, j, "暂存写入目标无法隔离", err)
 	}
 	for _, step := range plan.Definition.Steps {
@@ -161,34 +182,49 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 			return r.failed(ctx, s, j, "配置步骤失败："+step.ID, runErr)
 		}
 	}
-	after, _, err := actionjournal.TreeFactsAllow(j.Stage, stagedLinks)
+	written, err := actionjournal.WriteAreaLinks(j.Stage, plan.Live, filepath.Dir(j.Stage), areas, stagedLinks, plan.Programs)
+	if err != nil {
+		return r.failed(ctx, s, j, "配置命令在写入区域留下了不能放行的链接", err)
+	}
+	after, _, err := actionjournal.TreeFactsAllow(j.Stage, actionjournal.Merged(stagedLinks, written))
 	if err != nil {
 		return r.failed(ctx, s, j, "暂存目录包含无法隔离的文件", err)
 	}
-	if err = actionjournal.CheckChanges(before, after, plan.Definition.Transaction.Writes); err != nil {
-		return r.failed(ctx, s, j, "配置命令写入未声明的目标", err)
+	if err = actionjournal.CheckChanges(before, after, areas); err != nil {
+		reason := "配置命令写入未声明的目标"
+		var u *actionjournal.UndeclaredWrites
+		if errors.As(err, &u) {
+			reason += "：" + strings.Join(u.Paths, "、")
+		}
+		return r.failed(ctx, s, j, reason, err)
 	}
 	if err = actionjournal.CheckPrograms(filepath.Dir(j.Stage), plan.Links); err != nil {
 		return r.failed(ctx, s, j, "配置命令改动了程序代码", err)
 	}
-	if err = actionjournal.CheckWrites(j.Stage, plan.Definition.Transaction.Writes); err != nil {
+	if err = actionjournal.CheckWrites(j.Stage, areas); err != nil {
 		return r.failed(ctx, s, j, "配置命令产生链接写入目标", err)
 	}
 	matched, verifyErr := verify(ctx, staged, lock, j.Stage, &plan.Approval)
 	if !matched || verifyErr != nil {
 		return r.failed(ctx, s, j, "暂存审批检查未达到声明目标", verifyErr)
 	}
-	checked, _, err := actionjournal.TreeFactsAllow(j.Stage, stagedLinks)
-	if err != nil || digest(checked) != digest(after) {
+	// The approval read may rewrite only the scratch areas (INSTALL.md 5.2.1).
+	if written, err = actionjournal.WriteAreaLinks(j.Stage, plan.Live, filepath.Dir(j.Stage), areas, stagedLinks, plan.Programs); err != nil {
+		return r.failed(ctx, s, j, "审批读法在写入区域留下了不能放行的链接", err)
+	}
+	scratch := plan.Definition.Transaction.Scratch
+	checked, _, err := actionjournal.TreeFactsAllow(j.Stage, actionjournal.Merged(stagedLinks, written))
+	if err != nil || digest(actionjournal.WithoutAreas(checked, scratch)) != digest(actionjournal.WithoutAreas(after, scratch)) {
 		return r.failed(ctx, s, j, "审批读法意外改变暂存配置", err)
 	}
 	if err = actionjournal.CheckPrograms(filepath.Dir(j.Stage), plan.Links); err != nil {
 		return r.failed(ctx, s, j, "审批读法改动了程序代码", err)
 	}
-	if err = actionjournal.RestoreLinks(j.Stage, plan.Links, stagedLinks); err != nil {
+	if err = actionjournal.RestoreLinks(j.Stage, plan.Links, stagedLinks, areas); err != nil {
 		return r.failed(ctx, s, j, "暂存中的链接无法还原为原文本", err)
 	}
-	j.StageTreeDigest, err = actionjournal.TreeDigestAllow(j.Stage, allow)
+	j.WriteLinks = written
+	j.StageTreeDigest, err = actionjournal.TreeDigestAllow(j.Stage, actionjournal.Merged(allow, written))
 	if err != nil {
 		return r.failed(ctx, s, j, "暂存配置无法固定", err)
 	}

@@ -43,7 +43,11 @@ case "$1" in
  wrong) printf '{"security":"allowlist","ask":"always"}' > "$EXAMPLE_STATE_DIR/config.json";;
  outside) printf changed > "$EXAMPLE_STATE_DIR/memory.txt";;
  touchprog) printf x > "$EXAMPLE_STATE_DIR/skills/program/cache.json";;
+ capture) rm -rf "$EXAMPLE_STATE_DIR/tmp/cap"; mkdir -p "$EXAMPLE_STATE_DIR/tmp/cap"; ln -s "$HOME/prefix/lib/node_modules/demo/skill" "$EXAMPLE_STATE_DIR/tmp/cap/program";;
+ livelink) ln -s "$HOME/live/inner" "$EXAMPLE_STATE_DIR/tmp/live";;
+ stagelink) ln -s "$EXAMPLE_STATE_DIR/config.json" "$EXAMPLE_STATE_DIR/tmp/cap/stage";;
 esac
+if test "$1" = status && test -e "$HOME/capture-on-read"; then "$0" capture >/dev/null; fi
 `, 0700)
 	put("bin/systemctl", `#!/bin/sh
 verb="$2"
@@ -121,6 +125,9 @@ func TestStepAndApprovalFailuresNeverPublish(t *testing.T) {
 			j := res.Operation
 			if res.Exit == 0 || j.Published || j.Failure == "" || j.Services != "restored" {
 				t.Fatalf("%+v", j)
+			}
+			if verb == "outside" && !strings.Contains(j.Failure, "memory.txt") {
+				t.Fatalf("undeclared path not named: %q", j.Failure)
 			}
 			if verb == "fail" && len(j.Steps) != 2 {
 				t.Fatal("steps continued after first error")
@@ -209,5 +216,119 @@ func TestProgramCopyWriteNeverPublishes(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(rec.Roots["state"], "config.json"))
 	if !strings.Contains(string(b), "full") {
 		t.Fatal("failed stage published")
+	}
+}
+
+// The confirmation binds the action and the link rules, not the readings of
+// a state dir the running instance keeps writing (INSTALL.md 5.2.1): links
+// that appear after confirming are read after the stop and handled; a link
+// that cannot be handled is refused before anything stops.
+func TestLinkReadingsAfterConfirmation(t *testing.T) {
+	r, _, rec, pkg := linkFixture(t)
+	plan, err := Plan(context.Background(), r.Env, "demo", "approval-ask")
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := rec.Roots["state"]
+	os.WriteFile(filepath.Join(live, "inner", "grown.log"), []byte("written after confirming"), 0o600)
+	os.MkdirAll(filepath.Join(live, "tmp"), 0o755)
+	os.Symlink(filepath.Join(live, "inner"), filepath.Join(live, "tmp", "new-inner"))
+	res, err := r.Run(context.Background(), action.RunParams{InstanceID: "demo", ActionID: "approval-ask", PlanDigest: plan.Digest, LinkHandling: action.LinkHandlingVersion})
+	if err != nil || !res.Operation.Published || len(res.Operation.Plan.Links) != 3 {
+		t.Fatalf("%+v %v", res.Operation, err)
+	}
+	if got, _ := os.Readlink(filepath.Join(live, "tmp", "new-inner")); got != filepath.Join(live, "inner") {
+		t.Fatalf("new link not restored: %q", got)
+	}
+	_ = pkg
+
+	r2, _, rec2, _ := linkFixture(t)
+	plan, err = Plan(context.Background(), r2.Env, "demo", "approval-ask")
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := t.TempDir()
+	os.Symlink(elsewhere, filepath.Join(rec2.Roots["state"], "skills", "elsewhere"))
+	res, err = r2.Run(context.Background(), action.RunParams{InstanceID: "demo", ActionID: "approval-ask", PlanDigest: plan.Digest, LinkHandling: action.LinkHandlingVersion})
+	// Found when the plan is recomputed at the start, before anything stops.
+	if err == nil || !strings.Contains(err.Error(), "skills/elsewhere") {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if calls, _ := os.ReadFile(filepath.Join(r2.Env.Home, "calls")); len(calls) != 0 {
+		t.Fatalf("service touched: %s", calls)
+	}
+}
+
+// scratchFixture: a scratch area the harness rebuilds on every CLI call,
+// holding staged links the command removes (INSTALL.md 5.2.1).
+func scratchFixture(t *testing.T, extra ...string) (Runner, enroll.Record, string) {
+	t.Helper()
+	r, p, rec, pkg := linkFixture(t)
+	live := rec.Roots["state"]
+	os.MkdirAll(filepath.Join(live, "tmp", "cap"), 0o755)
+	os.Symlink(pkg, filepath.Join(live, "tmp", "cap", "old"))
+	os.Symlink(filepath.Join(live, "inner"), filepath.Join(live, "tmp", "cap", "in"))
+	os.WriteFile(filepath.Join(r.Env.Home, "capture-on-read"), nil, 0o600)
+	a := &p.Actions[0]
+	a.Transaction.Scratch = []string{"tmp"}
+	for _, v := range append([]string{"capture"}, extra...) {
+		a.Steps = append(a.Steps, profile.ActionStep{ID: v, Argv: profile.Argv{"example", v}})
+	}
+	if _, err := porterenroll.WriteRecord(r.Env.Home, rec, *p); err != nil {
+		t.Fatal(err)
+	}
+	return r, rec, pkg
+}
+
+func runLinks(t *testing.T, r Runner) *action.Operation {
+	t.Helper()
+	plan, err := Plan(context.Background(), r.Env, "demo", "approval-ask")
+	if err != nil || len(plan.Links) != 4 {
+		t.Fatalf("%+v %v", plan, err)
+	}
+	res, err := r.Run(context.Background(), action.RunParams{InstanceID: "demo", ActionID: "approval-ask", PlanDigest: plan.Digest, LinkHandling: action.LinkHandlingVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res.Operation
+}
+
+func TestScratchLinksPublish(t *testing.T) {
+	r, rec, pkg := scratchFixture(t, "livelink")
+	op := runLinks(t, r)
+	if !op.Published || op.Services != "restored" || len(op.WriteLinks) != 2 {
+		t.Fatalf("%+v", op)
+	}
+	live := rec.Roots["state"]
+	for rel, want := range map[string]string{"skills/program": pkg, "tmp/cap/program": pkg, "tmp/live": filepath.Join(r.Env.Home, "live", "inner")} {
+		if got, _ := os.Readlink(filepath.Join(live, rel)); got != want {
+			t.Fatalf("%s = %q, want %q", rel, got, want)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(live, "tmp", "cap", "old")); !os.IsNotExist(err) {
+		t.Fatal("a link the command removed was put back")
+	}
+	if b, _ := os.ReadFile(filepath.Join(live, "tmp", "live", "SKILL.md")); string(b) != "inner skill" {
+		t.Fatalf("live link does not resolve after the swap: %q", b)
+	}
+}
+
+func TestScratchLinkIntoStageRefused(t *testing.T) {
+	r, rec, _ := scratchFixture(t, "stagelink")
+	op := runLinks(t, r)
+	if op.Published || op.Services != "restored" || !strings.Contains(op.Failure, "不能放行的链接") {
+		t.Fatalf("%+v", op)
+	}
+	if b, _ := os.ReadFile(filepath.Join(rec.Roots["state"], "config.json")); !strings.Contains(string(b), "full") {
+		t.Fatal("refused stage published")
+	}
+}
+
+func TestScratchOverlapRejectedByLint(t *testing.T) {
+	_, p, _ := fixture(t, "active")
+	p.Actions[0].Transaction.Scratch = []string{"config.json"}
+	issues := profile.ValidateTransaction(p.Actions[0], p.ApprovalCheck)
+	if len(issues) == 0 || !strings.Contains(issues[0].Field, "scratch") {
+		t.Fatalf("%+v", issues)
 	}
 }

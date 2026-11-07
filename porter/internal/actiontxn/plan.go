@@ -22,6 +22,15 @@ import (
 func reject(reason string) error {
 	return valise.New("action_preflight", reason, "检查配置事务条件与当前 profile；条件变化后重新确认")
 }
+
+// planDigest is what a confirmation binds: everything but the readings of
+// the state directory (size and link list), which change while the
+// instance runs and are read again after the stop (INSTALL.md 5.2.1).
+func planDigest(p *action.Plan) string {
+	c := *p
+	c.Digest, c.Bytes, c.Links, c.LinkBytes = "", 0, nil, 0
+	return digest(&c)
+}
 func digest(v any) string {
 	b, _ := json.Marshal(v)
 	h := sha256.Sum256(b)
@@ -98,12 +107,13 @@ func Plan(ctx context.Context, base *porterenroll.Env, id, actionID string) (*ac
 			}
 		}
 	}
-	if err = actionjournal.CheckWrites(live, a.Transaction.Writes); err != nil {
+	if err = actionjournal.CheckWrites(live, a.Transaction.Areas()); err != nil {
 		return nil, reject("配置写入目标包含链接或无效路径")
 	}
 	// State links are classified by target (INSTALL.md 5.2.1); the program
 	// locations come from the recorded provenance, never from link names.
-	links, linkBytes, err := actionjournal.ScanLinks(live, rec.Provenance.BodyPaths())
+	programs := rec.Provenance.BodyPaths()
+	links, linkBytes, err := actionjournal.ScanLinks(live, programs)
 	if err != nil {
 		return nil, err
 	}
@@ -134,8 +144,8 @@ func Plan(ctx context.Context, base *porterenroll.Env, id, actionID string) (*ac
 	}
 	slices.Sort(affected)
 	affected = slices.Compact(affected)
-	plan := &action.Plan{InstanceID: id, Affected: affected, ProfileDigest: digest(p), ActionDigest: digest(a), Version: version, BinDirs: p.Detect.BinDirs, SelectionDigest: digest(rec.Env), Definition: *a, Approval: *p.ApprovalCheck, Live: live, LiveIdentity: li, Bytes: size, Services: services, Health: p.Health, Entries: p.Entries, Links: links, LinkBytes: linkBytes}
-	plan.Digest = digest(plan)
+	plan := &action.Plan{InstanceID: id, Affected: affected, ProfileDigest: digest(p), ActionDigest: digest(a), Version: version, BinDirs: p.Detect.BinDirs, SelectionDigest: digest(rec.Env), Definition: *a, Approval: *p.ApprovalCheck, Live: live, LiveIdentity: li, Bytes: size, Services: services, Health: p.Health, Entries: p.Entries, Programs: programs, Links: links, LinkBytes: linkBytes}
+	plan.Digest = planDigest(plan)
 	return plan, nil
 }
 
@@ -143,9 +153,7 @@ func checkPlan(p *action.Plan) error {
 	if p == nil || p.Digest == "" {
 		return reject("缺少已确认的执行计划")
 	}
-	clone := *p
-	clone.Digest = ""
-	if digest(&clone) != p.Digest {
+	if planDigest(p) != p.Digest {
 		return errors.New("configuration plan digest mismatch")
 	}
 	return nil
