@@ -15,6 +15,7 @@ import (
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
+	"valise/porter/internal/fault"
 	"valise/porter/internal/seal"
 )
 
@@ -282,6 +283,7 @@ func (s Store) Apply(ctx context.Context, p cp.ApplyParams) (*cp.Change, error) 
 		// No durable intent: nothing has been changed.
 		return nil, err
 	}
+	fault.Hit(s.Home, "protection-after-intent")
 	// From here the change itself is the result. Failures are reported in the
 	// returned Change (error_code), never as a bare RPC error that would hide a
 	// completed rollback or a required reconciliation.
@@ -308,6 +310,7 @@ func (s Store) Apply(ctx context.Context, p cp.ApplyParams) (*cp.Change, error) 
 		r.ErrorCode = errorCode(err)
 		return s.settle(&r), nil
 	}
+	fault.Hit(s.Home, "protection-after-publish")
 	r.Committed = true
 	r.State = "committed"
 	r.ReconcileRequired = true

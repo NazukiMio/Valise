@@ -11,6 +11,7 @@ import (
 	cp "valise/core/protection"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
+	"valise/porter/internal/fault"
 	"valise/porter/internal/seal"
 )
 
@@ -29,6 +30,7 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 	if err := s.persist(r); err != nil {
 		return err
 	}
+	fault.Hit(s.Home, "backup-after-running")
 	paths := seal.Paths{Home: s.Home}
 	rep, err := seal.SealPlanned(ctx, s.Env, paths, vaultrpc.SealParams{InstanceID: r.AgentRef.InstanceID, Tier: r.Plan.Scope.Tier, Reason: r.Request.Reason}, "planned")
 	if err != nil {

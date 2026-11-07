@@ -138,4 +138,12 @@
 - **时钟**：`ubuntu-vm-x86` 慢约 2.5 天，健康页提示偏差与 NTP 未同步；该机由 chrony 而非 systemd-timesyncd 提供时间同步，Valise 只给说明，不提供一键。`debian-vm` NTP 未开启，提示命令；因它是用户自带 SSH 设置的服务器，不能开启高级模式，没有一键修复，页面说明原因。真实 sudo 修复未测。
 - 实测中修正：保护计划定时在健康页显示为“每  一次”（旧 timer 读取只认间隔），改为显示计划的每日时间；时钟项没有一键时补充说明原因。
 
-尚未在实机覆盖：崩溃留下的 pending（fake 测试已覆盖）、DST 实际切换、客户端退出登录或重启、创建副本与恢复当前实例的关系（fake 测试已覆盖）、分离执行下复制成功、需要 sudo 的时钟修复。
+### 崩溃待核实实机记录（2026-11-07，`ubuntu-vm` 的 OpenClaw 计划）
+
+故障注入只存在于带 `faultinject` 构建标签的 porter（`porter/internal/fault`）：触发文件 `~/.local/state/valise/fault-inject` 写入点名后，porter 在该点先删文件再 SIGKILL 自己。正式构建编译为空实现，二进制中不含触发文件名（已核对）；测试完成后重新部署了正式构建。
+
+- **记录提交意图后崩溃**：计划仍为 revision 8，读取计划带“未完成事务”警告；`protection_status` 两次读取一致（pending、reconcile_required），不执行 systemctl。按计划备份、旧 `period_set`、旧 `target_set`、新的计划准备都返回 result_unknown，且没有新的封存。显式 `rollback` 后为 failed、rollback_succeeded，警告消失，timer 未启用。
+- **新计划已发布、未核实时崩溃**：revision 已为 9（不倒退），状态为 committed + reconcile_required，按计划备份被阻止。显式 `verify` 后完成，timer active / enabled，警告消失。
+- **备份运行中崩溃**：运行记录显示 reconciling；用同一 run_id 重试仍返回 reconciling，没有新的封存；换新 run_id 的备份正常成功。
+
+尚未在实机覆盖：DST 实际切换、客户端退出登录或重启、创建副本与恢复当前实例的关系（fake 测试已覆盖）、分离执行下复制成功（等 NAS 恢复）、需要 sudo 的时钟修复。
