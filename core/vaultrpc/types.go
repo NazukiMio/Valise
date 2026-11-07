@@ -195,6 +195,25 @@ type TargetState struct {
 	LastOK     *time.Time `json:"last_ok,omitempty"`
 	LastError  string     `json:"last_error,omitempty"`
 	LastSynced []string   `json:"last_synced_snapshots,omitempty"`
+	// Checks are the server's own list checks after its copies
+	// (docs/ARCHITECTURE.md 7.1.1), by leaf.
+	Checks []LeafCopyCheck `json:"checks,omitempty"`
+}
+
+// LeafCopyCheck is the server's file-list check of one copied leaf at a
+// location: paths, sizes and small-file hashes against the server's own
+// leaf; pack contents are not read. Counts and the first path only.
+type LeafCopyCheck struct {
+	Leaf      string    `json:"leaf"`
+	CheckedAt time.Time `json:"checked_at"`
+	Result    string    `json:"result"` // passed | failed | unknown
+	Basis     string    `json:"basis,omitempty"`
+	Snapshots int       `json:"snapshots"`
+	Missing   int       `json:"missing,omitempty"`
+	Different int       `json:"different,omitempty"`
+	Extra     int       `json:"extra,omitempty"`
+	First     string    `json:"first,omitempty"`
+	Error     string    `json:"error,omitempty"`
 }
 
 // StatusResult describes the server vault without any key.
@@ -272,6 +291,8 @@ type SyncResult struct {
 	// fallback to sftp.
 	Method string `json:"method,omitempty"`
 	Note   string `json:"note,omitempty"`
+	// Checks are the list checks run after this copy (copy-verify/1).
+	Checks []LeafCopyCheck `json:"checks,omitempty"`
 }
 
 // ServerNameSetParams names the server (once).

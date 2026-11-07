@@ -3,8 +3,10 @@ package service
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"valise/core/vault"
+	"valise/core/vaultrpc"
 )
 
 // Plain words for strict copy results (docs/ARCHITECTURE.md 7.1.1).
@@ -120,4 +122,63 @@ func CheckSummary(checks []CopyCheck) string {
 		return fmt.Sprintf("核对：%d 个周期的文件清单与服务器一致（数据包内容在“核对副本”或删除前核对）", len(checks))
 	}
 	return "核对发现问题：" + strings.Join(bad, "；")
+}
+
+// ServerChecks turns the server's own list checks after its copies into
+// copy checks of the place where.
+func ServerChecks(where string, checks []vaultrpc.LeafCopyCheck) []CopyCheck {
+	var out []CopyCheck
+	for _, c := range checks {
+		cc := CopyCheck{Where: where, Kind: KindTarget, Snapshots: c.Snapshots, CheckedAt: c.CheckedAt}
+		switch c.Result {
+		case "passed":
+			cc.State = CopyListed
+		case "failed":
+			cc.State = CopyIncomplete
+			var parts []string
+			if c.Missing > 0 {
+				parts = append(parts, fmt.Sprintf("缺 %d 个文件", c.Missing))
+			}
+			if c.Different > 0 {
+				parts = append(parts, fmt.Sprintf("%d 个文件与服务器不同", c.Different))
+			}
+			if c.Extra > 0 {
+				parts = append(parts, fmt.Sprintf("多出 %d 个文件", c.Extra))
+			}
+			if c.Error != "" {
+				parts = append(parts, c.Error)
+			}
+			if c.First != "" {
+				parts = append(parts, "如 "+c.First)
+			}
+			cc.Reason = c.Leaf + "：" + strings.Join(parts, "，")
+		default:
+			cc.State, cc.Reason = CopyUnknown, c.Leaf+"："+c.Error
+		}
+		out = append(out, cc)
+	}
+	return out
+}
+
+// ServerCheckLine sums up a location's recorded server checks for status
+// lists: the latest check time and the leaves that did not pass.
+func ServerCheckLine(checks []vaultrpc.LeafCopyCheck) string {
+	if len(checks) == 0 {
+		return ""
+	}
+	var latest time.Time
+	var bad []string
+	for _, c := range checks {
+		if c.CheckedAt.After(latest) {
+			latest = c.CheckedAt
+		}
+		if c.Result != "passed" {
+			bad = append(bad, CopyStateText(ServerChecks("", []vaultrpc.LeafCopyCheck{c})[0]))
+		}
+	}
+	at := latest.Local().Format("01-02 15:04")
+	if len(bad) == 0 {
+		return fmt.Sprintf("服务器复制后核对：%d 个周期的文件清单一致（最近 %s）", len(checks), at)
+	}
+	return "服务器复制后核对发现问题（最近 " + at + "）：" + strings.Join(bad, "；")
 }

@@ -120,3 +120,31 @@ func TestTargetVerifyByRsyncChecksum(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 }
+
+func TestSyncChecksWhatItCopied(t *testing.T) {
+	w := newWorld(t)
+	fakeSFTP(t, w)
+	cloud, leaf := syncedCloud(t, w)
+	ctx := context.Background()
+	st, _ := Status(w.p)
+	if len(st.Targets) != 1 || len(st.Targets[0].Checks) != 1 || st.Targets[0].Checks[0].Result != "passed" || st.Targets[0].Checks[0].Snapshots != 2 {
+		t.Fatalf("%+v", st.Targets)
+	}
+	// Nothing new on the server: the leaf is not read again.
+	res, err := Sync(ctx, w.env, w.p, "nas", "client")
+	if err != nil || len(res.Checks) != 0 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	// A changed meta at the location is found once the leaf changes again.
+	meta := filepath.Join(cloud, "box", leaf, vault.MetaPath(st.Snapshots[0].SnapshotID))
+	b, _ := os.ReadFile(meta)
+	os.WriteFile(meta, append(b[:len(b)-2], ' ', '}'), 0o600)
+	w.seal(t, vault.TierSoul)
+	res, err = Sync(ctx, w.env, w.p, "nas", "client")
+	if err != nil || len(res.Checks) != 1 || res.Checks[0].Result != "failed" || res.Checks[0].Different != 1 || res.Checks[0].First == "" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if st, _ := Status(w.p); st.Targets[0].Checks[0].Result != "failed" {
+		t.Fatalf("%+v", st.Targets[0].Checks)
+	}
+}

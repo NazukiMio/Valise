@@ -2,6 +2,7 @@ package seal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path"
@@ -217,4 +218,98 @@ func knownPacks(list []vault.Material) stationsync.KnownPack {
 		}
 		return m.SHA256, true
 	}
+}
+
+// checkCopied compares, after a copy, each copied leaf whose server list
+// changed since its last passed check with what the location now holds
+// (docs/ARCHITECTURE.md 7.1.1): paths, sizes and small-file hashes; pack
+// contents are not read. A failed check never fails the copy.
+func checkCopied(ctx context.Context, r stationsync.Remote, p Paths, t *vaultrpc.Target, res *vaultrpc.SyncResult) []vaultrpc.LeafCopyCheck {
+	prev := map[string]vaultrpc.LeafCopyCheck{}
+	if b, err := os.ReadFile(p.SyncState(t.Name)); err == nil {
+		var st vaultrpc.TargetState
+		if json.Unmarshal(b, &st) == nil {
+			for _, c := range st.Checks {
+				prev[c.Leaf] = c
+			}
+		}
+	}
+	var out []vaultrpc.LeafCopyCheck
+	for _, leaf := range res.Leaves {
+		if leaf == vault.LegacyLeaf {
+			continue
+		}
+		c := vaultrpc.LeafCopyCheck{Leaf: leaf, Result: "unknown"}
+		dir, err := p.LeafDir(leaf)
+		var basis []vault.Material
+		if err == nil {
+			basis, err = vault.ListMaterials(dir, false)
+		}
+		if err == nil {
+			c.Basis = vault.MaterialsDigest(basis)
+			if old, ok := prev[leaf]; ok && old.Result == "passed" && old.Basis == c.Basis {
+				continue // nothing new was copied for this leaf
+			}
+			err = compareAt(ctx, r, res.Dest+"/"+leaf, p.Tmp(), basis, &c)
+		}
+		if err != nil {
+			c.Error = err.Error()
+			if ue, ok := valise.As(err); ok {
+				c.Error = ue.Reason
+			}
+		}
+		c.CheckedAt = time.Now().UTC()
+		out = append(out, c)
+	}
+	return out
+}
+
+func compareAt(ctx context.Context, r stationsync.Remote, base, tmp string, basis []vault.Material, c *vaultrpc.LeafCopyCheck) error {
+	entries, err := r.List(ctx, base)
+	if err != nil {
+		return err
+	}
+	files, deleting := stationsync.LeafEntries(entries)
+	if deleting {
+		c.Result, c.Error = "failed", "删除未完成"
+		return nil
+	}
+	if err := os.MkdirAll(tmp, 0o700); err != nil {
+		return err
+	}
+	reading, err := stationsync.ReadLeaf(ctx, r, base, files, tmp, false, nil)
+	if err != nil {
+		return err
+	}
+	d := vault.CompareMaterials(basis, reading.Materials)
+	c.Snapshots = len(vault.Snapshots(reading.Materials))
+	c.Missing, c.Different, c.Extra = len(d.Missing), len(d.Different)+len(d.Unhashed), len(d.Extra)
+	for _, l := range [][]string{d.Missing, d.Different, d.Unhashed, d.Extra} {
+		if c.First == "" && len(l) > 0 {
+			c.First = l[0]
+		}
+	}
+	c.Result = "passed"
+	if !d.OK() {
+		c.Result = "failed"
+	}
+	return nil
+}
+
+// mergeChecks keeps the latest check of each leaf.
+func mergeChecks(old, fresh []vaultrpc.LeafCopyCheck) []vaultrpc.LeafCopyCheck {
+	at := map[string]int{}
+	out := append([]vaultrpc.LeafCopyCheck{}, old...)
+	for i, c := range out {
+		at[c.Leaf] = i
+	}
+	for _, c := range fresh {
+		if i, ok := at[c.Leaf]; ok {
+			out[i] = c
+		} else {
+			at[c.Leaf] = len(out)
+			out = append(out, c)
+		}
+	}
+	return out
 }

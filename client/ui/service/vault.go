@@ -74,7 +74,8 @@ func (s *Service) Sync(ctx context.Context, host, target string) (*TargetSyncRes
 	if err != nil {
 		return nil, err
 	}
-	return &TargetSyncResult{SyncResult: *res, Checks: s.CheckAfterCopy(ctx, host, target, res.Leaves)}, nil
+	// The server checks what it copied (docs/ARCHITECTURE.md 7.1.1).
+	return &TargetSyncResult{SyncResult: *res, Checks: ServerChecks(target, res.Checks)}, nil
 }
 
 // TargetSyncResult is a copy to a server-configured place and the check of

@@ -186,6 +186,9 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 				fmt.Fprint(c.out, "；上次失败")
 			}
 			fmt.Fprintln(c.out)
+			if l := service.ServerCheckLine(t.Checks); l != "" {
+				fmt.Fprintln(c.out, "  "+l)
+			}
 		}
 		return nil
 	case "verify":

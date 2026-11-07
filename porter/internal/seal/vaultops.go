@@ -350,6 +350,9 @@ func syncLocked(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.T
 			state.Target = *t
 		}
 		ent := AuditEntry{Time: time.Now().UTC(), Op: "sync", Initiator: initiator, Target: t.Name, Result: "ok"}
+		if res != nil {
+			state.Checks = mergeChecks(state.Checks, res.Checks)
+		}
 		if err != nil {
 			ent.Result, state.LastError = "failed", err.Error()
 		} else {
@@ -388,6 +391,9 @@ func syncLocked(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.T
 			}
 			res.Leaves = append(res.Leaves, l.Leaf)
 			res.Snapshots = append(res.Snapshots, l.Snapshots...)
+		}
+		if t.Station == nil {
+			res.Checks = checkCopied(ctx, r, p, t, res)
 		}
 		return nil
 	})
