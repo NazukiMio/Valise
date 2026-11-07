@@ -42,6 +42,11 @@ type Station struct {
 	SSH []string
 	// Tmp is a private directory for batch and marker files.
 	Tmp string
+	// Rclone and RcloneConfig are the program and Valise's own config file
+	// for Kind "rclone"; Host is then the remote name (docs/ARCHITECTURE.md
+	// 7.3).
+	Rclone       string
+	RcloneConfig string
 }
 
 // Remote paths are "host:/path"; Dest builds one.
@@ -100,6 +105,7 @@ const (
 	MethodRsync  = "rsync"
 	MethodSFTP   = "sftp"
 	MethodRRsync = "rrsync"
+	MethodRclone = "rclone"
 )
 
 // UnreachableCode marks a failure to reach or log in to a station; the
@@ -121,6 +127,9 @@ func (e *errNoRsync) Unwrap() error { return e.err }
 func With(ctx context.Context, run Runner, st Station, op func(Remote) error) (method, note string, err error) {
 	if st.Kind == MethodSFTP {
 		return MethodSFTP, "", op(&sftpRemote{run: run, st: st})
+	}
+	if st.Kind == MethodRclone {
+		return MethodRclone, "", op(&rcloneRemote{run: run, st: st})
 	}
 	err = op(&rsyncRemote{run: run, st: st})
 	var missing *errNoRsync

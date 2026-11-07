@@ -53,6 +53,16 @@ func withRemote(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.T
 // <key>-cert.pub, which ssh loads by itself).
 func stationOf(p Paths, t *vaultrpc.Target) (stationsync.Station, func(), error) {
 	st := stationsync.Station{Name: t.Name, Kind: t.Kind, Host: strings.SplitN(t.Dest, ":", 2)[0], Tmp: p.Tmp()}
+	if t.Kind == stationsync.MethodRclone {
+		if _, err := os.Stat(p.Rclone()); err != nil {
+			return st, nil, valise.New("rclone_missing", "服务器上没有 Valise 安装的 rclone", "先在服务器设置的工具里安装 rclone，再登录云盘")
+		}
+		if err := os.MkdirAll(p.Tmp(), 0o700); err != nil {
+			return st, nil, err
+		}
+		st.Rclone, st.RcloneConfig = p.Rclone(), p.RcloneConfig()
+		return st, func() {}, nil
+	}
 	c := t.Station
 	if c == nil {
 		return st, func() {}, nil

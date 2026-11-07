@@ -38,6 +38,11 @@ func Cause(stderr string) string {
 		return CauseNotWritable
 	case strings.Contains(stderr, "command not found"), strings.Contains(stderr, "rsync: not found"), strings.Contains(stderr, "subsystem request failed"):
 		return CauseToolMissing
+	case strings.Contains(stderr, "invalid_grant"), strings.Contains(stderr, "couldn't fetch token"), strings.Contains(stderr, "401 Unauthorized"),
+		strings.Contains(stderr, "didn't find section in config file"):
+		return CauseAuthDenied
+	case strings.Contains(stderr, "no such host"), strings.Contains(stderr, "dial tcp"):
+		return CauseConnectTimeout
 	}
 	return CauseOther
 }

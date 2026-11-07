@@ -336,7 +336,8 @@ profile 负责通用规则，档案记录这台服务器实际探测并经用户
 
 备份位置新增“云盘”，全部经 rclone 完成，Valise 不实现任何云盘协议。首批 Google Drive、OneDrive、Dropbox；坚果云（WebDAV）与自定义云在后。
 
-- **云盘清单**：签名资料包 `kit-tools.yaml` 中 rclone 条目的 `clouds`（AGENT_KIT.md 8.4）列出每家的 `rclone_type`、固定参数、授权范围（`folder` 只能访问 rclone 自己建的文件 / `account` 能访问整个网盘）与说明。Go 代码不写任何云盘名称或参数；`verify: pending` 的条目只展示、不能添加。Google Drive 固定 `scope: drive.file`；rclone 内置的 Dropbox 与 OneDrive 应用是整盘权限，不支持用户自建应用的密钥（Valise 不经手任何应用密钥）。
+- **云盘清单**：签名资料包 `kit-tools.yaml` 中 rclone 条目的 `clouds`（AGENT_KIT.md 8.4）列出每家的 `rclone_type`、固定参数、授权范围（`folder` 只能访问 rclone 自己建的文件 / `account` 能访问整个网盘）与说明。Go 代码不写任何云盘名称或参数；`verify: pending` 的条目只展示、不能添加。Google Drive 固定 `scope: drive.file`；rclone 内置的 Dropbox 与 OneDrive 应用是整盘权限。
+- **自己的应用**（2026-11-08 用户决定）：rclone 1.75.2 提示它共享的 Google Drive 应用“将在 2026 年内停止工作”。条目可声明 `ask_app: true`（Google Drive），登录时 rclone 的配置命令加 `--all`，由 rclone 自己在终端里依次询问 client_id、client_secret、service_account_file 与是否编辑高级设置（默认否）；client_id 留空时 rclone 会问是否继续用共享应用。用户在 rclone 的提问里自己填写，Valise 只转发终端字节，不解析、不保存、不记录（与原生界面同一规则）。登录前界面说明这几步，并给出 rclone 文档“自建 client_id”页面的地址；不用自己的应用时写明“rclone 的共享应用可能随时停用，之后需要重新登录”。Valise 自己不提供任何应用密钥输入框。
 - **两种登录**，界面分别说明同步级别，可以都登录：
   - **服务器登录**：rclone 由 Kit 安装（`~/.local/bin/rclone`，版本与 SHA-256 已核实），配置在 Valise 自己的文件 `~/.config/valise/rclone/rclone.conf`（0600），每次调用都显式 `--config`，不碰用户自己的 rclone 配置。remote 名为 `valise-<位置名>`。备份后由服务器直传，定时与自动复制依赖它，不需要 Valise 打开。
   - **这台电脑登录**：rclone 用 PATH 里已有的（显示 `rclone version` 第一行），没有时经确认按 `kit-tools.yaml` 锁定版本下载（展示地址、大小与 SHA-256），核对后放在 `<配置目录>/tools/rclone`；配置在 `<配置目录>/rclone/rclone.conf`（0600），同样显式 `--config`。复制经本机仓库或临时目录中转，只在 Valise 打开时更新。

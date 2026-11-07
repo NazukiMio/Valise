@@ -43,6 +43,69 @@ type Tool struct {
 	Install   []Command `yaml:"install" json:"install,omitempty"`
 	Uninstall []Command `yaml:"uninstall" json:"uninstall,omitempty"`
 	Verify    string    `yaml:"verify" json:"verify,omitempty"`
+	// ClientArchives are downloads for this computer (docs/ARCHITECTURE.md
+	// 7.3, "这台电脑登录"); never installed on a server.
+	ClientArchives []ClientArchive `yaml:"client_archives" json:"client_archives,omitempty"`
+	// Clouds are the cloud drives reached through this tool (rclone only).
+	Clouds []Cloud `yaml:"clouds" json:"clouds,omitempty"`
+}
+
+// ClientArchive is one download for this computer.
+type ClientArchive struct {
+	OS     string `yaml:"os" json:"os"`
+	Arch   string `yaml:"arch" json:"arch"`
+	URL    string `yaml:"url" json:"url"`
+	SHA256 string `yaml:"sha256" json:"sha256"`
+	Member string `yaml:"member" json:"member"`
+}
+
+// Cloud access scopes.
+const (
+	AccessFolder  = "folder"  // only files rclone created
+	AccessAccount = "account" // the whole drive
+)
+
+// Cloud is one cloud drive (docs/ARCHITECTURE.md 7.3): fixed parameters
+// for rclone, never any authorization content.
+type Cloud struct {
+	ID         string            `yaml:"id" json:"id"`
+	Name       string            `yaml:"name" json:"name"`
+	RcloneType string            `yaml:"rclone_type" json:"rclone_type"`
+	Params     map[string]string `yaml:"params" json:"params,omitempty"`
+	Access     string            `yaml:"access" json:"access"`
+	AccessNote string            `yaml:"access_note" json:"access_note"`
+	// Loopback false: the drive cannot use the loopback login.
+	Loopback *bool `yaml:"loopback" json:"loopback,omitempty"`
+	// AskApp lets rclone ask for the user's own app (config create --all).
+	AskApp  bool   `yaml:"ask_app" json:"ask_app,omitempty"`
+	AppHelp string `yaml:"app_help" json:"app_help,omitempty"`
+	Verify  string `yaml:"verify" json:"verify,omitempty"`
+}
+
+// UsesLoopback reports whether the loopback login applies.
+func (c Cloud) UsesLoopback() bool { return c.Loopback == nil || *c.Loopback }
+
+// Pending reports a cloud that may be shown but not added.
+func (c Cloud) Pending() bool { return c.Verify == "pending" }
+
+// Cloud finds a cloud of the tool.
+func (t *Tool) Cloud(id string) *Cloud {
+	for i := range t.Clouds {
+		if t.Clouds[i].ID == id {
+			return &t.Clouds[i]
+		}
+	}
+	return nil
+}
+
+// ClientArchive returns this computer's download.
+func (t *Tool) ClientArchive(goos, arch string) *ClientArchive {
+	for i := range t.ClientArchives {
+		if t.ClientArchives[i].OS == goos && t.ClientArchives[i].Arch == arch {
+			return &t.ClientArchives[i]
+		}
+	}
+	return nil
 }
 
 // Check is how porter tells whether the tool is there.
@@ -126,7 +189,13 @@ var (
 	shaRe    = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	varRe    = regexp.MustCompile(`\$\{[^}]*\}`)
 	memberRe = regexp.MustCompile(`^[A-Za-z0-9._/+-]+$`)
+	typeRe   = regexp.MustCompile(`^[a-z0-9]{1,30}$`)
+	keyRe    = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
+	valueRe  = regexp.MustCompile(`^[A-Za-z0-9._:/-]{0,100}$`)
 )
+
+// secretKeys may never be fixed parameters: they are authorization content.
+var secretKeys = []string{"token", "client_secret", "client_id", "pass", "password", "key", "service_account_file", "service_account_credentials"}
 
 // Parse reads kit-tools.yaml strictly and checks it.
 func Parse(data []byte) (*List, error) {
@@ -204,6 +273,56 @@ func (l *List) Lint() error {
 			}
 		default:
 			bad(id, "tier 只能是 enhanced 或 expert")
+		}
+		for _, a := range t.ClientArchives {
+			u, err := url.Parse(a.URL)
+			switch {
+			case a.OS != "darwin" && a.OS != "linux":
+				bad(id, "client_archives 的 os 只能是 darwin 或 linux")
+			case a.Arch != "amd64" && a.Arch != "arm64":
+				bad(id, "client_archives 的 arch 只能是 amd64 或 arm64")
+			case err != nil || u.Scheme != "https" || u.Host == "":
+				bad(id, "下载地址必须是 https：%s", a.URL)
+			case t.Binary == nil || t.Binary.Version == "" || !strings.Contains(a.URL, t.Binary.Version):
+				bad(id, "client_archives 要与锁定的版本一致：%s", a.URL)
+			case !shaRe.MatchString(a.SHA256):
+				bad(id, "client_archives 的 sha256 格式不对")
+			case !memberRe.MatchString(a.Member) || strings.Contains(a.Member, ".."):
+				bad(id, "member 路径无效")
+			}
+		}
+		clouds := map[string]bool{}
+		for _, c := range t.Clouds {
+			if t.ID != "rclone" {
+				bad(id, "只有 rclone 能声明 clouds")
+			}
+			if !idRe.MatchString(c.ID) || clouds[c.ID] {
+				bad(id, "云盘 id 无效或重复：%s", c.ID)
+			}
+			clouds[c.ID] = true
+			if c.Name == "" || c.AccessNote == "" || !typeRe.MatchString(c.RcloneType) {
+				bad(id, "云盘 %s 要写 name、access_note 与 rclone_type", c.ID)
+			}
+			if c.Access != AccessFolder && c.Access != AccessAccount {
+				bad(id, "云盘 %s 的 access 只能是 folder 或 account", c.ID)
+			}
+			if c.Verify != "" && c.Verify != "pending" {
+				bad(id, "云盘 %s 的 verify 只能是 pending 或不写", c.ID)
+			}
+			if c.AppHelp != "" {
+				if u, err := url.Parse(c.AppHelp); err != nil || u.Scheme != "https" {
+					bad(id, "云盘 %s 的 app_help 必须是 https 地址", c.ID)
+				}
+			}
+			for k, v := range c.Params {
+				secret := false
+				for _, s := range secretKeys {
+					secret = secret || k == s
+				}
+				if secret || !keyRe.MatchString(k) || !valueRe.MatchString(v) || k == "config_is_local" {
+					bad(id, "云盘 %s 的参数 %s 不允许（不能写授权内容，只能是固定的简单值）", c.ID, k)
+				}
+			}
 		}
 		for _, c := range append(append([]Command{}, t.Install...), t.Uninstall...) {
 			if len(c.OSID) == 0 || len(c.Argv) == 0 {

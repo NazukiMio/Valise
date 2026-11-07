@@ -25,7 +25,15 @@ func (p Paths) Recipients() string {
 func (p Paths) Targets() string { return filepath.Join(p.Home, ".config", "valise", "targets.json") }
 func (p Paths) State() string   { return filepath.Join(p.Home, ".local", "state", "valise") }
 func (p Paths) Tmp() string     { return filepath.Join(p.State(), "tmp") }
-func (p Paths) Audit() string   { return filepath.Join(p.State(), "audit.jsonl") }
+
+// RcloneConfig is Valise's own rclone config file (docs/ARCHITECTURE.md 7.3).
+func (p Paths) RcloneConfig() string {
+	return filepath.Join(p.Home, ".config", "valise", "rclone", "rclone.conf")
+}
+
+// Rclone is the Kit-installed rclone.
+func (p Paths) Rclone() string { return filepath.Join(p.Home, ".local", "bin", "rclone") }
+func (p Paths) Audit() string  { return filepath.Join(p.State(), "audit.jsonl") }
 func (p Paths) SyncState(target string) string {
 	return filepath.Join(p.State(), "sync", target+".json")
 }

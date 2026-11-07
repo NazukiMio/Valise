@@ -227,7 +227,7 @@ tools:
 - **增强级卸载**（主人）：`kit_tool_remove` 只删除记录中、且内容未被改动的文件。
 - **专家级**：需要开发者模式下的高级模式与 INSTALL.md 4.2 的前提；命令先过第 7 节检查，展示后确认，在新的管理连接的交互终端里执行（sudo 的密码由用户在终端里输入）。没有为这台服务器发行版写命令时，说明原因并给出"打开服务器终端自己装"。rsync 不提供卸载（系统包，可能被别的程序使用）。
 - 清单中 `verify: pending` 或缺少 SHA-256 的条目只展示，不能安装。
-- **云盘与本机下载**（N3，2026-11-07 用户决定，ARCHITECTURE.md 7.3）：rclone 条目另有 `clouds`（每项 `id`、`name`、`rclone_type`、`params`、`access: folder|account`、`access_note`、可选 `loopback: false`、`verify`）与 `client_archives`（`os: darwin|linux`、`arch`、`url`、`sha256`、`member`），后者只用于“这台电脑登录”时下载到客户端配置目录，不安装到服务器。
+- **云盘与本机下载**（N3，2026-11-07 用户决定，ARCHITECTURE.md 7.3）：rclone 条目另有 `clouds`（每项 `id`、`name`、`rclone_type`、`params`、`access: folder|account`、`access_note`、可选 `loopback: false`、可选 `ask_app: true` 与 `app_help`（rclone 自建应用说明的 https 地址）、`verify`；`params` 不能出现 token、client_secret 等授权内容）与 `client_archives`（`os: darwin|linux`、`arch`、`url`、`sha256`、`member`），后者只用于“这台电脑登录”时下载到客户端配置目录，不安装到服务器。
 
 
 ### 8.5 安装 Agent 保护技能

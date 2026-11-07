@@ -17,6 +17,40 @@ tools:
         - { arch: arm64, url: "https://downloads.rclone.org/v1.75.2/rclone-v1.75.2-linux-arm64.zip", sha256: "7e1e8d69654941b7b7df84ee74c5f7fb09cce7d5496947fb7bf16b55ff427d10", member: "rclone-v1.75.2-linux-arm64/rclone" }
     # Installed, run and removed on Debian 13 arm64 (2026-11-02). The amd64
     # build is the same release, not yet run on a target.
+    # For "这台电脑登录" (docs/ARCHITECTURE.md 7.3), from the same SHA256SUMS
+    # (checked 2026-11-07).
+    client_archives:
+      - { os: darwin, arch: arm64, url: "https://downloads.rclone.org/v1.75.2/rclone-v1.75.2-osx-arm64.zip", sha256: "610ab7d48615135dfc60b763858b11a426a0d3d1160c1bb76fb0ae6011b02edd", member: "rclone-v1.75.2-osx-arm64/rclone" }
+      - { os: darwin, arch: amd64, url: "https://downloads.rclone.org/v1.75.2/rclone-v1.75.2-osx-amd64.zip", sha256: "574e1f31cf1c464e5fb0325cb66fcbdeaf1efa1802bd9b17f13c256fd74b6561", member: "rclone-v1.75.2-osx-amd64/rclone" }
+      - { os: linux, arch: amd64, url: "https://downloads.rclone.org/v1.75.2/rclone-v1.75.2-linux-amd64.zip", sha256: "349ac8fba6ff65d6247043f1750cdcb518ec5d500ef91463a10d37c0ccdf3702", member: "rclone-v1.75.2-linux-amd64/rclone" }
+      - { os: linux, arch: arm64, url: "https://downloads.rclone.org/v1.75.2/rclone-v1.75.2-linux-arm64.zip", sha256: "7e1e8d69654941b7b7df84ee74c5f7fb09cce7d5496947fb7bf16b55ff427d10", member: "rclone-v1.75.2-linux-arm64/rclone" }
+    # Cloud drives (docs/ARCHITECTURE.md 7.3). Pending until logged in,
+    # copied to and listed on a target. Observed on 1.75.2 (2026-11-08):
+    # Google Drive warns its shared app stops working during 2026, so it
+    # asks for the user's own app (--all); Dropbox and OneDrive print
+    # `rclone authorize "<type>"` for the headless login.
+    clouds:
+      - id: gdrive
+        name: Google Drive
+        rclone_type: drive
+        params: { scope: drive.file }
+        access: folder
+        access_note: 只能读写 Valise 上传的文件，看不到你网盘里的其他东西
+        ask_app: true
+        app_help: "https://rclone.org/drive/#making-your-own-client-id"
+        verify: pending
+      - id: onedrive
+        name: OneDrive
+        rclone_type: onedrive
+        access: account
+        access_note: 能读写整个 OneDrive
+        verify: pending
+      - id: dropbox
+        name: Dropbox
+        rclone_type: dropbox
+        access: account
+        access_note: 能读写整个 Dropbox
+        verify: pending
 
   - id: rsync
     tier: expert

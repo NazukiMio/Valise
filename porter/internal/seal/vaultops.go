@@ -174,7 +174,9 @@ func OpenVaultFile(p Paths, leaf, rel string) (*os.File, error) {
 }
 
 var (
-	targetNameRe  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	targetNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	// rcloneDestRe: Valise's remote, a relative folder (docs/ARCHITECTURE.md 7.3).
+	rcloneDestRe  = regexp.MustCompile(`^valise-[a-z0-9]+(-[a-z0-9]+)*:[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/?$`)
 	stationAddrRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$`)
 	stationUserRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,31}$`)
 )
@@ -263,8 +265,15 @@ func validTarget(t vaultrpc.Target) error {
 	}
 	switch t.Kind {
 	case stationsync.MethodRsync, stationsync.MethodSFTP, stationsync.MethodRRsync:
-	case "rclone":
-		return valise.New("target_kind_unsupported", "这个版本还不支持 rclone 同步", "改用 rsync 或 sftp")
+	case stationsync.MethodRclone:
+		// A cloud drive (docs/ARCHITECTURE.md 7.3): the remote lives in
+		// Valise's own rclone config; the dest holds no authorization.
+		_, folder, _ := strings.Cut(t.Dest, ":")
+		folder = "/" + strings.TrimSuffix(folder, "/") + "/"
+		if t.Station != nil || !rcloneDestRe.MatchString(t.Dest) || strings.Contains(folder, "/../") || strings.Contains(folder, "/./") {
+			return valise.New("target_dest_invalid", "云盘位置无效："+t.Dest, "在 Valise 里重新添加这个云盘")
+		}
+		return validateAuto(t.Auto)
 	default:
 		return valise.New("target_kind_invalid", "未知的同步方式："+t.Kind, "可选 rsync、sftp")
 	}

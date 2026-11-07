@@ -46,6 +46,8 @@
 8. **取代规则**（同意建议）：目标与已登记实例目录相同、或该实例目录在目标之内才取代；目标在另一实例目录之内时，命名实例位置放行，其他阻断。已实现并实机复测。
 9. **N3 云盘细节**（问卷确认，已写入 ARCHITECTURE.md 7.3、LOGIN_RELAY.md 第 7 节、AGENT_KIT.md 8.4、UI.md 备份位置；提案移入 `history/N3_CLOUD_LOGIN_PROPOSAL_2026-11-07.md`）：服务器与这台电脑都用 Valise 自己的 rclone 配置文件；53682 不可用时由 Valise 用本机 rclone 代为运行 `rclone authorize`，结果由用户粘贴；不加 rclone crypt，界面说明云端可见的名字；Dropbox、OneDrive 的整盘权限允许服务器登录但加重说明；N3 顺序为严格副本 → 云盘 → 自动同步收入共享服务 → 失联恢复；实机验收用 Google Drive 测试账户，由用户亲自授权。
 10. **严格副本**（问卷确认，写入 ARCHITECTURE.md 7.1.1；提案移入 `history/N3_STRICT_COPIES_PROPOSAL_2026-11-07.md`）：远端 pack 下载计算、已核对的按大小与修改时间复用；复制后自动核对清单，pack 内容在“核对副本”或删除前做；删除时可跳过某处核对，按未核对处理；服务器不可达时写“能恢复这里列出的 N 个备份”。
+11. **服务器复制后核对**（2026-11-08）：porter 在服务器发起的复制后核对清单有变化的周期，写进同步记录。
+12. **Google Drive 自己的应用**（2026-11-08）：rclone 共享的 Google Drive 应用将在 2026 年内停用；登录时用 `--all` 让 rclone 自己问 client_id 等，用户在 rclone 的提问里填，Valise 不解析不保存；实机测试账户仍用 Google Drive。
 
 ## 4. 用语统一与契约整理（2026-11-07 完成，步骤 ①）
 
