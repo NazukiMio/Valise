@@ -41,6 +41,12 @@ func (c *cli) cloudList() error {
 		}
 		fmt.Fprintf(c.out, "  %-10s %s：%s%s\n", cl.ID, cl.Name, cl.AccessNote, state)
 	}
+	if len(c.svc.Config.Clouds) > 0 {
+		fmt.Fprintln(c.out, "在这台电脑登录的云盘（只在 Valise 打开时更新）：")
+		for _, h := range c.svc.Config.Clouds {
+			fmt.Fprintf(c.out, "  %-10s %s\n", h.Name, h.Cloud)
+		}
+	}
 	return nil
 }
 
@@ -79,9 +85,16 @@ func (c *cli) cloudAdd(ctx context.Context, args []string) error {
 	id := fs.String("cloud", "", "")
 	pending := fs.Bool("allow-pending", false, "")
 	headless := fs.Bool("headless", false, "")
+	here := fs.Bool("here", false, "")
+	if len(args) > 0 && args[0] == "--here" {
+		return c.cloudAddHere(ctx, args[1:])
+	}
 	pos, err := parseArgs(fs, args, 2)
 	if err != nil {
 		return err
+	}
+	if *here {
+		return c.cloudAddHere(ctx, args)
 	}
 	host, name := pos[0], pos[1]
 	list, err := c.svc.Clouds()
@@ -150,7 +163,45 @@ func (c *cli) cloudAdd(ctx context.Context, args []string) error {
 	return nil
 }
 
+// cloudAddHere logs this computer in: rclone's own configuration runs in
+// this terminal and opens this computer's browser.
+func (c *cli) cloudAddHere(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("cloud add --here", flag.ContinueOnError)
+	id := fs.String("cloud", "", "")
+	pending := fs.Bool("allow-pending", false, "")
+	fs.Bool("here", true, "")
+	pos, err := parseArgs(fs, args, 1)
+	if err != nil {
+		return err
+	}
+	if c.svc.FindLocalRclone(ctx) == nil {
+		if err := c.cloudRclone(ctx); err != nil {
+			return err
+		}
+		if c.svc.FindLocalRclone(ctx) == nil {
+			return nil
+		}
+	}
+	fmt.Fprintf(c.out, "在这台电脑上登录云盘，作为备份位置 %s。授权留在这台电脑（Valise 自己的 rclone 配置）；复制经这台电脑中转，只在 Valise 打开时进行。\n", pos[0])
+	fmt.Fprintln(c.out, "接下来是 rclone 自己的提问，会在这台电脑的浏览器里打开授权页。")
+	if err := c.svc.CloudLoginHere(ctx, pos[0], *id, service.CloudOptions{AllowPending: *pending}, c.in, c.out); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.out, "已登录，连接测试通过。复制：valise sync <服务器> %s\n", pos[0])
+	return nil
+}
+
 func (c *cli) cloudRemove(ctx context.Context, args []string) error {
+	if len(args) == 2 && args[0] == "--here" {
+		if !c.confirm("移除这台电脑上的云盘登录 " + args[1] + "？网盘里已有的备份不会删除。") {
+			return nil
+		}
+		if err := c.svc.CloudRemoveHere(ctx, args[1]); err != nil {
+			return err
+		}
+		fmt.Fprintln(c.out, "已移除这台电脑上的登录；网盘账户里的授权需要你在账户设置里撤销。")
+		return nil
+	}
 	pos, err := parseArgs(flag.NewFlagSet("cloud remove", flag.ContinueOnError), args, 2)
 	if err != nil {
 		return err

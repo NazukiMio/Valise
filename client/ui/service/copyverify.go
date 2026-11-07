@@ -142,9 +142,11 @@ func (s *Service) VerifyCopies(ctx context.Context, host, leaf string, o VerifyO
 		basisList = basis.Materials
 	}
 	serverName := ""
+	seen := map[string]bool{}
 	if statusErr == nil {
 		serverName = status.ServerName
 		for _, t := range status.Targets {
+			seen[t.Name] = true
 			if o.skipped(t.Name) {
 				continue
 			}
@@ -152,6 +154,10 @@ func (s *Service) VerifyCopies(ctx context.Context, host, leaf string, o VerifyO
 			switch {
 			case o.Skip[t.Name]:
 				c.State, c.Reason = CopyUnchecked, "已跳过核对"
+			case t.Kind == stationsync.MethodRclone && s.IsCloudHere(t.Name):
+				// Logged in here too: read it from here, which also works
+				// when the server cannot reach the drive.
+				s.checkHere(ctx, host, serverName, leaf, &c, basisList, cache, o)
 			case s.IsStation(t.Name):
 				c.Kind = KindStation
 				s.checkStation(ctx, host, serverName, leaf, &c, basisList, cache, o)
@@ -160,6 +166,18 @@ func (s *Service) VerifyCopies(ctx context.Context, host, leaf string, o VerifyO
 			}
 			rep.Checks = append(rep.Checks, c)
 		}
+	}
+	for _, cl := range s.Config.Clouds {
+		if seen[cl.Name] || o.skipped(cl.Name) || statusErr != nil {
+			continue
+		}
+		c := CopyCheck{Where: cl.Name, Kind: KindTarget}
+		if o.Skip[cl.Name] {
+			c.State, c.Reason = CopyUnchecked, "已跳过核对"
+		} else {
+			s.checkHere(ctx, host, serverName, leaf, &c, basisList, cache, o)
+		}
+		rep.Checks = append(rep.Checks, c)
 	}
 	for _, r := range s.Config.Repos {
 		if o.skipped(r.Name) {
@@ -259,7 +277,29 @@ func (s *Service) checkStation(ctx context.Context, host, serverName, leaf strin
 		return
 	}
 	rs := s.relayStation(*st)
-	base := rs.Dest(strings.TrimRight(st.Path, "/") + "/" + serverName + "/" + leaf)
+	s.checkRemote(ctx, host, leaf, c, rs, rs.Dest(strings.TrimRight(st.Path, "/")+"/"+serverName+"/"+leaf), basis, cache, o)
+}
+
+// checkHere reads a cloud drive logged in on this computer.
+func (s *Service) checkHere(ctx context.Context, host, serverName, leaf string, c *CopyCheck, basis []vault.Material, cache *verificationState, o VerifyOptions) {
+	c.CheckedAt = time.Now().UTC()
+	rs, err := s.hereStation(ctx, c.Where)
+	if err == nil && serverName == "" {
+		err = valise.New("server_name_missing", "这台服务器还没有名字", "先给服务器起名")
+	}
+	if err == nil && leaf == vault.LegacyLeaf {
+		err = valise.New("verify_legacy", "分档之前的旧金库不复制到云盘", "")
+	}
+	if err != nil {
+		c.State, c.Reason = CopyUnknown, reasonOf(err)
+		return
+	}
+	s.checkRemote(ctx, host, leaf, c, rs, rs.Dest(cloudFolder+serverName+"/"+leaf), basis, cache, o)
+}
+
+// checkRemote reads a leaf at base through this computer's tools.
+func (s *Service) checkRemote(ctx context.Context, host, leaf string, c *CopyCheck, rs stationsync.Station, base string, basis []vault.Material, cache *verificationState, o VerifyOptions) {
+	var err error
 	known := cache.lookup(host, c.Where, leaf)
 	var reading *stationsync.LeafReading
 	var deleting bool

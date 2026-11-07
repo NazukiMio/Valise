@@ -374,43 +374,52 @@ func errText1(err error) string {
 
 // relay copies through this computer: from an available repository, else
 // through a temporary folder deleted afterwards.
-func (s *Service) relay(ctx context.Context, host string, st config.Station, status *vaultrpc.StatusResult, res *StationSyncResult) (*StationSyncResult, error) {
-	var base string
+// relayBase brings host's backups to this computer for a relay: into the
+// first available repository, else a temporary folder (removed by cleanup).
+func (s *Service) relayBase(ctx context.Context, host string, status *vaultrpc.StatusResult) (base, path, repo string, cleanup func(), err error) {
+	cleanup = func() {}
 	for _, r := range s.Config.Repos {
 		if _, err := os.Stat(r.Path); err == nil {
 			if _, err := s.RepoSync(ctx, host, r.Name); err != nil {
-				return nil, err
+				return "", "", "", cleanup, err
 			}
-			base, res.Path, res.Repo = filepath.Join(r.Path, status.ServerName), PathRepo, r.Name
-			break
+			return filepath.Join(r.Path, status.ServerName), PathRepo, r.Name, cleanup, nil
 		}
 	}
-	if base == "" {
-		if err := os.MkdirAll(filepath.Join(s.Dirs.Cache, "tmp"), 0o700); err != nil {
-			return nil, err
+	if err := os.MkdirAll(filepath.Join(s.Dirs.Cache, "tmp"), 0o700); err != nil {
+		return "", "", "", cleanup, err
+	}
+	tmp, err := os.MkdirTemp(filepath.Join(s.Dirs.Cache, "tmp"), "relay-")
+	if err != nil {
+		return "", "", "", cleanup, err
+	}
+	cleanup = func() { os.RemoveAll(tmp) }
+	base = filepath.Join(tmp, status.ServerName)
+	if err := writeTree(base, status.ServerName); err != nil {
+		return "", "", "", cleanup, err
+	}
+	for _, l := range status.Leaves {
+		if l.Deleting || l.VaultID == "" {
+			continue
 		}
-		tmp, err := os.MkdirTemp(filepath.Join(s.Dirs.Cache, "tmp"), "relay-")
+		pr, err := s.Pull(ctx, host, l.Leaf, filepath.Join(base, leafDirName(l.Leaf)))
 		if err != nil {
-			return nil, err
+			return "", "", "", cleanup, err
 		}
-		defer os.RemoveAll(tmp)
-		base, res.Path = filepath.Join(tmp, status.ServerName), PathTemp
-		if err := writeTree(base, status.ServerName); err != nil {
-			return nil, err
-		}
-		for _, l := range status.Leaves {
-			if l.Deleting || l.VaultID == "" {
-				continue
-			}
-			pr, err := s.Pull(ctx, host, l.Leaf, filepath.Join(base, leafDirName(l.Leaf)))
-			if err != nil {
-				return nil, err
-			}
-			if len(pr.Problems) > 0 {
-				return nil, valise.New("relay_verify_failed", "取回的备份没有通过校验，没有上传", "检查网络后重试")
-			}
+		if len(pr.Problems) > 0 {
+			return "", "", "", cleanup, valise.New("relay_verify_failed", "取回的备份没有通过校验，没有上传", "检查网络后重试")
 		}
 	}
+	return base, PathTemp, "", cleanup, nil
+}
+
+func (s *Service) relay(ctx context.Context, host string, st config.Station, status *vaultrpc.StatusResult, res *StationSyncResult) (*StationSyncResult, error) {
+	base, path, repo, cleanup, err := s.relayBase(ctx, host, status)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	res.Path, res.Repo = path, repo
 	rs := s.relayStation(st)
 	dest := strings.TrimRight(st.Path, "/") + "/" + status.ServerName
 	res.Dest = st.Address + ":" + dest

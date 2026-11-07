@@ -74,7 +74,9 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   cloud rclone                                   准备这台电脑的 rclone（PATH 中已有就直接用）
   cloud add <服务器> <名称> --cloud <id> [--headless] [--allow-pending]
                                                  在服务器上登录云盘并保存为备份位置（授权留在服务器的 rclone 配置里）
-  cloud remove <服务器> <名称>                     移除云盘位置与服务器上的登录（网盘里的备份不删除）
+  cloud add --here <名称> --cloud <id> [--allow-pending]
+                                                 在这台电脑上登录云盘（复制经这台电脑中转，只在 Valise 打开时进行）
+  cloud remove <服务器> <名称> | --here <名称>       移除云盘位置与登录（网盘里的备份不删除）
   pull <服务器> [--leaf 周期] [--to 目录]          把金库拉取到本机（默认全部周期）
   period <服务器> <实例> week|month|quarter [--tz 时区]
                                                  设置备份分组（从下一组开始生效）

@@ -21,6 +21,10 @@ type Config struct {
 	// Repos are local folders escape pods are copied to (docs/
 	// ARCHITECTURE.md section 7, "本机仓库"), shared by all servers.
 	Repos []Repo `json:"repos,omitempty"`
+	// Clouds are cloud drives logged in on this computer (docs/
+	// ARCHITECTURE.md 7.3, "这台电脑登录"); the authorization stays in
+	// Valise's rclone config, never here.
+	Clouds []Cloud `json:"clouds,omitempty"`
 	// StationCertHours is how long a server's station certificate lasts
 	// (1–720, default 168; renewed when Valise opens).
 	StationCertHours int `json:"station_cert_hours,omitempty"`
@@ -93,6 +97,16 @@ func Load(dir string) (Config, error) {
 func SetAdminWindow(dir string, minutes int) error {
 	return setKey(dir, "admin_window_minutes", minutes)
 }
+
+// Cloud is a cloud drive logged in on this computer: the location name
+// (its rclone remote is valise-<name>) and the signed list's cloud id.
+type Cloud struct {
+	Name  string `json:"name"`
+	Cloud string `json:"cloud"`
+}
+
+// SetClouds replaces the cloud list in config.json.
+func SetClouds(dir string, clouds []Cloud) error { return setKey(dir, "clouds", clouds) }
 
 // SetRepos replaces the repository list in config.json.
 func SetRepos(dir string, repos []Repo) error { return setKey(dir, "repos", repos) }

@@ -271,8 +271,12 @@ func (c *cli) sync(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if c.svc.IsStation(pos[1]) {
-		r, err := c.svc.SyncStation(ctx, pos[0], pos[1])
+	if c.svc.IsStation(pos[1]) || c.svc.IsCloudHere(pos[1]) {
+		sync := c.svc.SyncStation
+		if c.svc.IsCloudHere(pos[1]) {
+			sync = c.svc.SyncCloud
+		}
+		r, err := sync(ctx, pos[0], pos[1])
 		if err != nil {
 			return err
 		}

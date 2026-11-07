@@ -11,8 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"valise/client/config"
 	"valise/client/minisign/minisigntest"
 	"valise/client/profiles"
+	"valise/core/vault"
 )
 
 // The server's fake rclone: config create prints rclone's headless line,
@@ -154,4 +156,41 @@ func (s *syncWriter) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.w.Write(p)
+}
+
+// A cloud drive logged in on this computer (an alias of a local folder,
+// with the real rclone named by VALISE_TEST_RCLONE): relayed copies and
+// checks from here.
+func TestCloudHereRelay(t *testing.T) {
+	bin := os.Getenv("VALISE_TEST_RCLONE")
+	if bin == "" {
+		t.Skip("VALISE_TEST_RCLONE not set")
+	}
+	s, _, _, _ := sealedWorld(t)
+	ctx := context.Background()
+	old := lookRclone
+	lookRclone = func() (string, error) { return bin, nil }
+	t.Cleanup(func() { lookRclone = old })
+	if err := s.ServerNameSet(ctx, "box", "box"); err != nil {
+		t.Fatal(err)
+	}
+	drive := filepath.Join(t.TempDir(), "drive")
+	s.ensureLocalRcloneConfig()
+	os.WriteFile(s.LocalRcloneConfig(), []byte("[valise-here]\ntype = alias\nremote = "+drive+"\n"), 0o600)
+	s.Config.Clouds = []config.Cloud{{Name: "here", Cloud: "gdrive"}}
+	res, err := s.SyncCloud(ctx, "box", "here")
+	if err != nil || res.Path != PathTemp || len(res.Leaves) != 1 || len(res.Checks) != 1 || res.Checks[0].State != CopyListed {
+		t.Fatalf("%+v %v", res, err)
+	}
+	leafDir := filepath.Join(drive, "valise-vault", "box", filepath.FromSlash(res.Leaves[0]))
+	if probs, err := vault.VerifyNoKey(leafDir); err != nil || len(probs) != 0 {
+		t.Fatal(probs, err)
+	}
+	cr, err := s.VerifyCopies(ctx, "box", res.Leaves[0], VerifyOptions{Packs: true})
+	if err != nil || len(cr.Checks) != 2 || cr.Checks[1].Where != "here" || cr.Checks[1].State != CopyComplete {
+		t.Fatalf("%+v %v", cr, err)
+	}
+	if err := s.CloudRemoveHere(ctx, "here"); err != nil || s.IsCloudHere("here") {
+		t.Fatal(err)
+	}
 }
