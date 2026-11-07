@@ -161,7 +161,9 @@
 - F4：`valise config detach on|off`，默认关闭；关闭时按计划备份在连接内执行，任务结果带提示“任务也可以在后台跑，查看「开启分离模式」”。发起按计划备份的界面在 N4，提示目前只在服务层结果中。
 - 实机：三台靶机已部署当前 porter。`ubuntu-vm`、`debian-vm` 免密 sudo 可用，`ubuntu-vm-x86` 需要密码。接管模式与需要 sudo 的修复仍未实机执行：现有靶机都是用户自带 SSH 设置接入，不能开启高级模式。
 
-尚未在实机覆盖：DST 实际切换、客户端退出登录或重启、创建副本与恢复当前实例的关系（fake 测试已覆盖）、分离执行下复制成功（等 NAS 恢复）、需要 sudo 的时钟修复。
+- 分离执行下的服务器复制（`ubuntu-vm` → `nas`，2026-11-07）：`ubuntu-vm` 处在 NAT 后，原先按局域网地址连不上 NAS，前几次复制失败即此原因；改经 Tailscale 后，`detach: true` 的按计划备份立即返回 accepted / detached，37 秒后 succeeded，server_backup 与 server_copy 均成功，审计记 seal ok 与 sync ok，NAS 上可见该快照的 `.age`、`.meta.json` 与索引。
+
+尚未在实机覆盖：DST 实际切换、客户端退出登录或重启、创建副本与恢复当前实例的关系（fake 测试已覆盖）、需要 sudo 的时钟修复。
 
 ### Debian 13 定时器时间戳问题（2026-11-07）
 
