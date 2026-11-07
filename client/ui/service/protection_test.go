@@ -304,3 +304,25 @@ func TestProtectionConfirmationCannotAuthorizeTwoTasks(t *testing.T) {
 		t.Fatalf("confirmation reused for %d applications", b.applyCount)
 	}
 }
+
+// TestProtectionServerClockSkew: the plan window is counted on the client
+// clock from receipt, so a server clock ahead or behind does not make a
+// fresh plan look invalid; the client still expires it ten minutes later.
+func TestProtectionServerClockSkew(t *testing.T) {
+	for _, skew := range []time.Duration{3 * time.Hour, -2 * 24 * time.Hour} {
+		b := &protectionBoundary{now: time.Now().UTC().Add(skew), preconditions: "facts"}
+		c := protectionController(t, b, func(context.Context, string, protection.FrozenChange) (bool, error) { return true, nil })
+		local := time.Now().UTC()
+		c.now = func() time.Time { return local }
+		plan := prepareProtection(t, c)
+		task, err := c.StartProtectionChange(context.Background(), plan.PlanID, "skew")
+		if err != nil || b.applyCount != 1 {
+			t.Fatalf("skew %v: %v %+v apply %d", skew, err, task, b.applyCount)
+		}
+		late := prepareProtection(t, c)
+		c.now = func() time.Time { return local.Add(11 * time.Minute) }
+		if _, err := c.StartProtectionChange(context.Background(), late.PlanID, "late"); journeyCode(err) != "plan_expired" {
+			t.Fatalf("skew %v: late plan: %v", skew, err)
+		}
+	}
+}

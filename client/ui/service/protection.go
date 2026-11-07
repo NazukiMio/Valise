@@ -34,8 +34,12 @@ type ProtectionController struct {
 	now     func() time.Time
 }
 type protectionPlan struct {
-	host     string
-	plan     protection.FrozenChange
+	host string
+	plan protection.FrozenChange
+	// expires is the plan's ten-minute window on this client's clock,
+	// counted from receipt. The server's CreatedAt/ExpiresAt are on the
+	// server clock, which may differ; the server enforces those itself.
+	expires  time.Time
 	consumed bool
 }
 
@@ -136,7 +140,7 @@ func (c *ProtectionController) PrepareProtectionChange(ctx context.Context, host
 	plan = cloneProtection(plan)
 	c.mu.Lock()
 	for id, p := range c.plans {
-		if !c.now().Before(p.plan.ExpiresAt) {
+		if !c.now().Before(p.expires) {
 			delete(c.plans, id)
 		}
 	}
@@ -144,7 +148,7 @@ func (c *ProtectionController) PrepareProtectionChange(ctx context.Context, host
 		c.mu.Unlock()
 		return protection.FrozenChange{}, protectionError("source_conflict", "服务器重复使用了计划标识")
 	}
-	c.plans[plan.PlanID] = protectionPlan{host: host, plan: plan}
+	c.plans[plan.PlanID] = protectionPlan{host: host, plan: plan, expires: c.now().Add(plan.ExpiresAt.Sub(plan.CreatedAt))}
 	c.mu.Unlock()
 	return cloneProtection(plan), nil
 }
@@ -152,8 +156,9 @@ func (c *ProtectionController) validatePlan(plan protection.FrozenChange, req pr
 	digest, err := plan.Digest()
 	a, _ := protection.Digest(req)
 	b, _ := protection.Digest(plan.Request)
-	now := c.now().UTC()
-	if err != nil || digest != plan.PlanDigest || a != b || !protection.ValidID(plan.PlanID) || plan.Kind != "protection_change" || plan.PreconditionsDigest == "" || plan.CreatedAt.After(now) || !now.Before(plan.ExpiresAt) || plan.ExpiresAt.Sub(plan.CreatedAt) != 10*time.Minute {
+	// Freshness is judged by the window length only: the timestamps are on
+	// the server clock, which may run ahead of or behind this client.
+	if err != nil || digest != plan.PlanDigest || a != b || !protection.ValidID(plan.PlanID) || plan.Kind != "protection_change" || plan.PreconditionsDigest == "" || plan.ExpiresAt.Sub(plan.CreatedAt) != 10*time.Minute {
 		return protectionError("plan_stale", "服务器返回的冻结计划无效或已过期")
 	}
 	return nil
@@ -204,7 +209,7 @@ func (c *ProtectionController) StartProtectionChange(ctx context.Context, planID
 		if p.consumed {
 			return protectionError("plan_stale", "此计划的确认已被消费，请重新准备")
 		}
-		if !c.now().Before(p.plan.ExpiresAt) {
+		if !c.now().Before(p.expires) {
 			return protectionError("plan_expired", "首次执行的十分钟有效期已结束")
 		}
 		taskID, err := randomJourneyID()
@@ -228,7 +233,7 @@ func (c *ProtectionController) StartProtectionChange(ctx context.Context, planID
 	if c.config.Review == nil {
 		return cloneProtection(task), nil
 	}
-	if p.consumed || !c.now().Before(p.plan.ExpiresAt) {
+	if p.consumed || !c.now().Before(p.expires) {
 		return task, protectionError("plan_expired", "计划确认已失效，请重新准备")
 	}
 	// Human interaction never holds the disk index lock.
@@ -242,7 +247,7 @@ func (c *ProtectionController) StartProtectionChange(ctx context.Context, planID
 	if err := ctx.Err(); err != nil {
 		return task, err
 	}
-	if !c.now().Before(p.plan.ExpiresAt) {
+	if !c.now().Before(p.expires) {
 		return task, protectionError("plan_expired", "确认期间计划已过期，请重新准备")
 	}
 	// Re-read facts after confirmation. A new remote plan has different random
@@ -260,7 +265,7 @@ func (c *ProtectionController) StartProtectionChange(ctx context.Context, planID
 	claimed := false
 	c.mu.Lock()
 	currentPlan, exists := c.plans[planID]
-	if !exists || currentPlan.consumed || !c.now().Before(p.plan.ExpiresAt) {
+	if !exists || currentPlan.consumed || !c.now().Before(p.expires) {
 		c.mu.Unlock()
 		return task, protectionError("plan_stale", "此计划已过期或已被另一项任务消费")
 	}
