@@ -55,8 +55,9 @@ const (
 // systemRead is what the health page reads for both items.
 type systemRead struct {
 	status    *SystemStatus
-	statusErr error // nil, errSystemUnsupported, or a read failure
-	scheduled bool  // an accepted protection plan with its schedule on
+	statusErr error  // nil, errSystemUnsupported, or a read failure
+	scheduled bool   // an accepted protection plan with its schedule on
+	schedule  string // that schedule in words, for the timer line
 }
 
 var errSystemUnsupported = errors.New("system_status unsupported")
@@ -89,6 +90,8 @@ func (s *Service) readSystem(ctx context.Context, host, instance string) (*syste
 		}
 		if v.Mode == "accepted" && v.ServerPlan != nil && v.ServerPlan.Schedule.Enabled != nil && *v.ServerPlan.Schedule.Enabled {
 			out.scheduled = true
+			sc := v.ServerPlan.Schedule
+			out.schedule = "每天 " + sc.DailyAt + "（" + sc.Timezone + "）"
 			if out.status != nil && out.status.Linger == "unknown" && v.Timer.Linger {
 				out.status.Linger = "yes"
 			}
@@ -140,6 +143,15 @@ func (s *Service) systemItems(r *HealthReport, host, instance string, read func(
 		linger = st.Linger
 	case legacyTimer && !legacyLinger:
 		linger = "no"
+	}
+	if sr.schedule != "" {
+		// The legacy timer reader knows only intervals; a plan runs at a
+		// daily time.
+		for i := range r.Items {
+			if it := &r.Items[i]; it.ID == "timer" && it.Level == HealthOK {
+				it.Text = sr.schedule + "按保护计划备份一次，登出后也会运行"
+			}
+		}
 	}
 	if (sr.scheduled || legacyTimer) && linger == "no" {
 		user := "<用户>"
@@ -196,8 +208,14 @@ func (s *Service) bindSystemFix(it *HealthItem, host string, st *SystemStatus) {
 	if it.ID == FixClock && len(clockSteps(st, false)) == 0 {
 		return
 	}
-	if (it.ID == FixLinger && s.adminLoginAvailable(host)) || s.advancedOn(host) || s.AdvancedReady(host) == nil {
+	ready := s.AdvancedReady(host)
+	if (it.ID == FixLinger && s.adminLoginAvailable(host)) || s.advancedOn(host) || ready == nil {
 		it.SystemFix, it.ActionName, it.Key = it.ID, systemFixNames[it.ID], "f"
+		return
+	}
+	// Say why there is no one-key fix, instead of only listing commands.
+	if ue, ok := valise.As(ready); ok {
+		it.Detail += "一键" + systemFixNames[it.ID] + "需要管理员权限，要先为这台服务器开启高级模式，目前不能开启：" + ue.Reason + "。" + ue.Suggestion
 	}
 }
 

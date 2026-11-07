@@ -125,4 +125,17 @@
 
 `ubuntu-vm` 当前状态：OpenClaw 计划 revision 4，full，日程关闭，复制到 nas；该实例迁移后源服务已停止。同机其他 legacy 实例改 `nas` 目标会被拒绝。
 
-尚未在实机覆盖：崩溃留下的 pending（fake 测试已覆盖）、DST 实际切换、客户端退出登录或重启、创建副本与恢复当前实例的关系（fake 测试已覆盖）。
+### 增补功能实机记录（2026-11-07）
+
+三台靶机以 `porter deploy --local` 部署当前构建，均声明 identity/1–2、protection-plan/1–2、backup-runs/1–2、system-fix/1。
+
+- **分离执行（`ubuntu-vm`）**：`detach: true` 的按计划备份立即返回 accepted / detached，由 `systemd-run --user` 的一次性单元执行，备份成功。同一次的服务器复制失败，记 partial、快照保留：原因是 `nas-test` 当时已离线（本机与靶机都连不上，“Host is down”），不是单元环境问题。NAS 恢复后需补测分离执行下的复制成功路径。
+- **取消**：分离启动后立刻取消，未认领即记 cancelled，未封存、无快照。
+- **被引用目标的版本化修改**：对 `nas` 先加 auto 再撤销，两次都提交，引用计划版本 4→5→6，`targets.json` 回到原样；旧 `target_set` 仍为 revision_conflict。
+- **错过与补跑**：开启日程（10:13 UTC）与 catch_up，单元为 `Persistent=yes`；在触发时刻前停掉 timer 模拟停机，过后 `missed_runs` 报告该时刻 missed；重新启动 timer 后 systemd 立即补跑（10:28:59），之后 missed 记录消失。补跑的这次因 NAS 离线复制失败而为 partial。日程随后关闭（revision 8）。补跑成功后 missed 不再显示，没有单独的“已补跑”记录。
+- **已迁出的源**：跨 `ubuntu-vm` 与 `ubuntu-vm-x86` 读取 Agent 列表（identity/2，两台均 fresh），源 OpenClaw 标注 `migrated_to` x86 的新世代与迁移 op；目标不标注。
+- **linger 一键修复（`debian-vm`）**：采用开启日程的计划后出现 linger 项。确认页列出 `loginctl enable-linger parallels`、改动与撤销命令；同意后经管理登录执行，退出码 0，复核通过（Linger=yes），审计写入 `system_fix` resolved。Debian 13 上无需 sudo。
+- **时钟**：`ubuntu-vm-x86` 慢约 2.5 天，健康页提示偏差与 NTP 未同步；该机由 chrony 而非 systemd-timesyncd 提供时间同步，Valise 只给说明，不提供一键。`debian-vm` NTP 未开启，提示命令；因它是用户自带 SSH 设置的服务器，不能开启高级模式，没有一键修复，页面说明原因。真实 sudo 修复未测。
+- 实测中修正：保护计划定时在健康页显示为“每  一次”（旧 timer 读取只认间隔），改为显示计划的每日时间；时钟项没有一键时补充说明原因。
+
+尚未在实机覆盖：崩溃留下的 pending（fake 测试已覆盖）、DST 实际切换、客户端退出登录或重启、创建副本与恢复当前实例的关系（fake 测试已覆盖）、分离执行下复制成功、需要 sudo 的时钟修复。
