@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"valise/client/relay"
 
 	"valise/client/config"
 	"valise/client/minisign/minisigntest"
@@ -192,5 +193,20 @@ func TestCloudHereRelay(t *testing.T) {
 	}
 	if err := s.CloudRemoveHere(ctx, "here"); err != nil || s.IsCloudHere("here") {
 		t.Fatal(err)
+	}
+}
+
+// Only rclone's loopback page is relayed, never the help links it prints
+// (seen on 1.75.2: the client_id prompt links rclone.org first).
+func TestCloudLinkPattern(t *testing.T) {
+	scan, err := relay.NewScanner(cloudLinkPattern)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.WriteString(scan, "See https://rclone.org/drive/#making-your-own-client-id for how to create your own.\r\n"+
+		"client_id> \r\n2026/11/08 NOTICE: Make sure your Redirect URL is set to \"http://127.0.0.1:53682/\" in your custom config.\r\n"+
+		"2026/11/08 NOTICE: If your browser doesn't open automatically go to the following link: http://127.0.0.1:53682/auth?state=Ab-9_x\r\n")
+	if got := scan.Links(); len(got) != 1 || got[0] != "http://127.0.0.1:53682/auth?state=Ab-9_x" {
+		t.Fatalf("%v", got)
 	}
 }

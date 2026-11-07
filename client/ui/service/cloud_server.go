@@ -7,6 +7,7 @@ import (
 	"net"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +89,11 @@ func PortFree(port int) bool {
 	return true
 }
 
+// cloudLinkPattern is the only link a cloud login relays: rclone's own
+// loopback page, which then redirects to the drive's sign-in. Other links
+// rclone prints (help pages) are left on the screen.
+var cloudLinkPattern = `(http://127\.0\.0\.1:` + strconv.Itoa(CloudPort) + `/auth\?state=[A-Za-z0-9_-]+)`
+
 var authorizeRe = regexp.MustCompile(`rclone authorize "([a-z0-9]+)"(?: "([A-Za-z0-9_=-]+)")?`)
 
 // CloudLoginServer logs host in to a cloud drive (the server keeps the
@@ -151,7 +157,7 @@ func (s *Service) CloudLoginServer(ctx context.Context, host, name, cloudID stri
 			go s.authorizeHere(ctx, local, args, lio.Stdout)
 		})
 	}
-	status, err := s.relaySession(ctx, c, t, porterPath, prep, relayOpts{kind: login.KindLoopbackOAuth, timeout: 10 * time.Minute, watch: watch}, lio.LoginIO)
+	status, err := s.relaySession(ctx, c, t, porterPath, prep, relayOpts{kind: login.KindLoopbackOAuth, pattern: cloudLinkPattern, timeout: 10 * time.Minute, watch: watch}, lio.LoginIO)
 	res.Status = status
 	forget := func() {
 		fctx, fcancel := context.WithTimeout(context.Background(), 30*time.Second)

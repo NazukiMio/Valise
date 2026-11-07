@@ -69,10 +69,19 @@ func CloudPrepare(ctx context.Context, e *porterenroll.Env, p Paths, q vaultrpc.
 	if err != nil {
 		return nil, err
 	}
+	// No location uses this name (checked above), so an existing login is
+	// left over from one that never finished (the client was closed, the
+	// connection dropped): Valise saves the location right after a login
+	// passes its test. It is unusable, and the new login replaces it.
 	for _, n := range names {
-		if n == remote {
-			return nil, valise.New("cloud_exists", "服务器上已经有 "+q.Name+" 的云盘登录", "先移除它：valise cloud remove <服务器> "+q.Name)
+		if n != remote {
+			continue
 		}
+		code, _, stderr, err := envRunner{e, p.Home}.Run(ctx, 30*time.Second, p.Rclone(), "config", "delete", remote, "--config", p.RcloneConfig())
+		if err != nil || code != 0 {
+			return nil, valise.New("rclone_failed", "没能清除上次没有完成的 "+q.Name+" 云盘登录", "稍后重试，或运行 valise cloud remove <服务器> "+q.Name).WithDetail(lastLine(string(stderr)))
+		}
+		p.AppendAudit(AuditEntry{Time: time.Now().UTC(), Op: "cloud_forget", Initiator: vaultrpc.InitiatorClient, Target: q.Name, Result: "ok", Reason: "unfinished login"})
 	}
 	argv := append([]string{p.Rclone()}, q.Cloud.CreateArgs(remote, !q.Fallback)...)
 	argv = append(argv, "--config", p.RcloneConfig())

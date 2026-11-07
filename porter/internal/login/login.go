@@ -131,6 +131,7 @@ func Exec(home, id, porterPath string, cols, rows int) error {
 	if err := os.Chdir(home); err != nil {
 		return err
 	}
+	saneTerminal(0)
 	if cols > 0 && rows > 0 && cols < 10000 && rows < 10000 {
 		unix.IoctlSetWinsize(0, unix.TIOCSWINSZ, &unix.Winsize{Col: uint16(cols), Row: uint16(rows)})
 	}

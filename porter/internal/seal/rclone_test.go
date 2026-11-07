@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"valise/core/kittools"
 	"valise/core/stationsync"
@@ -82,8 +84,22 @@ func TestCloudPrepareAndForget(t *testing.T) {
 	ctx := context.Background()
 	gd := kittools.Cloud{ID: "gdrive", Name: "Google Drive", RcloneType: "drive", Params: map[string]string{"scope": "drive.file"},
 		Access: kittools.AccessFolder, AccessNote: "n", AskApp: true}
-	if _, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "gd", Cloud: gd}); err == nil || !strings.Contains(err.Error(), "cloud_exists") {
-		t.Fatalf("existing login: %v", err)
+	// gd is a saved location: its login stays.
+	if err := SetTarget(w.p, vaultrpc.Target{Name: "gd", Kind: "rclone", Dest: "valise-gd:valise-vault/"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "gd", Cloud: gd}); err == nil || !strings.Contains(err.Error(), "target_exists") {
+		t.Fatalf("existing location: %v", err)
+	}
+	// A login no location uses is left over and replaced.
+	if code, _, _, err := (envRunner{w.env, w.p.Home}).Run(ctx, 30*time.Second, w.p.Rclone(), "config", "create", "valise-left", "alias", "remote=/nonexistent", "--config", w.p.RcloneConfig()); err != nil || code != 0 {
+		t.Fatal(code, err)
+	}
+	if _, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "left", Cloud: gd}); err != nil {
+		t.Fatalf("leftover login: %v", err)
+	}
+	if names, _ := rcloneRemotes(ctx, w.env, w.p); slices.Contains(names, "valise-left") {
+		t.Fatalf("leftover kept: %v", names)
 	}
 	bad := gd
 	bad.Params = map[string]string{"token": "x"}
@@ -98,7 +114,6 @@ func TestCloudPrepareAndForget(t *testing.T) {
 	if strings.Join(res.Argv, " ") != strings.Join(want, " ") {
 		t.Fatalf("%v", res.Argv)
 	}
-	SetTarget(w.p, vaultrpc.Target{Name: "gd", Kind: "rclone", Dest: "valise-gd:valise-vault/"})
 	if err := CloudForget(ctx, w.env, w.p, "gd", false); err == nil {
 		t.Fatal("forgot a login a location uses")
 	}

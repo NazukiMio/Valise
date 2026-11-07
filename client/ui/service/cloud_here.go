@@ -84,9 +84,11 @@ func (s *Service) CloudLoginHere(ctx context.Context, name, cloudID string, o Cl
 	if err != nil {
 		return valise.New("rclone_failed", "这台电脑上的 rclone 无法运行", "运行 valise cloud rclone 检查").WithDetail(err.Error())
 	}
+	// The name is not a saved cloud (checked above), so an existing login
+	// is left over from one that never finished; the new login replaces it.
 	for _, r := range remotes {
 		if r == vaultrpc.CloudRemote(name) {
-			return valise.New("cloud_exists", "这台电脑上已经有 "+name+" 的云盘登录", "先移除：valise cloud remove --here "+name)
+			s.forgetHere(local.Path, name)
 		}
 	}
 	args := append(cloud.CreateArgs(vaultrpc.CloudRemote(name), !o.Headless), "--config", s.LocalRcloneConfig())

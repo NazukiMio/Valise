@@ -105,7 +105,7 @@ login:
 ### 5.2 登录中继的流程
 
 1. 客户端调用 RPC `login_prepare`，传入登录条目（来自客户端内置或本地 profile 中与实例 `profile_id` 相同的 profile）。porter 用登录 shell 的 PATH 展开 argv，生成一个会话 id，把会话写到 `~/.local/state/valise/login/<会话>.json`（0600）。
-2. 客户端运行 `ssh -tt <服务器> "<porter 路径> login-run <会话>"`。porter 读出会话，设置 `BROWSER="<porter 路径> browser-shim"` 与 `VALISE_LOGIN_SESSION=<会话>`，在 PTY 中执行登录命令。`browser-shim` 把收到的链接追加写入 `<会话>.url` 后以 0 退出。
+2. 客户端运行 `ssh -tt <服务器> "<porter 路径> login-run <会话>"`。porter 读出会话，把 PTY 恢复为正常的行模式（换行转换、回显、行编辑；经 ControlMaster 复用连接且本机 stdin 不是终端时，OpenSSH 分配的 PTY 全部模式为空，提问会错位、回车不结束输入，2026-11-08 实机发现），设置 `BROWSER="<porter 路径> browser-shim"` 与 `VALISE_LOGIN_SESSION=<会话>`，在 PTY 中执行登录命令。`browser-shim` 把收到的链接追加写入 `<会话>.url` 后以 0 退出。
 3. 客户端把 PTY 输出原样显示给用户，同时去掉终端控制序列后扫描链接（profile 有 `url_pattern` 时优先用它）；另起一个 RPC 会话轮询 `login_urls` 读取 shim 截获的链接。两条渠道先到者为准。
 4. `loopback_oauth`：从链接的 `redirect_uri`（或链接本身）中找出指向 `localhost`、`127.0.0.1`、`[::1]` 的地址和端口；向 porter 查询该端口的监听地址（最多等待 10 秒）；本机绑定同一端口，失败就报错并结束登录命令，**绝不换端口**。没有找到回环地址时，按 `device_code` 处理（只打开链接）。
 5. 打开浏览器前，先显示链接的域名，用户按回车确认后才用系统浏览器打开（macOS 用 `open`，Linux 用 `xdg-open`）。确认期间暂停向远端转发键盘输入。
@@ -134,6 +134,7 @@ login:
 云盘的“服务器登录”（ARCHITECTURE.md 7.3）复用本文的登录中继，登录条目由代码按 `kit-tools.yaml` 的 `clouds` 生成，不来自 harness profile：
 
 1. 主人操作，连接方式与 harness 登录相同（5.2 节；日常钥匙可开终端时加主人证明，否则管理登录），`ssh -tt` 下由 porter 运行固定 argv：`rclone config create valise-<名> <rclone_type> <固定参数…> config_is_local=true --config ~/.config/valise/rclone/rclone.conf`。
-2. rclone 在服务器 `127.0.0.1:53682` 起回调并打印 `http://127.0.0.1:53682/auth?state=…`；按 5.2 节以 `loopback_oauth` 处理：截获链接、绑定本机同一端口、显示域名后打开本机浏览器，回调经隧道到达服务器。
+2. rclone 在服务器 `127.0.0.1:53682` 起回调并打印 `http://127.0.0.1:53682/auth?state=…`；按 5.2 节以 `loopback_oauth` 处理，链接只认这个回环地址（rclone 在提问里打印的帮助链接不算登录页，2026-11-08 实机发现）：截获链接、绑定本机同一端口、显示域名后打开本机浏览器，回调经隧道到达服务器。
 3. **退回**：本机 53682 被占用（报告占用进程），或云盘条目声明不支持回环授权时，改为 `config_is_local=false`。rclone 打印一行 `rclone authorize "<类型>" "<参数>"`；Valise 展示这行命令，用户确认后用本机 rclone（ARCHITECTURE.md 7.3“这台电脑登录”的同一来源，没有时先按确认下载）在本机前台运行，输出只显示给用户；用户把结果复制、粘贴回服务器终端。Valise 不解析、不自动传递这段结果。
-4. 结束后按 ARCHITECTURE.md 7.3 做连通测试并保存位置。审计只记录云盘条目 id、开始与结束时间、退出码。
+4. 结束后按 ARCHITECTURE.md 7.3 做连通测试并保存位置。
+5. **没有完成的登录**：同名的位置不存在时，服务器上已有的同名登录只可能来自上次没有完成的登录（客户端被关闭、连接中断；登录通过测试后立即保存位置），无法使用；再次登录时 porter 先删除它并记入审计，不要求用户先手动移除。“这台电脑登录”同理。审计只记录云盘条目 id、开始与结束时间、退出码。
