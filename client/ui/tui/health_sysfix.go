@@ -144,9 +144,8 @@ type systemFixResult struct {
 	res        *service.SystemFixResult
 	err        error
 	// risk: the user accepted going on without an escape pod elsewhere,
-	// for this run only; endAdvanced: advanced mode was turned on for this
-	// fix and ends with it.
-	risk, endAdvanced bool
+	// for this run only.
+	risk bool
 }
 
 type systemFixDone struct {
@@ -171,16 +170,13 @@ func (r *systemFixResult) busy() string {
 }
 
 func (r *systemFixResult) init(m *Model) tea.Cmd {
-	svc, ctx, f, end := m.svc, m.ctx, r.fix, r.endAdvanced
+	svc, ctx, f := m.svc, m.ctx, r.fix
 	if r.risk {
 		ctx = service.WithRiskAccepted(ctx)
 	}
 	opts := service.SystemFixOptions{NonInteractive: f.NonInteractive}
 	return func() tea.Msg {
 		res, err := svc.RunSystemFix(ctx, f.Host, f.Instance, f.ID, f.Digest, opts, service.InstallIO{})
-		if end {
-			svc.DisableAdvanced(ctx)
-		}
 		return systemFixDone{r, res, err}
 	}
 }

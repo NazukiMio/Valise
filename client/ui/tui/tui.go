@@ -86,18 +86,20 @@ func (d *srvData) synced(sid string) bool {
 type Model struct {
 	// riskOnce: the next CLI step runs with the risk accepted (gate.go).
 	riskOnce bool
-	opt      Options
-	svc      *service.Service
-	ctx      context.Context
-	stack    []screen
-	width    int
-	height   int
-	flash    string
-	flashErr bool
-	data     map[string]*srvData
-	repoDone map[string]bool // servers already copied to the repositories this run
-	prof     *profiles.Set
-	now      func() time.Time
+	// advancedEnding: a server switch is ending advanced mode.
+	advancedEnding bool
+	opt            Options
+	svc            *service.Service
+	ctx            context.Context
+	stack          []screen
+	width          int
+	height         int
+	flash          string
+	flashErr       bool
+	data           map[string]*srvData
+	repoDone       map[string]bool // servers already copied to the repositories this run
+	prof           *profiles.Set
+	now            func() time.Time
 	// send delivers a message from a background goroutine (the landing
 	// confirmation); set by Run.
 	send func(tea.Msg)
@@ -228,8 +230,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if _, ok := msg.(animTick); ok {
 		m.animOn = false
 	}
+	if _, ok := msg.(advancedEnded); ok {
+		m.advancedEnding = false
+	}
+	if cmd, done := m.advancedKeys(msg); done {
+		return m, cmd
+	}
 	_, cmd := m.update(msg)
-	return m, tea.Batch(cmd, m.ensureAnim())
+	return m, tea.Batch(cmd, m.ensureAnim(), m.switchEndsAdvanced())
 }
 
 func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {

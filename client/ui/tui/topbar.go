@@ -27,7 +27,7 @@ func (m *Model) accessState() string {
 	if fa := m.svc.AdvancedHost(); fa != "" {
 		left, _ := m.svc.AdminRemaining(fa)
 		return lipgloss.NewStyle().Background(cBad).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).
-			Render(" 高级模式 · " + fa + " · 剩余 " + minutes(left) + " ")
+			Render(" 高级模式 · "+fa+" · 剩余 "+minutes(left)+" ") + dimStyle.Render(" · ") + keyStyle.Render("L") + dimStyle.Render(" 立即关闭")
 	}
 	host := m.currentHost()
 	if host == "" || !m.svc.HasAdminKey(host) {
@@ -116,3 +116,44 @@ func wrapMenu(help string, width int, back bool) string {
 	}
 	return strings.Join(append(lines, cur), "\n")
 }
+
+// endAdvanced turns advanced mode off: the L key while it is on, or moving
+// to another server (docs/INSTALL.md 4.1). The top bar changes at once;
+// the audit line is written in the background.
+func (m *Model) endAdvanced(why string) tea.Cmd {
+	host := m.svc.AdvancedHost()
+	if host == "" {
+		return nil
+	}
+	m.flash, m.flashErr = why, false
+	svc, ctx := m.svc, m.ctx
+	return func() tea.Msg {
+		svc.DisableAdvanced(ctx)
+		return nil
+	}
+}
+
+// advancedKeys handles the top bar's L while advanced mode is on.
+func (m *Model) advancedKeys(msg tea.Msg) (tea.Cmd, bool) {
+	fa := m.svc.AdvancedHost()
+	if k, ok := msg.(tea.KeyPressMsg); ok && fa != "" && k.String() == "L" && !m.typing() && !m.tooSmall() {
+		return m.endAdvanced("高级模式已关闭（" + fa + "）；下次需要时要重新开启"), true
+	}
+	return nil, false
+}
+
+// switchEndsAdvanced runs after each update, once the screen in front may
+// belong to another server.
+func (m *Model) switchEndsAdvanced() tea.Cmd {
+	fa := m.svc.AdvancedHost()
+	if h := m.currentHost(); fa != "" && h != "" && h != fa && !m.advancedEnding {
+		m.advancedEnding = true
+		end := m.endAdvanced("切换到 " + h + "，" + fa + " 的高级模式已结束")
+		return func() tea.Msg { end(); return advancedEnded{} }
+	}
+	return nil
+}
+
+// advancedEnded clears the guard that keeps one switch from ending the
+// mode twice while the audit is written.
+type advancedEnded struct{}

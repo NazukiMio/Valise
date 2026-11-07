@@ -23,24 +23,24 @@ func takeoverNote(m *Model, host string) string {
 	if m.svc.AdvancedHost() == host {
 		return "接管模式：高级模式已为 " + host + " 开启，按 enter 后在这里用 sudo -n 执行。sudo 需要密码时不会在这里询问，会给出在终端里执行的命令。"
 	}
-	return "接管模式：需要管理员权限。按 enter 后在这里由你开启高级模式（Valise 口令、管理口令与确认句），只用于这次修复，结束后自动关闭；再用 sudo -n 执行。sudo 需要密码时不会在这里询问，会给出在终端里执行的命令。"
+	return "接管模式：需要管理员权限。按 enter 后在这里由你开启高级模式（Valise 口令、管理口令与确认句），开启后保持到你在顶栏按 L 关闭；再用 sudo -n 执行。sudo 需要密码时不会在这里询问，会给出在终端里执行的命令。"
 }
 
 // startTakeover runs a confirmed takeover fix, turning advanced mode on
 // first when it is not on for host.
 func startTakeover(m *Model, host, inst string, f *service.SystemFix) tea.Cmd {
-	run := func(end bool) func(m *Model) tea.Cmd {
+	run := func() func(m *Model) tea.Cmd {
 		return func(m *Model) tea.Cmd {
 			risk := m.riskOnce
 			m.riskOnce = false
-			return m.push(&systemFixResult{host: host, inst: inst, fix: f, running: true, risk: risk, endAdvanced: end})
+			return m.push(&systemFixResult{host: host, inst: inst, fix: f, running: true, risk: risk})
 		}
 	}
 	if m.svc.AdvancedHost() == host {
 		if f.Destructive() {
-			return gateThen(m, host, "", run(false))
+			return gateThen(m, host, "", run())
 		}
-		return run(false)(m)
+		return run()(m)
 	}
 	if err := m.svc.AdvancedReady(host); err != nil {
 		m.flash, m.flashErr = "接管模式要先为 "+host+" 开启高级模式，目前不能开启："+errText(err)+"。也可以自己在服务器上执行："+commandList(f.Manual), true
@@ -54,7 +54,7 @@ func startTakeover(m *Model, host, inst string, f *service.SystemFix) tea.Cmd {
 		m.riskOnce = false
 		return enableAdvancedThen(m, host, risk, func(m *Model) tea.Cmd {
 			m.riskOnce = risk
-			return run(true)(m)
+			return run()(m)
 		})
 	})
 }
@@ -68,7 +68,7 @@ func enableAdvancedThen(m *Model, host string, risk bool, next func(m *Model) te
 		detail = append(detail, "  ⚠ "+r)
 	}
 	detail = append(detail, "",
-		"高级模式只用于这次修复，修复结束后自动关闭；开启期间顶栏显示红色的“高级模式”。",
+		"开启后一直保持，直到你在顶栏按 L 立即关闭、切换到另一台服务器或退出 Valise；管理钥匙的时间窗口到期后暂停，继续前要重新输入管理口令。开启期间顶栏显示红色的“高级模式”。",
 		"接下来依次输入 Valise 口令、"+host+" 的管理口令和确认句。")
 	return m.push(confirm("为 "+host+" 开启高级模式？", detail, func(m *Model) tea.Cmd {
 		return m.push(newInput("Valise 口令（开启高级模式 · "+host+"）", "", true, func(m *Model, vp string) tea.Cmd {

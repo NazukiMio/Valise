@@ -77,7 +77,7 @@ func TestTakeoverEnableAdvancedUsesService(t *testing.T) {
 	m, _ := world(t)
 	called := false
 	drive(t, m, enableAdvancedThen(m, "box", false, func(m *Model) tea.Cmd { called = true; return nil }))
-	wantText(t, m, "为 box 开启高级模式？", service.AdvancedRisks[0], "只用于这次修复")
+	wantText(t, m, "为 box 开启高级模式？", service.AdvancedRisks[0], "按 L 立即关闭")
 	key(t, m, "y")
 	wantText(t, m, "Valise 口令")
 	typeText(t, m, "valise secret pass")
