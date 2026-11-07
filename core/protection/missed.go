@@ -135,6 +135,15 @@ func ComputeMissed(plan ServerPlan, runs []BackupRun, now time.Time) ([]MissedRu
 // dir that belong to agent and were started by the timer. Records that cannot
 // be parsed are counted, not fatal: the result only feeds a read-only view.
 func ReadTimerRuns(dir string, agent identity.AgentRef) ([]BackupRun, int, error) {
+	return readRuns(dir, agent, true)
+}
+
+// ReadRuns is ReadTimerRuns for runs of any reason.
+func ReadRuns(dir string, agent identity.AgentRef) ([]BackupRun, int, error) {
+	return readRuns(dir, agent, false)
+}
+
+func readRuns(dir string, agent identity.AgentRef, timerOnly bool) ([]BackupRun, int, error) {
 	es, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, 0, nil
@@ -158,11 +167,50 @@ func ReadTimerRuns(dir string, agent identity.AgentRef) ([]BackupRun, int, error
 			unreadable++
 			continue
 		}
-		if r.AgentRef != agent || r.Request.Reason != "timer" {
+		if r.AgentRef != agent || (timerOnly && r.Request.Reason != "timer") {
 			continue
 		}
 		runs = append(runs, r)
 	}
 	sort.Slice(runs, func(i, j int) bool { return runs[i].AcceptedAt.Before(runs[j].AcceptedAt) })
 	return runs, unreadable, nil
+}
+
+// CopyStatus is the latest attempt to copy to one location of the plan
+// (N2 G.2). State is succeeded, failed or unknown.
+type CopyStatus struct {
+	TargetRef    LocationRef `json:"target_ref"`
+	At           time.Time   `json:"at"`
+	RunID        string      `json:"run_id"`
+	State        string      `json:"state"`
+	FailureCause string      `json:"failure_cause,omitempty"`
+}
+
+// ComputeCopyStatus is pure: for each of the plan's copy locations, the
+// newest run (runs oldest first) that attempted it. Skipped components are
+// not attempts; a location never attempted is left out.
+func ComputeCopyStatus(plan ServerPlan, runs []BackupRun) []CopyStatus {
+	out := []CopyStatus{}
+	for _, c := range plan.ServerCopies {
+		var latest *CopyStatus
+		for _, r := range runs {
+			for _, comp := range r.Components {
+				if comp.Kind != "server_copy" || comp.TargetRef == nil || comp.TargetRef.ID != c.TargetRef.ID {
+					continue
+				}
+				if comp.State != "succeeded" && comp.State != "failed" && comp.State != "unknown" {
+					continue
+				}
+				at := r.UpdatedAt
+				if comp.CompletedAt != nil {
+					at = *comp.CompletedAt
+				}
+				latest = &CopyStatus{TargetRef: c.TargetRef, At: at, RunID: r.RunID, State: comp.State, FailureCause: comp.FailureCause}
+			}
+		}
+		if latest != nil {
+			out = append(out, *latest)
+		}
+	}
+	return out
 }

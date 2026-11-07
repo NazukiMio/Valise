@@ -75,7 +75,13 @@ type Remote interface {
 	// DeleteDir deletes parent/name: the DELETING marker first, then
 	// everything else, the marker last.
 	DeleteDir(ctx context.Context, parent, name string) error
+	// Probe logs in and lists base without recursing, within ProbeTimeout;
+	// a missing base still counts as reachable (copies create it).
+	Probe(ctx context.Context, base string) error
 }
+
+// ProbeTimeout bounds a reachability check (N2 G.3).
+const ProbeTimeout = 20 * time.Second
 
 // Entry is a file or directory relative to the listed base.
 type Entry struct {
@@ -575,5 +581,28 @@ func (r *sftpRemote) DeleteDir(ctx context.Context, parent, name string) error {
 	}
 	lines = append(lines, "rm "+quote(mark), "rmdir "+quote(tp))
 	_, err = r.batch(ctx, lines, what)
+	return err
+}
+
+func (r *rsyncRemote) Probe(ctx context.Context, base string) error {
+	code, _, stderr, err := r.run.Run(ctx, ProbeTimeout, "rsync", "--list-only", "-e", r.shell(), base+"/")
+	if err != nil {
+		return &errNoRsync{valise.New("target_list_failed", "无法运行 rsync", "安装 rsync，或改用 sftp").WithDetail(err.Error()), whyNoRsync(err.Error())}
+	}
+	if code != 0 && !strings.Contains(string(stderr), "No such file or directory") {
+		ue := failure(r.st, "无法连接 "+r.st.Name, string(stderr))
+		if rsyncMissing(code, string(stderr)) {
+			return &errNoRsync{ue, whyNoRsync(string(stderr))}
+		}
+		return ue
+	}
+	return nil
+}
+
+func (r *sftpRemote) Probe(ctx context.Context, base string) error {
+	ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
+	defer cancel()
+	// "-" ignores a missing directory; login failures still fail the batch.
+	_, err := r.batch(ctx, []string{"-ls -ln " + quote(strings.TrimRight(destPath(base), "/"))}, "无法连接 "+r.st.Name)
 	return err
 }

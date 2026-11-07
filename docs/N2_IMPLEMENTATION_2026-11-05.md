@@ -172,6 +172,8 @@
 
 - 分离执行下的服务器复制（`ubuntu-vm` → `nas`，2026-11-07）：`ubuntu-vm` 处在 NAT 后，原先按局域网地址连不上 NAS，前几次复制失败即此原因；改经 Tailscale 后，`detach: true` 的按计划备份立即返回 accepted / detached，37 秒后 succeeded，server_backup 与 server_copy 均成功，审计记 seal ok 与 sync ok，NAS 上可见该快照的 `.age`、`.meta.json` 与索引。
 
+- G 节实机（2026-11-07，三台靶机部署当前 porter，声明 `copy-check/1`）：`ubuntu-vm` 上 `target_check` 对已保存的 `nas`（经 Tailscale）返回可达，方式为 sftp（该机没有 rsync，自动回落）；对 NAS 的局域网地址 `nas@192.168.101.109` 返回 `auth_denied`（地址可达，但该写法没有对应的登录钥匙）；主机名写错返回 `host_unknown`。`valise target add` 在连不上时不保存（未写入 `targets.json`），提示原因与 `--force`。复制失败记录 `failure_cause` 与健康页提示由单元测试覆盖，实机尚未制造一次真实失败。服务器返回的原因文字仍沿用旧说法（“空间站”），客户端显示用新文案；旧文字随统一替换处理。
+
 尚未在实机覆盖：DST 实际切换、客户端退出登录或重启、创建副本与恢复当前实例的关系（fake 测试已覆盖）、需要 sudo 的时钟修复。
 
 ### Debian 13 定时器时间戳问题（2026-11-07）

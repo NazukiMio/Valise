@@ -204,7 +204,7 @@ func TestCopyFailureKeepsSnapshotAndMinimumInterval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.State != "partial" || r.Snapshot == nil || len(r.Components) != 2 || r.Components[1].State != "failed" {
+	if r.State != "partial" || r.Snapshot == nil || len(r.Components) != 2 || r.Components[1].State != "failed" || r.Components[1].FailureCause != "other" {
 		t.Fatalf("partial %+v", r)
 	}
 	// A prior successful copy throttles the next accepted backup. No real SSH

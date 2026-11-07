@@ -196,3 +196,22 @@ func TestComputeMissedCaughtUp(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestComputeCopyStatus(t *testing.T) {
+	p := missedPlan("03:00", "UTC", utc(2026, 11, 1, 0, 0))
+	nas := LocationRef{Kind: "legacy_target", ID: "nas", AuthorityID: "a"}
+	p.ServerCopies = []ServerCopy{{TargetRef: nas}, {TargetRef: LocationRef{Kind: "legacy_target", ID: "never", AuthorityID: "a"}}}
+	ok := timerRun(utc(2026, 11, 5, 3, 0), "succeeded")
+	ok.Components = []BackupComponent{{Kind: "server_copy", TargetRef: &nas, State: "succeeded"}}
+	ok.UpdatedAt = utc(2026, 11, 5, 3, 1)
+	bad := timerRun(utc(2026, 11, 6, 3, 0), "partial")
+	bad.RunID = "r2"
+	bad.UpdatedAt = utc(2026, 11, 6, 3, 1)
+	bad.Components = []BackupComponent{{Kind: "server_copy", TargetRef: &nas, State: "failed", FailureCause: "connect_timeout"}}
+	skipped := timerRun(utc(2026, 11, 6, 9, 0), "succeeded")
+	skipped.Components = []BackupComponent{{Kind: "server_copy", TargetRef: &nas, State: "skipped"}}
+	got := ComputeCopyStatus(p, []BackupRun{ok, bad, skipped})
+	if len(got) != 1 || got[0].State != "failed" || got[0].FailureCause != "connect_timeout" || got[0].RunID != "r2" || !got[0].At.Equal(utc(2026, 11, 6, 3, 1)) {
+		t.Fatal(got)
+	}
+}

@@ -62,8 +62,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
                                                  建立一个逃生舱（soul=轻装、soul-secrets=标准、full=完整、raw=原样）
   vault status <服务器> [--json]                   按周期列出逃生舱与云备份状态（不需要私钥）
   vault delete <服务器> <周期> [--yes]             删除服务器上一整个已结束的周期（先列出其他副本）
-  target add <服务器> <名称> --rsync <主机:路径> [--auto 1d]
-                                                 添加云备份位置（--auto：建立逃生舱后顺带同步的最短间隔）
+  target add <服务器> <名称> --rsync <主机:路径> [--auto 1d] [--force]
+                                                 添加复制位置：先从服务器测试能否登录，连不上时不保存（--force 仍然保存；--auto：备份后顺带复制的最短间隔）
   target auto <服务器> <名称> <间隔|off>            开关自动同步
   target list <服务器> <名称> [--json]              列出云备份上的周期，并与服务器对照
   target delete <服务器> <名称> <周期> [--yes]      删除云备份上一整个已结束的周期

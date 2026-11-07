@@ -8,6 +8,7 @@ import (
 	"valise/core/protection"
 	"valise/core/rpc"
 	"valise/core/valise"
+	"valise/core/vaultrpc"
 )
 
 // n2Compatibility refuses an N2 method, or an N2 request field, the server's
@@ -27,6 +28,8 @@ func n2Compatibility(hello *rpc.HelloResult, method string, params any) error {
 		}
 	case protection.MethodTargetChangePrepare, protection.MethodTargetChangeApply:
 		capability = protection.CapabilityV2
+	case vaultrpc.MethodTargetCheck:
+		capability = vaultrpc.CopyCheckCapability
 	case protection.MethodRunCancel:
 		capability = protection.BackupCapabilityV2
 	case protection.MethodBackup, protection.MethodRunStatus, protection.MethodSnapshotBinding:

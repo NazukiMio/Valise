@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 	"valise/ui/service"
@@ -223,6 +225,7 @@ func (c *cli) target(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("target", flag.ContinueOnError)
 	dest := fs.String("rsync", "", "")
 	auto := fs.String("auto", "", "")
+	force := fs.Bool("force", false, "")
 	pos, err := parseArgs(fs, args[1:], 2)
 	if err != nil || *dest == "" {
 		return errUsage
@@ -230,6 +233,22 @@ func (c *cli) target(ctx context.Context, args []string) error {
 	t := vaultrpc.Target{Name: pos[1], Kind: "rsync", Dest: *dest}
 	if *auto != "" {
 		t.Auto = &vaultrpc.AutoSync{Every: *auto}
+	}
+	// Test from the server before saving (N2 G.3).
+	switch res, err := c.svc.CheckTarget(ctx, pos[0], vaultrpc.TargetCheckParams{Target: &t}); {
+	case errors.Is(err, service.ErrCheckUnsupported):
+		fmt.Fprintln(c.out, "服务器上的 porter 较旧，不能先测试连接；第一次复制时才会知道能不能连上。")
+	case err != nil:
+		return err
+	case !res.Reachable:
+		what, remedy := service.CopyCause(res.FailureCause, pos[1])
+		fmt.Fprintf(c.out, "从 %s 测试 %s：%s。\n  %s\n", pos[0], *dest, what, remedy)
+		if !*force {
+			return valise.New("target_unreachable", "没有保存："+pos[0]+" 现在连不上 "+pos[1], "解决后再添加；确定要先保存，加 --force")
+		}
+		fmt.Fprintln(c.out, "按你的要求仍然保存；连上之前，复制到这里都会失败。")
+	default:
+		fmt.Fprintf(c.out, "已从 %s 测试：能登录 %s（%s）。\n", pos[0], *dest, res.Method)
 	}
 	if err := c.svc.TargetSet(ctx, pos[0], t); err != nil {
 		return err

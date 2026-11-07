@@ -16,7 +16,10 @@ const (
 	MethodVerify       = "vault_verify"
 	MethodFiles        = "vault_files"
 	MethodTargetSet    = "target_set"
-	MethodSync         = "sync"
+	// MethodTargetCheck tests a copy location from the server, read-only
+	// (N2 G.3; capability CopyCheckCapability).
+	MethodTargetCheck = "target_check"
+	MethodSync        = "sync"
 	// Vault tree and cloud backup (docs/VAULT_FORMAT.md section 10,
 	// docs/ARCHITECTURE.md section 7).
 	MethodServerNameSet = "server_name_set"
@@ -163,6 +166,27 @@ type AutoSync struct {
 // TargetSetParams adds or replaces a target.
 type TargetSetParams struct {
 	Target Target `json:"target"`
+}
+
+// CopyCheckCapability marks a porter with target_check.
+const CopyCheckCapability = "copy-check/1"
+
+// TargetCheckParams names a saved location, or carries one about to be
+// saved (exactly one of the two).
+type TargetCheckParams struct {
+	Name   string  `json:"name,omitempty"`
+	Target *Target `json:"target,omitempty"`
+}
+
+// TargetCheckResult is one read-only login and listing from the server.
+// FailureCause uses the fixed copy failure causes (N2 G.1).
+type TargetCheckResult struct {
+	Reachable    bool   `json:"reachable"`
+	Method       string `json:"method,omitempty"`
+	Note         string `json:"note,omitempty"`
+	FailureCause string `json:"failure_cause,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	Suggestion   string `json:"suggestion,omitempty"`
 }
 
 // TargetState is the last sync of a target.

@@ -59,6 +59,7 @@ var dailyMethods = map[string]bool{
 	"backup_snapshot_binding": true,
 	"target_change_prepare":   true,
 	"system_status":           true,
+	"target_check":            true,
 	"system_fix_audit":        true,
 	"backup_run_cancel":       true,
 	"checkup":                 true,

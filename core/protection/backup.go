@@ -70,6 +70,10 @@ type BackupComponent struct {
 	State       string       `json:"state"`
 	CompletedAt *time.Time   `json:"completed_at,omitempty"`
 	ErrorCode   string       `json:"error_code,omitempty"`
+	// FailureCause (N2 G.1) classifies a failed copy: host_unknown,
+	// connect_refused, connect_timeout, auth_denied, host_key_unverified,
+	// not_writable, tool_missing or other.
+	FailureCause string `json:"failure_cause,omitempty"`
 }
 type BackupRun struct {
 	Schema        string                `json:"schema"`

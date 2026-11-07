@@ -266,6 +266,9 @@ func (s Store) missed(v *cp.View, plan cp.ServerPlan) {
 	if unreadable > 0 {
 		v.Warnings = append(v.Warnings, "部分备份运行记录无法读取，错过的定时备份统计可能不完整")
 	}
+	if all, _, err := cp.ReadRuns(s.runsDir(), plan.AgentRef); err == nil {
+		v.CopyStatus = cp.ComputeCopyStatus(plan, all)
+	}
 	missed, clockDoubt := cp.ComputeMissed(plan, runs, v.ServerNow)
 	v.MissedRuns = missed
 	if clockDoubt {

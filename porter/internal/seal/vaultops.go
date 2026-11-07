@@ -200,6 +200,64 @@ func readTargets(p Paths) ([]vaultrpc.Target, error) {
 
 // SetTarget adds or replaces a sync target.
 func SetTarget(p Paths, t vaultrpc.Target) error {
+	if err := validTarget(t); err != nil {
+		return err
+	}
+	ts, err := readTargets(p)
+	if err != nil {
+		return err
+	}
+	out := []vaultrpc.Target{t}
+	for _, old := range ts {
+		if old.Name != t.Name {
+			out = append(out, old)
+		}
+	}
+	b, _ := json.MarshalIndent(targetsFile{Targets: out}, "", "  ")
+	return writeAtomic(p.Targets(), append(b, '\n'), 0o600)
+}
+
+// CheckTarget logs in to a copy location from this server and lists its
+// folder without recursing or writing (N2 G.3). A failed login is a result,
+// not an error. Valise-managed locations keep their own certificate probe.
+func CheckTarget(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.TargetCheckParams) (*vaultrpc.TargetCheckResult, error) {
+	var t *vaultrpc.Target
+	switch {
+	case params.Target != nil && params.Name == "":
+		if err := validTarget(*params.Target); err != nil {
+			return nil, err
+		}
+		t = params.Target
+	case params.Target == nil && params.Name != "":
+		var err error
+		if t, err = findTarget(p, params.Name); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, valise.New("request_invalid", "要给出一个已保存的位置名，或一份待保存的设置", "")
+	}
+	if t.Station != nil {
+		return nil, valise.New("check_not_applicable", t.Name+" 由 Valise 管理，连接测试在复制时自动进行", "直接复制；连不上时会经这台电脑中转")
+	}
+	res := &vaultrpc.TargetCheckResult{}
+	var err error
+	res.Method, res.Note, err = withRemote(ctx, e, p, t, func(r stationsync.Remote) error {
+		return r.Probe(ctx, strings.TrimRight(t.Dest, "/"))
+	})
+	if err != nil {
+		res.FailureCause = stationsync.CauseOf(err)
+		if ue, ok := valise.As(err); ok {
+			res.Reason, res.Suggestion = ue.Reason, ue.Suggestion
+		} else {
+			res.Reason = err.Error()
+		}
+		return res, nil
+	}
+	res.Reachable = true
+	return res, nil
+}
+
+func validTarget(t vaultrpc.Target) error {
 	if !targetNameRe.MatchString(t.Name) {
 		return valise.New("target_name_invalid", "同步目标名只能包含小写字母、数字和连字符", "例如 nas")
 	}
@@ -225,21 +283,7 @@ func SetTarget(p Paths, t vaultrpc.Target) error {
 	if !ok || host == "" || strings.HasPrefix(host, "-") || !strings.HasPrefix(path, "/") || strings.ContainsAny(t.Dest, " \t\n'\"`$\\") {
 		return valise.New("target_dest_invalid", "同步目标地址无效："+t.Dest, "格式为 <SSH 主机别名>:<绝对路径>，例如 nas-test:/mnt/test/nas/valise-vault/")
 	}
-	if err := validateAuto(t.Auto); err != nil {
-		return err
-	}
-	ts, err := readTargets(p)
-	if err != nil {
-		return err
-	}
-	out := []vaultrpc.Target{t}
-	for _, old := range ts {
-		if old.Name != t.Name {
-			out = append(out, old)
-		}
-	}
-	b, _ := json.MarshalIndent(targetsFile{Targets: out}, "", "  ")
-	return writeAtomic(p.Targets(), append(b, '\n'), 0o600)
+	return validateAuto(t.Auto)
 }
 
 const syncTimeout = 6 * time.Hour

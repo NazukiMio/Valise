@@ -9,6 +9,7 @@ import (
 
 	"valise/core/identity"
 	cp "valise/core/protection"
+	"valise/core/stationsync"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 	"valise/porter/internal/fault"
@@ -104,6 +105,7 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 				if copyErr != nil {
 					component.State = "failed"
 					component.ErrorCode = "copy_failed"
+					component.FailureCause = stationsync.CauseOf(copyErr)
 					partial = true
 				} else {
 					at := time.Now().UTC()

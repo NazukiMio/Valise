@@ -199,6 +199,9 @@ type View struct {
 	// PendingChanges lists this instance's plan changes that a crash or a
 	// failed verification left for the person to settle with Reconcile.
 	PendingChanges []PendingChange `json:"pending_changes,omitempty"`
+	// CopyStatus (protection-plan/2, N2 G.2) is each copy location's latest
+	// attempt, computed read-only from run records.
+	CopyStatus []CopyStatus `json:"copy_status,omitempty"`
 }
 
 // PendingChange is one unsettled plan change. Committed means the new

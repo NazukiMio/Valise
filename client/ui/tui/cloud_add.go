@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	"valise/core/vaultrpc"
+	"valise/ui/service"
 )
 
 func (c *cloudScreen) addPlace(m *Model) tea.Cmd {
@@ -85,14 +87,7 @@ func (c *cloudScreen) addTarget(m *Model) tea.Cmd {
 		name = strings.TrimSpace(name)
 		return m.push(newInput("位置：服务器能用 SSH 登录的 <主机>:<绝对路径>（登录凭据在服务器上由你配置）", "nas:/volume1/valise-vault/", false,
 			func(m *Model, dest string) tea.Cmd {
-				svc, ctx, host := m.svc, m.ctx, c.host
-				t := vaultrpc.Target{Name: name, Kind: "rsync", Dest: strings.TrimSpace(dest)}
-				return func() tea.Msg {
-					if err := svc.TargetSet(ctx, host, t); err != nil {
-						return failed(err)
-					}
-					return srvRefresh(host, "已添加空间站 "+name)
-				}
+				return c.checkThenSave(m, vaultrpc.Target{Name: name, Kind: "rsync", Dest: strings.TrimSpace(dest)})
 			}))
 	}))
 }
@@ -111,4 +106,37 @@ func (c *cloudScreen) stationHead(m *Model, p place, w int) string {
 		head += "\n" + errStyle.Render("无法列出 "+p.name+" 上的内容："+firstLine(errText(e)))
 	}
 	return head
+}
+
+// checkThenSave tests the location from the server first (N2 G.3); when
+// the server cannot reach it, the person decides whether to save anyway.
+func (c *cloudScreen) checkThenSave(m *Model, t vaultrpc.Target) tea.Cmd {
+	svc, ctx, host := m.svc, m.ctx, c.host
+	save := func(note string) tea.Cmd {
+		return func() tea.Msg {
+			if err := svc.TargetSet(ctx, host, t); err != nil {
+				return failed(err)
+			}
+			return srvRefresh(host, "已添加复制位置 "+t.Name+note)
+		}
+	}
+	m.flash, m.flashErr = "正在从 "+host+" 测试能否登录 "+t.Dest+"…", false
+	return func() tea.Msg {
+		res, err := svc.CheckTarget(ctx, host, vaultrpc.TargetCheckParams{Target: &t})
+		switch {
+		case errors.Is(err, service.ErrCheckUnsupported):
+			return contMsg{func(*Model) tea.Cmd { return save("（服务器 porter 较旧，没能先测试连接）") }}
+		case err != nil:
+			return failed(err)
+		case res.Reachable:
+			return contMsg{func(*Model) tea.Cmd { return save("（已从服务器测试，能登录）") }}
+		}
+		what, remedy := service.CopyCause(res.FailureCause, t.Name)
+		return contMsg{func(m *Model) tea.Cmd {
+			return m.push(confirm("从 "+host+" 连不上 "+t.Name+"，仍然保存？", []string{
+				what + "。", remedy + "。",
+				"仍然保存的话，连上之前复制到这里都会失败，健康页会提示。"},
+				func(m *Model) tea.Cmd { return save("（服务器暂时连不上它）") }))
+		}}
+	}
 }

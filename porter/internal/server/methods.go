@@ -268,6 +268,13 @@ func init() {
 			return seal.SetTarget(paths(s), p.Target)
 		})
 	}
+	methods[vaultrpc.MethodTargetCheck] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.TargetCheckParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.CheckTarget(ctx, s.loginEnv(ctx), paths(s), p)
+	}
 	methods[vaultrpc.MethodStationKey] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.StationKeyParams
 		if err := json.Unmarshal(raw, &p); err != nil {

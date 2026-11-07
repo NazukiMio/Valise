@@ -60,6 +60,7 @@ type systemRead struct {
 	schedule  string // that schedule in words, for the timer line
 	pending   []protection.PendingChange
 	caughtUp  []protection.MissedRun
+	copies    []protection.CopyStatus
 }
 
 var errSystemUnsupported = errors.New("system_status unsupported")
@@ -91,6 +92,7 @@ func (s *Service) readSystem(ctx context.Context, host, instance string) (*syste
 			return unsupportedOK(err)
 		}
 		out.pending = v.PendingChanges
+		out.copies = v.CopyStatus
 		for _, m := range v.MissedRuns {
 			if m.State == "caught_up" && m.RanAt != nil {
 				out.caughtUp = append(out.caughtUp, m)
@@ -152,6 +154,7 @@ func (s *Service) systemItems(r *HealthReport, host, instance string, read func(
 	case legacyTimer && !legacyLinger:
 		linger = "no"
 	}
+	copyItems(r, sr.copies)
 	for _, pc := range sr.pending {
 		r.Items = append(r.Items, pendingPlanItem(host, instance, pc))
 	}
