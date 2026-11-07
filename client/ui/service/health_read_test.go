@@ -16,7 +16,7 @@ import (
 // Pure aggregation fault injection; RPC transport remains covered by the
 // existing fake-ssh Health tests. A failed source must not erase other facts.
 func TestHealthPartialSources(t *testing.T) {
-	for _, failed := range []string{"backup", "service", "timer", "kit", "approval", ""} {
+	for _, failed := range []string{"backup", "service", "timer", "kit", "approval", "system", ""} {
 		t.Run("failure_"+failed, func(t *testing.T) {
 			s := newService(t, "")
 			fault := func(id string) error {
@@ -35,6 +35,9 @@ func TestHealthPartialSources(t *testing.T) {
 				approval: func() (*action.ApprovalResult, error) {
 					return &action.ApprovalResult{Declared: true, Mode: profile.ApprovalAsk}, fault("approval")
 				},
+				system: func() (*systemRead, error) {
+					return &systemRead{status: &SystemStatus{Linger: "unknown"}}, fault("system")
+				},
 			}
 			r := s.collectHealth("box", "demo", src)
 			want := 0
@@ -44,7 +47,7 @@ func TestHealthPartialSources(t *testing.T) {
 			if r.Incomplete() != want {
 				t.Fatalf("missing failures: %+v", r.Checks)
 			}
-			if len(r.Checks) != 5 {
+			if len(r.Checks) != 6 {
 				t.Fatalf("check disappeared: %+v", r.Checks)
 			}
 			for _, check := range r.Checks {

@@ -31,8 +31,15 @@ func tarName(plan revive.Plan, root, path string) string {
 
 // ExecuteRevive stages, verifies and swaps. confirm is asked with the stage
 // verification result before anything live is touched (the second
-// confirmation of docs/ARCHITECTURE.md section 8.2).
+// confirmation of docs/ARCHITECTURE.md section 8.2). A plan whose source is
+// unverified is refused here; use ExecuteReviveConfirmed.
 func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault string, confirm func(*revive.StageVerifyResult) bool) (*revive.SwapResult, error) {
+	return s.ExecuteReviveConfirmed(ctx, rp, fault, ReviveConfirm{Swap: confirm})
+}
+
+// ExecuteReviveConfirmed is ExecuteRevive with every human confirmation
+// supplied by the in-process adapter (GUI, TUI or interactive CLI).
+func (s *Service) ExecuteReviveConfirmed(ctx context.Context, rp *RevivePlan, fault string, confirm ReviveConfirm) (*revive.SwapResult, error) {
 	if len(rp.Blockers) > 0 {
 		return nil, &rp.Blockers[0]
 	}
@@ -40,8 +47,16 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 		return nil, valise.New("nested_instances", "目标目录里还嵌着其他 agent（"+strings.Join(rp.Nested, "、")+"），原地交换会把它们一起挪走，暂不支持",
 			"可以单独恢复嵌在里面的 agent，或恢复到另一台服务器；恢复测试不受影响")
 	}
+	if confirm.Swap == nil {
+		return nil, valise.New("confirmation_required", "缺少交换前的确认", "从 Valise 界面或终端发起恢复")
+	}
 	plan := rp.Plan
 	if err := s.requireRecoveryIdentityCapability(ctx, rp); err != nil {
+		return nil, err
+	}
+	// Before anything is staged: an unverified source needs the person's
+	// choice, and "backup first" must have sealed the current state.
+	if err := s.settleUnverifiedSource(ctx, rp, confirm.UnverifiedSource); err != nil {
 		return nil, err
 	}
 	// A daily key gets a one-time grant to run stage-write for this op.
@@ -73,7 +88,7 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 		return back(valise.New("stage_verify_failed", fmt.Sprintf("暂存校验发现 %d 个问题，已退回，活动目录未改动", len(ver.Problems)), "检查网络与服务器磁盘后重试").
 			WithDetail(strings.Join(ver.Problems, "\n")))
 	}
-	if !confirm(&ver) {
+	if !confirm.Swap(&ver) {
 		return back(valise.New("cancelled", "已取消，活动目录未改动", "暂存目录保留，可用 valise prev drop 清理"))
 	}
 	// From here on nothing may interrupt the swap (docs/UI.md section 6):

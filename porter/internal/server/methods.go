@@ -14,6 +14,7 @@ import (
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 	porterenroll "valise/porter/internal/enroll"
+	porteridentity "valise/porter/internal/identity"
 	porterinstall "valise/porter/internal/install"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/timer"
@@ -88,6 +89,9 @@ var methods = map[string]handler{
 					sum.Service, sum.Entries = porterenroll.Live(ctx, s.loginEnv(ctx), p)
 				}
 			}
+			// identity/2: the same read-only binding identity_get returns.
+			b := porteridentity.ListBinding(s.cfg.Home, r.InstanceID)
+			sum.Identity = &b
 			res.Instances = append(res.Instances, sum)
 		}
 		return res, err

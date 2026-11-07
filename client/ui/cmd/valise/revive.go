@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"valise/core/revive"
+	"valise/core/valise"
 	"valise/ui/service"
 )
 
@@ -52,6 +53,7 @@ func (c *cli) revive(ctx context.Context, args []string) error {
 	fs.BoolVar(&o.AllowSnapshotProfile, "allow-snapshot-profile", false, "")
 	dry := fs.Bool("dry-run", false, "")
 	yes := fs.Bool("yes", false, "")
+	backupFirst := fs.Bool("backup-first", false, "")
 	fs.StringVar(&o.Fault, "inject-fault", "", "")
 	pos, err := parseArgs(fs, args, 1)
 	if err != nil || o.SnapshotID == "" {
@@ -79,18 +81,68 @@ func (c *cli) revive(ctx context.Context, args []string) error {
 		fmt.Fprintln(c.out, "\n（--dry-run：只输出计划，没有做任何改动）")
 		return nil
 	}
+	if *backupFirst && (rp.UnverifiedSource == nil || !rp.UnverifiedSource.BackupFirst) {
+		return valise.New("backup_first_unavailable", "--backup-first 只用于来源无法核实、且目标上已有同一实例的恢复", "去掉 --backup-first 后重试")
+	}
+	decision := service.SourceCancel
+	if u := rp.UnverifiedSource; u != nil {
+		decision = c.sourceDecision(u, *yes, *backupFirst)
+		if decision == service.SourceCancel {
+			fmt.Fprintln(c.out, "已取消，没有做任何改动。")
+			return nil
+		}
+	}
 	if !*yes && !c.confirm("按上述计划暂存？（活动目录在第二次确认前不会被改动）") {
 		fmt.Fprintln(c.out, "已取消，没有做任何改动。")
 		return nil
 	}
-	res, err := c.svc.ExecuteRevive(c.withProgress(ctx), rp, o.Fault, func(v *revive.StageVerifyResult) bool {
-		fmt.Fprintf(c.out, "暂存校验通过：%d 个文件，%s，SHA-256 与 SQLite 完整性检查全部通过。\n", v.Files, size(v.Bytes))
-		return *yes || c.confirm("开始交换？（会停止服务；失败会自动退回）")
+	res, err := c.svc.ExecuteReviveConfirmed(c.withProgress(ctx), rp, o.Fault, service.ReviveConfirm{
+		// The choice was made interactively above (or by --yes, as for the
+		// other confirmations of this command); no request field can set it.
+		UnverifiedSource: func(service.UnverifiedSource) service.SourceDecision { return decision },
+		Swap: func(v *revive.StageVerifyResult) bool {
+			if b := rp.PreRestoreBackup; b != nil {
+				fmt.Fprintf(c.out, "恢复前已备份当前状态：%s（full，%d 个文件）。\n", b.SnapshotID, b.Files)
+			}
+			fmt.Fprintf(c.out, "暂存校验通过：%d 个文件，%s，SHA-256 与 SQLite 完整性检查全部通过。\n", v.Files, size(v.Bytes))
+			return *yes || c.confirm("开始交换？（会停止服务；失败会自动退回）")
+		},
 	})
 	if res != nil && res.State != "" {
 		printSwap(c, res)
 	}
 	return err
+}
+
+// sourceDecision asks how to treat a snapshot whose source is unverified.
+// --backup-first chooses the backup; --yes, like this command's other
+// confirmations, stands for "我清楚，继续".
+func (c *cli) sourceDecision(u *service.UnverifiedSource, yes, backupFirst bool) service.SourceDecision {
+	if backupFirst {
+		return service.SourceBackupFirst
+	}
+	if yes {
+		return service.SourceProceed
+	}
+	fmt.Fprintln(c.errOut, "\n这个快照的"+u.Notice+"。请选择：")
+	fmt.Fprintln(c.errOut, "  1) 我清楚，继续")
+	if u.BackupFirst {
+		fmt.Fprintf(c.errOut, "  2) 先对目标上的实例 %s 做一次 full 备份，成功后再恢复\n", u.BackupInstance)
+	}
+	fmt.Fprint(c.errOut, "  其他) 取消\n选择：")
+	if c.lines == nil {
+		c.lines = bufio.NewReader(c.in)
+	}
+	line, _ := c.lines.ReadString('\n')
+	switch strings.TrimSpace(line) {
+	case "1":
+		return service.SourceProceed
+	case "2":
+		if u.BackupFirst {
+			return service.SourceBackupFirst
+		}
+	}
+	return service.SourceCancel
 }
 
 func printPlan(c *cli, rp *service.RevivePlan) {
@@ -147,6 +199,20 @@ func printPlan(c *cli, rp *service.RevivePlan) {
 	fmt.Fprintf(w, "  空间：需要约 %s，目标可用 %s；暂存目录与活动目录在同一文件系统\n", size(rp.NeedBytes), size(int64(rp.FreeBytes)))
 	for _, x := range rp.Warnings {
 		fmt.Fprintf(w, "  · %s\n", x)
+	}
+	if u := rp.UnverifiedSource; u != nil {
+		fmt.Fprintf(w, "  %s：快照没有可核实的来源实例世代，以下只是快照自带的记录\n", u.Notice)
+		name := u.InstanceID
+		if u.Name != "" {
+			name += "（命名实例 " + u.Name + "）"
+		}
+		fmt.Fprintf(w, "    实例：%s\n    profile：%s v%d\n    来源服务器：%s，周期 %s\n    创建时间：%s\n    范围：%s\n",
+			name, u.ProfileID, u.ProfileVersion, u.SourceServer, u.Period, u.CreatedAt.Local().Format("2006-01-02 15:04"), tierLabel(u.Tier))
+		if u.BackupFirst {
+			fmt.Fprintf(w, "    执行前需要选择：我清楚，继续；或先对目标上的实例 %s 做一次 full 备份再恢复（--backup-first）\n", u.BackupInstance)
+		} else {
+			fmt.Fprintln(w, "    目标上没有同一实例，执行前需要确认：我清楚，继续")
+		}
 	}
 }
 

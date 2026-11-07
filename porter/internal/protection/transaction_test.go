@@ -189,8 +189,13 @@ func TestFailedInstallRestoresLegacyTimerAndPeriod(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, err := s.Apply(ctx, cp.ApplyParams{Plan: *p, ChangeID: strings.Repeat("c", 32)})
-	if err == nil || r == nil || r.Committed || !r.RollbackSucceeded || r.State != "failed" {
+	// A safe rollback is the result, not an RPC error that would hide it.
+	if err != nil || r == nil || r.Committed || !r.RollbackSucceeded || r.State != "failed" || r.ReconcileRequired || r.ErrorCode != "timer_failed" {
 		t.Fatal(r, err)
+	}
+	status, err := s.Status(ctx, cp.StatusParams{AgentRef: a, ChangeID: r.ChangeID})
+	if err != nil || status.State != "failed" || !status.RollbackSucceeded || status.ErrorCode != "timer_failed" {
+		t.Fatal(status, err)
 	}
 	after, _ := s.snapshots(a.InstanceID)
 	x, _ := cp.Digest(before)
@@ -251,7 +256,7 @@ func TestPostPublishFailureKeepsNewVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, err := s.Apply(ctx, cp.ApplyParams{Plan: *p, ChangeID: strings.Repeat("3", 32)})
-	if err == nil || r == nil || !r.Committed || !r.ReconcileRequired || r.RollbackSucceeded {
+	if err != nil || r == nil || !r.Committed || !r.ReconcileRequired || r.RollbackSucceeded || r.ErrorCode != "result_unknown" {
 		t.Fatal(r, err)
 	}
 	current, err := s.load(a.InstanceID)

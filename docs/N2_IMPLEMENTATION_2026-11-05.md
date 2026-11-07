@@ -52,6 +52,28 @@
 - **时钟**：服务器与本机时间差超过 5 分钟，或 NTP 未同步时提示。一键修复执行 `timedatectl set-ntp true`；已开启 NTP 仍有偏差的，执行 `systemctl restart systemd-timesyncd` 后复核；均需管理员权限，规则同上。不从客户端时间手动改写服务器时钟。复核仍有偏差就如实说明，给出下一步。
 - 两项都是 Valise 内置的固定系统动作，不是 harness 知识，不进 profile。确认页按 UI.md 健康一节列出实际命令与将改变的系统设置，用户再次同意后才执行；执行后复核并写审计。
 
+### 增补的线级映射与实现细节（2026-11-07）
+
+| 能力 | 方法 / 字段 | 权限与含义 |
+| --- | --- | --- |
+| `identity/2` | `instance_list` 每项带 `identity` | 列表直接带身份及关系摘要（kind、source_agent、target_agent、source_snapshot、operation_ref，不含路径与秘密）；单项读不出只标该项。客户端在对方声明时不再逐个调 `identity_get` |
+| `protection-plan/2` | `schedule.catch_up`、`missed_runs`、`server_now` | 开启补跑时单元写 `Persistent=true`；错过记录只读计算。新 porter 严格解析 `desired`，拒绝未知字段；已部署的旧 porter 会静默丢弃，所以客户端只向声明 v2 的 porter 发送 `catch_up` |
+| `protection-plan/2` | `target_change_prepare`（daily）、`target_change_apply`（owner） | 被引用目标的版本化修改；崩溃留下 `valise-target-change/1` 记录并阻断，按同一 change_id 重试只比对文件、不重跑 systemctl |
+| `backup-runs/2` | `protection_backup` 的 `detach`、`backup_run_cancel`（daily） | 客户端只向声明 v2 的 porter 发送 `detach: true`，未请求的仍在连接内执行，旧客户端不受影响；定时路径不使用 systemd-run |
+| `system-fix/1` | `system_status`、`system_fix_audit`（daily） | 只读 linger 与时间同步状态；审计只接受固定修复 id、方式与结果，不记命令输出 |
+
+实现时确定的细节：
+
+- **失败回退结果**：事务记录建立后，`protection_apply` 一律返回事务记录，原因放在 `error_code`；只有什么都没发生时才返回错误。
+- **单元路径**：进程是正式安装路径或指向它时，单元写 `~/.local/bin/valise-porter`，原地更新 porter 后定时器自动用新版本。
+- **防降级门槛**：部署检查与提交前检查都要求 `protection-plan/2`，以免换成会丢弃 `catch_up` 的 porter。
+- **错过记录**：应触发时刻过去 15 分钟仍无定时运行才记 missed；窗口起点为当前版本的接受时间（修改计划会重置历史），最多 30 天；夏令时按 systemd 处理（不存在的本地时刻跳过，重复时刻算一次）。记录时间在未来时附“服务器时钟可能有误”。
+- **分离执行**：只有正式安装的 porter 才分离执行；每个 run 有自己的锁，`task-run` 只认领仍为 accepted 的记录，绝不重放；等待单元启动超过 60 秒仍未认领则显示待核实；认领前计划已变更则记 failed（revision_conflict），不封存。
+- **取消**：只写取消请求，不杀进程；未认领的直接 cancelled；封存已提交后取消，结果为 cancelled，快照与绑定保留，未开始的复制记 skipped（`cancelled`）；越过最后安全节点的取消不改变实际结果。客户端在服务器确认前显示 cancelling；结果未知或旧 porter 时拒绝取消。
+- **本机任务**：`LocalTasks` 第一个任务是拉回本机仓库；进程意外结束的任务显示待核实、不重跑；正常退出时在下一个安全节点停下并记 cancelled（client_exit）。CLI 正常退出时先等待任务到达安全节点，最多 2 分钟。
+- **来源不明快照**：CLI 交互输入 1 继续、2 先备份；`--yes` 代表“我清楚，继续”，与 CLI 用 `--yes` 跳过交换确认的现有做法一致；`--backup-first` 直接选先备份，不适用时报错而不改成继续。TUI 复用已有的选择列表。旧 `ExecuteRevive` 遇到来源不明计划拒绝（`source_unverified`），须改用带确认回调的 `ExecuteReviveConfirmed`。
+- **一键修复的执行方式**：用户已为该服务器开启高级模式时，每条命令新开管理登录、在终端里用 sudo 执行。linger 在没有高级模式时先不带 sudo 尝试，系统拒绝就如实显示“仍在”并给出下一步。时钟修复一律需要 sudo，`systemctl restart systemd-timesyncd` 只在 `set-ntp` 后仍未对上时执行。确认的计划带摘要，执行前重新生成比对，不一致就拒绝。TUI 进程从不开启高级模式，需要 sudo 的修复在确认后交给终端里的 `valise health fix … --advanced` 执行，结果显示在终端，沿用现有终端动作和 Kit 专家级工具的做法。
+
 ## 恢复收尾身份与关系映射
 
 `identity/1` 在既有主人权限的恢复协议上增加可选来源上下文：确认计划绑定 mode、SourceSnapshot（VaultID / SnapshotID）及可核实的 SourceAgentRef；没有快照与世代绑定证据时，源 Agent 身份保持未知，不将当前同名实例当作快照来源。旧 porter 缺此能力时不发送新增语义，也不声称建立关系。

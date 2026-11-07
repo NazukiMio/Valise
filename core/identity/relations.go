@@ -34,3 +34,22 @@ type Relation struct {
 	VerifiedAt        time.Time   `json:"verified_at"`
 	SourceDisposition string      `json:"source_disposition"`
 }
+
+// RelationSummary is the readable part of a Relation for listings.
+type RelationSummary struct {
+	Kind           string      `json:"kind"`
+	SourceAgent    *AgentRef   `json:"source_agent,omitempty"`
+	TargetAgent    AgentRef    `json:"target_agent"`
+	SourceSnapshot SnapshotRef `json:"source_snapshot"`
+	OperationRef   string      `json:"operation_ref"`
+}
+
+// Summary drops everything but identities and the operation reference.
+func (r Relation) Summary() RelationSummary {
+	out := RelationSummary{Kind: r.Kind, TargetAgent: r.TargetAgent, SourceSnapshot: r.SourceSnapshot, OperationRef: r.OperationRef}
+	if r.SourceAgent != nil {
+		ref := *r.SourceAgent
+		out.SourceAgent = &ref
+	}
+	return out
+}

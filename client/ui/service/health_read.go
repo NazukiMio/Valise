@@ -59,4 +59,6 @@ type healthSources struct {
 	timer     func() (*vaultrpc.TimerStatus, error)
 	kit       func() (*agentkit.KitStatusResult, error)
 	approval  func() (*action.ApprovalResult, error)
+	// system may be nil (treated as an older porter).
+	system func() (*systemRead, error)
 }

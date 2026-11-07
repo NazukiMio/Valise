@@ -38,6 +38,18 @@ type AgentSummary struct {
 	Instance      enroll.InstanceSummary `json:"instance"`
 	IdentityState string                 `json:"identity_state"`
 	AgentRef      *identity.AgentRef     `json:"agent_ref,omitempty"`
+	// Relations are the target-side relation summaries of this generation.
+	Relations []identity.RelationSummary `json:"relations,omitempty"`
+	// MigratedTo is set only when, in this same read, another server's
+	// fresh generation records migration_completed from exactly AgentRef.
+	MigratedTo *AgentMigration `json:"migrated_to,omitempty"`
+}
+
+// AgentMigration names where a source generation's journey continued.
+type AgentMigration struct {
+	ConnectionID string            `json:"connection_id"`
+	AgentRef     identity.AgentRef `json:"agent_ref"`
+	OperationRef string            `json:"operation_ref"`
 }
 type AgentServerObservation struct {
 	ConnectionID  string            `json:"connection_id"`
@@ -99,38 +111,99 @@ func (r *AgentReader) readServer(ctx context.Context, srv config.Server) ([]Agen
 	}
 	items := make([]AgentSummary, 0, len(list.Instances))
 	supported := c.hello != nil && slices.Contains(c.hello.Capabilities, identity.Capability)
+	// identity/2 lists bindings with the instances; otherwise one identity_get
+	// per instance. Neither read initializes an identity.
+	listed := c.hello != nil && slices.Contains(c.hello.Capabilities, identity.ListCapability)
 	for _, in := range list.Instances {
+		listedBinding := in.Identity
+		in.Identity = nil
 		item := AgentSummary{ConnectionID: srv.Name, Instance: in, IdentityState: identity.LegacyUnbound}
-		if supported {
+		if supported || listed {
 			var binding identity.Binding
-			if err := c.Call(ctx, identity.MethodGet, identity.GetParams{InstanceID: in.InstanceID}, &binding); err != nil {
+			if listed {
+				if listedBinding == nil {
+					return nil, agentReadError("identity_unknown")
+				}
+				binding = *listedBinding
+			} else if err := c.Call(ctx, identity.MethodGet, identity.GetParams{InstanceID: in.InstanceID}, &binding); err != nil {
 				return nil, err
 			}
-			item.IdentityState = binding.IdentityState
-			switch binding.IdentityState {
-			case identity.LegacyUnbound:
-				if binding.Agent != nil {
-					return nil, agentReadError("identity_conflict")
-				}
-			case identity.Bound:
-				if binding.Agent == nil {
-					return nil, agentReadError("identity_conflict")
-				}
-				ref := binding.Agent.Ref
-				if ref.InstanceID != in.InstanceID || ref.ServerUID == "" || ref.Generation == "" || ref.InstallID == "" || (in.InstallID != "" && ref.InstallID != in.InstallID) {
-					return nil, agentReadError("identity_conflict")
-				}
-				item.AgentRef = &ref
-			case identity.NeedsReconciliation:
-				return nil, agentReadError("identity_needs_reconciliation")
-			default:
-				return nil, agentReadError("identity_unknown")
+			if err := applyBinding(&item, binding); err != nil {
+				return nil, err
 			}
 		}
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Instance.InstanceID < items[j].Instance.InstanceID })
 	return items, nil
+}
+
+func applyBinding(item *AgentSummary, binding identity.Binding) error {
+	in := item.Instance
+	item.IdentityState = binding.IdentityState
+	switch binding.IdentityState {
+	case identity.LegacyUnbound:
+		if binding.Agent != nil || len(binding.Relations) > 0 {
+			return agentReadError("identity_conflict")
+		}
+	case identity.Bound:
+		if binding.Agent == nil {
+			return agentReadError("identity_conflict")
+		}
+		ref := binding.Agent.Ref
+		if ref.InstanceID != in.InstanceID || ref.ServerUID == "" || ref.Generation == "" || ref.InstallID == "" || (in.InstallID != "" && ref.InstallID != in.InstallID) {
+			return agentReadError("identity_conflict")
+		}
+		for _, rel := range binding.Relations {
+			if rel.TargetAgent != ref {
+				return agentReadError("identity_conflict")
+			}
+		}
+		item.AgentRef = &ref
+		item.Relations = binding.Relations
+	case identity.NeedsReconciliation:
+		return agentReadError("identity_needs_reconciliation")
+	default:
+		return agentReadError("identity_unknown")
+	}
+	return nil
+}
+
+// annotateMigrations marks a source generation as migrated only from two
+// fresh reads of different connections and an exact four-field AgentRef
+// match. Names, instance ids alone and stale or unreachable servers are
+// never evidence.
+func annotateMigrations(observations []AgentServerObservation) {
+	type located struct {
+		connection string
+		item       *AgentSummary
+	}
+	var fresh []located
+	for i := range observations {
+		obs := &observations[i]
+		if obs.Status != "fresh" || obs.Value == nil {
+			continue
+		}
+		for j := range *obs.Value {
+			item := &(*obs.Value)[j]
+			if item.AgentRef != nil && item.IdentityState == identity.Bound {
+				fresh = append(fresh, located{obs.ConnectionID, item})
+			}
+		}
+	}
+	for _, target := range fresh {
+		for _, rel := range target.item.Relations {
+			if rel.Kind != identity.MigrationCompleted || rel.SourceAgent == nil || rel.TargetAgent != *target.item.AgentRef {
+				continue
+			}
+			for _, source := range fresh {
+				if source.connection == target.connection || *source.item.AgentRef != *rel.SourceAgent {
+					continue
+				}
+				source.item.MigratedTo = &AgentMigration{ConnectionID: target.connection, AgentRef: rel.TargetAgent, OperationRef: rel.OperationRef}
+			}
+		}
+	}
 }
 
 // ListAgents reads each selected server separately. Failure preserves its last
@@ -245,7 +318,12 @@ func (r *AgentReader) ListAgents(ctx context.Context, req AgentListRequest) (Age
 				obs.Error = agentReadError("identity_conflict")
 				result.Partial = true
 			}
-			result.Items = append(result.Items, *item)
+		}
+	}
+	annotateMigrations(result.Observations)
+	for _, obs := range result.Observations {
+		if obs.Value != nil {
+			result.Items = append(result.Items, *obs.Value...)
 		}
 	}
 	return result, nil

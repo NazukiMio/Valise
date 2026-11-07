@@ -128,7 +128,19 @@ func TestN2ProtectionFakeSSHFacade(t *testing.T) {
 		t.Fatal(err)
 	}
 	bt, err = next.StartBackup(ctx, bp.PlanID, "reviewed-backup")
-	if err != nil || bt.State != "succeeded" || bt.Run == nil || bt.Run.Snapshot == nil || bt.Run.Plan.Scope.Tier != "full" {
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A backup-runs/2 porter returns at once; follow the task to its end.
+	updates, stopWatch, err := next.WatchBackupTask(ctx, bt.TaskRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for v := range updates {
+		bt = v
+	}
+	stopWatch()
+	if bt.State != "succeeded" || bt.Run == nil || bt.Run.Snapshot == nil || bt.Run.Plan.Scope.Tier != "full" {
 		t.Fatalf("planned backup: %+v %v", bt, err)
 	}
 	var bind protection.SnapshotBinding
@@ -158,12 +170,43 @@ func TestN2CapabilitiesAndTiers(t *testing.T) {
 		if rpc.TierOf(method) != rpc.TierDaily {
 			t.Fatalf("read/backup tier: %s", method)
 		}
-		wantCode(t, n2Compatibility(&rpc.HelloResult{}, method), "unsupported_capability")
+		wantCode(t, n2Compatibility(&rpc.HelloResult{}, method, nil), "unsupported_capability")
 	}
 	for _, method := range []string{protection.MethodApply, protection.MethodReconcile} {
 		if rpc.TierOf(method) != rpc.TierOwner {
 			t.Fatalf("mutation tier: %s", method)
 		}
-		wantCode(t, n2Compatibility(nil, method), "unsupported_capability")
+		wantCode(t, n2Compatibility(nil, method, nil), "unsupported_capability")
 	}
+}
+
+func TestCatchUpNeedsPlanV2(t *testing.T) {
+	v1 := &rpc.HelloResult{Capabilities: []string{protection.Capability}}
+	d := protection.NewDefault()
+	if err := n2Compatibility(v1, protection.MethodPrepare, protection.PrepareParams{Desired: d}); err != nil {
+		t.Fatal("plan without catch_up refused on v1:", err)
+	}
+	on := true
+	d.Schedule.CatchUp = &on
+	wantCode(t, n2Compatibility(v1, protection.MethodPrepare, protection.PrepareParams{Desired: d}), "unsupported_capability")
+	wantCode(t, n2Compatibility(v1, protection.MethodTargetChangeApply, nil), "unsupported_capability")
+	v2 := &rpc.HelloResult{Capabilities: []string{protection.Capability, protection.CapabilityV2}}
+	if err := n2Compatibility(v2, protection.MethodPrepare, protection.PrepareParams{Desired: d}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// waitBackup follows a planned backup task to its final state; a
+// backup-runs/2 porter returns from StartBackup at once.
+func waitBackup(t *testing.T, s *Service, bt BackupTask) BackupTask {
+	t.Helper()
+	updates, stop, err := s.WatchBackupTask(context.Background(), bt.TaskRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	for v := range updates {
+		bt = v
+	}
+	return bt
 }

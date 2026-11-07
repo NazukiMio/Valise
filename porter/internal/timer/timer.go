@@ -124,15 +124,10 @@ func setLegacy(ctx context.Context, e *porterenroll.Env, home string, p vaultrpc
 	if err != nil || every < seal.MinAutoEvery {
 		return nil, valise.New("timer_every_invalid", "定时间隔无效："+p.Every, "至少 1 小时，例如 6h、1d")
 	}
-	exe, err := os.Executable()
+	// The formal install path, not a resolved target a later deploy replaces.
+	exe, err := protection.UnitExecutable(home)
 	if err != nil {
-		return nil, err
-	}
-	if exe, err = filepath.EvalSymlinks(exe); err != nil {
-		return nil, err
-	}
-	if strings.ContainsAny(exe, " \t\n\"'\\%$") {
-		return nil, valise.New("timer_path", "porter 的路径含有特殊字符，无法写进 systemd 单元", "把 porter 部署到默认位置 ~/.local/bin/valise-porter").WithDetail(exe)
+		return nil, valise.New("timer_path", "porter 的路径含有特殊字符，无法写进 systemd 单元", "把 porter 部署到默认位置 ~/.local/bin/valise-porter")
 	}
 	service := fmt.Sprintf(`# Written by Valise; turned off and deleted from the instance settings.
 [Unit]

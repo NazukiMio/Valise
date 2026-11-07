@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -215,5 +216,244 @@ func TestAgentReaderLegacyCapabilityFakeSSH(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".config/valise/identity")); !os.IsNotExist(err) {
 		t.Fatal("read initialized legacy identity")
+	}
+}
+
+// scriptedAgentPorter answers hello, instance_list and identity_get from
+// $HOME/stub.json and appends every method it serves to $HOME/calls.
+const scriptedAgentPorter = `package main
+import("bufio";"encoding/json";"fmt";"os";"path/filepath")
+func main(){
+ if len(os.Args)>1&&os.Args[1]=="version"{fmt.Println("{\"name\":\"valise-porter\",\"protocol\":\"1.3\"}");return}
+ var stub struct{Capabilities []string ` + "`json:\"capabilities\"`" + `;Instances json.RawMessage ` + "`json:\"instances\"`" + `;Identity map[string]json.RawMessage ` + "`json:\"identity\"`" + `}
+ b,_:=os.ReadFile(filepath.Join(os.Getenv("HOME"),"stub.json"));if json.Unmarshal(b,&stub)!=nil{return}
+ log,_:=os.OpenFile(filepath.Join(os.Getenv("HOME"),"calls"),os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600);defer log.Close()
+ scan:=bufio.NewScanner(os.Stdin);enc:=json.NewEncoder(os.Stdout)
+ for scan.Scan(){
+  var req struct{ID json.RawMessage ` + "`json:\"id\"`" + `;Method string ` + "`json:\"method\"`" + `;Params struct{InstanceID string ` + "`json:\"instance_id\"`" + `} ` + "`json:\"params\"`" + `};if json.Unmarshal(scan.Bytes(),&req)!=nil{return}
+  fmt.Fprintln(log,req.Method)
+  var result any
+  switch req.Method{
+  case "hello":result=map[string]any{"protocol":"1.3","home":os.Getenv("HOME"),"tools":[]any{},"pending_ops":[]any{},"capabilities":stub.Capabilities}
+  case "instance_list":result=map[string]any{"instances":stub.Instances}
+  case "identity_get":r,ok:=stub.Identity[req.Params.InstanceID];if !ok{return};result=r
+  default:return
+  }
+  enc.Encode(map[string]any{"jsonrpc":"2.0","id":req.ID,"result":result})
+ }
+}
+`
+
+func installScriptedAgentPorter(t *testing.T, e *fakesshenv.Env, host string, stub any) string {
+	t.Helper()
+	home := e.AddHost(host)
+	dir := t.TempDir()
+	source := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(source, []byte(scriptedAgentPorter), 0600); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(home, ".local/bin/valise-porter")
+	if err := os.MkdirAll(filepath.Dir(bin), 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "build", "-o", bin, source)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build scripted peer: %v\n%s", err, out)
+	}
+	agentFixtureJSON(t, filepath.Join(home, "stub.json"), stub)
+	return home
+}
+
+func scriptedCalls(t *testing.T, home string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(home, "calls"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestAgentReaderIdentityListCapabilityFakeSSH(t *testing.T) {
+	e := fakesshenv.New(t)
+	at := time.Now().UTC()
+	listedRef := identity.AgentRef{ServerUID: "uid-new", InstallID: "demo", InstanceID: "demo", Generation: "listed"}
+	queriedRef := identity.AgentRef{ServerUID: "uid-old", InstallID: "demo", InstanceID: "demo", Generation: "queried"}
+	binding := func(ref identity.AgentRef) identity.Binding {
+		return identity.Binding{IdentityState: identity.Bound, Agent: &identity.Agent{Schema: identity.Schema, Ref: ref, State: "active", CreatedAt: at}}
+	}
+	instance := func(b *identity.Binding) map[string]any {
+		m := map[string]any{"instance_id": "demo", "install_id": "demo", "profile_id": "demo", "roots": map[string]string{"state": "/fixture"}}
+		if b != nil {
+			m["identity"] = b
+		}
+		return m
+	}
+	listed := binding(listedRef)
+	legacy := identity.Binding{IdentityState: identity.LegacyUnbound}
+	newHome := installScriptedAgentPorter(t, e, "new", map[string]any{
+		"capabilities": []string{identity.Capability, identity.ListCapability},
+		"instances":    []any{instance(&listed), map[string]any{"instance_id": "plain", "profile_id": "demo", "roots": map[string]string{}, "identity": legacy}},
+	})
+	// An identity/1 peer: anything it may put in instance_list is ignored and
+	// identity_get stays the source of truth.
+	stray := binding(identity.AgentRef{ServerUID: "uid-old", InstallID: "demo", InstanceID: "demo", Generation: "stray"})
+	oldHome := installScriptedAgentPorter(t, e, "old", map[string]any{
+		"capabilities": []string{identity.Capability},
+		"instances":    []any{instance(&stray)},
+		"identity":     map[string]any{"demo": binding(queriedRef)},
+	})
+	s := newService(t, e.SSH)
+	if _, err := s.AddServers("new", "old"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewAgentReader(s).ListAgents(context.Background(), AgentListRequest{})
+	if err != nil || got.Partial || len(got.Items) != 3 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	byConn := map[string][]AgentSummary{}
+	for _, item := range got.Items {
+		byConn[item.ConnectionID] = append(byConn[item.ConnectionID], item)
+		if item.Instance.Identity != nil {
+			t.Fatalf("raw listed binding leaked into summary: %+v", item)
+		}
+	}
+	n := byConn["new"]
+	if len(n) != 2 || n[0].AgentRef == nil || *n[0].AgentRef != listedRef || n[1].IdentityState != identity.LegacyUnbound || n[1].AgentRef != nil {
+		t.Fatalf("identity/2 read: %+v", n)
+	}
+	if calls := scriptedCalls(t, newHome); strings.Contains(calls, "identity_get") {
+		t.Fatalf("identity/2 peer was queried per instance: %q", calls)
+	}
+	o := byConn["old"]
+	if len(o) != 1 || o[0].AgentRef == nil || *o[0].AgentRef != queriedRef {
+		t.Fatalf("identity/1 read: %+v", o)
+	}
+	if calls := scriptedCalls(t, oldHome); strings.Count(calls, "identity_get") != 1 {
+		t.Fatalf("identity/1 peer not queried per instance: %q", calls)
+	}
+
+	// An identity/2 peer that omits a binding is not silently legacy.
+	agentFixtureJSON(t, filepath.Join(newHome, "stub.json"), map[string]any{
+		"capabilities": []string{identity.Capability, identity.ListCapability},
+		"instances":    []any{instance(nil)},
+	})
+	bad, err := NewAgentReader(s).ListAgents(context.Background(), AgentListRequest{ConnectionIDs: []string{"new"}})
+	if err != nil || !bad.Partial || len(bad.Items) != 0 {
+		t.Fatalf("missing listed binding accepted: %+v %v", bad, err)
+	}
+}
+
+// relationFixture records a committed migration on the target host exactly
+// as porter's recovery commit leaves it (relation plus operation record).
+func relationFixture(t *testing.T, home string, target identity.AgentRef, source identity.AgentRef) {
+	t.Helper()
+	dir := filepath.Join(home, ".config/valise/identity")
+	at := time.Now().UTC().Truncate(time.Second)
+	relID := "0123456789abcdef0123456789abcdef"
+	rel := identity.Relation{Schema: identity.Schema, RelationID: relID, Kind: identity.MigrationCompleted, SourceAgent: &source,
+		SourceSnapshot: identity.SnapshotRef{VaultID: "vault", SnapshotID: "snap"}, TargetAgent: target, OperationRef: "op_fixture",
+		VerifiedAt: at, SourceDisposition: identity.StoppedVerified}
+	agentFixtureJSON(t, filepath.Join(dir, "relations", relID+".json"), rel)
+	agentFixtureJSON(t, filepath.Join(dir, "operations", "op_fixture.json"), map[string]any{"schema": identity.Schema, "state": "complete", "relation": rel})
+	var a identity.Agent
+	b, err := os.ReadFile(filepath.Join(dir, "agents/demo.json"))
+	if err != nil || json.Unmarshal(b, &a) != nil {
+		t.Fatalf("agent fixture: %v", err)
+	}
+	a.RelationRefs = []string{relID}
+	agentFixtureJSON(t, filepath.Join(dir, "agents/demo.json"), a)
+}
+
+func TestAgentReaderMigratedSourceFakeSSH(t *testing.T) {
+	e := fakesshenv.New(t)
+	src := e.AddHost("src")
+	dst := e.AddHost("dst")
+	e.InstallPorter("src")
+	e.InstallPorter("dst")
+	srcRef := agentFixture(t, src, "server-src", "generation-src")
+	dstRef := agentFixture(t, dst, "server-dst", "generation-dst")
+	relationFixture(t, dst, dstRef, srcRef)
+	s := newService(t, e.SSH)
+	if _, err := s.AddServers("src", "dst"); err != nil {
+		t.Fatal(err)
+	}
+	r := NewAgentReader(s)
+	got, err := r.ListAgents(context.Background(), AgentListRequest{})
+	if err != nil || got.Partial || len(got.Items) != 2 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	var source, target AgentSummary
+	for _, item := range got.Items {
+		if item.ConnectionID == "src" {
+			source = item
+		} else {
+			target = item
+		}
+	}
+	if source.MigratedTo == nil || source.MigratedTo.ConnectionID != "dst" || source.MigratedTo.AgentRef != dstRef || source.MigratedTo.OperationRef != "op_fixture" {
+		t.Fatalf("source not marked: %+v", source)
+	}
+	if target.MigratedTo != nil || len(target.Relations) != 1 || target.Relations[0].SourceAgent == nil || *target.Relations[0].SourceAgent != srcRef {
+		t.Fatalf("target: %+v", target)
+	}
+	if obs := agentObservation(t, got, "src"); (*obs.Value)[0].MigratedTo == nil {
+		t.Fatal("observation and items disagree")
+	}
+	// Only one of the two servers is reachable: nothing is inferred, even
+	// from the cached value of the other.
+	t.Setenv("FAKESSH_FAIL_CONNECT", "dst")
+	partial, err := r.ListAgents(context.Background(), AgentListRequest{})
+	if err != nil || !partial.Partial {
+		t.Fatalf("%+v %v", partial, err)
+	}
+	for _, item := range partial.Items {
+		if item.MigratedTo != nil {
+			t.Fatalf("inferred with target unreachable: %+v", item)
+		}
+	}
+	t.Setenv("FAKESSH_FAIL_CONNECT", "src")
+	partial, err = r.ListAgents(context.Background(), AgentListRequest{})
+	if err != nil || !partial.Partial {
+		t.Fatalf("%+v %v", partial, err)
+	}
+	for _, item := range partial.Items {
+		if item.MigratedTo != nil {
+			t.Fatalf("inferred with source unreachable: %+v", item)
+		}
+	}
+	t.Setenv("FAKESSH_FAIL_CONNECT", "")
+	// Reading a single server never annotates.
+	single, err := r.ListAgents(context.Background(), AgentListRequest{ConnectionIDs: []string{"src"}})
+	if err != nil || len(single.Items) != 1 || single.Items[0].MigratedTo != nil {
+		t.Fatalf("single: %+v %v", single, err)
+	}
+}
+
+func TestAgentReaderMigratedSourceNeedsExactGenerationFakeSSH(t *testing.T) {
+	e := fakesshenv.New(t)
+	src := e.AddHost("src")
+	dst := e.AddHost("dst")
+	e.InstallPorter("src")
+	e.InstallPorter("dst")
+	// The source instance was re-enrolled since: same server, install,
+	// instance id and display name, but a different generation.
+	srcRef := agentFixture(t, src, "server-src", "generation-now")
+	dstRef := agentFixture(t, dst, "server-dst", "generation-dst")
+	old := srcRef
+	old.Generation = "generation-before"
+	relationFixture(t, dst, dstRef, old)
+	s := newService(t, e.SSH)
+	if _, err := s.AddServers("src", "dst"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewAgentReader(s).ListAgents(context.Background(), AgentListRequest{})
+	if err != nil || got.Partial || len(got.Items) != 2 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	for _, item := range got.Items {
+		if item.MigratedTo != nil {
+			t.Fatalf("marked a different generation: %+v", item)
+		}
 	}
 }

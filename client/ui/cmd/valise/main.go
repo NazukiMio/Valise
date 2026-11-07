@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"time"
 
 	"valise/client/config"
 	"valise/core/valise"
@@ -78,7 +79,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
 
 恢复与迁移
   revive <服务器> --snapshot <id> [--mode rollback|migrate|clone] [--from <服务器>] [--id 新实例]
-         [--root id=路径]... [--allow-draft-profile] [--allow-snapshot-profile] [--dry-run] [--yes]
+         [--root id=路径]... [--allow-draft-profile] [--allow-snapshot-profile] [--backup-first] [--dry-run] [--yes]
                                                  逃生舱着陆（rollback=原地着陆、migrate=着陆到另一台服务器、clone=着陆成一个新的 agent）：先出计划，暂存校验后再确认交换
   revive resume <服务器> <op> --continue|--back   处理未完成的着陆
   prev list <服务器> | prev drop <服务器> <op>    查看 / 删除交换前保留的旧状态
@@ -92,6 +93,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   verify --vault <目录> [--key]                   校验本机金库；--key 用私钥解密并逐个文件校验
   checkup <服务器> <实例> [--json]                 会话与记忆检查（只读）
   health <服务器> <实例> [--json]                  健康：备份、恢复测试、服务、定时备份、审批（只读）
+  health fix <服务器> <实例> <linger|clock> [--advanced] [--yes] [--json]
+                                                 修复 linger 或服务器时钟：先列出要执行的命令与改动，再次同意后执行并复核
   proposals <服务器> <实例> [--accept id,…|all] [--accept-demotion id,…] [--reject id,…|all]
                                                  查看 / 确认 agent 提出的归类提议
   action <服务器> <实例> [<动作>] [--yes] [--no-seal]
@@ -174,6 +177,11 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 		c.svc.AdminAuth.Passphrase = c.adminPassphrase
 		c.svc.OwnerAuth.Passphrase = c.ownerPassphrase
 		err = c.dispatch(ctx, args)
+		// A normal exit lets in-flight work reach a safe boundary; a detached
+		// server backup goes on without this process.
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		_ = c.svc.Shutdown(sctx)
+		cancel()
 		c.svc.Close()
 	}
 	return c.report(err)

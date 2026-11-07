@@ -23,7 +23,7 @@ func DeployedPorter(home string) string {
 // before a downgrade could otherwise adopt a plan the installed binary no
 // longer understands. Missing, unusable or silent binaries fail closed.
 func CheckDeployment(ctx context.Context, e *porterenroll.Env, home string) error {
-	refuse := valise.New("unsupported_capability", "服务器上正式安装的 porter 不支持版本化保护计划", "重新部署声明 "+cp.Capability+" 的 porter 后再提交")
+	refuse := valise.New("unsupported_capability", "服务器上正式安装的 porter 不支持版本化保护计划", "重新部署声明 "+cp.CapabilityV2+" 的 porter 后再提交")
 	if e == nil {
 		return refuse
 	}
@@ -36,7 +36,7 @@ func CheckDeployment(ctx context.Context, e *porterenroll.Env, home string) erro
 		return refuse
 	}
 	for _, c := range info.Capabilities {
-		if c == cp.Capability {
+		if c == cp.CapabilityV2 {
 			return nil
 		}
 	}

@@ -52,6 +52,7 @@ type Service struct {
 	ProtectionReview ProtectionReview
 	backupController *BackupController
 	BackupReview     BackupReview
+	localTasks       *LocalTasks
 }
 
 // New loads config.json from dirs.Data.

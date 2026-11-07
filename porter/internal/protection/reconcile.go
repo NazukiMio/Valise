@@ -53,25 +53,8 @@ func (s Store) CheckLegacyTargetsWrite(name string) error {
 	if err := s.CheckPending(""); err != nil {
 		return err
 	}
-	// Include first-adoption transactions before a plan file has been published.
-	changes, err := os.ReadDir(s.state())
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := s.checkUnfinished(); err != nil {
 		return err
-	}
-	for _, e := range changes {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		var r record
-		if err := read(filepath.Join(s.state(), e.Name()), &r); err != nil {
-			return err
-		}
-		if err := r.valid(); err != nil {
-			return err
-		}
-		if r.State == "pending" || r.ReconcileRequired {
-			return fail("result_unknown", "保护计划提交待核实，复制目标暂不可修改")
-		}
 	}
 	entries, err := os.ReadDir(filepath.Join(s.config(), "protection"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -98,6 +81,32 @@ func (s Store) CheckLegacyTargetsWrite(name string) error {
 		}
 	}
 	return nil
+}
+
+// checkUnfinished refuses while any protection-plan transaction of any
+// instance, including a first adoption before its plan file exists, or any
+// versioned target change is unfinished.
+func (s Store) checkUnfinished() error {
+	changes, err := os.ReadDir(s.state())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, e := range changes {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		var r record
+		if err := read(filepath.Join(s.state(), e.Name()), &r); err != nil {
+			return err
+		}
+		if err := r.valid(); err != nil {
+			return err
+		}
+		if r.State == "pending" || r.ReconcileRequired {
+			return fail("result_unknown", "保护计划提交待核实，复制目标暂不可修改")
+		}
+	}
+	return s.checkTargetChanges("")
 }
 func (s Store) validateImages(r record) error {
 	if enroll.ValidInstanceID(r.AgentRef.InstanceID) != nil {

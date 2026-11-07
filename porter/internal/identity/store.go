@@ -196,8 +196,25 @@ func Read(home, id string) (b model.Binding, err error) {
 		if s == nil || a.Schema != model.Schema || a.Ref.ServerUID != s.ServerUID || a.Ref.InstanceID != id || a.Ref.InstallID == "" || a.Ref.Generation == "" || a.CreatedAt.IsZero() {
 			return errors.New("invalid agent identity")
 		}
-		b.IdentityState, b.Agent = model.Bound, &a
+		rels, err := agentRelations(home, a)
+		if err != nil {
+			return err
+		}
+		b.IdentityState, b.Agent, b.Relations = model.Bound, &a, rels
 		return nil
 	})
 	return
+}
+
+// ListBinding is Read for listings: one unreadable identity is reported in
+// its own entry instead of failing the whole list. It never initializes.
+func ListBinding(home, id string) model.Binding {
+	b, err := Read(home, id)
+	if err == nil {
+		return b
+	}
+	if ue, ok := valise.As(err); ok && ue.Code == "identity_needs_reconciliation" {
+		return model.Binding{IdentityState: model.NeedsReconciliation}
+	}
+	return model.Binding{IdentityState: model.Unreadable}
 }

@@ -9,6 +9,10 @@ import (
 
 const Schema = "valise-identity/1"
 const Capability = "identity/1"
+
+// ListCapability (identity/2) means instance_list carries each instance's
+// Binding, and bindings carry relation summaries; reading never initializes.
+const ListCapability = "identity/2"
 const MethodGet = "identity_get"
 
 type GetParams struct {
@@ -19,6 +23,9 @@ const (
 	LegacyUnbound       = "legacy_unbound"
 	Bound               = "bound"
 	NeedsReconciliation = "needs_reconciliation"
+	// Unreadable is reported in listings when a record exists but could not
+	// be read or validated; it is never treated as legacy or bound.
+	Unreadable = "unreadable"
 )
 
 type ServerRef struct {
@@ -57,6 +64,9 @@ type Agent struct {
 type Binding struct {
 	IdentityState string `json:"identity_state"`
 	Agent         *Agent `json:"agent,omitempty"`
+	// Relations summarize committed relations whose target is Agent. They
+	// carry identities only: no roots, paths, dispositions or secrets.
+	Relations []RelationSummary `json:"relations,omitempty"`
 }
 
 // NewID generates an opaque 128-bit identifier using the system RNG.

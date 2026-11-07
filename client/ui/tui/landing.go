@@ -189,23 +189,12 @@ func (r *reviveScreen) key(m *Model, k string) (tea.Cmd, bool) {
 				return nil, true
 			}
 			// The plan on screen says nothing changes before the swap is
-			// confirmed; enter starts staging.
-			rp := r.plan
-			r.step = rvStaging
-			r.startScene(m)
-			send := m.send
-			// The revive keeps the root context: closing the screen must
-			// not interrupt a swap.
-			ctx := service.WithProgress(m.ctx, r.prog.set)
-			return func() tea.Msg {
-				res, err := m.svc.ExecuteRevive(ctx, rp, "", func(v *revive.StageVerifyResult) bool {
-					reply := make(chan bool, 1)
-					send(stageVerified{v, reply})
-					return <-reply
-				})
-				rp.Close()
-				return reviveFinished{res, err}
-			}, true
+			// confirmed; enter starts staging, after the source choice
+			// when the snapshot's source cannot be verified.
+			if r.plan.UnverifiedSource != nil {
+				return m.push(sourcePick(r)), true
+			}
+			return r.stage(m, service.SourceCancel), true
 		case "up", "k":
 			r.scroll--
 		case "down", "j":
@@ -319,6 +308,7 @@ func planText(rp *service.RevivePlan) string {
 		b.WriteString(l + "\n")
 	}
 	fmt.Fprintf(&b, "harness 资料 %s v%d（%s）\n", p.Profile.ID, p.Profile.ProfileVersion, origin)
+	b.WriteString(unverifiedText(rp.UnverifiedSource))
 	for _, root := range p.Roots {
 		fmt.Fprintf(&b, "  目录 %-10s → %s\n", root.ID, root.Path)
 	}

@@ -11,6 +11,9 @@ import (
 
 // health: valise health <服务器> <实例> [--json]
 func (c *cli) health(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "fix" {
+		return c.healthFix(ctx, args[1:])
+	}
 	fs := flag.NewFlagSet("health", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "")
 	pos, err := parseArgs(fs, args, 2)
@@ -51,6 +54,9 @@ func (c *cli) health(ctx context.Context, args []string) error {
 			mark = "·"
 		}
 		fmt.Fprintf(c.out, "  %s %s：%s\n", mark, it.Title, it.Text)
+		if it.SystemFix != "" {
+			fmt.Fprintf(c.out, "      %s（列出命令并确认后执行）：\n        valise health fix %s %s %s\n", it.ActionName, ssh.Quote(pos[0]), ssh.Quote(pos[1]), it.SystemFix)
+		}
 		if it.ActionID != "" {
 			fmt.Fprintf(c.out, "      %s：\n        valise action %s %s %s\n      资料版本不同需先重新接入。\n", it.ActionName, ssh.Quote(pos[0]), ssh.Quote(pos[1]), ssh.Quote(it.ActionID))
 		}

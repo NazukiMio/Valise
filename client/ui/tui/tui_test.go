@@ -220,9 +220,17 @@ func TestLandingRollback(t *testing.T) {
 	if strings.Contains(v, "无法执行") {
 		t.Fatalf("plan blocked:\n%s", v)
 	}
+	// A legacy seal has no snapshot binding: the plan lists what the
+	// snapshot records and asks before anything is staged.
+	wantText(t, m, "来源无法核实", "快照记录的实例 demo")
+	key(t, m, "enter")
+	wantText(t, m, "这个快照的来源无法核实", "我清楚，继续", "先备份当前状态再恢复", "取消")
 	msgs := make(chan tea.Msg, 4)
 	m.send = func(msg tea.Msg) { msgs <- msg }
-	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // stage
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // "我清楚，继续": stage
+	if cmd == nil {
+		t.Fatal("choosing to continue did not start staging")
+	}
 	go func() { msgs <- cmd() }()
 	m.Update(<-msgs) // stageVerified
 	wantText(t, m, "暂存与校验都通过了", "正在呼叫地面指挥")

@@ -2,6 +2,7 @@ package identity
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	model "valise/core/identity"
@@ -63,5 +64,51 @@ func TestRecoveryValidationAndUnknownSource(t *testing.T) {
 	rels, err := ListRelations(home)
 	if err != nil || len(rels) != 0 {
 		t.Fatalf("%+v %v", rels, err)
+	}
+}
+
+func TestReadCarriesRelationSummaries(t *testing.T) {
+	home := t.TempDir()
+	in := recoveryInput("op_m", "migrate", model.StoppedVerified)
+	src := model.AgentRef{ServerUID: "src", InstallID: "demo", InstanceID: "demo", Generation: "g1"}
+	in.Context.SourceAgent = &src
+	a, rel, err := CompleteRecovery(home, in, func() error { return nil })
+	if err != nil || rel == nil {
+		t.Fatal(err)
+	}
+	b, err := Read(home, "target")
+	if err != nil || b.IdentityState != model.Bound || len(b.Relations) != 1 {
+		t.Fatalf("%+v %v", b, err)
+	}
+	got := b.Relations[0]
+	if got.Kind != model.MigrationCompleted || got.SourceAgent == nil || *got.SourceAgent != src || got.TargetAgent != a.Ref ||
+		got.SourceSnapshot != in.Context.SourceSnapshot || got.OperationRef != "op_m" {
+		t.Fatalf("summary: %+v", got)
+	}
+	if lb := ListBinding(home, "target"); lb.IdentityState != model.Bound || len(lb.Relations) != 1 {
+		t.Fatalf("listing binding: %+v", lb)
+	}
+	// A relation record that disagrees with its operation is not readable history.
+	path := relationPath(home, rel.RelationID)
+	tampered := *rel
+	tampered.SourceAgent = &model.AgentRef{ServerUID: "other", InstallID: "demo", InstanceID: "demo", Generation: "g1"}
+	if err := writeJSON(path, &tampered); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Read(home, "target"); err == nil {
+		t.Fatal("tampered relation was summarized")
+	}
+	if lb := ListBinding(home, "target"); lb.IdentityState != model.NeedsReconciliation || lb.Agent != nil || lb.Relations != nil {
+		t.Fatalf("listing hid reconciliation: %+v", lb)
+	}
+}
+
+func TestListBindingDoesNotInitialize(t *testing.T) {
+	home := t.TempDir()
+	if b := ListBinding(home, "demo"); b.IdentityState != model.LegacyUnbound || b.Agent != nil {
+		t.Fatalf("%+v", b)
+	}
+	if _, err := os.Stat(Dir(home)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("listing created identity: %v", err)
 	}
 }

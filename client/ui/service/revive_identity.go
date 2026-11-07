@@ -12,6 +12,9 @@ import (
 
 // prepareRecoveryIdentity reads capabilities and exact snapshot/run evidence.
 // A current instance with the same name is never evidence for an old snapshot.
+// rp.sourceAgent is set only from a bound backup_snapshot_binding result, also
+// when the target cannot record relations, so the plan can say whether the
+// snapshot's origin is verifiable at all.
 func (s *Service) prepareRecoveryIdentity(ctx context.Context, rp *RevivePlan, plan *revive.Plan) error {
 	target, err := s.session(ctx, rp.Target)
 	if err != nil {
@@ -19,30 +22,36 @@ func (s *Service) prepareRecoveryIdentity(ctx context.Context, rp *RevivePlan, p
 	}
 	supported := target.hello != nil && slices.Contains(target.hello.Capabilities, identity.Capability)
 	target.Close()
-	if !supported {
+	snapshot := identity.SnapshotRef{VaultID: rp.vault.Desc.VaultID, SnapshotID: plan.SnapshotID}
+	if supported {
+		plan.Identity = &identity.RecoveryContext{Mode: plan.Mode, SourceSnapshot: snapshot}
+	} else {
 		rp.Warnings = append(rp.Warnings, "目标搬运工尚不支持世代与恢复关系，本次不建立迁移旅程关联")
-		return nil
 	}
-	plan.Identity = &identity.RecoveryContext{Mode: plan.Mode, SourceSnapshot: identity.SnapshotRef{VaultID: rp.vault.Desc.VaultID, SnapshotID: plan.SnapshotID}}
 	source, err := s.session(ctx, rp.From)
 	if err != nil {
-		rp.Warnings = append(rp.Warnings, "无法读取快照来源身份，来源实例世代保持未知")
+		if supported {
+			rp.Warnings = append(rp.Warnings, "无法读取快照来源身份，来源实例世代保持未知")
+		}
 		return nil
 	}
 	defer source.Close()
 	rp.sourceStatus = source.hello != nil && slices.Contains(source.hello.Capabilities, identity.Capability)
 	if source.hello != nil && slices.Contains(source.hello.Capabilities, protection.BackupCapability) {
 		var binding protection.SnapshotBinding
-		err := source.Call(ctx, protection.MethodSnapshotBinding, protection.SnapshotBindingParams{SnapshotRef: plan.Identity.SourceSnapshot}, &binding)
+		err := source.Call(ctx, protection.MethodSnapshotBinding, protection.SnapshotBindingParams{SnapshotRef: snapshot}, &binding)
 		if err == nil && binding.State == "bound" && binding.AgentRef != nil {
 			ref := *binding.AgentRef
 			if ref.ServerUID != "" && ref.InstallID != "" && ref.InstanceID != "" && ref.Generation != "" {
-				plan.Identity.SourceAgent = &ref
+				rp.sourceAgent = &ref
 			}
 		}
 	}
-	if plan.Identity.SourceAgent == nil {
-		rp.Warnings = append(rp.Warnings, "该快照没有可核实的实例世代绑定，来源实例身份未知；不会按同名补全旅程")
+	if plan.Identity != nil {
+		plan.Identity.SourceAgent = rp.sourceAgent
+		if rp.sourceAgent == nil {
+			rp.Warnings = append(rp.Warnings, "该快照没有可核实的实例世代绑定，来源实例身份未知；不会按同名补全旅程")
+		}
 	}
 	return nil
 }

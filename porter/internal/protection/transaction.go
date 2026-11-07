@@ -12,6 +12,7 @@ import (
 
 	"valise/core/identity"
 	cp "valise/core/protection"
+	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 	"valise/porter/internal/seal"
@@ -278,9 +279,14 @@ func (s Store) Apply(ctx context.Context, p cp.ApplyParams) (*cp.Change, error) 
 	v := s.observe(ctx, a.InstanceID)
 	r := record{Change: cp.Change{Schema: changeSchema, ChangeID: p.ChangeID, AgentRef: a, RequestDigest: requestDigest, State: "pending", OldRevision: p.Plan.Request.ExpectedRevision, NewRevision: p.Plan.Request.ExpectedRevision + 1}, Plan: cp.ServerPlan{SchemaVersion: cp.Schema, AgentRef: a, Revision: p.Plan.Request.ExpectedRevision + 1, Desired: desired, AcceptedAt: now}, OldFiles: old, NewFiles: next, OldActive: v.ActiveState == "active", OldEnabled: v.UnitFileState == "enabled"}
 	if err = s.persist(&r); err != nil {
+		// No durable intent: nothing has been changed.
 		return nil, err
 	}
+	// From here the change itself is the result. Failures are reported in the
+	// returned Change (error_code), never as a bare RPC error that would hide a
+	// completed rollback or a required reconciliation.
 	if err = s.configure(ctx, a.InstanceID, next, *desired.Schedule.Enabled, *desired.Schedule.Enabled); err != nil {
+		r.ErrorCode = errorCode(err)
 		// A failed or cancelled attempt still restores the original timer at a safe boundary.
 		restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 		defer cancel()
@@ -294,40 +300,63 @@ func (s Store) Apply(ctx context.Context, p cp.ApplyParams) (*cp.Change, error) 
 		} else {
 			r.ReconcileRequired = true
 		}
-		if perr := s.persist(&r); perr != nil {
-			return &r.Change, perr
-		}
-		return &r.Change, err
+		return s.settle(&r), nil
 	}
 	// Atomic publication is the point of no version rollback.
 	if err = atomic(s.planPath(a.InstanceID), r.Plan); err != nil {
 		r.ReconcileRequired = true
-		_ = s.persist(&r)
-		return &r.Change, err
+		r.ErrorCode = errorCode(err)
+		return s.settle(&r), nil
 	}
 	r.Committed = true
 	r.State = "committed"
 	r.ReconcileRequired = true
 	if err = s.persist(&r); err != nil {
-		return &r.Change, err
+		r.ErrorCode = errorCode(err)
+		return &r.Change, nil
 	}
 	actualFiles, readErr := s.snapshots(a.InstanceID)
 	if readErr != nil {
-		return &r.Change, readErr
+		r.ErrorCode = errorCode(readErr)
+		return s.settle(&r), nil
 	}
 	actualDigest, _ := cp.Digest(actualFiles)
 	newDigest, _ := cp.Digest(next)
 	if actualDigest != newDigest {
-		return &r.Change, fail("result_unknown", "发布配置与事务不一致")
+		r.ErrorCode = "result_unknown"
+		return s.settle(&r), nil
 	}
 	if err = s.verify(ctx, a.InstanceID, *desired.Schedule.Enabled, next[s.periodPath(a.InstanceID)]); err != nil {
-		return &r.Change, err
+		r.ErrorCode = errorCode(err)
+		return s.settle(&r), nil
 	}
 	r.ReconcileRequired = false
-	if err = s.persist(&r); err != nil {
-		return &r.Change, err
+	return s.settle(&r), nil
+}
+
+// errorCode keeps only the stable classification of a failure.
+func errorCode(err error) string {
+	if ue, ok := valise.As(err); ok && ue.Code != "" {
+		return ue.Code
 	}
-	return &r.Change, nil
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return "cancelled"
+	}
+	return "internal"
+}
+
+// settle persists the outcome. If even that fails, the durable record is still
+// the earlier one, so the caller is told to reconcile instead of trusting it.
+func (s Store) settle(r *record) *cp.Change {
+	if err := s.persist(r); err != nil {
+		out := r.Change
+		out.ReconcileRequired = true
+		if out.ErrorCode == "" {
+			out.ErrorCode = "record_write_failed"
+		}
+		return &out
+	}
+	return &r.Change
 }
 func (s Store) verifyImages(ctx context.Context, r record) error {
 	files, err := s.snapshots(r.AgentRef.InstanceID)

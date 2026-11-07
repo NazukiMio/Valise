@@ -22,6 +22,12 @@ type BackupControllerConfig struct {
 	ExecutorID string
 	RPC        ProtectionRPC
 	Review     BackupReview
+	// Capabilities returns the porter's hello capabilities for host. Only a
+	// porter declaring backup-runs/2 gets the asynchronous Start; nil, an
+	// error or an older porter keeps the synchronous backup-runs/1 call.
+	Capabilities func(ctx context.Context, host string) ([]string, error)
+	// PollInterval spaces run status queries of asynchronous tasks.
+	PollInterval time.Duration
 }
 type BackupPlan struct {
 	PlanID              string                `json:"plan_id"`
@@ -50,6 +56,14 @@ type BackupTask struct {
 	ObservedAt          time.Time             `json:"observed_at"`
 	Run                 *protection.BackupRun `json:"run,omitempty"`
 	Error               *ProtectionTaskError  `json:"error,omitempty"`
+	// Async marks a backup-runs/2 task: Start returned before completion and
+	// the run is followed by status queries. Execution mirrors the run
+	// record; attached means closing Valise interrupts this backup.
+	Async     bool   `json:"async,omitempty"`
+	Execution string `json:"execution,omitempty"`
+	// CancelRequested is set once backup_run_cancel was sent; the state is
+	// cancelling until the run record confirms a stop or a final result.
+	CancelRequested bool `json:"cancel_requested,omitempty"`
 }
 type backupPrepared struct {
 	host     string
@@ -62,6 +76,7 @@ type BackupController struct {
 	config  BackupControllerConfig
 	plans   map[string]backupPrepared
 	now     func() time.Time
+	follow  backupFollowers
 }
 
 func NewBackupController(config BackupControllerConfig) (*BackupController, error) {
@@ -69,6 +84,7 @@ func NewBackupController(config BackupControllerConfig) (*BackupController, erro
 		return nil, protectionError("request_invalid", "备份服务缺少状态目录或连接适配")
 	}
 	c := &BackupController{config: config, plans: map[string]backupPrepared{}, now: time.Now}
+	c.follow.init(func(t BackupTask) string { return t.TaskRef.TaskID }, func(t BackupTask) bool { return backupTerminal(t.State) })
 	err := c.withStore(func() error {
 		path := filepath.Join(c.dir(), ".executor.json")
 		var r struct {
@@ -162,6 +178,9 @@ func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKe
 	if submissionKey == "" || len(submissionKey) > 256 {
 		return BackupTask{}, protectionError("request_invalid", "提交标识为空或过长")
 	}
+	if c.follow.isClosing() {
+		return BackupTask{}, protectionError("resource_busy", "Valise 正在关闭，不再开始新的备份")
+	}
 	c.mu.Lock()
 	p, ok := c.plans[planID]
 	c.mu.Unlock()
@@ -225,6 +244,7 @@ func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKe
 	if backupRequestDigest(p.host, fresh) != digest {
 		return task, protectionError("plan_stale", "确认后保护计划或实例身份已变化，请重新准备")
 	}
+	async := c.supportsAsync(ctx, p.host)
 	c.mu.Lock()
 	current, ok := c.plans[planID]
 	if !ok || current.consumed || !c.now().Before(current.plan.ExpiresAt) {
@@ -237,6 +257,7 @@ func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKe
 		t.Wait = ""
 		t.PlanID = planID
 		t.PlanDigest = p.plan.PlanDigest
+		t.Async = async
 		claimed = true
 	})
 	if claimed {
@@ -248,12 +269,18 @@ func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKe
 		return task, err
 	}
 	// No code path reissues this call after the durable running boundary.
+	if async {
+		if !c.follow.start(task.TaskRef.TaskID, func(stop <-chan struct{}) { c.drive(task, true, stop) }) {
+			return c.finish(task, protection.BackupRun{}, protectionError("resource_busy", "Valise 正在关闭"))
+		}
+		return task, nil
+	}
 	var run protection.BackupRun
 	callErr := c.config.RPC(ctx, task.Host, protection.MethodBackup, task.params(), &run)
 	return c.finish(task, run, callErr)
 }
 func (t BackupTask) params() protection.BackupParams {
-	return protection.BackupParams{AgentRef: t.AgentRef, ExpectedRevision: t.ServerPlan.Revision, RunID: t.RunID, Reason: "manual"}
+	return protection.BackupParams{AgentRef: t.AgentRef, ExpectedRevision: t.ServerPlan.Revision, RunID: t.RunID, Reason: "manual", Detach: t.Async}
 }
 func (c *BackupController) updateWaiting(old BackupTask, update func(*BackupTask)) (BackupTask, error) {
 	t := old
@@ -271,6 +298,9 @@ func (c *BackupController) updateWaiting(old BackupTask, update func(*BackupTask
 		t.ObservedAt = c.now().UTC()
 		return c.save(t)
 	})
+	if err == nil {
+		c.follow.notify(t)
+	}
 	return cloneProtection(t), err
 }
 
@@ -286,7 +316,7 @@ func (c *BackupController) GetBackupTask(ctx context.Context, ref ProtectionTask
 		return t, err
 	}
 	switch t.State {
-	case "running", "reconciling", "needs_recovery":
+	case "running", "cancelling", "reconciling", "needs_recovery":
 	default:
 		return cloneProtection(t), nil
 	}
@@ -302,15 +332,16 @@ func (c *BackupController) finish(old BackupTask, run protection.BackupRun, call
 			return err
 		}
 		t = current
-		switch t.State {
-		case "succeeded", "partial", "failed", "cancelled":
+		if backupTerminal(t.State) {
 			return nil
 		}
 		valid := callErr == nil && backupRunMatches(t, run)
+		cancelling := t.State == "cancelling" || t.CancelRequested
 		t.State = "reconciling"
 		t.Error = protectionTaskError("result_unknown", "备份结果尚未核实，不能自动重发", "reconcile")
 		if valid {
 			t.Run = &run
+			t.Execution = run.Execution
 			switch run.State {
 			case "succeeded", "partial":
 				t.State = run.State
@@ -318,8 +349,16 @@ func (c *BackupController) finish(old BackupTask, run protection.BackupRun, call
 			case "failed":
 				t.State = "failed"
 				t.Error = protectionTaskError("backup_failed", "服务器备份未完成，请核实记录后重新准备", "replan")
+			case "cancelled":
+				// The executor confirmed it stopped; a committed snapshot is
+				// kept in run.Snapshot.
+				t.State = "cancelled"
+				t.Error = nil
 			case "accepted", "running":
 				t.State = "running"
+				if cancelling {
+					t.State = "cancelling"
+				}
 				t.Error = nil
 			case "reconciling":
 			}
@@ -328,7 +367,17 @@ func (c *BackupController) finish(old BackupTask, run protection.BackupRun, call
 		t.ObservedAt = c.now().UTC()
 		return c.save(t)
 	})
+	if err == nil {
+		c.follow.notify(t)
+	}
 	return cloneProtection(t), err
+}
+func backupTerminal(state string) bool {
+	switch state {
+	case "succeeded", "partial", "failed", "cancelled":
+		return true
+	}
+	return false
 }
 func backupRunMatches(t BackupTask, run protection.BackupRun) bool {
 	requestDigest, _ := protection.Digest(t.params())
@@ -340,7 +389,7 @@ func backupRunMatches(t BackupTask, run protection.BackupRun) bool {
 	switch run.State {
 	case "succeeded", "partial":
 		return run.Snapshot != nil && run.Snapshot.VaultID != "" && run.Snapshot.SnapshotID != ""
-	case "accepted", "running", "reconciling", "failed":
+	case "accepted", "running", "reconciling", "failed", "cancelled":
 		return true
 	default:
 		return false
@@ -387,13 +436,13 @@ func (c *BackupController) load(id string) (BackupTask, error) {
 	if !protection.ValidID(t.PlanID) || t.PlanDigest == "" || t.ObservedAt.IsZero() || (t.Run != nil && !backupRunMatches(t, *t.Run)) {
 		return BackupTask{}, protectionError("record_corrupt", "备份任务计划或运行证据绑定无效")
 	}
-	if t.State == "succeeded" || t.State == "partial" || t.State == "failed" {
+	if t.State == "succeeded" || t.State == "partial" || t.State == "failed" || (t.State == "cancelled" && t.Run != nil) {
 		if t.Run == nil || t.Run.State != t.State {
 			return BackupTask{}, protectionError("record_corrupt", "备份任务缺少对应终态运行证据")
 		}
 	}
 	switch t.State {
-	case "waiting", "running", "reconciling", "needs_recovery", "succeeded", "partial", "failed", "cancelled":
+	case "waiting", "running", "cancelling", "reconciling", "needs_recovery", "succeeded", "partial", "failed", "cancelled":
 	default:
 		return BackupTask{}, protectionError("record_corrupt", "备份任务状态无效")
 	}

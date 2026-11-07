@@ -12,7 +12,7 @@ import (
 )
 
 func transactionCompatibility(hello *rpc.HelloResult, method string, params any) error {
-	if err := n2Compatibility(hello, method); err != nil {
+	if err := n2Compatibility(hello, method, params); err != nil {
 		return err
 	}
 	required := method == action.MethodPlan || method == action.MethodStatus || method == action.MethodResume || method == action.MethodCleanup

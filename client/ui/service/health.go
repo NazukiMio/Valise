@@ -46,7 +46,10 @@ type HealthItem struct {
 	Key        string `json:"key,omitempty"` // the one key that acts on it
 	ActionID   string `json:"action_id,omitempty"`
 	ActionName string `json:"action_name,omitempty"`
-	Detail     string `json:"detail,omitempty"`
+	// SystemFix names a fix built into Valise (FixLinger, FixClock),
+	// planned with PlanSystemFix; ActionName is its name.
+	SystemFix string `json:"system_fix,omitempty"`
+	Detail    string `json:"detail,omitempty"`
 	// Dismissed is set while the user has dismissed it: until then, or
 	// the zero time for a yellow item dismissed for good.
 	Dismissed *time.Time `json:"dismissed_until,omitempty"`
@@ -113,6 +116,7 @@ func (s *Service) Health(ctx context.Context, host, instance string) (*HealthRep
 		instances: func() ([]enroll.InstanceSummary, error) { return s.Instances(ctx, host) },
 		timer:     func() (*vaultrpc.TimerStatus, error) { return s.TimerStatus(ctx, host, instance) },
 		kit:       func() (*agentkit.KitStatusResult, error) { return s.KitStatus(ctx, host, instance) },
+		system:    func() (*systemRead, error) { return s.readSystem(ctx, host, instance) },
 		approval: func() (*action.ApprovalResult, error) {
 			var chk action.ApprovalResult
 			err := s.call(ctx, host, action.MethodApproval, action.ApprovalParams{InstanceID: instance}, &chk)
@@ -132,20 +136,12 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 	r := &HealthReport{Host: host, Instance: instance, Items: []HealthItem{}}
 	add := func(it HealthItem) { r.Items = append(r.Items, it) }
 	now := time.Now()
+	var vaultNow time.Time
 	st, err := src.vault()
 	r.read("backup", "备份与服务器时间", err)
 	if err == nil {
 		add(s.backupItem(host, instance, st.ServerName, st.Snapshots, st.Targets, now))
-		if !st.Now.IsZero() {
-			if skew := st.Now.Sub(now); skew > clockSkewLimit || skew < -clockSkewLimit {
-				if skew < 0 {
-					skew = -skew
-				}
-				add(HealthItem{ID: "clock", Group: HealthAgent, Level: HealthWarn, Title: "服务器时钟",
-					Text:   "和这台电脑差 " + agoPlain(skew),
-					Detail: "时钟偏差会让空间站的短期证书失效，也会让逃生舱的时间显示不准。在服务器上开启时间同步（如 chrony 或 systemd-timesyncd）。"})
-			}
-		}
+		vaultNow = st.Now
 	}
 	add(s.restoreTestItem(host, instance, now))
 	profileID := ""
@@ -169,15 +165,14 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 	r.read("service", "服务与管理页", err)
 	ts, err := src.timer()
 	r.read("timer", "定时备份", err)
+	legacyTimer, legacyLinger := false, false
 	if err == nil {
+		legacyTimer, legacyLinger = ts.Enabled, ts.Linger
 		it := HealthItem{ID: "timer", Group: HealthAgent, Title: "定时备份"}
 		switch {
 		case !ts.Enabled:
 			it.Level, it.Text, it.Key = HealthInfo, "没有开启", "s"
 			it.Detail = "定时建立逃生舱让备份不靠你记得。按 s 打开这个 agent 的设置，在「定时建立逃生舱」里开启。"
-		case !ts.Linger:
-			it.Level, it.Text, it.Key = HealthWarn, "每 "+everyText(ts.Every)+"一次，但 linger 没有开启：你登出或服务器重启后会停下", "k"
-			it.Detail = "linger 让服务器在你没有登录时也运行你的定时任务。按 k 打开 Kit 工具，在那里开启（专家级，需要高级模式）；也可以自己在服务器终端里运行 sudo loginctl enable-linger $USER。"
 		default:
 			it.Level, it.Text = HealthOK, "每 "+everyText(ts.Every)+"一次，登出后也会运行"
 		}
@@ -223,6 +218,8 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 		it.Detail += s.approvalRemedy(profileID)
 	}
 	add(it)
+	s.systemItems(r, host, instance, src.system, legacyTimer, legacyLinger, vaultNow)
+	lingerNote(r)
 	s.MarkDismissed(host, instance, r.Items)
 	r.Sort()
 	return r

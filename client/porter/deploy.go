@@ -113,10 +113,10 @@ func Upload(ctx context.Context, t *ssh.Transport, binary []byte, want Platform)
 	return Probe(ctx, t)
 }
 
-// ProtectionCapability must equal core/protection.Capability. It is repeated
+// ProtectionCapability must equal core/protection.CapabilityV2. It is repeated
 // here so the client module does not pull core/vault's dependencies into
 // client/porter; TestUploadCapablePorterWithPlan checks the built porter declares it.
-const ProtectionCapability = "protection-plan/1"
+const ProtectionCapability = "protection-plan/2"
 
 // Exit codes of publishScript.
 const (

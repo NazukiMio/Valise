@@ -36,7 +36,12 @@ func TestCheckDeploymentRequiresDeclaredCapability(t *testing.T) {
 	if err := CheckDeployment(ctx, s.Env, s.Home); err == nil {
 		t.Fatal("porter without protection capability accepted")
 	}
+	// A porter that knows plans but not catch_up would drop that field.
 	installFakePorter(t, s.Home, `,"capabilities":["identity/1","`+cp.Capability+`"]`)
+	if err := CheckDeployment(ctx, s.Env, s.Home); err == nil {
+		t.Fatal("porter without protection-plan/2 accepted")
+	}
+	installFakePorter(t, s.Home, `,"capabilities":["identity/1","`+cp.Capability+`","`+cp.CapabilityV2+`"]`)
 	if err := CheckDeployment(ctx, s.Env, s.Home); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +66,7 @@ func TestApplyRefusedAfterDowngradeWritesNothing(t *testing.T) {
 	if _, err := os.Stat(s.planPath(a.InstanceID)); !os.IsNotExist(err) {
 		t.Fatal("plan published")
 	}
-	installFakePorter(t, s.Home, `,"capabilities":["`+cp.Capability+`"]`)
+	installFakePorter(t, s.Home, `,"capabilities":["`+cp.Capability+`","`+cp.CapabilityV2+`"]`)
 	if r := apply(t, s, p); !r.Committed {
 		t.Fatal(r)
 	}

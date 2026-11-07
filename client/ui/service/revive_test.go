@@ -39,6 +39,14 @@ func sealedWorld(t *testing.T) (*Service, string, string, string) {
 	return s, home, soul.SnapshotID, ss.SnapshotID
 }
 
+// proceedConfirm stands for a person who chose "我清楚，继续" and confirmed the swap.
+func proceedConfirm() ReviveConfirm {
+	return ReviveConfirm{
+		UnverifiedSource: func(UnverifiedSource) SourceDecision { return SourceProceed },
+		Swap:             func(*revive.StageVerifyResult) bool { return true },
+	}
+}
+
 func readFile(t *testing.T, p string) string {
 	t.Helper()
 	b, err := os.ReadFile(p)
@@ -68,9 +76,17 @@ func TestRollbackOverFakeSSH(t *testing.T) {
 	if err != nil || len(rp.Blockers) != 0 || rp.Plan.Unit != "" || !rp.Plan.Carry {
 		t.Fatalf("%+v %v", rp, err)
 	}
+	u := rp.UnverifiedSource
+	if u == nil || u.Notice != UnverifiedSourceNotice || u.InstanceID != "demo" || u.ProfileID != "demo" || u.ProfileVersion != 1 ||
+		u.SourceServer != "box" || u.Period == "" || u.Tier != vault.TierSoul || u.CreatedAt.IsZero() || !u.BackupFirst || u.BackupInstance != "demo" {
+		t.Fatalf("legacy snapshot source shown as verified: %+v", u)
+	}
 	asked := false
-	res, err := s.ExecuteRevive(ctx, rp, "", func(v *revive.StageVerifyResult) bool { asked = v.Files > 0; return true })
-	if err != nil || !asked || res.State != revive.StateRestored {
+	res, err := s.ExecuteReviveConfirmed(ctx, rp, "", ReviveConfirm{
+		UnverifiedSource: func(UnverifiedSource) SourceDecision { return SourceProceed },
+		Swap:             func(v *revive.StageVerifyResult) bool { asked = v.Files > 0; return true },
+	})
+	if err != nil || !asked || res.State != revive.StateRestored || rp.PreRestoreBackup != nil {
 		t.Fatalf("%+v %v", res, err)
 	}
 	if readFile(t, filepath.Join(state, "memory/a.md")) != "m" {
@@ -97,7 +113,7 @@ func TestCrashInjectionAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.ExecuteRevive(ctx, rp, "crash-at="+revive.StateLiveMoved, func(*revive.StageVerifyResult) bool { return true })
+	_, err = s.ExecuteReviveConfirmed(ctx, rp, "crash-at="+revive.StateLiveMoved, proceedConfirm())
 	if err == nil {
 		t.Fatal("injected crash did not surface")
 	}
@@ -135,7 +151,16 @@ func TestCloneToAnotherServer(t *testing.T) {
 	if rp.Plan.InstanceID != "demo-clone" || rp.Plan.Carry || rp.Plan.Roots[0].Path != filepath.Join(home2, ".demo") {
 		t.Fatalf("%+v", rp.Plan)
 	}
-	res, err := s.ExecuteRevive(ctx, rp, "", func(*revive.StageVerifyResult) bool { return true })
+	// A new copy has no current state to back up: only "我清楚，继续".
+	if rp.UnverifiedSource == nil || rp.UnverifiedSource.BackupFirst {
+		t.Fatalf("clone source: %+v", rp.UnverifiedSource)
+	}
+	_, err = s.ExecuteReviveConfirmed(ctx, rp, "", ReviveConfirm{
+		UnverifiedSource: func(UnverifiedSource) SourceDecision { return SourceBackupFirst },
+		Swap:             func(*revive.StageVerifyResult) bool { t.Fatal("staged without a valid choice"); return false },
+	})
+	wantCode(t, err, "backup_first_unavailable")
+	res, err := s.ExecuteReviveConfirmed(ctx, rp, "", proceedConfirm())
 	if err != nil || res.State != revive.StateRestored {
 		t.Fatalf("%+v %v", res, err)
 	}
@@ -156,7 +181,7 @@ func TestCloneToAnotherServer(t *testing.T) {
 		!strings.Contains(strings.Join(rp.Warnings, "\n"), "demo-clone") {
 		t.Fatalf("%+v %+v %v", rp.Plan, rp.Warnings, err)
 	}
-	mres, err := s.ExecuteRevive(ctx, rp, "", func(*revive.StageVerifyResult) bool { return true })
+	mres, err := s.ExecuteReviveConfirmed(ctx, rp, "", proceedConfirm())
 	if err != nil || mres.State != revive.StateRestored {
 		t.Fatalf("%+v %v", mres, err)
 	}
@@ -202,7 +227,7 @@ func TestReviveWithProfileFromSnapshot(t *testing.T) {
 		t.Fatalf("%+v %v", rp.Blockers, err)
 	}
 	os.WriteFile(filepath.Join(home, ".demo/memory/a.md"), []byte("changed"), 0o644)
-	res, err := s.ExecuteRevive(ctx, rp, "", func(*revive.StageVerifyResult) bool { return true })
+	res, err := s.ExecuteReviveConfirmed(ctx, rp, "", proceedConfirm())
 	if err != nil || res.State != revive.StateRestored || readFile(t, filepath.Join(home, ".demo/memory/a.md")) != "m" {
 		t.Fatalf("%+v %v", res, err)
 	}
@@ -254,7 +279,7 @@ func TestRollbackOnDailyKey(t *testing.T) {
 	if err != nil || len(rp.Blockers) > 0 {
 		t.Fatalf("%+v %v", rp.Blockers, err)
 	}
-	res, err := s.ExecuteRevive(ctx, rp, "", func(*revive.StageVerifyResult) bool { return true })
+	res, err := s.ExecuteReviveConfirmed(ctx, rp, "", proceedConfirm())
 	if err != nil || res.State != revive.StateRestored {
 		t.Fatalf("%+v %v", res, err)
 	}

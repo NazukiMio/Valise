@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"valise/core/identity"
 	"valise/core/protection"
+	"valise/core/valise"
 )
 
 // Typed RPC substitute: these tests execute no SSH or harness commands.
@@ -271,5 +273,351 @@ func TestBackupConcurrentSubmissionsExecuteOnce(t *testing.T) {
 	wg.Wait()
 	if b.calls != 1 {
 		t.Fatalf("calls %d", b.calls)
+	}
+}
+
+// asyncBoundary is a typed backup-runs/2 substitute. Its run advances only
+// when the test says so; it executes no SSH or harness commands.
+type asyncBoundary struct {
+	*backupBoundary
+	caps      []string
+	execution string
+	gate      chan struct{}
+	cancels   int
+	status    func(*protection.BackupRun)
+}
+
+func newAsyncBoundary(execution string) *asyncBoundary {
+	return &asyncBoundary{backupBoundary: newBackupBoundary(), caps: []string{protection.BackupCapability, protection.BackupCapabilityV2}, execution: execution}
+}
+func (a *asyncBoundary) capabilities(context.Context, string) ([]string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.caps), nil
+}
+func (a *asyncBoundary) rpc(ctx context.Context, host, method string, p, out any) error {
+	switch method {
+	case protection.MethodGet:
+		return a.backupBoundary.rpc(ctx, host, method, p, out)
+	case protection.MethodBackup:
+		req := p.(protection.BackupParams)
+		digest, _ := protection.Digest(req)
+		a.mu.Lock()
+		a.calls++
+		if req.Detach != slices.Contains(a.caps, protection.BackupCapabilityV2) {
+			a.mu.Unlock()
+			return valise.New("request_invalid", "detach sent without backup-runs/2", "fix the client")
+		}
+		now := time.Now().UTC()
+		a.run = protection.BackupRun{Schema: protection.BackupRunSchema, RunID: req.RunID, AgentRef: req.AgentRef, Request: req, RequestDigest: digest, Plan: cloneProtection(a.plan), State: "accepted", Execution: a.execution, Stage: protection.StageQueued, AcceptedAt: now, UpdatedAt: now}
+		gate := a.gate
+		a.mu.Unlock()
+		if a.execution == protection.ExecutionAttached && gate != nil {
+			a.mu.Lock()
+			a.run.State = "running"
+			a.run.Stage = protection.StageSealing
+			a.mu.Unlock()
+			select {
+			case <-gate:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			a.mu.Lock()
+			a.run.State = "succeeded"
+			a.run.Stage = ""
+			a.run.Snapshot = &identity.SnapshotRef{VaultID: "vault", SnapshotID: "snapshot"}
+			a.mu.Unlock()
+		}
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		*out.(*protection.BackupRun) = cloneProtection(a.run)
+		return nil
+	case protection.MethodRunStatus:
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.statusCalls++
+		req := p.(protection.BackupStatusParams)
+		if req.RunID != a.run.RunID {
+			return valise.New("run_not_found", "missing", "retry")
+		}
+		if a.status != nil {
+			a.status(&a.run)
+		}
+		*out.(*protection.BackupRun) = cloneProtection(a.run)
+		return nil
+	case protection.MethodRunCancel:
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.cancels++
+		at := time.Now().UTC()
+		a.run.CancelRequestedAt = &at
+		*out.(*protection.BackupRun) = cloneProtection(a.run)
+		return nil
+	}
+	panic(method)
+}
+func (a *asyncBoundary) set(fn func(*protection.BackupRun)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	fn(&a.run)
+}
+func (a *asyncBoundary) counts() (int, int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.calls, a.cancels
+}
+func makeAsyncController(t *testing.T, a *asyncBoundary, dir string) *BackupController {
+	t.Helper()
+	if dir == "" {
+		dir = t.TempDir()
+	}
+	c, err := NewBackupController(BackupControllerConfig{StateDir: dir, RPC: a.rpc, Review: approveBackup, Capabilities: a.capabilities, PollInterval: 5 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Shutdown(context.Background()) })
+	return c
+}
+func waitBackupState(t *testing.T, ch <-chan BackupTask, states ...string) BackupTask {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case v, ok := <-ch:
+			if !ok {
+				t.Fatalf("closed before %v", states)
+			}
+			if slices.Contains(states, v.State) {
+				return v
+			}
+		case <-deadline:
+			t.Fatalf("timeout waiting for %v", states)
+		}
+	}
+}
+
+func TestBackupAsyncStartReturnsBeforeAttachedRunCompletes(t *testing.T) {
+	a := newAsyncBoundary(protection.ExecutionAttached)
+	a.gate = make(chan struct{})
+	c := makeAsyncController(t, a, "")
+	p := prepareBackup(t, c, a.backupBoundary)
+	tsk, err := c.StartBackup(context.Background(), p.PlanID, "key")
+	if err != nil || tsk.State != "running" || !tsk.Async || tsk.Run != nil {
+		t.Fatalf("start %+v %v", tsk, err)
+	}
+	ch, unsubscribe, err := c.WatchBackupTask(context.Background(), tsk.TaskRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribe()
+	// Status queries reveal the attached execution while the call is open.
+	deadline := time.After(5 * time.Second)
+	for seen := false; !seen; {
+		select {
+		case v := <-ch:
+			seen = v.Execution == protection.ExecutionAttached && v.Run != nil && v.Run.Stage == protection.StageSealing
+		case <-deadline:
+			t.Fatal("attached execution not observed")
+		}
+	}
+	list, err := c.ListBackupTasks(context.Background())
+	if err != nil || len(list) != 1 || list[0].TaskRef != tsk.TaskRef || list[0].State != "running" {
+		t.Fatalf("list %+v %v", list, err)
+	}
+	close(a.gate)
+	done := waitBackupState(t, ch, "succeeded")
+	if done.Run == nil || done.Run.Snapshot == nil {
+		t.Fatalf("done %+v", done)
+	}
+	if _, ok := <-ch; ok {
+		t.Fatal("terminal view did not close the subscription")
+	}
+	if calls, _ := a.counts(); calls != 1 {
+		t.Fatalf("calls %d", calls)
+	}
+	// Same key: the same task, no new call.
+	again, err := c.StartBackup(context.Background(), p.PlanID, "key")
+	if err != nil || again.TaskRef != tsk.TaskRef || again.State != "succeeded" {
+		t.Fatalf("dedup %+v %v", again, err)
+	}
+}
+
+func TestBackupAsyncDetachedSurvivesRestartAndUnsubscribe(t *testing.T) {
+	a := newAsyncBoundary(protection.ExecutionDetached)
+	c := makeAsyncController(t, a, "")
+	p := prepareBackup(t, c, a.backupBoundary)
+	tsk, err := c.StartBackup(context.Background(), p.PlanID, "key")
+	if err != nil || tsk.State != "running" {
+		t.Fatalf("start %+v %v", tsk, err)
+	}
+	ch, unsubscribe, err := c.WatchBackupTask(context.Background(), tsk.TaskRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := waitBackupState(t, ch, "running")
+	unsubscribe()
+	if _, ok := <-ch; ok {
+		// drain the pending view; the channel must close after unsubscribe
+		if _, ok := <-ch; ok {
+			t.Fatal("unsubscribe kept the channel open")
+		}
+	}
+	_ = v
+	// Close this process while the server still runs the unit.
+	if err := c.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.StartBackup(context.Background(), p.PlanID, "other"); err == nil {
+		t.Fatal("started after shutdown")
+	}
+	durable, err := c.load(tsk.TaskRef.TaskID)
+	if err != nil || durable.State != "running" || durable.Execution != protection.ExecutionDetached {
+		t.Fatalf("durable %+v %v", durable, err)
+	}
+	a.set(func(r *protection.BackupRun) {
+		r.State = "succeeded"
+		r.Snapshot = &identity.SnapshotRef{VaultID: "vault", SnapshotID: "snapshot"}
+	})
+	reopened := makeAsyncController(t, a, c.config.StateDir)
+	ch, unsubscribe, err = reopened.WatchBackupTask(context.Background(), tsk.TaskRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribe()
+	if done := waitBackupState(t, ch, "succeeded"); done.Run.Snapshot == nil {
+		t.Fatalf("restart %+v", done)
+	}
+	if calls, _ := a.counts(); calls != 1 {
+		t.Fatalf("restart replayed: %d", calls)
+	}
+}
+
+func TestBackupAsyncCancelReadsCancellingUntilConfirmed(t *testing.T) {
+	a := newAsyncBoundary(protection.ExecutionDetached)
+	c := makeAsyncController(t, a, "")
+	p := prepareBackup(t, c, a.backupBoundary)
+	a.status = func(r *protection.BackupRun) {
+		if r.State == "accepted" {
+			r.State = "running"
+			r.Stage = protection.StageSealing
+		}
+	}
+	tsk, err := c.StartBackup(context.Background(), p.PlanID, "key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, unsubscribe, err := c.WatchBackupTask(context.Background(), tsk.TaskRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribe()
+	for v := waitBackupState(t, ch, "running"); v.Run == nil || v.Run.State != "running"; v = waitBackupState(t, ch, "running") {
+	}
+	got, err := c.CancelBackupTask(context.Background(), tsk.TaskRef)
+	if err != nil || got.State != "cancelling" || !got.CancelRequested {
+		t.Fatalf("cancel %+v %v", got, err)
+	}
+	if _, cancels := a.counts(); cancels != 1 {
+		t.Fatalf("cancels %d", cancels)
+	}
+	// The executor stops at the copy safe point and keeps the snapshot.
+	a.set(func(r *protection.BackupRun) {
+		r.State = "cancelled"
+		r.ErrorCode = "cancelled"
+		r.Stage = ""
+		r.Snapshot = &identity.SnapshotRef{VaultID: "vault", SnapshotID: "snapshot"}
+	})
+	done := waitBackupState(t, ch, "cancelled")
+	if done.Run == nil || done.Run.Snapshot == nil {
+		t.Fatalf("cancelled %+v", done)
+	}
+	reloaded, err := c.load(tsk.TaskRef.TaskID)
+	if err != nil || reloaded.State != "cancelled" {
+		t.Fatalf("durable %+v %v", reloaded, err)
+	}
+	if calls, _ := a.counts(); calls != 1 {
+		t.Fatal("cancel replayed the backup")
+	}
+}
+
+func TestBackupOldPorterStaysSynchronous(t *testing.T) {
+	a := newAsyncBoundary(protection.ExecutionAttached)
+	a.caps = []string{protection.BackupCapability}
+	c := makeAsyncController(t, a, "")
+	p := prepareBackup(t, c, a.backupBoundary)
+	tsk, err := c.StartBackup(context.Background(), p.PlanID, "key")
+	// Without a gate the attached substitute answers accepted at once, so a
+	// synchronous Start shows the call's own result and is not followed.
+	if err != nil || tsk.Async || tsk.State != "running" || tsk.Run == nil {
+		t.Fatalf("sync %+v %v", tsk, err)
+	}
+	if _, err := c.CancelBackupTask(context.Background(), tsk.TaskRef); err == nil {
+		t.Fatal("old porter accepted cancel")
+	}
+	if _, cancels := a.counts(); cancels != 0 {
+		t.Fatal("cancel sent to old porter")
+	}
+	a.caps = nil
+	b := newBackupBoundary()
+	sync := makeBackupController(t, b, approveBackup)
+	p = prepareBackup(t, sync, b)
+	if done, err := sync.StartBackup(context.Background(), p.PlanID, "k"); err != nil || done.State != "succeeded" || done.Async {
+		t.Fatalf("no capabilities %+v %v", done, err)
+	}
+}
+
+func TestBackupAsyncLostCallIsUnknownAndNotResent(t *testing.T) {
+	a := newAsyncBoundary(protection.ExecutionDetached)
+	c := makeAsyncController(t, a, "")
+	p := prepareBackup(t, c, a.backupBoundary)
+	failing := func(ctx context.Context, host, method string, params, out any) error {
+		if method == protection.MethodBackup {
+			a.mu.Lock()
+			a.calls++
+			a.mu.Unlock()
+			return errors.New("connection reset SECRET")
+		}
+		return a.rpc(ctx, host, method, params, out)
+	}
+	c.config.RPC = failing
+	tsk, err := c.StartBackup(context.Background(), p.PlanID, "key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, unsubscribe, err := c.WatchBackupTask(context.Background(), tsk.TaskRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribe()
+	got := waitBackupState(t, ch, "reconciling")
+	if got.Error == nil || got.Error.Code != "result_unknown" {
+		t.Fatalf("unknown %+v", got)
+	}
+	if _, err := c.CancelBackupTask(context.Background(), tsk.TaskRef); err == nil {
+		t.Fatal("cancelled an unknown result")
+	}
+	if calls, _ := a.counts(); calls != 1 {
+		t.Fatal("resent")
+	}
+}
+
+func TestBackupShutdownWaitsForAttachedCall(t *testing.T) {
+	a := newAsyncBoundary(protection.ExecutionAttached)
+	a.gate = make(chan struct{})
+	c := makeAsyncController(t, a, "")
+	p := prepareBackup(t, c, a.backupBoundary)
+	tsk, err := c.StartBackup(context.Background(), p.PlanID, "key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	short, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	go func() { time.Sleep(20 * time.Millisecond); close(a.gate) }()
+	if err := c.Shutdown(short); err != nil {
+		t.Fatalf("shutdown did not wait: %v", err)
+	}
+	done, err := c.load(tsk.TaskRef.TaskID)
+	if err != nil || done.State != "succeeded" {
+		t.Fatalf("after shutdown %+v %v", done, err)
 	}
 }

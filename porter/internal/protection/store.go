@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"valise/core/enroll"
 	"valise/core/identity"
@@ -25,7 +26,17 @@ type Store struct {
 	// transaction is recorded (see CheckDeployment). Nil skips the check,
 	// for tests and explicitly run builds outside the formal install path.
 	ValidateDeployment func(context.Context) error
+	// Now is the server clock; nil means time.Now.
+	Now func() time.Time
 }
+
+func (s Store) now() time.Time {
+	if s.Now != nil {
+		return s.Now().UTC()
+	}
+	return time.Now().UTC()
+}
+func (s Store) runsDir() string { return filepath.Join(s.Home, ".local", "state", "valise", "runs") }
 
 func fail(code, reason string) error {
 	return valise.New(code, reason, "重新读取计划；存在未完成事务时请显式核实恢复")
@@ -152,7 +163,7 @@ func (s Store) CheckPending(instance string) error {
 			return fail("result_unknown", "保护计划事务尚待核实，已阻止按计划备份")
 		}
 	}
-	return nil
+	return s.checkTargetChanges(instance)
 }
 func (s Store) CheckLegacyWrite(instance string) error {
 	if err := s.CheckPending(instance); err != nil {
@@ -206,7 +217,7 @@ func (s Store) Get(ctx context.Context, p cp.GetParams) (*cp.View, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := &cp.View{Mode: "legacy", Warnings: []string{}}
+	v := &cp.View{Mode: "legacy", Warnings: []string{}, MissedRuns: []cp.MissedRun{}, ServerNow: s.now()}
 	if plan == nil {
 		v.LegacySettings, err = s.legacy(p.AgentRef)
 		if err != nil {
@@ -235,8 +246,28 @@ func (s Store) Get(ctx context.Context, p cp.GetParams) (*cp.View, error) {
 		}
 		v.Warnings = append(v.Warnings, "保护设置有未完成事务，需要核实；按计划备份已阻止")
 	}
+	if plan != nil {
+		s.missed(v, *plan)
+	}
 	if !v.Timer.Linger {
 		v.Warnings = append(v.Warnings, "未确认 linger 已启用，退出登录后不能保证定时执行")
 	}
 	return v, nil
+}
+
+// missed only reads run records; problems become warnings of the view.
+func (s Store) missed(v *cp.View, plan cp.ServerPlan) {
+	runs, unreadable, err := cp.ReadTimerRuns(s.runsDir(), plan.AgentRef)
+	if err != nil {
+		v.Warnings = append(v.Warnings, "无法读取备份运行记录，错过的定时备份无法统计")
+		return
+	}
+	if unreadable > 0 {
+		v.Warnings = append(v.Warnings, "部分备份运行记录无法读取，错过的定时备份统计可能不完整")
+	}
+	missed, clockDoubt := cp.ComputeMissed(plan, runs, v.ServerNow)
+	v.MissedRuns = missed
+	if clockDoubt {
+		v.Warnings = append(v.Warnings, "服务器时钟可能不准确：记录时间晚于服务器当前时间，错过统计按服务器时钟计算")
+	}
 }

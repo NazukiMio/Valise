@@ -51,7 +51,20 @@ func init() {
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
 		}
-		return (backuprun.Store{Home: s.cfg.Home, Env: s.loginEnv(ctx), ValidateAgent: s.validateAgent}).Run(ctx, p)
+		st := backuprun.Store{Home: s.cfg.Home, Env: s.loginEnv(ctx), ValidateAgent: s.validateAgent}
+		// Only the deployed porter is handed to a transient unit; any other
+		// build, or a failed launch, executes inside this connection.
+		if porter := backuprun.FormalPorter(s.cfg.Home); porter != "" {
+			st.Launch = backuprun.SystemdLauncher(st.Env, s.cfg.Home, porter)
+		}
+		return st.Run(ctx, p)
+	}
+	methods[protection.MethodRunCancel] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p protection.BackupCancelParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return (backuprun.Store{Home: s.cfg.Home, Env: s.loginEnv(ctx), ValidateAgent: s.validateAgent}).Cancel(ctx, p)
 	}
 	methods[protection.MethodRunStatus] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p protection.BackupStatusParams

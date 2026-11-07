@@ -96,22 +96,47 @@ func (s Store) timerFiles(instance string, d cp.Desired) (map[string]fileImage, 
 		files[filepath.Join(dir, tmr)] = fileImage{}
 		return files, nil
 	}
-	exe, err := os.Executable()
+	exe, err := UnitExecutable(s.Home)
 	if err != nil {
 		return nil, err
-	}
-	exe, err = filepath.EvalSymlinks(exe)
-	if err != nil {
-		return nil, err
-	}
-	if strings.ContainsAny(exe, " \t\r\n\"'\\%$") {
-		return nil, fail("timer_path", "porter 路径含 systemd 不可接受的字符")
 	}
 	service := fmt.Sprintf("[Unit]\nDescription=Valise accepted-plan backup for %s\n\n[Service]\nType=oneshot\nExecStart=%s protection-timer --instance %s\nNoNewPrivileges=yes\n", instance, exe, instance)
-	timer := fmt.Sprintf("[Unit]\nDescription=Valise accepted-plan schedule for %s\n\n[Timer]\nOnCalendar=%s\n\n[Install]\nWantedBy=timers.target\n", instance, d.Schedule.Calendar())
+	persistent := ""
+	if d.Schedule.CatchUpEnabled() {
+		// Run once after boot or resume when the last trigger was missed.
+		persistent = "Persistent=true\n"
+	}
+	timer := fmt.Sprintf("[Unit]\nDescription=Valise accepted-plan schedule for %s\n\n[Timer]\nOnCalendar=%s\n%s\n[Install]\nWantedBy=timers.target\n", instance, d.Schedule.Calendar(), persistent)
 	files[filepath.Join(dir, svc)] = fileImage{Exists: true, Data: []byte(service)}
 	files[filepath.Join(dir, tmr)] = fileImage{Exists: true, Data: []byte(timer)}
 	return files, nil
+}
+
+// executable is replaceable in tests.
+var executable = os.Executable
+
+// UnitExecutable is the porter path written into systemd ExecStart. When the
+// running process is the formal install (DeployedPorter) or a link to it, the
+// formal path is written, never a resolved target that a later deploy may
+// replace. Otherwise, for an explicitly run build, the current executable path
+// is written as is. Either path must be acceptable to systemd unquoted.
+func UnitExecutable(home string) (string, error) {
+	exe, err := executable()
+	if err != nil {
+		return "", err
+	}
+	formal := DeployedPorter(home)
+	if exe != formal {
+		realExe, err1 := filepath.EvalSymlinks(exe)
+		realFormal, err2 := filepath.EvalSymlinks(formal)
+		if err1 == nil && err2 == nil && realExe == realFormal {
+			exe = formal
+		}
+	}
+	if !filepath.IsAbs(exe) || strings.ContainsAny(exe, " \t\r\n\"'\\%$") {
+		return "", fail("timer_path", "porter 路径含 systemd 不可接受的字符")
+	}
+	return exe, nil
 }
 func (s Store) configure(ctx context.Context, instance string, files map[string]fileImage, active, enabled bool) error {
 	_, tmr := names(instance)

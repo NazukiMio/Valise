@@ -15,8 +15,16 @@ import (
 )
 
 func (s Store) persist(r *Run) error { r.UpdatedAt = time.Now().UTC(); return s.save(r) }
+
+// execute runs the claimed record. Cancel requests are honoured only at the
+// safe points: before sealing starts and before each copy target.
 func (s Store) execute(ctx context.Context, r *Run) error {
+	if s.stop(r, cp.StageSealing) {
+		s.markCancelled(r)
+		return s.persist(r)
+	}
 	r.State = "running"
+	r.Stage = cp.StageSealing
 	r.Components[0].State = "running"
 	if err := s.persist(r); err != nil {
 		return err
@@ -30,6 +38,7 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 		r.ErrorCode = "result_unknown"
 		r.Components[0].State = "unknown"
 		r.Components[0].ErrorCode = "backup_failed"
+		r.Stage = ""
 		return s.persist(r)
 	}
 	dir, err := paths.LeafDir(rep.Leaf)
@@ -45,6 +54,7 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 		r.State = "reconciling"
 		r.ErrorCode = "result_unknown"
 		r.Components[0].State = "unknown"
+		r.Stage = ""
 		return s.persist(r)
 	}
 	r.Snapshot = &identity.SnapshotRef{VaultID: desc.VaultID, SnapshotID: rep.SnapshotID}
@@ -55,11 +65,20 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 	if err := s.persist(r); err != nil {
 		return err
 	}
-	partial := false
+	partial, cancelled := false, false
 	for _, copy := range r.Plan.ServerCopies {
 		ref := copy.TargetRef
 		component := cp.BackupComponent{Kind: "server_copy", TargetRef: &ref, State: "skipped"}
-		if copy.Enabled != nil && *copy.Enabled {
+		if !cancelled && copy.Enabled != nil && *copy.Enabled && s.stop(r, cp.StageCopying) {
+			// The committed snapshot stays bound; copies not started are
+			// recorded as skipped by the cancel request.
+			cancelled = true
+		}
+		if cancelled {
+			if copy.Enabled != nil && *copy.Enabled {
+				component.ErrorCode = "cancelled"
+			}
+		} else if copy.Enabled != nil && *copy.Enabled {
 			due, checkErr := s.copyDue(r, copy)
 			switch {
 			case ref.AuthorityID != r.AgentRef.ServerUID:
@@ -72,6 +91,8 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 				partial = true
 			case due:
 				component.State = "running"
+				r.Stage = cp.StageCopying
+				r.StageTarget = &ref
 				r.Components = append(r.Components, component)
 				if err := s.persist(r); err != nil {
 					return err
@@ -98,9 +119,15 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 			return err
 		}
 	}
-	r.State = "succeeded"
-	if partial {
+	r.Stage = ""
+	r.StageTarget = nil
+	switch {
+	case cancelled:
+		s.markCancelled(r)
+	case partial:
 		r.State = "partial"
+	default:
+		r.State = "succeeded"
 	}
 	return s.persist(r)
 }

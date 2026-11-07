@@ -11,10 +11,12 @@ import (
 	"filippo.io/age"
 
 	"valise/core/enroll"
+	"valise/core/identity"
 	"valise/core/profile"
 	"valise/core/revive"
 	"valise/core/valise"
 	"valise/core/vault"
+	"valise/core/vaultrpc"
 )
 
 // ReviveOptions are the user's choices for `valise revive`.
@@ -59,6 +61,12 @@ type RevivePlan struct {
 	// Nested are other agents inside the target state dir: a swap is
 	// refused (a restore test, which does not swap, is not).
 	Nested []string `json:"nested,omitempty"`
+	// UnverifiedSource is set when no snapshot binding identifies the source
+	// generation: execution then needs ReviveConfirm.UnverifiedSource.
+	UnverifiedSource *UnverifiedSource `json:"unverified_source,omitempty"`
+	// PreRestoreBackup is the full backup taken when the person chose
+	// SourceBackupFirst; set during execution.
+	PreRestoreBackup *vaultrpc.SealReport `json:"pre_restore_backup,omitempty"`
 
 	files  []vault.File
 	links  []vault.Symlink
@@ -69,6 +77,8 @@ type RevivePlan struct {
 	// sourceStatus: the source porter supports service_control "status"
 	// (identity/1). Older porters treat unknown actions as start.
 	sourceStatus bool
+	// sourceAgent is the source generation from a bound snapshot binding.
+	sourceAgent *identity.AgentRef
 }
 
 func (p *RevivePlan) block(code, reason, suggestion string) {
@@ -312,6 +322,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if err := s.prepareRecoveryIdentity(ctx, rp, &plan); err != nil {
 		return nil, err
 	}
+	describeUnverifiedSource(rp, head, periodOf(st, leaf), facts, instance)
 	rp.NeedBytes = rp.Bytes
 	if plan.Carry {
 		rp.Warnings = append(rp.Warnings, "回滚会把档位以外的现有内容（凭据、缓存、未分类文件等）复制进新状态，另需相应空间；身体目录只改名搬动，不复制")

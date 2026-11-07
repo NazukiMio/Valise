@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"valise/core/identity"
 	"valise/core/profile"
 )
 
@@ -324,6 +325,9 @@ type InstanceSummary struct {
 	// Live state read when listing (systemctl show, a TCP dial).
 	Service []ServiceState `json:"service"`
 	Entries []EntryState   `json:"entries"`
+	// Identity is filled only by porters declaring identity/2; absent
+	// means the client must read identity_get (identity/1) itself.
+	Identity *identity.Binding `json:"identity,omitempty"`
 }
 
 // InstanceListResult lists the enrolled instances, sorted by id.

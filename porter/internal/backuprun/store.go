@@ -25,6 +25,14 @@ type Store struct {
 	Home          string
 	Env           *porterenroll.Env
 	ValidateAgent func(context.Context, identity.AgentRef) error
+	// Launch starts `task-run --id <run_id>` outside this process (a
+	// transient systemd user unit). Nil, or a failed launch, executes the
+	// accepted run attached to the caller. It is used only for a request
+	// with Detach; the timer path leaves it nil.
+	Launch func(ctx context.Context, runID string) error
+
+	// hook is a test seam called at each executor safe point.
+	hook func(stage string)
 }
 
 func failure(code string) error {
@@ -126,8 +134,13 @@ func (s Store) load(id string) (*Run, error) {
 	if r.Schema != cp.BackupRunSchema || r.RunID != id || r.Request != p || p.RunID != id || r.AgentRef != p.AgentRef || r.RequestDigest != digest || r.Plan.AgentRef != r.AgentRef || r.Plan.Revision != p.ExpectedRevision || r.Plan.Validate() != nil || r.AcceptedAt.IsZero() || r.UpdatedAt.IsZero() {
 		return nil, failure("record_corrupt")
 	}
+	switch r.Execution {
+	case "", cp.ExecutionAttached, cp.ExecutionDetached:
+	default:
+		return nil, failure("record_corrupt")
+	}
 	switch r.State {
-	case "accepted", "running", "reconciling", "failed":
+	case "accepted", "running", "reconciling", "failed", "cancelled":
 	case "succeeded", "partial":
 		if r.Snapshot == nil {
 			return nil, failure("record_corrupt")
@@ -160,11 +173,7 @@ func (s Store) Status(ctx context.Context, p StatusParams) (*Run, error) {
 	if r.AgentRef != p.AgentRef {
 		return nil, failure("identity_conflict")
 	}
-	if r.State == "running" || r.State == "accepted" {
-		r.State = "reconciling"
-		r.ErrorCode = "result_unknown"
-	}
-	return r, nil
+	return s.project(r), nil
 }
 func (s Store) Run(ctx context.Context, p Params) (*Run, error) {
 	p, err := p.Normalize()
@@ -182,7 +191,7 @@ func (s Store) Run(ctx context.Context, p Params) (*Run, error) {
 	// observe a live operation without waiting on its process lock.
 	existing, err := s.load(p.RunID)
 	if err == nil {
-		return repeated(existing, digest)
+		return s.repeated(existing, digest)
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -194,13 +203,21 @@ func (s Store) Run(ctx context.Context, p Params) (*Run, error) {
 	defer unlock()
 	existing, err = s.load(p.RunID)
 	if err == nil {
-		return repeated(existing, digest)
+		return s.repeated(existing, digest)
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 	if s.Env == nil {
 		return nil, failure("environment_unavailable")
+	}
+	launch := s.Launch
+	if !p.Detach {
+		launch = nil
+	}
+	execution := cp.ExecutionAttached
+	if launch != nil {
+		execution = cp.ExecutionDetached
 	}
 	var r *Run
 	ps := planstore.Store{Home: s.Home, Env: s.Env, ValidateAgent: s.ValidateAgent}
@@ -215,21 +232,38 @@ func (s Store) Run(ctx context.Context, p Params) (*Run, error) {
 			return err
 		}
 		now := time.Now().UTC()
-		r = &Run{Schema: cp.BackupRunSchema, RunID: p.RunID, AgentRef: p.AgentRef, Request: p, RequestDigest: digest, Plan: *plan, State: "accepted", AcceptedAt: now, UpdatedAt: now, Components: []cp.BackupComponent{{Kind: "server_backup", State: "not_started"}}}
+		r = &Run{Schema: cp.BackupRunSchema, RunID: p.RunID, AgentRef: p.AgentRef, Request: p, RequestDigest: digest, Plan: *plan, State: "accepted", AcceptedAt: now, UpdatedAt: now, Components: []cp.BackupComponent{{Kind: "server_backup", State: "not_started"}}, Execution: execution, Stage: cp.StageQueued}
 		if err := s.save(r); err != nil {
 			return err
 		}
+		// The unit waits for the locks held here and claims the run only
+		// while it is still accepted, so it can never replay it.
+		if launch != nil && launch(ctx, p.RunID) == nil {
+			return nil
+		}
+		release, err := s.runLock(p.RunID)
+		if err != nil {
+			// A unit whose launch reported failure did start and owns the
+			// run; this connection must not execute it as well.
+			return nil
+		}
+		defer release()
+		if r.Execution != cp.ExecutionAttached {
+			r.Execution = cp.ExecutionAttached
+			if err := s.persist(r); err != nil {
+				return err
+			}
+		}
 		return s.execute(ctx, r)
 	})
-	return r, err
+	if err != nil || r == nil {
+		return r, err
+	}
+	return s.project(r), nil
 }
-func repeated(r *Run, digest string) (*Run, error) {
+func (s Store) repeated(r *Run, digest string) (*Run, error) {
 	if r.RequestDigest != digest {
 		return nil, failure("request_conflict")
 	}
-	if r.State == "accepted" || r.State == "running" {
-		r.State = "reconciling"
-		r.ErrorCode = "result_unknown"
-	}
-	return r, nil
+	return s.project(r), nil
 }

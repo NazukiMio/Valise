@@ -2,6 +2,7 @@
 package protection
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,12 @@ import (
 
 const Schema = "valise-protection/1"
 const Capability = "protection-plan/1"
+
+// CapabilityV2 adds schedule.catch_up, missed_runs and versioned changes of
+// plan-referenced copy targets. A client sends catch_up or calls the target
+// change methods only to a porter declaring it: older porters decode unknown
+// JSON fields leniently and would silently drop catch_up.
+const CapabilityV2 = "protection-plan/2"
 const (
 	MethodGet       = "protection_get"
 	MethodPrepare   = "protection_prepare"
@@ -49,7 +56,14 @@ type Schedule struct {
 	Enabled  *bool  `json:"enabled"`
 	DailyAt  string `json:"daily_at"`
 	Timezone string `json:"timezone"`
+	// CatchUp (protection-plan/2) runs one missed backup after boot or
+	// resume (systemd Persistent=true). Absent means off.
+	CatchUp *bool `json:"catch_up,omitempty"`
 }
+
+// CatchUpEnabled treats an absent catch_up as off.
+func (s Schedule) CatchUpEnabled() bool { return s.CatchUp != nil && *s.CatchUp }
+
 type Period struct {
 	Unit     string `json:"unit"`
 	Timezone string `json:"timezone"`
@@ -98,6 +112,19 @@ func (p *PrepareParams) UnmarshalJSON(b []byte) error {
 	var v plain
 	if err := json.Unmarshal(b, &v); err != nil {
 		return err
+	}
+	// The desired settings are decoded strictly: a field this porter does not
+	// know must be refused, never silently dropped from an accepted plan.
+	if raw, ok := fields["desired"]; ok {
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		var d Desired
+		if err := dec.Decode(&d); err != nil {
+			return fmt.Errorf("desired: %w", err)
+		}
+		if dec.More() {
+			return fmt.Errorf("desired: trailing data")
+		}
 	}
 	*p = PrepareParams(v)
 	return nil
@@ -165,6 +192,10 @@ type View struct {
 	ServerPlan     *ServerPlan      `json:"server_plan,omitempty"`
 	Timer          TimerObservation `json:"timer"`
 	Warnings       []string         `json:"warnings"`
+	// MissedRuns (protection-plan/2) is computed read-only from the accepted
+	// schedule and timer run records, by the server clock in ServerNow.
+	MissedRuns []MissedRun `json:"missed_runs"`
+	ServerNow  time.Time   `json:"server_now"`
 }
 type Change struct {
 	Schema            string            `json:"schema"`
@@ -177,7 +208,10 @@ type Change struct {
 	Committed         bool              `json:"committed"`
 	ReconcileRequired bool              `json:"reconcile_required"`
 	RollbackSucceeded bool              `json:"rollback_succeeded"`
-	UpdatedAt         time.Time         `json:"updated_at"`
+	// ErrorCode says why a recorded change failed or awaits reconciliation;
+	// the change itself is the result, not an RPC error.
+	ErrorCode string    `json:"error_code,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Digest hashes a deterministic JSON projection, never an authorization proof.

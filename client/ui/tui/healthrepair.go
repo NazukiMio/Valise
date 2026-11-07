@@ -14,10 +14,15 @@ type repairReady struct {
 	actionID string
 	list     *service.ActionList
 	err      error
+	// fix is set for a fix built into Valise (linger, clock).
+	fix *service.SystemFix
 }
 
 func (c *healthTab) repair(m *Model, p *instancePage) tea.Cmd {
 	rows := c.rows(m, p)
+	if c.cursor < len(rows) && rows[c.cursor].SystemFix != "" {
+		return c.planSystemFix(m, p, rows[c.cursor].SystemFix)
+	}
 	if c.cursor >= len(rows) || rows[c.cursor].ActionID == "" {
 		return nil
 	}
@@ -28,7 +33,7 @@ func (c *healthTab) repair(m *Model, p *instancePage) tea.Cmd {
 	m.flash, m.flashErr = "正在核对管理动作…", false
 	return func() tea.Msg {
 		list, err := svc.Actions(ctx, host, inst)
-		return repairReady{p, c, seq, id, list, err}
+		return repairReady{page: p, tab: c, seq: seq, actionID: id, list: list, err: err}
 	}
 }
 
@@ -39,6 +44,9 @@ func (m *Model) readyRepair(v repairReady) tea.Cmd {
 	}
 	if v.err != nil {
 		return func() tea.Msg { return failed(v.err) }
+	}
+	if v.fix != nil {
+		return m.readySystemFix(v.page, v.fix)
 	}
 	if v.list.Stale {
 		m.flash, m.flashErr = "harness 资料版本不同；请先重新接入，完成后回健康页重新发起动作", true

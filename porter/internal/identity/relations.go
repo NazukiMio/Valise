@@ -30,6 +30,7 @@ type recoveryCommit struct {
 }
 
 var operationPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
+var relationIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 func recoveryPath(home string) string      { return filepath.Join(Dir(home), "recovery-commit.json") }
 func operationPath(home, op string) string { return filepath.Join(Dir(home), "operations", op+".json") }
@@ -222,25 +223,55 @@ func ListRelations(home string) (out []model.Relation, err error) {
 			return e
 		}
 		for _, path := range paths {
-			var rel model.Relation
-			ok, e := readJSON(path, &rel)
+			rel, e := readRelation(home, path)
 			if e != nil {
 				return e
 			}
-			if !ok || rel.Schema != model.Schema || rel.RelationID == "" || !operationPattern.MatchString(rel.OperationRef) {
-				return reconciliation()
-			}
-			var op recoveryCommit
-			ok, e = readJSON(operationPath(home, rel.OperationRef), &op)
-			if e != nil {
-				return e
-			}
-			if !ok || op.State != "complete" || op.Relation == nil || !reflect.DeepEqual(*op.Relation, rel) {
-				return reconciliation()
-			}
-			out = append(out, rel)
+			out = append(out, *rel)
 		}
 		return nil
 	})
 	return
+}
+
+// readRelation accepts a relation only when its completed operation record
+// holds exactly the same relation. Callers hold the identity lock.
+func readRelation(home, path string) (*model.Relation, error) {
+	var rel model.Relation
+	ok, err := readJSON(path, &rel)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || rel.Schema != model.Schema || rel.RelationID == "" || !operationPattern.MatchString(rel.OperationRef) {
+		return nil, reconciliation()
+	}
+	var op recoveryCommit
+	ok, err = readJSON(operationPath(home, rel.OperationRef), &op)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || op.State != "complete" || op.Relation == nil || !reflect.DeepEqual(*op.Relation, rel) {
+		return nil, reconciliation()
+	}
+	return &rel, nil
+}
+
+// agentRelations summarizes the relations an accepted generation refers to.
+// A relation naming another target generation is not this agent's history.
+func agentRelations(home string, a model.Agent) ([]model.RelationSummary, error) {
+	var out []model.RelationSummary
+	for _, id := range a.RelationRefs {
+		if !relationIDPattern.MatchString(id) {
+			return nil, reconciliation()
+		}
+		rel, err := readRelation(home, relationPath(home, id))
+		if err != nil {
+			return nil, err
+		}
+		if rel.RelationID != id || rel.TargetAgent != a.Ref {
+			return nil, reconciliation()
+		}
+		out = append(out, rel.Summary())
+	}
+	return out, nil
 }

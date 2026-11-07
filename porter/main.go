@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"syscall"
 	"time"
 	_ "time/tzdata" // period time zones (docs/VAULT_FORMAT.md 10.2) on servers without zoneinfo
 
@@ -33,6 +35,7 @@ import (
 	porterrevive "valise/porter/internal/revive"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/server"
+	"valise/porter/internal/sysfix"
 	"valise/porter/internal/timer"
 )
 
@@ -53,6 +56,7 @@ const usage = `用法：
   valise-porter serve --tier daily           （日常钥匙的强制命令）
   valise-porter seal-timer --instance <实例>（旧定时器）
   valise-porter protection-timer --instance <实例>（已接受保护计划的定时器）
+  valise-porter task-run --id <运行标识>（一次性 systemd 单元执行已接受的备份运行记录）
   valise-porter autosync                    （由封存后自动启动，同步到期的云备份）
   valise-porter vault-cat <周期> <金库内的相对路径>
   valise-porter stage-write --op <op_id>
@@ -291,6 +295,37 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		return 0
+	case "task-run":
+		// Started only by systemd-run for an accepted run: it reads the
+		// frozen request from the run record and takes no other input.
+		if len(args) != 3 || args[1] != "--id" || !protection.ValidID(args[2]) {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return 1
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+		env := porterenroll.LoadEnv(ctx, home)
+		validate := func(ctx context.Context, ref identity.AgentRef) error {
+			return porterenroll.ValidateIdentity(ctx, home, ref)
+		}
+		run, err := (backuprun.Store{Home: home, Env: env, ValidateAgent: validate}).Execute(ctx, args[2])
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		switch run.State {
+		case "succeeded", "cancelled":
+			return 0
+		case "accepted", "running":
+			// Another live executor owns this run; it is never replayed.
+			return 0
+		}
+		fmt.Fprintln(stderr, "备份运行尚未全部完成，请查询运行记录核实")
+		return 1
 	case "seal-timer":
 		if len(args) != 3 || args[1] != "--instance" {
 			fmt.Fprintln(stderr, usage)
@@ -407,7 +442,7 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 	info := rpc.VersionInfo{
 		Name: "valise-porter", Version: version, Protocol: rpc.ProtocolVersion,
 		OS: runtime.GOOS, Arch: runtime.GOARCH, SelfSHA256: sum,
-		Capabilities: []string{identity.Capability, protection.Capability, protection.BackupCapability},
+		Capabilities: []string{identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.BackupCapability, protection.BackupCapabilityV2, sysfix.Capability},
 	}
 	if err := json.NewEncoder(stdout).Encode(info); err != nil {
 		return 1
