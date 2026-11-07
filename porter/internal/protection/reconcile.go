@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"valise/core/enroll"
 	cp "valise/core/protection"
@@ -27,45 +28,34 @@ func (s Store) WithLegacyWrite(instance string, run func() error) error {
 	return run()
 }
 
-// WithLegacyTargetsWrite holds the same CAS lock across the legacy mutation.
-func (s Store) WithLegacyTargetsWrite(run func() error) error {
+// WithLegacyTargetsWrite holds the same CAS lock across the legacy mutation
+// of the named target.
+func (s Store) WithLegacyTargetsWrite(name string, run func() error) error {
 	unlock, err := s.lock()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if err = s.CheckLegacyTargetsWrite(); err != nil {
+	if err = s.CheckLegacyTargetsWrite(name); err != nil {
 		return err
 	}
 	return run()
 }
 
-// CheckLegacyTargetsWrite rejects unversioned writes affecting shared references.
-// The first N2 target API is deliberately conservative: changes must be prepared
-// with all affected plan revisions, so the old writer cannot alter any target.
-func (s Store) CheckLegacyTargetsWrite() error {
+// CheckLegacyTargetsWrite rejects an unversioned write to a target that an
+// accepted plan copies to: changing it would silently change that plan, so it
+// must go through a versioned change of every referencing plan. Targets no
+// plan references keep their legacy behaviour (their auto setting only drives
+// legacy instances; planned backups ignore targets.auto). While any plan
+// transaction is unfinished, every target write is refused, because the
+// pending plan's copies are not yet known to be settled.
+func (s Store) CheckLegacyTargetsWrite(name string) error {
 	if err := s.CheckPending(""); err != nil {
 		return err
 	}
-	entries, err := os.ReadDir(filepath.Join(s.config(), "protection"))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		return fail("revision_conflict", "服务器已有版本化保护计划，共享复制目标须核对所有引用版本后更改")
-	}
 	// Include first-adoption transactions before a plan file has been published.
 	changes, err := os.ReadDir(s.state())
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	for _, e := range changes {
@@ -80,7 +70,31 @@ func (s Store) CheckLegacyTargetsWrite() error {
 			return err
 		}
 		if r.State == "pending" || r.ReconcileRequired {
-			return fail("result_unknown", "保护计划提交待核实，共享目标不可修改")
+			return fail("result_unknown", "保护计划提交待核实，复制目标暂不可修改")
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(s.config(), "protection"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		plan, err := s.load(strings.TrimSuffix(e.Name(), ".json"))
+		if err != nil {
+			return err
+		}
+		if plan == nil {
+			continue
+		}
+		for _, c := range plan.ServerCopies {
+			if c.TargetRef.ID == name {
+				return fail("revision_conflict", "复制目标 "+name+" 已被实例 "+plan.AgentRef.InstanceID+" 的保护计划引用，须通过版本化计划更改")
+			}
 		}
 	}
 	return nil

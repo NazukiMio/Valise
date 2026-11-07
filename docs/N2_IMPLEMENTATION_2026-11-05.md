@@ -60,4 +60,13 @@
 
 把 `ubuntu-vm-x86` 金库用 `repo sync` 复制到本机隔离仓库（4 个周期、66 个快照，复制后校验通过），时间轴不连服务器读取，分 2 页（每页 50）读完 66 个点；快照 ID 与范围与服务器 `vault_status` 逐一一致，全部为 metadata_only（材料完整性留待 N3）。
 
-尚未在实机覆盖：提交中途失败回退与崩溃 pending（fake 测试已覆盖）、DST 实际切换、客户端退出登录或重启、计划内服务器复制目标、创建副本与恢复当前实例的关系（fake 测试已覆盖）。
+### 提交失败回退与服务器复制（2026-11-07，`ubuntu-vm` 的 OpenClaw 计划）
+
+- **真实失败回退**：先把计划改为日程关闭（revision 4，无 timer 单元），再在最高优先级的 `~/.config/systemd/user.control/` 用 `/dev/null` 链接屏蔽 `valise-seal@openclaw.service`，然后提交开启日程。真实 systemd 拒绝启动 timer，`protection_apply` 返回 `timer_failed`；事务记录为 failed、rollback_succeeded=true、committed=false。计划仍为 revision 4，timer 未启用、单元文件已清理，没有待核实警告，随后按计划备份正常。屏蔽链接已移除。（初次尝试用 `mask --runtime`，该位置优先级低于 `~/.config/systemd/user`，未能制造失败，提交正常成功；属于测试方法问题。）
+- **服务器复制**：计划引用已有 `nas` 目标（`nas-test:/mnt/test/nas/valise-vault/`，最小间隔 1h），提交 revision 3。按计划备份：server_backup 成功，server_copy 成功（约 31 秒）；一小时内再次备份时 server_copy 为 skipped。旧入口 `target_set` 改 `nas` 返回 revision_conflict。
+
+本轮同时收窄旧目标写入拦截：只拒绝被某个已接受计划 `server_copies` 引用的目标，以及存在未完成计划事务时的所有目标写入；未被引用的目标照旧可改（其 auto 只驱动 legacy 实例，计划备份不读 targets.auto）。此前实现在服务器有任一计划时拒绝全部目标写入，会导致采用计划后无法再新增复制目标；按 N1 第 4.3 节"影响计划时统一核对引用版本"改为现行规则。被引用目标的版本化修改入口尚未实现：要改 `nas` 的地址，需先把引用它的计划改为不复制。
+
+`ubuntu-vm` 当前状态：OpenClaw 计划 revision 4，full，日程关闭，复制到 nas；该实例迁移后源服务已停止。同机其他 legacy 实例改 `nas` 目标会被拒绝。
+
+尚未在实机覆盖：崩溃留下的 pending（fake 测试已覆盖）、DST 实际切换、客户端退出登录或重启、创建副本与恢复当前实例的关系（fake 测试已覆盖）。

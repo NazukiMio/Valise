@@ -260,7 +260,7 @@ func init() {
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
 		}
-		return struct{}{}, s.protectionStore(ctx).WithLegacyTargetsWrite(func() error {
+		return struct{}{}, s.protectionStore(ctx).WithLegacyTargetsWrite(p.Target.Name, func() error {
 			return seal.SetTarget(paths(s), p.Target)
 		})
 	}

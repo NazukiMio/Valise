@@ -102,8 +102,9 @@ func TestN2ProtectionFakeSSHFacade(t *testing.T) {
 	wantCode(t, err, "revision_conflict")
 	_, err = next.TimerSet(ctx, "box", vaultrpc.TimerSetParams{InstanceID: "demo"})
 	wantCode(t, err, "revision_conflict")
-	if err := next.TargetSet(ctx, "box", vaultrpc.Target{Name: "new", Kind: "ssh", Dest: "elsewhere:/vault"}); err == nil {
-		t.Fatal("old target write bypassed plan")
+	// The plan copies to no target, so adding one stays a legacy write.
+	if err := next.TargetSet(ctx, "box", vaultrpc.Target{Name: "new", Kind: "rsync", Dest: "elsewhere:/vault"}); err != nil {
+		t.Fatal("unreferenced target refused:", err)
 	}
 	if _, err := next.KeyInit(pass); err != nil {
 		t.Fatal(err)

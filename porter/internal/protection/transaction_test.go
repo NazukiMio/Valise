@@ -105,8 +105,10 @@ func TestPrepareReadOnlyAndCAS(t *testing.T) {
 	if err := s.CheckLegacyWrite(a.InstanceID); err == nil {
 		t.Fatal("legacy write accepted")
 	}
-	if err := s.CheckLegacyTargetsWrite(); err == nil {
-		t.Fatal("legacy shared target write accepted")
+	// A plan without server copies references no target: legacy target
+	// writes stay legacy (their auto setting only drives legacy instances).
+	if err := s.CheckLegacyTargetsWrite("unreferenced"); err != nil {
+		t.Fatal("unreferenced target write refused:", err)
 	}
 	for _, path := range []string{s.planPath(a.InstanceID), filepath.Join(s.state(), r.ChangeID+".json"), s.periodPath(a.InstanceID)} {
 		st, err := os.Stat(path)
@@ -327,7 +329,7 @@ func TestLegacyReviewAndExecutionLock(t *testing.T) {
 	}
 	apply(t, s, p)
 	if err := s.WithAccepted(ctx, a, func(*cp.ServerPlan) error {
-		if err := s.WithLegacyTargetsWrite(func() error { t.Fatal("legacy target mutation ran"); return nil }); err == nil {
+		if err := s.WithLegacyTargetsWrite("nas", func() error { t.Fatal("legacy target mutation ran"); return nil }); err == nil {
 			t.Fatal("execution lock not held")
 		}
 		return nil
@@ -383,5 +385,21 @@ func TestDedupeExpiryTamperAndChangedDossier(t *testing.T) {
 	}
 	if _, err := s.Apply(ctx, cp.ApplyParams{Plan: *p, ChangeID: strings.Repeat("f", 32)}); err == nil {
 		t.Fatal("changed profile accepted")
+	}
+}
+
+func TestReferencedTargetWriteRefused(t *testing.T) {
+	s, a, d := world(t)
+	if err := atomicBytes(filepath.Join(s.config(), "targets.json"), []byte(`{"targets":[{"name":"nas"},{"name":"other"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	yes := true
+	d.ServerCopies = []cp.ServerCopy{{TargetRef: cp.LocationRef{Kind: "legacy_target", ID: "nas", AuthorityID: a.ServerUID}, Enabled: &yes, MinimumInterval: "1h"}}
+	apply(t, s, prepare(t, s, a, d, 0))
+	if err := s.CheckLegacyTargetsWrite("nas"); err == nil {
+		t.Fatal("unversioned write to a plan-referenced target accepted")
+	}
+	if err := s.CheckLegacyTargetsWrite("other"); err != nil {
+		t.Fatal("unreferenced target refused:", err)
 	}
 }
