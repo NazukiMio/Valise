@@ -13,6 +13,11 @@ const Capability = "identity/1"
 // ListCapability (identity/2) means instance_list carries each instance's
 // Binding, and bindings carry relation summaries; reading never initializes.
 const ListCapability = "identity/2"
+
+// LostSourceCapability: the porter accepts a migration whose source could
+// not be reached, with exclusive secrets left out (exclusive_omitted on
+// migrate, docs/ARCHITECTURE.md 8.2.3).
+const LostSourceCapability = "identity-lost-source/1"
 const MethodGet = "identity_get"
 
 type GetParams struct {

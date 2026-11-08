@@ -54,7 +54,10 @@ func (r *Runner) RecordDisposition(op, disposition string) error {
 			return identityFailure()
 		}
 	case identity.ExclusiveOmitted:
-		if j.Plan.Mode != revive.ModeClone {
+		// A clone, or a migration whose source could not be reached
+		// (docs/ARCHITECTURE.md 8.2.3): either way the stage must hold no
+		// exclusive secret.
+		if j.Plan.Mode != revive.ModeClone && j.Plan.Mode != revive.ModeMigrate {
 			return identityFailure()
 		}
 		if err := verifyExclusiveOmitted(j); err != nil {

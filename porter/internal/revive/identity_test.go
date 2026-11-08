@@ -121,6 +121,28 @@ func TestCloneRequiresTargetVerifiedExclusion(t *testing.T) {
 	}
 }
 
+// A migration whose source could not be reached leaves exclusive secrets
+// out (docs/ARCHITECTURE.md 8.2.3): the stage is checked like a clone's and
+// the migration relation records an unknown source agent.
+func TestLostSourceMigrationOmitsExclusive(t *testing.T) {
+	w := newWorld(t)
+	w.p.ExclusiveSecrets = []profile.PathRef{{Root: "state", Glob: ".env"}}
+	p := w.recoveryPlan(revive.ModeMigrate, nil)
+	w.stage(t, p, append(snapshot, snapFile{".env", "KEY=exclusive"}))
+	if err := w.r.RecordDisposition(p.OpID, identity.ExclusiveOmitted); err == nil {
+		t.Fatal("lost-source migration accepted a stage with an exclusive secret")
+	}
+
+	m := newWorld(t)
+	m.p.ExclusiveSecrets = []profile.PathRef{{Root: "state", Glob: ".env"}}
+	mp := m.recoveryPlan(revive.ModeMigrate, nil)
+	m.swapWith(t, mp, snapshot, identity.ExclusiveOmitted)
+	rels := relations(t, m.home)
+	if len(rels) != 1 || rels[0].Kind != identity.MigrationCompleted || rels[0].SourceAgent != nil || rels[0].SourceDisposition != identity.ExclusiveOmitted {
+		t.Fatalf("migration relation: %+v", rels)
+	}
+}
+
 func TestRollbackKeepsGenerationAndLegacyStaysUnbound(t *testing.T) {
 	w := newWorld(t)
 	rec := enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": w.state}}
