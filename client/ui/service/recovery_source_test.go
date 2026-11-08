@@ -57,7 +57,7 @@ func TestLostSourceMigration(t *testing.T) {
 	if err != nil || len(rp.Blockers) != 0 {
 		t.Fatalf("%+v %v", rp, err)
 	}
-	if !rp.SourceLost || rp.Source == nil || rp.StopSource != "" || rp.UnverifiedSource == nil || rp.Transfer.Reused == 0 {
+	if !rp.SourceLost || rp.Source == nil || rp.StopSource != "" || rp.UnverifiedSource == nil || rp.Transfer.Reused == 0 || rp.Transfer.PeriodBytes < rp.Transfer.PackBytes {
 		t.Fatalf("lost plan: lost=%v source=%+v stop=%q unverified=%+v transfer=%+v", rp.SourceLost, rp.Source, rp.StopSource, rp.UnverifiedSource, rp.Transfer)
 	}
 	res, err := s.ExecuteReviveConfirmed(ctx, rp, "", proceedConfirm())

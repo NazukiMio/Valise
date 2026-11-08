@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -250,7 +251,7 @@ func (s *Service) openFromSource(ctx context.Context, c *CopySource, snapshot st
 	if err != nil {
 		return nil, nil, st, valise.New("source_unreadable", "无法读取 "+c.Label()+" 里的周期 "+leaf, "换一个来源").WithDetail(err.Error())
 	}
-	pull := &SnapshotPull{Dir: dir, VaultID: v.Desc.VaultID}
+	pull := &SnapshotPull{Dir: dir, VaultID: v.Desc.VaultID, PeriodBytes: dirBytes(dir)}
 	for _, m := range v.Metas {
 		if m.SnapshotID == snapshot {
 			pull.PodBytes = m.PlainBytes
@@ -413,4 +414,18 @@ func (s *Service) unreachableWithCopies(ctx context.Context, host, snapshot stri
 	}
 	return valise.New("source_unreachable", reason+"；这些副本有这个备份："+strings.Join(have, "、"),
 		"选一个加上 --source 重新运行，例如 --source "+strings.SplitN(have[0], "（", 2)[0])
+}
+
+// dirBytes is the size of the regular files under dir (a period copy).
+func dirBytes(dir string) int64 {
+	var n int64
+	filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if fi, err := d.Info(); err == nil {
+				n += fi.Size()
+			}
+		}
+		return nil
+	})
+	return n
 }

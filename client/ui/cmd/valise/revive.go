@@ -198,6 +198,9 @@ func printPlan(c *cli, rp *service.RevivePlan) {
 	case revive.BodyNPMInstall:
 		fmt.Fprintf(w, "  身体：按来源记录安装 %s@%s（registry %s，integrity 已与接入时的记录核对）\n", p.Body.Package, p.Body.Version, p.Body.Registry)
 	}
+	if p.Body.Action != revive.BodyMoveDirs && len(p.Body.Dirs) > 0 {
+		fmt.Fprintf(w, "    身体装在状态目录里：交换时把目标原有的 %s 原样搬进新目录，失败时搬回\n", strings.Join(p.Body.Dirs, "、"))
+	}
 	if p.Unit != "" {
 		fmt.Fprintf(w, "  服务：%s", p.Unit)
 		if p.InstallService {

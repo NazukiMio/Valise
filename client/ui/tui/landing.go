@@ -328,6 +328,9 @@ func planText(rp *service.RevivePlan) string {
 	case revive.BodyNPMInstall:
 		fmt.Fprintf(&b, "身体：按来源记录安装 %s@%s\n", p.Body.Package, p.Body.Version)
 	}
+	if p.Body.Action != revive.BodyMoveDirs && len(p.Body.Dirs) > 0 {
+		fmt.Fprintf(&b, "  身体装在状态目录里：交换时把目标原有的 %s 原样搬进新目录，失败时搬回\n", strings.Join(p.Body.Dirs, "、"))
+	}
 	if p.Unit != "" {
 		fmt.Fprintf(&b, "服务：%s", p.Unit)
 		if p.InstallService {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -86,6 +87,7 @@ type RevivePlan struct {
 	// sourceStatus: the source porter supports service_control "status"
 	// (identity/1). Older porters treat unknown actions as start.
 	sourceStatus bool
+	targetCaps   []string // the target porter's hello capabilities
 	// sourceAgent is the source generation from a bound snapshot binding.
 	sourceAgent *identity.AgentRef
 }
@@ -365,6 +367,8 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if err := s.prepareRecoveryIdentity(ctx, rp, &plan); err != nil {
 		return nil, err
 	}
+	planNestedBody(rp, &plan)
+	warnCredentialsReplaced(rp, &plan, facts, prof)
 	describeUnverifiedSource(rp, head, periodOf(st, leaf), facts, instance)
 	rp.NeedBytes = rp.Bytes
 	if plan.Carry {
@@ -474,6 +478,17 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 			dirs = append(dirs, swap+"/"+d)
 		}
 	}
+	// A kept or reinstalled body inside a replaced root travels with the
+	// swap (docs/ARCHITECTURE.md 8.2.1); only roots the target has.
+	var nested []string
+	for _, d := range dirs {
+		root, _, _ := strings.Cut(d, "/")
+		for _, f := range facts.Roots {
+			if f.ID == root && f.Exists {
+				nested = append(nested, d)
+			}
+		}
+	}
 	switch {
 	case pv.NPM != nil && pv.NPM.Version == "":
 		// Nothing was recorded at enrollment: say so, not "changed".
@@ -483,7 +498,7 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 	case pv.NPM != nil:
 		installed := facts.Provenance.NPM != nil && facts.Provenance.NPM.Version == pv.NPM.Version
 		if installed {
-			plan.Body = revive.BodyPlan{Action: revive.BodyKeep}
+			plan.Body = revive.BodyPlan{Action: revive.BodyKeep, Dirs: nested}
 			return
 		}
 		if !facts.Tools["npm"] {
@@ -501,7 +516,7 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 				"来源已变化，Valise 不会自动安装。核实后可按官方文档全新安装："+freshDoc(prof))
 			return
 		}
-		plan.Body = revive.BodyPlan{Action: revive.BodyNPMInstall, Package: pv.NPM.Package, Version: pv.NPM.Version, Registry: pv.NPM.Registry, Integrity: pv.NPM.Integrity}
+		plan.Body = revive.BodyPlan{Action: revive.BodyNPMInstall, Package: pv.NPM.Package, Version: pv.NPM.Version, Registry: pv.NPM.Registry, Integrity: pv.NPM.Integrity, Dirs: nested}
 	case pv.Git != nil:
 		same := facts.Provenance.Git != nil && facts.Provenance.Git.Commit == pv.Git.Commit && facts.Provenance.Git.Remote == pv.Git.Remote
 		switch {
@@ -515,7 +530,43 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 				"在目标服务器上按官方文档安装同一版本后重试（"+freshDoc(prof)+"），或使用同架构、同路径的 raw 快照")
 		}
 	default:
-		plan.Body = revive.BodyPlan{Action: revive.BodyKeep}
+		plan.Body = revive.BodyPlan{Action: revive.BodyKeep, Dirs: nested}
+	}
+}
+
+// planNestedBody checks that the target porter carries a kept body inside a
+// replaced root. An older porter still rolls back (the carry copies the
+// body), but cannot migrate or clone over it.
+func planNestedBody(rp *RevivePlan, plan *revive.Plan) {
+	b := &plan.Body
+	if len(b.Dirs) == 0 || b.Action == revive.BodyMoveDirs || slices.Contains(rp.targetCaps, revive.BodyDirsCapability) {
+		return
+	}
+	if plan.Mode == revive.ModeRollback {
+		b.Dirs = nil
+		return
+	}
+	rp.block("unsupported_capability", rp.Target+" 上的搬运工还不会把装在状态目录里的身体（"+strings.Join(b.Dirs, "、")+"）搬进新目录，交换后服务会起不来",
+		"先更新 "+rp.Target+" 上的搬运工（valise porter deploy），再重新准备恢复")
+}
+
+// warnCredentialsReplaced: a backup without credentials replacing a
+// directory the target already has leaves the harness without its
+// configuration (docs/ARCHITECTURE.md 8.2.1).
+func warnCredentialsReplaced(rp *RevivePlan, plan *revive.Plan, facts revive.InspectResult, prof profile.Profile) {
+	if plan.Mode == revive.ModeRollback || rp.RestoreSecret {
+		return
+	}
+	declared := false
+	for _, r := range prof.Paths {
+		declared = declared || r.Category == "secrets"
+	}
+	for _, f := range facts.Roots {
+		if declared && f.ID == profile.StateRoot && f.Exists {
+			rp.Warnings = append(rp.Warnings, "这个备份不含凭据：目标上 "+f.Path+" 原有的配置与凭据会随旧目录一起换下（保留在交换前的目录里），"+
+				prof.DisplayName+" 可能因缺少配置起不来并自动退回；可改用含凭据的备份，或恢复后在原生界面重新登录")
+			return
+		}
 	}
 }
 

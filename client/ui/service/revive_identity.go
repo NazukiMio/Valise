@@ -22,6 +22,9 @@ func (s *Service) prepareRecoveryIdentity(ctx context.Context, rp *RevivePlan, p
 	}
 	supported := target.hello != nil && slices.Contains(target.hello.Capabilities, identity.Capability)
 	lostOK := target.hello != nil && slices.Contains(target.hello.Capabilities, identity.LostSourceCapability)
+	if target.hello != nil {
+		rp.targetCaps = target.hello.Capabilities
+	}
 	target.Close()
 	if supported && rp.SourceLost && plan.Mode == revive.ModeMigrate && !lostOK {
 		return valise.New("unsupported_capability", rp.Target+" 上的搬运工还不支持失联迁移", "先更新 "+rp.Target+" 上的搬运工（valise porter deploy），再重新准备恢复")
