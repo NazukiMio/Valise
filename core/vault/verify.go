@@ -39,8 +39,13 @@ func VerifyNoKey(dir string) ([]Problem, error) {
 		}
 		ents, _ := os.ReadDir(filepath.Join(packsDir, sub.Name()))
 		for _, e := range ents {
-			id, err := packIDFromName(e.Name())
 			where := "packs/" + sub.Name() + "/" + e.Name()
+			// An interrupted write leaves its temporary file un-renamed;
+			// nothing refers to it (VAULT_FORMAT.md 3).
+			if MaterialExcluded(where) {
+				continue
+			}
+			id, err := packIDFromName(e.Name())
 			if err != nil || !strings.HasPrefix(id, sub.Name()) {
 				add(where, "文件名不符合格式")
 				continue

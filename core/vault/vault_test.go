@@ -101,6 +101,10 @@ func TestRoundTripAndDedupe(t *testing.T) {
 	if m3.AddedBytes >= m1.AddedBytes/2 {
 		t.Fatalf("one-byte change added %d of %d", m3.AddedBytes, m1.AddedBytes)
 	}
+	// A download interrupted mid-file leaves its temporary name behind;
+	// it is not part of the vault and does not fail the check.
+	subs, _ := os.ReadDir(filepath.Join(f.dir, PacksDir))
+	os.WriteFile(filepath.Join(f.dir, PacksDir, subs[0].Name(), ".tmp-3792185698"), []byte("partial"), 0o600)
 	if probs, err := VerifyNoKey(f.dir); err != nil || len(probs) != 0 {
 		t.Fatalf("%v %v", probs, err)
 	}
