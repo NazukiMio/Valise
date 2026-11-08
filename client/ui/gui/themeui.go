@@ -82,8 +82,12 @@ func (a *App) themeSlot(c *ui.Context, n *Node) {
 	if n.Style == "icon" {
 		label = "主题"
 	}
-	n.box(ui.Column(c).Gap(6).Padding(0, 8)).Children(func() {
-		ui.PopoverMenuButton(c, label, func(m *ui.Menu) {
+	pad := float32(8)
+	if n.Style == "icon" {
+		pad = 0 // a narrow rail: the button takes the whole width
+	}
+	n.box(ui.Column(c).Gap(6).Padding(0, pad)).Children(func() {
+		b := ui.PopoverMenuButton(c, label, func(m *ui.Menu) {
 			for _, b := range []struct{ id, name string }{{ThemeSystem, "跟随系统"}, {ThemeLight, "经典浅色"}, {ThemeDark, "经典深色"}} {
 				if m.Item(b.name).Checked(chosen == b.id).Chosen() {
 					a.setTheme(b.id)
@@ -114,6 +118,9 @@ func (a *App) themeSlot(c *ui.Context, n *Node) {
 				}
 			}
 		})
+		if n.Style == "icon" {
+			b.FontSize(12).Padding(6, 4).Label("主题 · " + cur.Name)
+		}
 		if a.themeErr != nil {
 			ui.Text(c, a.themeErr.Error()).FontSize(11).TextColor(palette.Warn).Wrap()
 		}
