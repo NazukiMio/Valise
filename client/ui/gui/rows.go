@@ -96,6 +96,18 @@ func initial(name string) string {
 
 // pointsFor are the timeline points of one agent: recorded under that
 // instance id and kept in that server's folder of a repository.
+// pointsOf is pointsFor with the folder name the server's vault uses in
+// repositories, which may differ from the connection's name.
+func (a *App) pointsOf(conn, instance string) []journey.TimelinePoint {
+	name := a.vaultNames[conn]
+	if name == "" {
+		name = conn
+	}
+	return pointsFor(a.timeline.value, name, instance)
+}
+
+// pointsFor is an agent's saved points, newest first; server is the
+// folder its server's vault has in the repositories.
 func pointsFor(page service.JourneyPage, server, instance string) []journey.TimelinePoint {
 	var out []journey.TimelinePoint
 	for _, p := range page.Items {

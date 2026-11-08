@@ -39,6 +39,7 @@ func main() {
 		// and the admin passphrase is asked in the window (docs/UI.md 7.3).
 		svc.NoTerminalLogin = true
 		svc.AdminAuth.Passphrase = app.AdminPassphrase
+		svc.OwnerAuth.Passphrase = app.OwnerPassphrase
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "Valise", Width: 1180, Height: 780, MinWidth: 860, MinHeight: 560,
 			Content: ui.View(app.View)})
 		app.SetUpdate(win.Update)

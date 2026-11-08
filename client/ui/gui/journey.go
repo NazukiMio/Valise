@@ -85,7 +85,7 @@ func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool
 			}
 		})
 		box := ui.Row(c).Grow(1).Padding(7, 12).Gap(12).Radius(8).Margin(0, 0, 4, 0).AlignItems(ui.Center).
-			Cursor(ui.CursorPointer).Label(when(p.CreatedAt, c.Now()))
+			Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(when(p.CreatedAt, c.Now()))
 		if box.Hovered() {
 			box.Background(palette.Card).Border(1, palette.CardBorder)
 		}

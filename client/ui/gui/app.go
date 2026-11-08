@@ -5,6 +5,7 @@ package gui
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -56,6 +57,11 @@ type App struct {
 	pickFolder func() (string, error) // the system's folder dialog; "" when cancelled
 	themes     map[string]themeEntry  // imported themes by id, read at start and after an import
 	themeErr   error                  // the chosen theme could not be used, or an import failed
+	// vaultNames maps a connection to the folder its vault has in the
+	// repositories (the server's name, which may differ: “debian-vm” keeps
+	// its backups under “debian”). Read with the agents; kept when a read
+	// fails.
+	vaultNames map[string]string
 }
 
 // load is one read and what came of it.
@@ -73,7 +79,7 @@ func New(svc *service.Service) *App {
 		run: func(f func()) { go f() }, update: func(f func()) { f() },
 		entries: map[string]*entryState{}, entryOpener: svc.OpenEntry, openURL: service.OpenURL,
 		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{},
-		health: map[string]*healthState{}, syncs: map[string]*syncState{},
+		health: map[string]*healthState{}, syncs: map[string]*syncState{}, vaultNames: map[string]string{},
 		prefs: prefs{View: "cards", Dismissed: map[string]string{}}}
 }
 
@@ -121,10 +127,38 @@ func (a *App) refreshAgents() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		res, err := a.svc.ListAgents(ctx, service.AgentListRequest{})
+		names := a.readVaultNames(ctx, res)
 		a.update(func() {
 			a.agents = load[service.AgentListResult]{started: true, value: res, err: err, at: time.Now()}
+			for conn, name := range names {
+				a.vaultNames[conn] = name
+			}
 		})
 	})
+}
+
+// readVaultNames asks each server read this time for its vault's name, in
+// parallel (daily access, read only).
+func (a *App) readVaultNames(ctx context.Context, res service.AgentListResult) map[string]string {
+	out := map[string]string{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, obs := range res.Observations {
+		if obs.Status != "fresh" {
+			continue
+		}
+		wg.Add(1)
+		go func(conn string) {
+			defer wg.Done()
+			if st, err := a.svc.VaultStatus(ctx, conn); err == nil && st.ServerName != "" {
+				mu.Lock()
+				out[conn] = st.ServerName
+				mu.Unlock()
+			}
+		}(obs.ConnectionID)
+	}
+	wg.Wait()
+	return out
 }
 
 // refreshTimeline reads the local repositories (no SSH, no key).

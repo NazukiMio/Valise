@@ -139,7 +139,7 @@ func (a *App) toolbarSlot(c *ui.Context, n *Node, d *homeData) {
 	if d.loading || len(d.inUse) == 0 {
 		return
 	}
-	a.agentToolbar(c, n, len(d.inUse))
+	a.agentToolbar(c, n, len(d.inUse), len(filterAgents(d.inUse, a.query)))
 }
 
 func (a *App) agentsSlot(c *ui.Context, n *Node, d *homeData) {

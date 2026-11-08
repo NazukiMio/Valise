@@ -56,7 +56,7 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 				State:  r.Service, Go: "/agents/" + r.Server + "/" + r.Instance, Tab: tabHealth})
 		}
 		if a.hasRepos {
-			points := pointsFor(a.timeline.value, r.Server, r.Instance)
+			points := a.pointsOf(r.Server, r.Instance)
 			if len(points) == 0 || now.Sub(points[0].CreatedAt) > staleAfter {
 				stale = append(stale, r.Name+"（"+r.Server+"）")
 				weeks := "none"

@@ -101,7 +101,7 @@ func (a *App) navSlot(c *ui.Context, n *Node) {
 }
 
 func (a *App) navButton(c *ui.Context, it navItem, on, withText bool) {
-	b := ui.Row(c).Gap(6).Padding(8, 10).Radius(cur.Sizes.Radius).AlignItems(ui.Center).Cursor(ui.CursorPointer).
+	b := ui.Row(c).Gap(6).Padding(8, 10).Radius(cur.Sizes.Radius).AlignItems(ui.Center).Cursor(ui.CursorPointer).Role(ui.RoleButton).
 		Label(it.label).Selected(on)
 	ink := palette.SideText
 	if on {

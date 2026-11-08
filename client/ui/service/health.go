@@ -173,6 +173,9 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 		case !ts.Enabled:
 			it.Level, it.Text, it.Key = HealthInfo, "没有开启", "s"
 			it.Detail = "定时备份让你不用记着手动备份。按 s 打开这个 agent 的设置，在「定时备份」里开启。"
+		case ts.Every == "":
+			// A protection plan's calendar schedule has no fixed interval.
+			it.Level, it.Text = HealthOK, "按保护计划的时间运行，登出后也会运行"
 		default:
 			it.Level, it.Text = HealthOK, "每 "+everyText(ts.Every)+"一次，登出后也会运行"
 		}
@@ -260,14 +263,14 @@ func (s *Service) backupItem(host, instance, server string, metas []vault.Meta, 
 			}
 		}
 	}
-	newest := "最新备份 " + agoPlain(now.Sub(pods[0].CreatedAt)) + "前"
+	newest := "最新备份 " + agoAt(pods[0].CreatedAt, now)
 	for i, m := range pods {
 		where, ok := elsewhere[m.SnapshotID]
 		if !ok {
 			continue
 		}
 		age := now.Sub(m.CreatedAt)
-		it.Text = newest + "；备份位置里最新的是 " + agoPlain(age) + "前（" + where + "）"
+		it.Text = newest + "；备份位置里最新的是 " + agoAt(m.CreatedAt, now) + "（" + where + "）"
 		it.Level = HealthOK
 		if i > 0 {
 			it.Text += "，还有 " + strconv.Itoa(i) + " 个没同步"
@@ -403,6 +406,16 @@ func withSkills(it HealthItem, d *agentkit.Declaration) HealthItem {
 		it.Text += "；声明的安全技能：" + strings.Join(names, "、")
 	}
 	return it
+}
+
+// agoAt says how long ago t was; a time after now (recorded while the
+// server's clock ran ahead) is told as the date it carries, never as “just
+// now”.
+func agoAt(t, now time.Time) string {
+	if t.After(now.Add(time.Minute)) {
+		return "记为 " + t.Local().Format("2006-01-02 15:04") + "，晚于现在（备份时服务器时钟可能不准）"
+	}
+	return agoPlain(now.Sub(t)) + "前"
 }
 
 func agoPlain(d time.Duration) string {

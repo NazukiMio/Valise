@@ -160,7 +160,7 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 func (a *App) curveCard(c *ui.Context, pt journey.TimelinePoint) {
 	id := pt.SnapshotRef.SnapshotID
 	card := ui.Column(c).Gap(2).Padding(7, 11).Radius(10).Background(palette.Card).Border(1, palette.CardBorder).
-		Shadow(0, 4, 14, 0, palette.Shadow.Alpha(0.06)).Cursor(ui.CursorPointer).Label(when(pt.CreatedAt, c.Now()))
+		Shadow(0, 4, 14, 0, palette.Shadow.Alpha(0.06)).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(when(pt.CreatedAt, c.Now()))
 	if card.Hovered() || a.glow == id {
 		card.Border(1, palette.Gold).Shadow(0, 0, 18, 0, palette.Gold.Alpha(0.7))
 	}

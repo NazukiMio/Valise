@@ -33,7 +33,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 	if ui.Link(c, "‹ "+text.back, "/agents").Clicked() {
 		a.point = ""
 	}
-	points := pointsFor(a.timeline.value, server, instance)
+	points := a.pointsOf(server, instance)
 	var newest *time.Time
 	if len(points) > 0 {
 		newest = &points[0].CreatedAt

@@ -142,7 +142,7 @@ func TestSearchAndViewChoice(t *testing.T) {
 	a, tt := world(t)
 	a.query = "hermes"
 	tt.Frame()
-	if !tt.HasText("阿蓝") || tt.HasText("小满") {
+	if !tt.HasText("阿蓝") || tt.HasText("小满") || !tt.HasText("找到 1 个 · 共 2 个在用") {
 		t.Fatalf("search: %q", tt.Texts())
 	}
 	a.query = "HOME"
@@ -323,5 +323,20 @@ func TestCurveGlowThenDetails(t *testing.T) {
 		if a.point != "sb" || !tt.HasText("这次带上了什么") {
 			t.Fatalf("still=%v: point %q %q", still, a.point, tt.Texts())
 		}
+	}
+}
+
+// A server's vault may keep its folder under another name than the
+// connection's (“debian-vm” → “debian”); backups are found by that name.
+func TestPointsByVaultName(t *testing.T) {
+	a, _ := world(t)
+	a.timeline.value.Items = append(a.timeline.value.Items, journey.TimelinePoint{SnapshotRef: journey.SnapshotRef{SnapshotID: "d1"},
+		CreatedAt: time.Now(), RecordedInstanceID: "alan", Copies: []journey.Copy{{SourceLocator: "cloudbox/alan/2026-11-01_2026-11-30"}}})
+	if len(a.pointsOf("cloud", "alan")) != 0 {
+		t.Fatal("matched before the name was known")
+	}
+	a.vaultNames["cloud"] = "cloudbox"
+	if got := a.pointsOf("cloud", "alan"); len(got) != 1 || got[0].SnapshotRef.SnapshotID != "d1" {
+		t.Fatalf("by vault name: %v", got)
 	}
 }

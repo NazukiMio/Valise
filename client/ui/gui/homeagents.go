@@ -32,10 +32,18 @@ func filterAgents(rows []agentRow, query string) []agentRow {
 }
 
 // agentToolbar is the section's title, the search and the view switch.
-func (a *App) agentToolbar(c *ui.Context, n *Node, count int) {
+// agentLabel names an agent for assistive technology: two agents may share
+// a name on different servers.
+func agentLabel(r agentRow) string { return r.Name + "，" + r.Harness + "，" + r.Server }
+
+func (a *App) agentToolbar(c *ui.Context, n *Node, count, found int) {
 	c.OnShortcut(ui.Cmd, ui.KeyF, func() { a.focusSearch = true })
 	n.box(ui.Row(c).Gap(12).AlignItems(ui.Center).Margin(12, 0, 0, 0)).Children(func() {
-		muted(ui.Text(c, fmt.Sprintf("在用的 Agent · %d", count))).FontSize(12).LetterSpacing(0.6).Grow(1)
+		title := fmt.Sprintf("在用的 Agent · %d", count)
+		if q := strings.TrimSpace(a.query); q != "" {
+			title = fmt.Sprintf("找到 %d 个 · 共 %d 个在用", found, count)
+		}
+		muted(ui.Text(c, title)).FontSize(12).LetterSpacing(0.6).Grow(1)
 		f := ui.SearchField(c, &a.query).Width(260).Placeholder("搜索名字、harness 或服务器  ⌘F").Label("搜索 Agent")
 		if a.focusSearch {
 			f.Focus()
@@ -50,7 +58,7 @@ func (a *App) agentToolbar(c *ui.Context, n *Node, count int) {
 
 func (a *App) viewButton(c *ui.Context, view string, icon *ui.SVG, label string) {
 	on := a.prefs.View == view || view == "cards" && a.prefs.View != "list"
-	b := ui.Box(c).Size(30, 26).Radius(7).Center().Cursor(ui.CursorPointer).Label(label).Selected(on)
+	b := ui.Box(c).Size(30, 26).Radius(7).Center().Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(label).Selected(on)
 	ink := palette.TextSub
 	if on {
 		b.Background(palette.Card).Shadow(0, 1, 2, 0, palette.Shadow.Alpha(0.12))
@@ -68,7 +76,7 @@ func (a *App) viewButton(c *ui.Context, view string, icon *ui.SVG, label string)
 
 // newest is the agent's latest local backup time, nil for none.
 func (a *App) newest(r agentRow) *time.Time {
-	if points := pointsFor(a.timeline.value, r.Server, r.Instance); len(points) > 0 {
+	if points := a.pointsOf(r.Server, r.Instance); len(points) > 0 {
 		return &points[0].CreatedAt
 	}
 	return nil
@@ -111,7 +119,7 @@ func (a *App) agentGrid(c *ui.Context, n *Node, rows []agentRow) {
 // problem is marked on its own (AGENTS.md 7.5: only problems are colored).
 func (a *App) agentCard(c *ui.Context, r agentRow, look cardLook) {
 	bad := trouble(r)
-	box := card(ui.Column(c)).Padding(look.pad).Gap(14).Cursor(ui.CursorPointer).Label(r.Name)
+	box := card(ui.Column(c)).Padding(look.pad).Gap(14).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(agentLabel(r))
 	if look.minH > 0 {
 		box.MinHeight(look.minH).Justify(ui.SpaceBetween)
 	}
@@ -166,7 +174,7 @@ func (a *App) agentList(c *ui.Context, key string, rows []agentRow) {
 }
 
 func (a *App) agentLine(c *ui.Context, r agentRow) {
-	row := ui.Row(c).Padding(11, 18).Gap(14).AlignItems(ui.Center).Cursor(ui.CursorPointer).Label(r.Name)
+	row := ui.Row(c).Padding(11, 18).Gap(14).AlignItems(ui.Center).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(agentLabel(r))
 	if row.Hovered() {
 		row.Background(palette.Hover)
 	}
@@ -185,7 +193,7 @@ func (a *App) agentLine(c *ui.Context, r agentRow) {
 
 // textLink is a quiet, clickable line of accent text.
 func textLink(c *ui.Context, label string, fn func()) {
-	t := ui.Text(c, label).FontSize(13).TextColor(palette.Brand).Cursor(ui.CursorPointer).Label(label)
+	t := ui.Text(c, label).FontSize(13).TextColor(palette.Brand).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(label)
 	if t.Hovered() {
 		t.Underline()
 	}
