@@ -7,7 +7,7 @@
 - 工作分支 `n2-agent-protection-journey`，**未推送**。N2 实现从 `305e14e` 开始，之后的提交都在这个分支上；`references/`（用户的参考 HTML）有意不纳入版本控制。
 - 全仓自检 `testbed/selfcheck.sh` 在 `add44a4`（用语统一）上通过（SELFCHECK_PASS）。
 - **提交署名缺口**：`c04b266`、`cfcb916`、`de37ced`、`e30a84e`、`021121c` 少了 `AGENTS.md` 第 8 节要求的两行 Co-authored-by（只有 Claude 的署名）。分支未推送，可以用非交互的 `git rebase --exec` 补上；是否改写等用户决定。更早的 `b990c75`、`6364c15`、`6c7e3c5`、`b45a883` 也没有这两行，不是本轮提交。
-- 三台靶机（`ubuntu-vm`、`ubuntu-vm-x86`、`debian-vm`）已部署 `021121c` 构建的正式 porter（声明 identity/1–2、protection-plan/1–2、backup-runs/1–2、system-fix/1、copy-check/1）。`nazukiki-cloud` 未部署本轮 porter。
+- 三台靶机（`ubuntu-vm`、`ubuntu-vm-x86`、`debian-vm`）已部署 `a1c5ba1` 构建的本地 porter（2026-11-08；在原有能力之外声明 copy-verify/1、cloud/1、identity-lost-source/1、revive-body-dirs/1）。`nazukiki-cloud` 未部署本轮 porter。
 
 ## 2. N2 进度（2026-11-07 验收为 Done）
 
@@ -86,10 +86,10 @@
 
 源服务器连不上时，可从本机仓库、选择的本机文件夹或这台电脑登录的云盘读取备份：列出（`vault status --source`）、失联迁移（`revive --source`，沿用原实例名、排除独占凭据、不碰源服务器，之后源又连上会提醒）、导出到本机文件夹（`export`）。挂起 `ubuntu-vm` 实机验证，详见 [acceptance/N3.md](acceptance/N3.md) 第 4 节；porter 新能力 `identity-lost-source/1`（`ubuntu-vm`、`debian-vm` 已部署）。N3 四项交付都已实现。
 
-收尾验收（acceptance/N3.md 4.4）：OpenClaw 从 `repo:local` 失联迁移到 `debian-vm`，服务健康，目标记下 `migration_completed`（来源未知、`exclusive_omitted`），源恢复后提醒、`--settle` 后停止。期间发现并修正“身体装在状态目录里时迁移把它换掉”（用户决定原样搬进新目录，新能力 `revive-body-dirs/1`，目前只部署到 `debian-vm`；其他靶机迁移/克隆到它们时计划会要求先更新搬运工），以及不含凭据的备份替换已有目录时在计划里写明后果。云盘与文件夹来源的实机迁移仍未验证。
+收尾验收（acceptance/N3.md 4.4）：OpenClaw 从 `repo:local` 失联迁移到 `debian-vm`，服务健康，目标记下 `migration_completed`（来源未知、`exclusive_omitted`），源恢复后提醒、`--settle` 后停止。期间发现并修正“身体装在状态目录里时迁移把它换掉”（用户决定原样搬进新目录，新能力 `revive-body-dirs/1`；本轮 porter 已部署到 `ubuntu-vm`、`ubuntu-vm-x86`、`debian-vm`，`nazukiki-cloud` 仍是旧版），以及不含凭据的备份替换已有目录时在计划里写明后果。云盘与文件夹来源的实机迁移仍未验证。
 
 ## 7. 建议的下一步
 
 1. 云盘剩余验收（acceptance/N3.md 2.5）：无浏览器授权、这台电脑登录与中转。
-2. 决定 N3 是否可以标为 Done（剩余未验证：云盘无浏览器授权与这台电脑登录的中转、云盘或文件夹来源的实机失联迁移）；把本轮 porter 部署到其余靶机。
+2. 决定 N3 是否可以标为 Done（剩余未验证：云盘无浏览器授权与这台电脑登录的中转、云盘或文件夹来源的实机失联迁移）。
 3. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。
