@@ -197,6 +197,27 @@ func TestCloudHereRelay(t *testing.T) {
 	if err != nil || len(ac.Locations) != 1 || ac.Locations[0].Kind != "cloud" || ac.Locations[0].State != CopyCopied || ac.Locations[0].Path != PathTemp {
 		t.Fatalf("%+v %v", ac, err)
 	}
+	// The cloud stands in for the server (docs/ARCHITECTURE.md 8.2.3):
+	// listed without the server, and a backup exported from it.
+	src, err := s.ParseCopySource("box", "cloud:here")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cst, err := s.SourceStatus(ctx, src)
+	if err != nil || len(cst.Snapshots) == 0 {
+		t.Fatalf("%+v %v", cst, err)
+	}
+	k, err := s.Unlock(pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := k.Identity()
+	s.rememberOwner(id)
+	out := filepath.Join(t.TempDir(), "export")
+	ex, err := s.Export(ctx, ExportOptions{Host: "box", SnapshotID: cst.Snapshots[0].SnapshotID, To: out, Source: "cloud:here"})
+	if err != nil || ex.Files == 0 || ex.Transfer == nil || ex.Transfer.Downloaded == 0 {
+		t.Fatalf("%+v %v", ex, err)
+	}
 	if err := s.CloudRemoveHere(ctx, "here"); err != nil || s.IsCloudHere("here") {
 		t.Fatal(err)
 	}

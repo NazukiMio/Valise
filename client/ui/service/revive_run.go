@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"valise/client/ssh"
 	"valise/core/identity"
@@ -113,7 +114,7 @@ func (s *Service) ExecuteReviveConfirmed(ctx context.Context, rp *RevivePlan, fa
 	if plan.Identity != nil {
 		disposition = identity.Unresolved
 		switch {
-		case plan.Mode == revive.ModeClone:
+		case plan.Mode == revive.ModeClone, plan.Mode == revive.ModeMigrate && rp.SourceLost:
 			disposition = identity.ExclusiveOmitted // excluded while planning; the target rechecks its stage
 		case plan.Mode == revive.ModeMigrate && stopped && rp.sourceStatus:
 			var st struct {
@@ -132,6 +133,9 @@ func (s *Service) ExecuteReviveConfirmed(ctx context.Context, rp *RevivePlan, fa
 		if s.callOwner(ctx, source, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "start"}, nil) == nil {
 			res.Message += "；已重新启动原服务器上的 " + rp.StopSource
 		}
+	}
+	if err == nil && rp.SourceLost && plan.Mode == revive.ModeMigrate && res.State != revive.StateRolledBack {
+		s.recordLostMigration(LostMigration{From: rp.From, Instance: rp.Plan.InstanceID, Target: rp.Target, OpID: plan.OpID, SnapshotID: plan.SnapshotID, At: time.Now().UTC()})
 	}
 	return &res, err
 }

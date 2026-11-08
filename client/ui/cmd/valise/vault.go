@@ -120,14 +120,28 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 	}
 	fs := flag.NewFlagSet("vault", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "")
+	source := fs.String("source", "", "")
 	pos, err := parseArgs(fs, args[1:], 1)
 	if err != nil {
 		return err
 	}
 	switch args[0] {
 	case "status":
-		st, err := c.svc.VaultStatus(ctx, pos[0])
-		if err != nil {
+		var st *vaultrpc.StatusResult
+		here := "服务器"
+		if *source != "" {
+			src, err := c.svc.ParseCopySource(pos[0], *source)
+			if err != nil {
+				return err
+			}
+			if st, err = c.svc.SourceStatus(ctx, src); err != nil {
+				return err
+			}
+			here = "副本"
+			if !*asJSON {
+				fmt.Fprintf(c.out, "来源：%s（只读副本里的元数据，不需要服务器与私钥）\n", src.Label())
+			}
+		} else if st, err = c.svc.VaultStatus(ctx, pos[0]); err != nil {
 			return err
 		}
 		if *asJSON {
@@ -141,7 +155,11 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 		if name == "" {
 			name = "（还没有名字，同步前需要 valise server name 起名）"
 		}
-		fmt.Fprintf(c.out, "服务器名：%s　收件人指纹：%v\n", name, st.Recipients)
+		if *source != "" {
+			fmt.Fprintf(c.out, "服务器名：%s\n", name)
+		} else {
+			fmt.Fprintf(c.out, "服务器名：%s　收件人指纹：%v\n", name, st.Recipients)
+		}
 		synced := map[string][]string{}
 		for _, t := range st.Targets {
 			for _, sid := range t.LastSynced {
@@ -169,10 +187,10 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 			sort.Sort(sort.Reverse(sort.StringSlice(ids)))
 			for _, id := range ids {
 				m := metas[id]
-				where := "服务器"
+				where := here
 				if t := synced[id]; len(t) > 0 {
 					where += " + " + strings.Join(t, "、")
-				} else {
+				} else if *source == "" {
 					where += "（尚未同步）"
 				}
 				fmt.Fprintf(c.out, "  %s  %-10s %-13s %s  %5d 个文件 %10s  %s\n", id, m.InstanceID, tierLabel(m.Tier),

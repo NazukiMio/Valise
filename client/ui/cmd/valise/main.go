@@ -61,7 +61,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   seal <服务器> <实例> [--tier soul|soul-secrets|full|raw] [--reason 原因] [--no-copy]
                                                  建立一个备份（soul=轻装、soul-secrets=标准、full=完整、raw=原样）；
                                                  之后在前台补到本机仓库与这台电脑登录的云盘，--no-copy 跳过
-  vault status <服务器> [--json]                   按周期列出备份与备份位置状态（不需要私钥）
+  vault status <服务器> [--source …] [--json]      按周期列出备份与备份位置状态（不需要私钥）；--source 只读副本，不需要服务器
   vault copies <服务器> <周期> [--packs] [--skip 位置,…] [--json]
                                                  核对一个周期在服务器、备份位置与本机仓库的副本（--packs 连数据包内容一起核对）
   vault delete <服务器> <周期> [--skip 位置,…] [--yes]  删除服务器上一整个已结束的周期（先核对其他各处副本；--skip 跳过的位置按未核对处理）
@@ -89,9 +89,14 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
 
 恢复与迁移
   revive <服务器> --snapshot <id> [--mode rollback|migrate|clone] [--from <服务器>] [--id 新实例]
-         [--root id=路径]... [--allow-draft-profile] [--allow-snapshot-profile] [--backup-first] [--dry-run] [--yes]
-                                                 恢复（rollback=恢复当前实例、migrate=迁移到另一台服务器、clone=创建副本（新的 agent））：先出计划，暂存校验后再确认交换
+         [--source repo:<仓库>|dir:<文件夹>|cloud:<云盘>] [--root id=路径]... [--allow-draft-profile] [--allow-snapshot-profile]
+         [--backup-first] [--dry-run] [--yes]
+                                                 恢复（rollback=恢复当前实例、migrate=迁移到另一台服务器、clone=创建副本（新的 agent））：先出计划，暂存校验后再确认交换；
+                                                 --source 从副本读取备份（来源服务器连不上时用；迁移时不停止它、不带独占凭据）
   revive resume <服务器> <op> --continue|--back   处理未完成的恢复
+  revive lost [--settle <op>]                    列出来源连不上时做的迁移；来源又连上且仍有该实例时提醒；处理好后记为完毕
+  export <服务器> <备份> --to <空文件夹> [--source …] [--include-secrets] [--json]
+                                                 把一个备份解密成普通文件放到这台电脑（不启动；默认不含凭据）
   prev list <服务器> | prev drop <服务器> <op>    查看 / 删除交换前保留的旧状态
   old list <服务器> | old cleanup <服务器> <实例>  查看 / 清理被迁移或克隆取代的旧实例
   restore-test <服务器> <实例> [--snapshot id]     恢复测试：两边各解开一次备份并核对，不切换，过后删除
@@ -213,6 +218,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.deploy(ctx, args[2:])
 	case args[0] == "porter" && len(args) > 1 && args[1] == "check":
 		return c.porterCheck(ctx, args[2:])
+	case args[0] == "export":
+		return c.export(ctx, args[1:])
 	case args[0] == "revive":
 		return c.revive(ctx, args[1:])
 	case args[0] == "prev" && len(args) > 1:

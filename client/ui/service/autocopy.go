@@ -57,6 +57,9 @@ type AutoCopyResult struct {
 	CertsRenewed  []string `json:"certs_renewed,omitempty"`
 	CertsExpiring []string `json:"certs_expiring,omitempty"`
 	CertError     string   `json:"cert_error,omitempty"`
+	// LostSource reminds of migrations made while this server was lost
+	// (open only, docs/ARCHITECTURE.md 8.2.3).
+	LostSource []string `json:"lost_source,omitempty"`
 }
 
 // Changed reports whether anything was copied or failed: the only results
@@ -67,7 +70,7 @@ func (r *AutoCopyResult) Changed() bool {
 			return true
 		}
 	}
-	return len(r.CertsRenewed) > 0 || len(r.CertsExpiring) > 0 || r.CertError != ""
+	return len(r.CertsRenewed) > 0 || len(r.CertsExpiring) > 0 || r.CertError != "" || len(r.LostSource) > 0
 }
 
 // AutoCopyOptions narrow a run. Progress, when set, sees each location
@@ -88,6 +91,9 @@ func (s *Service) AutoCopy(ctx context.Context, host string, trigger CopyTrigger
 	res := &AutoCopyResult{Host: host, Trigger: trigger, Locations: []AutoCopyOutcome{}}
 	if trigger == TriggerOpen {
 		s.renewForOpen(ctx, host, res)
+		for _, w := range s.LostSourceWarnings(ctx, host) {
+			res.LostSource = append(res.LostSource, w.Text)
+		}
 	}
 	if len(s.Config.Repos) == 0 && len(s.Config.Clouds) == 0 {
 		return res, nil

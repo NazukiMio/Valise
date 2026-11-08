@@ -57,6 +57,6 @@ func (m *Model) handleAutoCopied(msg autoCopied) {
 		for _, o := range msg.res.Locations {
 			failed = failed || o.State == service.CopyFailed
 		}
-		m.flash, m.flashErr = msg.host+"："+strings.Join(service.AutoCopyLines(msg.res, false), "；"), failed || msg.res.CertError != ""
+		m.flash, m.flashErr = msg.host+"："+strings.Join(service.AutoCopyLines(msg.res, false), "；"), failed || msg.res.CertError != "" || len(msg.res.LostSource) > 0
 	}
 }

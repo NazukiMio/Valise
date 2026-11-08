@@ -48,6 +48,7 @@ func AutoCopyLines(r *AutoCopyResult, all bool) []string {
 	if len(r.CertsExpiring) > 0 {
 		out = append(out, "到远程备份位置 "+strings.Join(r.CertsExpiring, "、")+" 的证书快到期了：同步一次即可续期（自动同步才不会中断）")
 	}
+	out = append(out, r.LostSource...)
 	if r.CertError != "" {
 		out = append(out, "证书续期失败："+r.CertError)
 	}

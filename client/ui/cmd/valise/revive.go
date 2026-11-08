@@ -42,11 +42,15 @@ func (c *cli) revive(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "resume" {
 		return c.reviveResume(ctx, args[1:])
 	}
+	if len(args) > 0 && args[0] == "lost" {
+		return c.reviveLost(ctx, args[1:])
+	}
 	fs := flag.NewFlagSet("revive", flag.ContinueOnError)
 	o := service.ReviveOptions{Roots: map[string]string{}}
 	fs.StringVar(&o.SnapshotID, "snapshot", "", "")
 	fs.StringVar(&o.Mode, "mode", revive.ModeRollback, "")
 	fs.StringVar(&o.From, "from", "", "")
+	fs.StringVar(&o.Source, "source", "", "")
 	fs.StringVar(&o.InstanceID, "id", "", "")
 	fs.Var(mapFlag(o.Roots), "root", "")
 	fs.BoolVar(&o.AllowDraft, "allow-draft-profile", false, "")
@@ -150,6 +154,12 @@ func printPlan(c *cli, rp *service.RevivePlan) {
 	mode := map[string]string{revive.ModeRollback: "恢复当前实例", revive.ModeMigrate: "迁移到另一台服务器", revive.ModeClone: "创建副本（新的 agent）"}[p.Mode]
 	fmt.Fprintf(w, "恢复计划（%s）：op %s\n", mode, p.OpID)
 	fmt.Fprintf(w, "  备份：%s（%s，%s，来自 %s）\n", p.SnapshotID, tierLabel(p.Tier), rp.Snapshot.CreatedAt.Local().Format("2006-01-02 15:04"), rp.From)
+	if rp.Source != nil {
+		fmt.Fprintf(w, "  读取自：%s\n", rp.Source.Label())
+	}
+	if rp.SourceLost {
+		fmt.Fprintf(w, "  %s 连不上：不会停止、读取或写入它\n", rp.From)
+	}
 	fmt.Fprintf(w, "  目标：%s（%s）上的实例 %s\n", rp.Target, rp.TargetArch, p.InstanceID)
 	if l := transferLine(rp.Transfer); l != "" {
 		fmt.Fprintln(w, "  "+l)
@@ -330,6 +340,45 @@ func (c *cli) keyUnregister(ctx context.Context, args []string) error {
 		fmt.Fprintln(c.out, "该公钥不在服务器的收件人中。")
 	} else {
 		fmt.Fprintf(c.out, "已移除。服务器上剩余的收件人指纹：%v\n", fps)
+	}
+	return nil
+}
+
+// reviveLost lists migrations made while their source was unreachable,
+// checks the sources that answer, and settles one on request:
+// valise revive lost [--settle <op>].
+func (c *cli) reviveLost(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("revive lost", flag.ContinueOnError)
+	settle := fs.String("settle", "", "")
+	if _, err := parseArgs(fs, args, 0); err != nil {
+		return err
+	}
+	if *settle != "" {
+		if err := c.svc.SettleLostMigration(*settle); err != nil {
+			return err
+		}
+		fmt.Fprintln(c.out, "已记为处理完毕，不再提醒。")
+		return nil
+	}
+	list := c.svc.LostMigrations()
+	if len(list) == 0 {
+		fmt.Fprintln(c.out, "没有未处理的失联迁移。")
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, m := range list {
+		fmt.Fprintf(c.out, "%s：%s 的 %s 迁移到 %s（%s，备份 %s）\n", m.OpID, m.From, m.Instance, m.Target, m.At.Local().Format("2006-01-02 15:04"), m.SnapshotID)
+		if seen[m.From] {
+			continue
+		}
+		seen[m.From] = true
+		ws, err := c.svc.CheckLostSource(ctx, m.From)
+		if err != nil {
+			fmt.Fprintf(c.out, "  ? 现在读不到 %s，无法核对它上面是否仍有这个实例\n", m.From)
+		}
+		for _, w := range ws {
+			fmt.Fprintln(c.out, "  ! "+w.Text)
+		}
 	}
 	return nil
 }

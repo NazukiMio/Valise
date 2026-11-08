@@ -30,20 +30,29 @@ type ReviveOptions struct {
 	AllowDraft bool              `json:"allow_draft_profile"`
 	// AllowSnapshotProfile revives with the profile stored in the snapshot
 	// when the client has no profile of that id and version.
-	AllowSnapshotProfile bool   `json:"allow_snapshot_profile"`
-	Fault                string `json:"-"` // drills only
+	AllowSnapshotProfile bool `json:"allow_snapshot_profile"`
+	// Source reads the snapshot from a copy instead of From's vault
+	// (docs/ARCHITECTURE.md 8.2.3): repo:<名>[/<服务器名>], dir:<路径> or
+	// cloud:<名>[/<服务器名>].
+	Source string `json:"source,omitempty"`
+	Fault  string `json:"-"` // drills only
 }
 
 // RevivePlan is shown to the user before anything changes.
 type RevivePlan struct {
 	// Transfer is what pulling the pod took (review F03).
-	Transfer     *SnapshotPull `json:"transfer,omitempty"`
-	Plan         revive.Plan   `json:"plan"`
-	Snapshot     vault.Meta    `json:"snapshot"`
-	Target       string        `json:"target"`
-	From         string        `json:"from"`
-	TargetArch   string        `json:"target_arch"`
-	ProfileLocal bool          `json:"profile_local"`
+	Transfer *SnapshotPull `json:"transfer,omitempty"`
+	Plan     revive.Plan   `json:"plan"`
+	Snapshot vault.Meta    `json:"snapshot"`
+	Target   string        `json:"target"`
+	From     string        `json:"from"`
+	// Source is the copy the snapshot was read from, nil for From's vault.
+	Source *CopySource `json:"source,omitempty"`
+	// SourceLost: From could not be reached. A migration then neither stops
+	// nor reads it, and leaves out exclusive secrets (8.2.3).
+	SourceLost   bool   `json:"source_lost,omitempty"`
+	TargetArch   string `json:"target_arch"`
+	ProfileLocal bool   `json:"profile_local"`
 	// ProfileFromSnapshot: the profile came from the snapshot header, not
 	// reviewed by this client.
 	ProfileFromSnapshot bool               `json:"profile_from_snapshot"`
@@ -111,13 +120,27 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	default:
 		return nil, valise.New("mode_invalid", "未知的复活模式："+o.Mode, "可选 rollback、migrate、clone")
 	}
+	var src *CopySource
+	if o.Source != "" {
+		if src, err = s.ParseCopySource(o.From, o.Source); err != nil {
+			return nil, err
+		}
+	}
 	st, err := s.VaultStatus(ctx, o.From)
-	if err != nil {
+	lost := err != nil && SourceUnreachable(err)
+	switch {
+	case lost && src == nil:
+		return nil, s.unreachableWithCopies(ctx, o.From, o.SnapshotID, err)
+	case lost && o.Mode == revive.ModeRollback:
+		return nil, valise.New("source_lost", "连不上 "+o.From+"，不能在它上面恢复当前实例", "到另一台服务器用 --mode migrate 或 clone，并用 --source 指定副本")
+	case err != nil && !lost:
 		return nil, err
 	}
-	leaf := st.LeafOf(o.SnapshotID)
-	if leaf == "" {
-		return nil, valise.New("snapshot_unknown", o.From+" 上没有备份 "+o.SnapshotID, "用 valise vault status "+o.From+" 列出现有的备份")
+	leaf := ""
+	if src == nil {
+		if leaf = st.LeafOf(o.SnapshotID); leaf == "" {
+			return nil, valise.New("snapshot_unknown", o.From+" 上没有备份 "+o.SnapshotID, "用 valise vault status "+o.From+" 列出现有的备份")
+		}
 	}
 	// The key comes first: which packs to fetch is in the encrypted file
 	// list (review F03).
@@ -140,15 +163,25 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		// landing (docs/ARCHITECTURE.md 2.2): no second prompt.
 		s.rememberOwner(id)
 	}
-	v, pull, err := s.PullSnapshot(ctx, o.From, leaf, o.SnapshotID, id)
-	if err != nil {
+	var v *vault.Vault
+	var pull *SnapshotPull
+	if src != nil {
+		var cst *vaultrpc.StatusResult
+		if v, pull, cst, err = s.openFromSource(ctx, src, o.SnapshotID, id); err != nil {
+			return nil, err
+		}
+		st, leaf = cst, cst.LeafOf(o.SnapshotID)
+	} else if v, pull, err = s.PullSnapshot(ctx, o.From, leaf, o.SnapshotID, id); err != nil {
 		return nil, err
 	}
 	head, list, err := v.Snapshot(o.SnapshotID, id)
 	if err != nil {
 		return nil, valise.New("snapshot_unreadable", "无法解密快照 "+o.SnapshotID, "确认快照 id 正确，且本机密钥是该快照的收件人").WithDetail(err.Error())
 	}
-	rp = &RevivePlan{Target: o.Target, From: o.From, vault: v, ident: id, sqlite: map[string]bool{}, Transfer: pull}
+	rp = &RevivePlan{Target: o.Target, From: o.From, vault: v, ident: id, sqlite: map[string]bool{}, Transfer: pull, Source: src, SourceLost: lost}
+	if lost {
+		rp.Warnings = append(rp.Warnings, "连不上 "+o.From+"：备份从"+src.Label()+"读取；不会停止、读取或写入 "+o.From+"，也无法确认它上面的实例已经停止")
+	}
 	for _, m := range v.Metas {
 		if m.SnapshotID == o.SnapshotID {
 			rp.Snapshot = m
@@ -264,7 +297,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 
 	// Files to stage.
 	var excl []profile.PathRef
-	if o.Mode == revive.ModeClone {
+	if o.Mode == revive.ModeClone || (o.Mode == revive.ModeMigrate && lost) {
 		excl = prof.ExclusiveSecrets
 	}
 	for _, f := range list.Files {
@@ -302,7 +335,13 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 			rp.Warnings = append(rp.Warnings, fmt.Sprintf("目录里还有 %d 个共用服务 %s 的 agent（%s）：交换时它们会一起短暂停下，目录原样搬进新状态，不会被替换", len(facts.NestedRel), plan.Unit, strings.Join(facts.NestedRel, "、")))
 		}
 	}
-	if o.Mode == revive.ModeMigrate && plan.Unit != "" {
+	if o.Mode == revive.ModeMigrate && lost {
+		excluded := "这个备份里没有 harness 资料声明的独占凭据"
+		if len(rp.Excluded) > 0 {
+			excluded = "独占凭据不会带过去（见下面排除的文件），在新服务器上需要重新登录"
+		}
+		rp.Warnings = append(rp.Warnings, "失联迁移："+excluded+"；"+o.From+" 以后又连上时，Valise 会提醒两边可能都在运行")
+	} else if o.Mode == revive.ModeMigrate && plan.Unit != "" {
 		rp.StopSource = plan.Unit
 		rp.Warnings = append(rp.Warnings, "目标启动前会停止原服务器上的 "+plan.Unit+"（原实例的文件不动）；复活失败时会重新启动它")
 	}

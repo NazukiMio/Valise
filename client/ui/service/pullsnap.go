@@ -78,6 +78,16 @@ func (s *Service) PullSnapshot(ctx context.Context, host, leaf, snapshot string,
 	if err != nil {
 		return nil, nil, err
 	}
+	return s.pullFrom(ctx, list, snapshot, id, func(f vaultrpc.VaultFile, local string, w io.Writer) error {
+		return s.fetch(ctx, t, found.Path, leaf, f, local, w)
+	})
+}
+
+// pullFrom fills the period's cache with what snapshot needs, fetching
+// each missing file with fetch (from a server or a copy, docs/ARCHITECTURE.md
+// 8.2.3); list is the period's files with their sizes.
+func (s *Service) pullFrom(ctx context.Context, list vaultrpc.FilesResult, snapshot string, id age.Identity,
+	fetch func(f vaultrpc.VaultFile, local string, w io.Writer) error) (*vault.Vault, *SnapshotPull, error) {
 	dir := s.DefaultPullDir(list.VaultID)
 	if b, err := os.ReadFile(filepath.Join(dir, vault.DescriptorFile)); err == nil && !strings.Contains(string(b), `"`+list.VaultID+`"`) {
 		return nil, nil, valise.New("pull_wrong_vault", "本机缓存目录里已经是另一个金库", "删除 "+dir+" 后重试")
@@ -113,7 +123,7 @@ func (s *Service) PullSnapshot(ctx context.Context, host, leaf, snapshot string,
 		if st, err := os.Stat(local); err == nil && st.Size() == f.Size {
 			continue
 		}
-		if err := s.fetch(ctx, t, found.Path, leaf, f, local, &countingWriter{ctx: ctx, stage: StagePullMeta, done: &done, total: total, w: io.Discard}); err != nil {
+		if err := fetch(f, local, &countingWriter{ctx: ctx, stage: StagePullMeta, done: &done, total: total, w: io.Discard}); err != nil {
 			return nil, res, err
 		}
 		res.Downloaded += f.Size
@@ -149,7 +159,7 @@ func (s *Service) PullSnapshot(ctx context.Context, host, leaf, snapshot string,
 			rel := vault.PackPath(p)
 			f, ok := byPath[rel]
 			if !ok {
-				return valise.New("pull_pack_missing", "服务器上缺少备份用到的数据包 "+p[:12], "在服务器上运行 valise vault verify")
+				return valise.New("pull_pack_missing", "来源缺少备份用到的数据包 "+p[:12], "换一个来源，或在服务器上运行 valise vault verify")
 			}
 			res.Packs++
 			res.PackBytes += f.Size
@@ -166,7 +176,7 @@ func (s *Service) PullSnapshot(ctx context.Context, host, leaf, snapshot string,
 		for _, f := range missing {
 			local := filepath.Join(dir, filepath.FromSlash(f.Path))
 			_ = os.Remove(local) // a damaged copy is fetched again
-			if err := s.fetch(ctx, t, found.Path, leaf, f, local, &countingWriter{ctx: ctx, stage: StagePullPacks, done: &got, total: need, w: io.Discard}); err != nil {
+			if err := fetch(f, local, &countingWriter{ctx: ctx, stage: StagePullPacks, done: &got, total: need, w: io.Discard}); err != nil {
 				return err
 			}
 			res.Downloaded += f.Size

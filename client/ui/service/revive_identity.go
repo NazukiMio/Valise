@@ -21,12 +21,23 @@ func (s *Service) prepareRecoveryIdentity(ctx context.Context, rp *RevivePlan, p
 		return err
 	}
 	supported := target.hello != nil && slices.Contains(target.hello.Capabilities, identity.Capability)
+	lostOK := target.hello != nil && slices.Contains(target.hello.Capabilities, identity.LostSourceCapability)
 	target.Close()
+	if supported && rp.SourceLost && plan.Mode == revive.ModeMigrate && !lostOK {
+		return valise.New("unsupported_capability", rp.Target+" 上的搬运工还不支持失联迁移", "先更新 "+rp.Target+" 上的搬运工（valise porter deploy），再重新准备恢复")
+	}
 	snapshot := identity.SnapshotRef{VaultID: rp.vault.Desc.VaultID, SnapshotID: plan.SnapshotID}
 	if supported {
 		plan.Identity = &identity.RecoveryContext{Mode: plan.Mode, SourceSnapshot: snapshot}
 	} else {
 		rp.Warnings = append(rp.Warnings, "目标搬运工尚不支持世代与恢复关系，本次不建立迁移旅程关联")
+	}
+	if rp.SourceLost {
+		// Unreachable: the source generation stays unknown (8.2.3).
+		if supported {
+			rp.Warnings = append(rp.Warnings, "连不上来源服务器，来源实例世代保持未知")
+		}
+		return nil
 	}
 	source, err := s.session(ctx, rp.From)
 	if err != nil {
