@@ -38,7 +38,11 @@ tools:
         access_note: 只能读写 Valise 上传的文件，看不到你网盘里的其他东西
         ask_app: true
         app_help: "https://rclone.org/drive/#making-your-own-client-id"
-        verify: pending
+        # Verified on ubuntu-vm (Ubuntu arm64, 2026-11-08): server login
+        # through the relay (shared app), copy of 10 periods, list check,
+        # pack check (264 MiB), append-only resync, remove. Not yet run:
+        # headless login, "this computer" login. Shared-app copies were
+        # slow (a one-backup sync took ~6 min).
       - id: onedrive
         name: OneDrive
         rclone_type: onedrive

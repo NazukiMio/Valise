@@ -28,8 +28,11 @@ func TestRepositoryList(t *testing.T) {
 	}
 	rc := l.ByID("rclone")
 	g := rc.Cloud("gdrive")
-	if g == nil || !g.AskApp || g.Params["scope"] != "drive.file" || !g.UsesLoopback() || !g.Pending() || g.Access != AccessFolder {
+	if g == nil || !g.AskApp || g.Params["scope"] != "drive.file" || !g.UsesLoopback() || g.Pending() || g.Access != AccessFolder {
 		t.Fatalf("%+v", g)
+	}
+	if od := rc.Cloud("onedrive"); od == nil || !od.Pending() {
+		t.Fatalf("%+v", od)
 	}
 	if a := rc.ClientArchive("darwin", "arm64"); a == nil || !strings.Contains(a.URL, rc.Binary.Version) {
 		t.Fatalf("%+v", a)

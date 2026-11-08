@@ -76,10 +76,10 @@
 
 ## 6b. N3 云盘（2026-11-08）
 
-实现完成并通过自动化测试（详见 [acceptance/N3.md](acceptance/N3.md) 第 2 节）；`ubuntu-vm` 已部署 porter 并经 Kit 装好 rclone。真实 Google Drive 验收需要用户亲自在浏览器授权，尚未进行。三家云盘仍为 `verify: pending`（使用时需 `--allow-pending`）。TUI 的云盘入口属 N4。
+实现完成。Google Drive 的服务器登录、同步、核对副本（含数据包）、只追加再同步与移除已在 `ubuntu-vm` 实机通过，gdrive 去掉 `verify: pending`（详见 [acceptance/N3.md](acceptance/N3.md) 第 2 节）。实机修复了登录终端、链接识别、残余登录、令牌打印与连通测试报错。未验收：无浏览器授权、这台电脑登录与中转、OneDrive、Dropbox（仍为 pending）。用 rclone 共享应用时复制很慢，疑似限流。TUI 的云盘入口属 N4。
 
 ## 7. 建议的下一步
 
-1. 用户用 Google Drive 测试账户完成 acceptance/N3.md 2.4 的实机验收，通过后去掉 gdrive 的 pending。
+1. 云盘剩余验收（acceptance/N3.md 2.5）：无浏览器授权、这台电脑登录与中转。
 2. N3 第三项：本机仓库自动同步收入共享服务；第四项：源服务器失联恢复。
 3. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。
