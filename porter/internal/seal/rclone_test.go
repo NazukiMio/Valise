@@ -110,7 +110,7 @@ func TestCloudPrepareAndForget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{w.p.Rclone(), "config", "create", "valise-drive2", "drive", "scope=drive.file", "config_is_local=false", "--all", "--config", w.p.RcloneConfig()}
+	want := []string{w.p.Rclone(), "config", "create", "valise-drive2", "drive", "scope=drive.file", "config_is_local=false", "--no-output", "--all", "--config", w.p.RcloneConfig()}
 	if strings.Join(res.Argv, " ") != strings.Join(want, " ") {
 		t.Fatalf("%v", res.Argv)
 	}

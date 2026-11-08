@@ -233,6 +233,9 @@ func (localRunner) Run(ctx context.Context, timeout time.Duration, argv ...strin
 	var out, errb strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
+	if ctx.Err() != nil {
+		return 0, nil, nil, ctx.Err()
+	}
 	var exit *exec.ExitError
 	if err != nil && !asExit(err, &exit) {
 		return 0, nil, nil, err

@@ -133,8 +133,8 @@ login:
 
 云盘的“服务器登录”（ARCHITECTURE.md 7.3）复用本文的登录中继，登录条目由代码按 `kit-tools.yaml` 的 `clouds` 生成，不来自 harness profile：
 
-1. 主人操作，连接方式与 harness 登录相同（5.2 节；日常钥匙可开终端时加主人证明，否则管理登录），`ssh -tt` 下由 porter 运行固定 argv：`rclone config create valise-<名> <rclone_type> <固定参数…> config_is_local=true --config ~/.config/valise/rclone/rclone.conf`。
+1. 主人操作，连接方式与 harness 登录相同（5.2 节；日常钥匙可开终端时加主人证明，否则管理登录），`ssh -tt` 下由 porter 运行固定 argv：`rclone config create valise-<名> <rclone_type> <固定参数…> config_is_local=true --no-output --config ~/.config/valise/rclone/rclone.conf`（`--no-output`：否则 rclone 结束时把含令牌的整段配置打印到终端，2026-11-08 实机发现；提问照常显示）。
 2. rclone 在服务器 `127.0.0.1:53682` 起回调并打印 `http://127.0.0.1:53682/auth?state=…`；按 5.2 节以 `loopback_oauth` 处理，链接只认这个回环地址（rclone 在提问里打印的帮助链接不算登录页，2026-11-08 实机发现）：截获链接、绑定本机同一端口、显示域名后打开本机浏览器，回调经隧道到达服务器。
 3. **退回**：本机 53682 被占用（报告占用进程），或云盘条目声明不支持回环授权时，改为 `config_is_local=false`。rclone 打印一行 `rclone authorize "<类型>" "<参数>"`；Valise 展示这行命令，用户确认后用本机 rclone（ARCHITECTURE.md 7.3“这台电脑登录”的同一来源，没有时先按确认下载）在本机前台运行，输出只显示给用户；用户把结果复制、粘贴回服务器终端。Valise 不解析、不自动传递这段结果。
-4. 结束后按 ARCHITECTURE.md 7.3 做连通测试并保存位置。
+4. 结束后按 ARCHITECTURE.md 7.3 做连通测试并保存位置。测试仍是 20 秒的只读列目录（SERVICE_CONTRACTS.md 16 节），rclone 带 `--retries 1 --low-level-retries 2 --contimeout 8s --timeout 12s`，让它在时限内放弃并说出原因，而不是静默重试到超时；超时本身报“rclone 在 20 秒内没有回应”，rclone 最后几行错误作为折叠的细节返回（`target_check` 的 `detail`）。
 5. **没有完成的登录**：同名的位置不存在时，服务器上已有的同名登录只可能来自上次没有完成的登录（客户端被关闭、连接中断；登录通过测试后立即保存位置），无法使用；再次登录时 porter 先删除它并记入审计，不要求用户先手动移除。“这台电脑登录”同理。审计只记录云盘条目 id、开始与结束时间、退出码。

@@ -249,7 +249,7 @@ func CheckTarget(ctx context.Context, e *porterenroll.Env, p Paths, params vault
 	if err != nil {
 		res.FailureCause = stationsync.CauseOf(err)
 		if ue, ok := valise.As(err); ok {
-			res.Reason, res.Suggestion = ue.Reason, ue.Suggestion
+			res.Reason, res.Suggestion, res.Detail = ue.Reason, ue.Suggestion, ue.Detail
 		} else {
 			res.Reason = err.Error()
 		}

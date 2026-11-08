@@ -263,7 +263,9 @@ func (c Cloud) CreateArgs(remote string, local bool) []string {
 	for _, k := range keys {
 		args = append(args, k+"="+c.Params[k])
 	}
-	args = append(args, fmt.Sprintf("config_is_local=%t", local))
+	// --no-output: rclone otherwise prints the finished config, token
+	// included, to the terminal (seen on 1.75.2); its questions still show.
+	args = append(args, fmt.Sprintf("config_is_local=%t", local), "--no-output")
 	if c.AskApp {
 		args = append(args, "--all")
 	}

@@ -112,3 +112,24 @@ func IntegrityProblems(r *LeafReading) []vault.Problem {
 	}
 	return out
 }
+
+type timeoutRunner struct{ argv []string }
+
+func (r *timeoutRunner) Run(ctx context.Context, timeout time.Duration, argv ...string) (int, []byte, []byte, error) {
+	r.argv = argv
+	return 0, nil, nil, context.DeadlineExceeded
+}
+
+// A probe that runs out of time says so instead of "cannot run rclone",
+// and asks rclone to give up early with its own reason.
+func TestRcloneProbeTimeout(t *testing.T) {
+	run := &timeoutRunner{}
+	r := &rcloneRemote{st: Station{Name: "gd", Kind: MethodRclone, Rclone: "/x/rclone", RcloneConfig: "/x/c.conf"}, run: run}
+	err := r.Probe(context.Background(), "valise-gd:valise-vault")
+	if err == nil || !strings.Contains(err.Error(), "没有回应") || !strings.Contains(err.Error(), UnreachableCode) {
+		t.Fatalf("%v", err)
+	}
+	if !strings.Contains(strings.Join(run.argv, " "), "--low-level-retries 2") {
+		t.Fatalf("%v", run.argv)
+	}
+}

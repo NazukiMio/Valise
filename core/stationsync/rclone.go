@@ -3,6 +3,8 @@ package stationsync
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -189,8 +191,19 @@ func (r *rcloneRemote) DeleteDir(ctx context.Context, parent, name string) error
 	return err
 }
 
+// probeFlags make rclone give up within ProbeTimeout and say why: by
+// default it retries a throttled or failing drive quietly for minutes, and
+// the check then ends with nothing to show (seen with Google Drive's shared
+// app, 2026-11-08).
+var probeFlags = []string{"--retries", "1", "--low-level-retries", "2", "--contimeout", "8s", "--timeout", "12s"}
+
 func (r *rcloneRemote) Probe(ctx context.Context, base string) error {
-	code, _, stderr, err := r.run.Run(ctx, ProbeTimeout, r.argv("lsjson", "--max-depth", "1", base)...)
+	args := append([]string{r.st.Rclone, "--config", r.st.RcloneConfig}, probeFlags...)
+	code, _, stderr, err := r.run.Run(ctx, ProbeTimeout, append(args, "lsjson", "--max-depth", "1", base)...)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return valise.New(UnreachableCode, fmt.Sprintf("无法连接 %s：rclone 在 %d 秒内没有回应", r.st.Name, int(ProbeTimeout.Seconds())),
+			"稍后重试；网盘可能在限流，Google Drive 请改用自己的应用（client_id）")
+	}
 	if err != nil {
 		return valise.New("target_list_failed", "无法运行 rclone", "在服务器设置里安装 rclone").WithDetail(err.Error())
 	}

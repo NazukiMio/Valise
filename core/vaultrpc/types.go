@@ -188,6 +188,9 @@ type TargetCheckResult struct {
 	FailureCause string `json:"failure_cause,omitempty"`
 	Reason       string `json:"reason,omitempty"`
 	Suggestion   string `json:"suggestion,omitempty"`
+	// Detail is the tool's own last error lines, folded by UIs; never
+	// file contents or credentials.
+	Detail string `json:"detail,omitempty"`
 }
 
 // TargetState is the last sync of a target.

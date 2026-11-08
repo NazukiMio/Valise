@@ -174,7 +174,7 @@ func (s *Service) CloudLoginServer(ctx context.Context, host, name, cloudID stri
 	target := CloudTarget(name)
 	chk, err := s.CheckTarget(ctx, host, vaultrpc.TargetCheckParams{Target: &target})
 	if err == nil && !chk.Reachable {
-		err = valise.New("cloud_unreachable", "登录完成了，但服务器读不了这个云盘："+chk.Reason, "重新登录；"+chk.Suggestion)
+		err = valise.New("cloud_unreachable", "登录完成了，但服务器读不了这个云盘："+chk.Reason, "重新登录；"+chk.Suggestion).WithDetail(chk.Detail)
 	}
 	if err != nil {
 		forget()
