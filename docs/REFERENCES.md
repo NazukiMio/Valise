@@ -38,6 +38,7 @@
 | golang.org/x/term | https://pkg.go.dev/golang.org/x/term | CLI 中无回显读取口令 |
 | go.yaml.in/yaml/v3 | https://github.com/yaml/go-yaml | profile 解析（含注释节点，用于统计 `verify: pending`） |
 | mygo | https://github.com/egoist/mygo | 桌面 UI，锁定 v0.7.3（tag 提交 `6f28d7b`）；Valise 用它的原生 UI（`ui` 包，Go 写，GPU 绘制，纯 Go 无 cgo，2026-11-08 用户决定），不用它的 WebView 前端（见 `docs/UI.md` 第 2–7 节） |
+| mygo 终端插件 | https://github.com/egoist/mygo/tree/v0.7.3/plugins/terminal | 2026-11-08 用户决定用于桌面版安装（UI.md 7.5）。与 mygo 同版本（MIT）；终端模拟用 Ghostty 的 libghostty-vt（MIT，源码提交 `befcdfd2c3a1`），运行时加载、无 cgo。原生库随 `mygo build` 放进应用资源并一起签名；不经打包运行（`go run`、`go test`、手工包）时从 mygo 的 GitHub Release 下载到用户缓存，核对插件 `mygo-plugin.json` 里锁定的 SHA-256。视图测试不加载它 |
 | Model Context Protocol | https://modelcontextprotocol.io | `valise-porter mcp` 遵循的协议 |
 | ascii-motion / ascii.rest | https://github.com/bas3line/ascii | 火箭字符画动画的运行时与 `hash()`（MIT）；场景由用户创作，在 `assets/TUI/rocket`（文件内保留 ascii.rest 的许可声明），移植到 `client/ui/tui/rocket.go` |
 

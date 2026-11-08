@@ -1,0 +1,393 @@
+<title>Valise 服务器与接入草图</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&display=swap">
+<style>
+/* Layout: a long sheet of screens, each a desktop window mock with its notes beside it, in the order a person meets them. */
+:root{
+  --paper:#f7f6f3; --card:#ffffff; --line:#e3ddd2; --board:#fcfbf8; --side:#efece6;
+  --ink:#2b2825; --sub:#8c857b; --gold:#9a7b4f; --gold-soft:#f3e7d3; --accent:#70685d; --on-accent:#fff;
+  --ok:#5f7d5a; --warn:#a06a2c; --warn-bg:#fbf3e6; --note:#fffdf7; --note-line:#e9dcc3;
+  --display:"Noto Serif SC","Songti SC",serif; --body:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif; --mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#1f1d1a; --card:#2a2723; --line:#3d3832; --board:#24221f; --side:#191816;
+  --ink:#ece7df; --sub:#a39b8f; --gold:#c9a66f; --gold-soft:#3a3226; --accent:#d8cbb6; --on-accent:#1f1d1a;
+  --ok:#94b28b; --warn:#dba45f; --warn-bg:#382d20; --note:#26231f; --note-line:#4a4033; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#1f1d1a; --card:#2a2723; --line:#3d3832; --board:#24221f; --side:#191816;
+  --ink:#ece7df; --sub:#a39b8f; --gold:#c9a66f; --gold-soft:#3a3226; --accent:#d8cbb6; --on-accent:#1f1d1a;
+  --ok:#94b28b; --warn:#dba45f; --warn-bg:#382d20; --note:#26231f; --note-line:#4a4033; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.6;
+  padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+header.top h1{font-family:var(--display);font-size:34px;margin:0 0 6px;text-wrap:balance}
+header.top p{margin:0;color:var(--sub);max-width:70ch}
+.decisions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-size:12px;color:var(--sub);background:var(--card)}
+.chip b{color:var(--ink);font-weight:600}
+section.scene{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}
+@media (max-width:900px){section.scene{grid-template-columns:minmax(0,1fr)}}
+.scene h2{grid-column:1/-1;margin:0;font-family:var(--display);font-size:22px;display:flex;gap:12px;align-items:baseline}
+.scene h2 small{font-family:var(--body);font-size:12px;color:var(--sub);font-weight:400}
+.win{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--paper);box-shadow:0 10px 30px rgba(40,30,20,.08);min-width:0}
+.bar{height:30px;background:var(--card);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;padding:0 12px}
+.bar i{width:10px;height:10px;border-radius:50%;background:var(--line)}
+.app{display:grid;grid-template-columns:150px minmax(0,1fr);min-height:420px}
+@media (max-width:600px){.app{grid-template-columns:minmax(0,1fr)}.side{display:none}}
+.side{background:var(--side);padding:18px 10px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--sub)}
+.brand{display:flex;gap:8px;align-items:center;font-family:var(--display);font-size:17px;color:var(--ink);padding:0 6px 12px}
+.brand svg{color:var(--gold)}
+.nav{display:flex;gap:8px;align-items:center;padding:5px 8px;border-radius:7px}
+.nav.on{background:var(--card);color:var(--ink)}
+.page{padding:26px 30px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.crumb{font-size:12px;color:var(--sub)}
+.h{font-family:var(--display);font-size:26px;margin:0;line-height:1.25}
+.lede{color:var(--sub);margin:-8px 0 0;font-size:13px}
+.steps{display:flex;gap:6px;flex-wrap:wrap;font-size:12px}
+.steps span{padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--sub)}
+.steps .now{border-color:var(--gold);color:var(--ink);background:var(--gold-soft)}
+.steps .done{color:var(--ok)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub);min-width:0}
+.input{border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:var(--card);color:var(--ink);font-size:13px;min-height:34px}
+.split{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:10px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 14px;font-size:13px;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--gold);padding-inline:0}
+.foot{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.mono{font-family:var(--mono);font-size:12px;word-break:break-all}
+.muted{color:var(--sub);font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.run{background:var(--gold);box-shadow:0 0 0 4px var(--gold-soft)}
+.stepline{display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line)}
+.stepline:first-child{border-top:0}
+.stepline .dot{margin-top:7px}
+.warnbox{background:var(--warn-bg);border:1px solid var(--note-line);border-radius:12px;padding:12px 14px;font-size:13px}
+.warnbox b{color:var(--warn)}
+.tag{font-size:11px;border-radius:999px;padding:1px 9px;border:1px solid var(--line);color:var(--sub);white-space:nowrap}
+.tag.ok{color:var(--ok);border-color:currentColor} .tag.warn{color:var(--warn);border-color:currentColor}
+.avatar{width:42px;height:42px;border-radius:11px;background:var(--gold-soft);display:grid;place-items:center;color:var(--gold);flex:none}
+.modal{position:relative;margin:4px auto;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:10px}
+.dim{background:repeating-linear-gradient(135deg,transparent 0 10px,rgba(0,0,0,.025) 10px 20px);padding:30px 16px;border-radius:10px}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:13px}
+.check i{width:16px;height:16px;border:1.5px solid var(--sub);border-radius:4px;flex:none;margin-top:3px}
+.check i.on{background:var(--accent);border-color:var(--accent)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+td{padding:6px 4px;border-top:1px solid var(--line);vertical-align:top}
+.tablebox{overflow-x:auto}
+aside.notes{background:var(--note);border:1px solid var(--note-line);border-radius:12px;padding:14px 16px;font-size:13px;display:flex;flex-direction:column;gap:8px}
+aside.notes h3{margin:0;font-size:12px;letter-spacing:.08em;color:var(--gold)}
+aside.notes ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+aside.notes .from{color:var(--sub);font-size:12px}
+.out{border:1px dashed var(--line);border-radius:12px;padding:14px 16px;color:var(--sub);font-size:13px}
+.out b{color:var(--ink)}
+.namecard{background:linear-gradient(160deg,var(--card),var(--board));border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:14px;box-shadow:0 14px 34px rgba(40,30,20,.10)}
+.namecard .big{font-family:var(--display);font-size:22px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--card);display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub)}
+.tile b{color:var(--ink);font-size:13px}
+.tile.on{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+.addr{font-size:17px;padding:10px 12px;font-family:var(--mono)}
+.two{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:760px){.two{grid-template-columns:minmax(0,1fr)}}
+.next{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--sub)}
+.next div{display:flex;gap:8px;align-items:center}
+.next em{font-style:normal;width:18px;height:18px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font-size:10px;flex:none}
+.pass{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--board)}
+.pass .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold);flex:none}
+.term{background:#1b1916;color:#e8e2d6;border-radius:10px;padding:12px 14px;font-family:var(--mono);font-size:12px;line-height:1.55;overflow-x:auto;white-space:pre}
+.state{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:760px){.state{grid-template-columns:minmax(0,1fr)}}
+.tag.bad{color:var(--warn);border-color:currentColor;background:var(--warn-bg)}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="case" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="14" rx="3"/><path d="M9 7V4h6v3M9 11v6m6-6v6"/></symbol>
+  <symbol id="bot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="6" width="14" height="13" rx="4"/><path d="M12 3v3M8 12h.01M16 12h.01M9 16h6"/></symbol>
+  <symbol id="srv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/><path d="M8 7h.01M8 17h.01M13 7h3m-3 10h3"/></symbol>
+  <symbol id="fold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8m-3 3 2 2m-4 0 2 2"/></symbol>
+</svg>
+
+<div class="wrap">
+<header class="top">
+  <h1>服务器与接入</h1>
+  <p>N4 第一段（第二版，按你的修改意见）：在桌面版里接入一台服务器，看清上面有什么——接入已有的 Agent、或装第一个——并能照看这台服务器。每一屏右边写着它来自哪里、做什么、不做什么。确认后再写代码。</p>
+  <div class="decisions">
+    <span class="chip">服务器密码：<b>这段就做 askpass</b></span>
+    <span class="chip">porter 来源：<b>默认 Release，本地构建在“更多选项”</b></span>
+    <span class="chip">管理员通行证：<b>向导里可选，默认不勾</b></span>
+    <span class="chip">状态：<b>在线 / 离线 / 需要处理 / 未知</b></span>
+    <span class="chip">钥匙说法：<b>用户通行证（免密）· 管理员通行证（管理口令）</b></span>
+    <span class="chip">本段范围：<b>接入、重新扫描、未适配教程、安装第一个 Agent</b></span>
+    <span class="chip">未识别文件：<b>默认按敏感保留，可逐项改</b></span>
+  </div>
+</header>
+
+<!-- 1 -->
+<section class="scene">
+  <h2>1 · 入口 <small>首页与服务器页</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="app">
+    <div class="side"><div class="brand"><svg width="20" height="20"><use href="#case"/></svg>Valise</div>
+      <div class="nav"><svg width="15" height="15"><use href="#bot"/></svg>我的 Agent</div>
+      <div class="nav on"><svg width="15" height="15"><use href="#srv"/></svg>服务器</div>
+      <div class="nav"><svg width="15" height="15"><use href="#fold"/></svg>备份位置</div></div>
+    <div class="page">
+      <div class="row"><h3 class="h grow">服务器</h3><span class="btn primary"><svg width="14" height="14"><use href="#plus"/></svg>添加服务器</span></div>
+      <p class="lede">—— Agent 住在这里。</p>
+      <div class="card" style="padding:4px 0;gap:0">
+        <div class="row" style="padding:12px 18px"><span class="dot ok"></span>
+          <div class="grow"><b>家里的服务器</b><div class="muted">parallels@10.211.55.7 · 3 个 Agent · 已办管理员通行证</div></div>
+          <span class="tag ok">在线</span><span class="muted">›</span></div>
+        <div class="row" style="padding:12px 18px;border-top:1px solid var(--line)"><span class="dot warn"></span>
+          <div class="grow"><b>云服务器</b><div class="muted">来自 SSH 配置 · 5 个 Agent · 登录被拒：服务器上的授权列表可能被改过</div></div>
+          <span class="tag bad">需要处理</span><span class="muted">›</span></div>
+        <div class="row" style="padding:12px 18px;border-top:1px solid var(--line)"><span class="dot"></span>
+          <div class="grow"><b>nas</b><div class="muted">来自 SSH 配置 · 没有回应 · 下面是 3 小时前的情况</div></div>
+          <span class="tag">离线</span><span class="muted">›</span></div>
+        <div class="row" style="padding:12px 18px;border-top:1px solid var(--line)"><span class="dot"></span>
+          <div class="grow"><b>实验机</b><div class="muted">刚添加，还没读取</div></div>
+          <span class="tag">未知</span><span class="muted">›</span></div>
+      </div>
+    </div></div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>状态四选一：<b>在线</b>（这次读到了）、<b>离线</b>（连不上：没开机或网络不通）、<b>需要处理</b>（连得上，但登录、porter 等出了问题）、<b>未知</b>（还没读）。离线时若有旧结果，写“下面是 3 小时前的情况”。</li>
+    <li>“需要处理”和“离线”的那一行直接写一句原因，点进去是第 7 屏。</li>
+    <li>首页右上角加“添加 Agent”，与这里的“添加服务器”进同一个向导；从首页进入时，连上后直接到第 6 屏。</li>
+  </ul><p class="from">来自：你的修改意见；2026-11-05 草图首页“添加 Agent”；UI.md 9.4。</p></aside>
+</section>
+
+<!-- 2 -->
+<section class="scene">
+  <h2>2 · 连接服务器 <small>向导第 1 步 · 左填右看</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="steps"><span class="now">连接服务器</span><span>确认身份</span><span>登录</span><span>准备服务器</span><span>这台服务器上的 Agent</span></div>
+    <h3 class="h">它在哪里？</h3>
+    <div class="two">
+      <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+        <div class="field">地址<div class="input addr">agent@192.0.2.24:22</div><span>粘贴 <span class="mono">用户@地址:端口</span> 会自动拆开；只填地址也行，用户名和端口在下面补。</span></div>
+        <div class="split"><div class="field">用户名<div class="input">agent</div></div><div class="field">端口<div class="input">22</div></div></div>
+        <div class="field">怎么登录
+          <div class="tiles">
+            <div class="tile on"><b>服务器密码</b>第一次登录时问你，Valise 不保存。</div>
+            <div class="tile"><b>我的私钥</b>选一个私钥文件；只记位置，不读内容。</div>
+          </div></div>
+        <div class="field">怎么称呼它<div class="input">家里的服务器</div></div>
+        <span class="btn quiet" style="align-self:flex-start">改为从已有 SSH 配置导入…</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+        <div class="namecard">
+          <div class="row"><div class="avatar"><svg width="24" height="24"><use href="#srv"/></svg></div><div class="grow"><div class="big">家里的服务器</div><div class="mono muted">agent@192.0.2.24:22</div></div><span class="tag">未知</span></div>
+          <div class="row"><span class="tag">服务器密码登录</span><span class="tag">还没有 Agent</span></div>
+        </div>
+        <div class="card"><b style="font-size:13px">接下来会发生什么</b>
+          <div class="next">
+            <div><em>1</em>核对服务器的指纹，确认没连错</div>
+            <div><em>2</em>用服务器密码登录一次</div>
+            <div><em>3</em>办好用户通行证，需要时部署 porter</div>
+            <div><em>4</em>看看上面有哪些 Agent</div>
+          </div></div>
+      </div>
+    </div>
+    <div class="foot"><span class="btn">取消</span><span class="btn primary">下一步：确认身份</span></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>右边的名片随左边输入实时变化，就是它以后在服务器列表里的样子。</li>
+    <li>登录方式用两张卡片选，不用下拉框。</li>
+    <li>“从已有 SSH 配置导入”列出 <span class="mono">~/.ssh/config</span> 里还没加入的主机（<span class="mono">ImportableHosts</span>），选中后直接到第 5 步，登录交给你自己的 SSH 设置。</li>
+    <li>这一步不连接服务器。</li>
+  </ul><p class="from">来自：你的修改意见（左填右看）；2026-11-05 草图“连接你的服务器”。</p></aside>
+</section>
+
+<!-- 3 -->
+<section class="scene">
+  <h2>3 · 确认服务器身份 <small>向导第 2 步</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="steps"><span class="done">✓ 连接服务器</span><span class="now">确认身份</span><span>登录</span><span>准备服务器</span><span>这台服务器上的 Agent</span></div>
+    <h3 class="h">这是你的服务器吗？</h3>
+    <p class="lede">第一次连接，先核对它的指纹，防止连到别人冒充的机器。</p>
+    <div class="card">
+      <div class="muted">192.0.2.24:22 报出的指纹</div>
+      <div class="tablebox"><table>
+        <tr><td style="width:90px">ED25519</td><td class="mono">SHA256:3f1Qx0N9bL0sYxkq0Q7mJk3m2vO2c7wqE4c7S8m1dZk</td></tr>
+        <tr><td>ECDSA</td><td class="mono">SHA256:a9KfP1rUe2Q3yT8nV5wX0zL4kH6jG7fD2sA1qW9eR3t</td></tr>
+      </table></div>
+      <details><summary class="muted">怎么核对？</summary><p class="muted" style="margin:6px 0 0">在服务器上（云服务商的网页控制台也可以）运行 <span class="mono">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</span>，看结果是否和上面一致。</p></details>
+    </div>
+    <div class="row"><span class="btn">返回</span><span class="grow"></span><span class="btn">不一致，停止</span><span class="btn primary">一致，继续</span></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li><span class="mono">ScanHostKeys</span> 读指纹，用户确认后 <span class="mono">TrustHostKeys</span> 写进 Valise 自己的 known_hosts。</li>
+    <li>“不一致，停止”不写任何东西，并说明可能的原因（重装过系统、地址填错、被冒充）。</li>
+    <li>已经确认过的服务器跳过这一步。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 第 3 节引导登录的主机身份确认。</p></aside>
+</section>
+
+<!-- 4 -->
+<section class="scene">
+  <h2>4 · 登录 <small>向导第 3 步 · askpass</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="steps"><span class="done">✓ 连接服务器</span><span class="done">✓ 确认身份</span><span class="now">登录</span><span>准备服务器</span><span>这台服务器上的 Agent</span></div>
+    <div class="dim">
+      <div class="modal">
+        <b style="font-size:16px">输入 agent@192.0.2.24 的服务器密码</b>
+        <p class="muted" style="margin:0">这是 OpenSSH 在问。密码直接交给它，只登录这一次，Valise 不保存。</p>
+        <div class="input" style="letter-spacing:3px">••••••••••</div>
+        <div class="check"><i></i><span>同时办一张管理员通行证<br><span class="muted">以后改动服务器（启动服务、安装、修复）时输管理口令就行，不用每次输服务器密码。</span></span></div>
+        <div class="foot"><span class="btn">取消</span><span class="btn primary">登录</span></div>
+      </div>
+      <div class="modal" style="margin-top:14px">
+        <div class="check"><i class="on"></i><span>同时办一张管理员通行证</span></div>
+        <div class="field">管理口令（至少 12 个字符，和 Valise 口令不同）<div class="input" style="letter-spacing:3px">••••••••••••••</div></div>
+        <div class="field">再输一次<div class="input" style="letter-spacing:3px">••••••••••••••</div></div>
+        <p class="muted" style="margin:0">勾选后才出现这两栏。忘了管理口令，可以在服务器详情里注销再重办，不影响备份。</p>
+      </div>
+    </div>
+    <div class="state">
+      <div class="pass"><div class="ic"><svg width="16" height="16"><use href="#key"/></svg></div><div><b>用户通行证</b><div class="muted">一定会办。只能查看和备份，不用密码，所以定时备份不用你在场。</div></div></div>
+      <div class="pass"><div class="ic"><svg width="16" height="16"><use href="#key"/></svg></div><div><b>管理员通行证</b><div class="muted">可选。能改动服务器，用管理口令解锁，一段时间后自动锁上。</div></div></div>
+      <div class="pass"><div class="ic"><svg width="16" height="16"><use href="#srv"/></svg></div><div><b>不办管理员通行证</b><div class="muted">每次改动服务器时，用服务器密码临时登录一次。</div></div></div>
+    </div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>界面不再说“钥匙”：日常钥匙叫<b>用户通行证</b>，管理钥匙叫<b>管理员通行证</b>，体现权限高低。技术信息里仍写实际文件。</li>
+    <li>askpass：OpenSSH 要密码时调用 Valise 自己的小程序（<span class="mono">SSH_ASKPASS</span>），经一次性的本机通道问窗口；答案只在内存里传回 OpenSSH，不落盘、不进日志。取消就让 OpenSSH 失败退出。</li>
+    <li>同一套机制补上健康页“启动服务”在只有服务器密码时不能用的缺口；私钥有口令时也经这个弹框。</li>
+  </ul><p class="from">来自：你的修改意见；ARCHITECTURE.md 2.1、第 3 节；AGENTS.md 7.1。</p></aside>
+</section>
+
+<!-- 5 -->
+<section class="scene">
+  <h2>5 · 准备服务器 <small>向导第 4 步 · 分步结果</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="steps"><span class="done">✓ 连接服务器</span><span class="done">✓ 确认身份</span><span class="done">✓ 登录</span><span class="now">准备服务器</span><span>这台服务器上的 Agent</span></div>
+    <h3 class="h">正在准备「家里的服务器」</h3>
+    <div class="card" style="gap:0">
+      <div class="stepline"><span class="dot ok"></span><div class="grow"><b>通行证已办好</b><div class="muted">用户通行证（只能查看和备份）、管理员通行证</div></div></div>
+      <div class="stepline"><span class="dot ok"></span><div class="grow"><b>环境检查通过</b><div class="muted">Linux arm64 · systemd 用户实例可用 · 可用空间 18 GB</div></div></div>
+      <div class="stepline"><span class="dot run"></span><div class="grow"><b>服务器上还没有 porter</b><div class="muted">Valise 在服务器上的小帮手，用到时由 SSH 唤起，不常驻、不监听端口。</div>
+        <div class="card" style="margin-top:8px;background:var(--board)">
+          <div class="row"><div class="grow">从 GitHub Release 下载 <b>v0.9.0</b>（与这台电脑上的 Valise 同版本），核对签名与 SHA-256 后上传</div><span class="btn primary">部署</span></div>
+          <details><summary class="muted">更多选项</summary><div class="row" style="margin-top:6px"><span class="grow muted">上传这台电脑上的本地构建（开发与演练用）</span><span class="btn">选择文件…</span></div></details>
+        </div></div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow"><span class="muted">登记这台电脑</span></div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow"><span class="muted">用用户通行证连上 porter</span></div></div>
+    </div>
+    <div class="warnbox"><b>如果某一步失败</b>：在那一步写原因与下一步建议，例如“签名不对，没有上传：下载的文件可能被替换了，换个网络重试”；技术细节默认折叠。之后的步骤不执行。</div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li><span class="mono">AddServer</span> / <span class="mono">SetupServer</span> 的每个 <span class="mono">SetupStep</span> 一行，进行中 / 完成 / 失败分开写。</li>
+    <li>没有 porter 时停在这里等你选来源；有 porter 就直接过去。</li>
+    <li>办好后先核对用户通行证确实只能做查看和备份，不是就撤销刚办的通行证；最后用用户通行证真的连一次 porter（<span class="mono">checkDaily</span>），连不上就停在这一步说明原因。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 第 3 节 3–6 步；AGENTS.md“不内嵌”。</p></aside>
+</section>
+
+<!-- 6 -->
+<section class="scene">
+  <h2>6 · 这台服务器上的 Agent <small>向导第 5 步 · 三种情况</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="steps"><span class="done">✓ 连接服务器</span><span class="done">✓ 确认身份</span><span class="done">✓ 登录</span><span class="done">✓ 准备服务器</span><span class="now">这台服务器上的 Agent</span></div>
+    <div class="row"><h3 class="h grow">这台服务器上的 Agent</h3><span class="btn">重新扫描</span></div>
+    <p class="lede">在「家里的服务器」上按资料包认识的 harness 找了一遍。</p>
+
+    <div class="muted" style="font-weight:600">A · 找到了认识的 Agent</div>
+    <div class="card">
+      <div class="row"><div class="avatar"><svg width="24" height="24"><use href="#bot"/></svg></div>
+        <div class="grow"><b>小满</b><div class="muted">OpenClaw · 服务运行中 · ~/.openclaw</div></div><span class="tag">还没接入</span><span class="btn primary">接入</span></div>
+      <p style="margin:0">记忆、会话、配置和工作区已找到。<b>2 个文件用途尚未识别</b>，默认按敏感内容保留。</p>
+      <div class="row"><span class="tag ok">备份已核实</span><span class="tag warn">此环境恢复尚未测试</span></div>
+      <details><summary class="muted">查看识别详情</summary>
+        <div class="tablebox"><table>
+          <tr><td class="mono">state/cache/notes.db</td><td style="width:150px"><div class="input" style="min-height:28px;padding:3px 8px">按敏感内容保留 ▾</div></td></tr>
+          <tr><td class="mono">state/plugins/x.json</td><td><div class="input" style="min-height:28px;padding:3px 8px">配置 ▾</div></td></tr>
+        </table></div></details>
+      <p class="muted" style="margin:0">接入只读取和记录，不改动 Agent 的任何文件，也不往 harness 里安装任何东西。</p>
+    </div>
+
+    <div class="muted" style="font-weight:600">B · 有像 harness 的东西，但资料包不认识</div>
+    <div class="card" style="background:var(--board)">
+      <div class="row"><svg width="20" height="20" style="color:var(--sub)"><use href="#bot"/></svg><div class="grow"><b>没有适配的 harness</b><div class="muted">Valise 只认资料包里登记过的 harness。你的 Agent 用的 harness 还不在里面时，可以自己为它写一份资料。</div></div><span class="btn">怎么为它写一份资料 ›</span></div>
+    </div>
+
+    <div class="muted" style="font-weight:600">C · 一个都没有</div>
+    <div class="card">
+      <div class="row"><div class="grow"><b>这台服务器上还没有 Agent</b><div class="muted">可以在这里装第一个，也可以先去服务器上自己装好再回来重新扫描。</div></div></div>
+      <div class="state">
+        <div class="tile on"><b>OpenClaw</b>官方安装方案 · 约 3 分钟 · 需要 Node 22</div>
+        <div class="tile"><b>Hermes</b>官方安装方案 · 约 5 分钟 · 需要 Python 3.11</div>
+        <div class="tile"><b>DeepSeek Harness</b>官方安装方案 · 约 2 分钟</div>
+      </div>
+      <div class="foot"><span class="btn">重新扫描</span><span class="btn primary">安装 OpenClaw…</span></div>
+    </div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>不预设用户已经有 Agent，三种情况都有出路。几种情况可以同时出现（例如找到一个，另有一个不认识）。</li>
+    <li>A：<span class="mono">DetectInstances</span> 列候选；“接入”先出报告（<span class="mono">Enroll</span> 不带 Accept），确认后写入；归类可逐项改。</li>
+    <li>B：教程写进文档（PROFILES.md 的入门篇），界面链过去；写好的本机资料会标“未经审核”。</li>
+    <li>C：harness 卡片来自资料包里有官方安装方案的 profile，写明大约用时和前提；点“安装”进下一屏。</li>
+    <li>“手动添加（非默认目录）”与“从备份导入”这一段不做，不画按钮。</li>
+  </ul><p class="from">来自：你的修改意见；2026-11-05 草图“找到你熟悉的 Agent”；INSTALL.md 第 3 节。</p></aside>
+</section>
+
+<!-- 6b -->
+<section class="scene">
+  <h2>6b · 安装第一个 Agent <small>先看清，再确认，窗口里的终端执行</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="crumb">‹ 这台服务器上的 Agent</div>
+    <h3 class="h">安装 OpenClaw</h3>
+    <div class="card">
+      <div class="row"><b class="grow">会做这些事</b><span class="tag ok">前提都满足</span></div>
+      <div class="stepline"><span class="dot"></span><div class="grow"><b>下载官方安装脚本</b><div class="mono muted">https://openclaw.ai/install.sh · SHA-256 3b7f…a91c 已核对</div><details><summary class="muted">查看脚本全文（214 行）</summary><div class="term">#!/usr/bin/env bash
+set -euo pipefail
+…</div></details></div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow"><b>在服务器上运行</b><div class="mono muted">bash ~/.cache/valise/stage/install.sh --no-onboard</div></div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow"><b>可选：加入 PATH</b><div class="muted">不选的话，之后要用完整路径运行 openclaw。</div></div></div>
+      <p class="muted" style="margin:0">装在 ~/.openclaw · 大约 3 分钟 · 需要管理员通行证（或服务器密码）。这是“未发现基础疑点”，不代表安全。</p>
+      <div class="foot"><span class="btn">取消</span><span class="btn primary">开始安装</span></div>
+    </div>
+    <div class="card">
+      <div class="row"><span class="dot run"></span><b class="grow">第 2 步 · 在服务器上运行</b><span class="muted">脚本问你问题时，直接在下面输入</span></div>
+      <div class="term">==&gt; Installing OpenClaw 2026.10.9
+==&gt; Node 22.11.0 found
+Choose install channel [stable/beta] (stable): <span style="background:#e8e2d6;color:#1b1916"> </span></div>
+    </div>
+    <div class="card"><div class="row"><span class="dot ok"></span><div class="grow"><b>装好了，并在服务器上找到了它</b><div class="muted">命令都已退出（退出码 0）；Valise 用资料包重新检测，确认 OpenClaw 在 ~/.openclaw。</div></div><span class="btn primary">接入它</span></div></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li><span class="mono">PlanInstall</span> 出计划：来源锁定版本、脚本核对 SHA-256 并可展开全文、可选步骤可勾选；有缺的前提时写明缺什么，不画“开始安装”。</li>
+    <li>执行用 mygo 终端插件（Ghostty 终端模拟）接 <span class="mono">RunInstall</span> 的输入输出；需要管理登录，弹第 4 屏的框。</li>
+    <li>“装好了”看的是重新检测的结果，不是退出码；两者分开写。之后直接接入，继续原生界面里的设置留到“原生界面与安装”段。</li>
+    <li>服务器上已有同一 harness 的默认 Agent 时先停下来让你决定（<span class="mono">Existing</span>）。</li>
+  </ul><p class="from">来自：INSTALL.md 第 3 节；AGENTS.md“不盲目执行远程内容”。</p></aside>
+</section>
+
+<!-- 7 -->
+<section class="scene">
+  <h2>7 · 服务器详情 <small>照看这台服务器</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="crumb">‹ 服务器</div>
+    <div class="row"><h3 class="h grow">家里的服务器</h3><span class="btn">重新连接</span></div>
+    <div class="row"><span class="tag ok">在线 · 22:18 读取</span><span class="tag">porter 0.9.0</span><span class="tag">Valise 接入</span></div>
+    <div class="card"><b>通行证</b>
+      <div class="pass"><div class="ic"><svg width="16" height="16"><use href="#key"/></svg></div><div class="grow"><b>用户通行证 · 能用</b><div class="muted">Valise 用它自动查看和备份，只能做这些。</div></div></div>
+      <div class="pass"><div class="ic"><svg width="16" height="16"><use href="#key"/></svg></div><div class="grow"><b>管理员通行证 · 已锁上</b><div class="muted">改动服务器时输管理口令解锁，15 分钟后自动锁上。</div></div><span class="btn quiet">注销</span></div>
+      <p class="muted" style="margin:0">没办管理员通行证时，第二行写“改动服务器时用服务器密码临时登录”，旁边是“办一张管理员通行证”。</p>
+    </div>
+    <div class="card"><div class="row"><b class="grow">这台服务器上的 Agent · 3</b><span class="btn">查找、接入或安装</span></div>
+      <div class="muted">openclaw · openclaw-test · n2-copy（点开进 Agent 页）</div></div>
+    <div class="card"><b>离线或需要处理时</b><div class="muted">原因、下一步建议、上次尝试与上次读到的时间，技术细节折叠；“重新连接”在顶部。</div></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>状态与第 1 屏同一套：在线 / 离线 / 需要处理 / 未知，旁边写读取时间。porter 版本、来源各自一个标签。</li>
+    <li>办管理员通行证要一次管理登录（服务器密码经第 4 屏的弹框）；注销前确认，说明“之后改动服务器要用服务器密码”。</li>
+    <li>来自 SSH 配置的服务器没有两张通行证之分，这一块写“用你自己的 SSH 设置登录”。</li>
+  </ul><p class="from">来自：你的修改意见；UI.md 9.4、7.3。</p></aside>
+</section>
+
+<div class="out"><b>这一段不含</b>：手动指定目录接入、从备份导入 Agent（“恢复、迁移、创建副本”段）；安装后的原生界面设置（“原生界面与安装”段）；设置备份与定时（“钥匙与备份”段）；从 Valise 移除服务器、改名。这些都不画按钮。</div>
+</div>

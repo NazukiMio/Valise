@@ -349,3 +349,14 @@ paths:
 checkup:
   memory_mechanism_markers: [ { root: state, glob: "memory-plugin/memories.json" } ]
 ```
+
+## 附录 A：为 harness 写一份资料（入门，2026-11-08）
+
+桌面版“这台服务器上的 Agent”在资料包不认识你的 harness 时链到这里。资料只是一份 YAML 数据：告诉 Valise 去哪里找这个 harness、它的文件各是什么、怎么判断它在运行。Valise 不会因此往服务器上装任何东西。
+
+1. **放在哪里**：这台电脑上 Valise 数据目录下的 `profiles/<id>.yaml`（`<id>` 用小写字母、数字和连字符）。这里的资料叫“本机资料”，界面标“未经审核”，与签名资料包里的官方资料分开。
+2. **从最小骨架开始**：照着仓库里的 `profiles/dsh.yaml` 写，它是最短的一份。至少要有：`schema: valise-profile/1`、`id`、`display_name`、`profile_version: 1`、`status: draft`、`detect`（可执行文件名、取版本号的命令、状态目录的候选位置、能确认是它的标记文件）、`paths`（每类文件的 glob 与类别：identity、memory、skills、config、sessions、state、secrets、workspace、cache）、`provenance`（它是怎么装上的）、`service` 与 `entries`（没有就写空）。第 2 节逐项说明了每个字段。
+3. **没亲眼核实的条目标 `verify: pending`**（第 1.2 节）。不要猜凭据文件：凭据只按你在 `paths` 里明确写成 `secrets` 的条目处理。
+4. **检查**：运行 `valise profiles status`。资料有问题时这里会列出它被拒绝的原因（与仓库的 profilelint 同一套规则）。
+5. **回到 Valise 重新扫描**：桌面版“这台服务器上的 Agent”点“重新扫描”，认出来就能接入。恢复能力还没核实的资料用于恢复时，界面会写明“恢复尚未在此版本测试”及影响。
+6. **想让它进官方资料包**：按第 5 节的贡献要求提交，附上在真实机器上核实的记录。
