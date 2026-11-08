@@ -32,6 +32,9 @@ type Service struct {
 	// OwnerAuth is set by the frontend to ask for the Valise passphrase
 	// (the owner proof, owner.go).
 	OwnerAuth OwnerAuth
+	// PasswordAuth is set by a frontend without a terminal to answer
+	// OpenSSH's password and passphrase prompts (askpass_relay.go).
+	PasswordAuth PasswordAuth
 	// Keyscan replaces ssh-keyscan in tests.
 	Keyscan Keyscan
 	// NoTerminalLogin is set by full-screen frontends: a temporary admin
@@ -39,9 +42,10 @@ type Service struct {
 	// refused with a suggestion instead.
 	NoTerminalLogin bool
 
-	agent adminAgent
-	full  advanced
-	owner ownerCache
+	agent    adminAgent
+	full     advanced
+	owner    ownerCache
+	askRelay relayState
 
 	readersMu            sync.Mutex
 	agentsReader         *AgentReader

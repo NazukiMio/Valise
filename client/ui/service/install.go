@@ -315,7 +315,7 @@ func runTTY(ctx context.Context, t *ssh.Transport, porterPath string, dirs, argv
 
 // runLineTTY runs one remote command line under a remote terminal.
 func runLineTTY(ctx context.Context, t *ssh.Transport, line string, tio InstallIO) (int, error) {
-	cmd := exec.CommandContext(ctx, t.Binary(), t.TTYArgs(line)...)
+	cmd := t.TTYCommand(ctx, line)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = tio.Stdin, tio.Stdout, tio.Stderr
 	err := cmd.Run()
 	if cmd.ProcessState == nil {
@@ -405,7 +405,7 @@ func (s *Service) NativeCommand(ctx context.Context, host, profileID string) (*e
 	if lp.Effective.Detect != nil {
 		dirs = lp.Effective.Detect.BinDirs
 	}
-	return exec.CommandContext(ctx, t.Binary(), t.TTYArgs(execLine(found.Path, dirs, lp.Effective.NativeCLI))...), done, nil
+	return t.TTYCommand(ctx, execLine(found.Path, dirs, lp.Effective.NativeCLI)), done, nil
 }
 
 // TerminalSessions lists the terminal programs Valise started on host that

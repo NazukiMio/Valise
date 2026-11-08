@@ -153,6 +153,13 @@ func (s *Service) bootstrapTransport(srv config.Server) (*ssh.Transport, error) 
 	if o.ControlPath = ssh.SocketPath(s.Dirs.Cache, "op-"); o.ControlPath == "" {
 		o.NoControl = true
 	}
+	if s.canPrompt() {
+		env, err := s.relayEnv()
+		if err != nil {
+			return nil, err
+		}
+		o.Env = env
+	}
 	return ssh.New(srv.Name, o)
 }
 

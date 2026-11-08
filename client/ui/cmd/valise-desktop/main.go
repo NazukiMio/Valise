@@ -40,6 +40,7 @@ func main() {
 		svc.NoTerminalLogin = true
 		svc.AdminAuth.Passphrase = app.AdminPassphrase
 		svc.OwnerAuth.Passphrase = app.OwnerPassphrase
+		svc.PasswordAuth.Prompt = app.ServerPassword
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "Valise", Width: 1180, Height: 780, MinWidth: 860, MinHeight: 560,
 			Content: ui.View(app.View)})
 		app.SetUpdate(win.Update)

@@ -113,7 +113,7 @@ func (s *Service) ShellCommand(ctx context.Context, host, profileID string) (cmd
 		done()
 		return nil, nil, err
 	}
-	return exec.CommandContext(ctx, t.Binary(), t.TTYArgs(execLine(found.Path, dirs, []string{"--shell"}))...), done, nil
+	return t.TTYCommand(ctx, execLine(found.Path, dirs, []string{"--shell"})), done, nil
 }
 
 // entryAuth asks porter for the URL suffix holding an entry's token.

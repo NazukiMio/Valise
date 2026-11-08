@@ -29,7 +29,11 @@ const (
 )
 
 func init() {
-	if os.Getenv(askpassEnv) != "1" {
+	switch os.Getenv(askpassEnv) {
+	case askpassRelay:
+		relayAsk()
+	case "1":
+	default:
 		return
 	}
 	// Match only OpenSSH's own wording at the start: the rest of a prompt

@@ -1,16 +1,26 @@
 package gui
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 
 	"valise/core/valise"
 )
 
-// passPrompt is the admin passphrase being asked for by work running off
-// the main thread; the answer goes back on reply and is never kept.
+// What a prompt asks for.
+const (
+	askAdmin  = iota // the admin passphrase (unlocks the admin pass)
+	askOwner         // the Valise passphrase (proving it is you)
+	askServer        // OpenSSH's own prompt: a server password or a key's passphrase
+)
+
+// passPrompt is a secret being asked for by work running off the main
+// thread; the answer goes back on reply and is never kept. Prompts wait in
+// line: one dialog at a time.
 type passPrompt struct {
-	host  string
-	owner bool // the Valise passphrase (proving it is you), else the admin passphrase
+	host  string // for askServer, OpenSSH's prompt
+	kind  int
 	value string
 	open  bool
 	reply chan passReply
@@ -23,35 +33,43 @@ type passReply struct {
 
 // AdminPassphrase is service.AdminAuth.Passphrase for the desktop: it asks
 // in the window and waits. It is called off the main thread only.
-func (a *App) AdminPassphrase(host string) (string, error) { return a.askPass(host, false) }
+func (a *App) AdminPassphrase(host string) (string, error) { return a.askPass(host, askAdmin) }
 
 // OwnerPassphrase is service.OwnerAuth.Passphrase for the desktop: the
 // Valise passphrase, asked when a step must confirm it is you.
-func (a *App) OwnerPassphrase(host string) (string, error) { return a.askPass(host, true) }
+func (a *App) OwnerPassphrase(host string) (string, error) { return a.askPass(host, askOwner) }
 
-func (a *App) askPass(host string, owner bool) (string, error) {
+// ServerPassword is service.PasswordAuth.Prompt for the desktop: OpenSSH's
+// own question, relayed (docs/ARCHITECTURE.md 2.1).
+func (a *App) ServerPassword(prompt string) (string, error) { return a.askPass(prompt, askServer) }
+
+func (a *App) askPass(host string, kind int) (string, error) {
 	reply := make(chan passReply, 1)
-	a.update(func() { a.asking = &passPrompt{host: host, owner: owner, open: true, reply: reply} })
+	a.update(func() { a.asks = append(a.asks, &passPrompt{host: host, kind: kind, open: true, reply: reply}) })
 	r := <-reply
 	return r.pass, r.err
 }
 
 // passDialog draws the question while one is open.
 func (a *App) passDialog(c *ui.Context) {
-	p := a.asking
-	if p == nil {
+	if len(a.asks) == 0 {
 		return
 	}
+	p := a.asks[0]
 	answer := func(r passReply) {
 		p.reply <- r
 		p.value = ""
-		a.asking = nil
+		a.asks = a.asks[1:]
 	}
-	title, why, field := "输入 "+p.host+" 的管理口令", "用来解锁这台服务器的管理钥匙；解锁后一段时间内不再询问。口令不会被保存。", "管理口令"
-	cancelled := "已取消，没有解锁管理钥匙"
-	if p.owner {
+	title, why, field := "输入 "+p.host+" 的管理口令", "用来解锁这台服务器的管理员通行证；解锁后一段时间内不再询问。口令不会被保存。", "管理口令"
+	cancelled := "已取消，没有解锁管理员通行证"
+	switch p.kind {
+	case askOwner:
 		title, why, field = "输入 Valise 口令", "这一步要确认是你本人（"+p.host+"）；确认后一段时间内不再询问。口令不会被保存。", "Valise 口令"
 		cancelled = "已取消，没有确认身份"
+	case askServer:
+		title, why, field = serverPromptTitle(p.host), "这是 OpenSSH 在问："+p.host+"\n答案直接交给它，只用这一次，Valise 不保存。", "服务器密码"
+		cancelled = "已取消，没有登录"
 	}
 	cancel := func() {
 		answer(passReply{err: valise.New("cancelled", cancelled, "")})
@@ -73,7 +91,18 @@ func (a *App) passDialog(c *ui.Context) {
 				})
 			})
 		})
-	}).Dismissed() && a.asking == p {
+	}).Dismissed() && len(a.asks) > 0 && a.asks[0] == p {
 		cancel()
 	}
+}
+
+// serverPromptTitle turns OpenSSH's “agent@host's password:” into a title.
+func serverPromptTitle(prompt string) string {
+	if who, ok := strings.CutSuffix(strings.TrimSpace(prompt), "'s password:"); ok {
+		return "输入 " + who + " 的服务器密码"
+	}
+	if strings.Contains(strings.ToLower(prompt), "passphrase") {
+		return "输入私钥的口令"
+	}
+	return "OpenSSH 需要你回答"
 }

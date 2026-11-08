@@ -52,7 +52,7 @@ type App struct {
 	iconErr     error                   // choosing an agent's picture failed
 	health      map[string]*healthState // by server/instance
 	syncs       map[string]*syncState   // by repo/server
-	asking      *passPrompt             // the admin passphrase being asked for
+	asks        []*passPrompt           // secrets being asked for, first shown
 
 	pickFolder func() (string, error) // the system's folder dialog; "" when cancelled
 	themes     map[string]themeEntry  // imported themes by id, read at start and after an import

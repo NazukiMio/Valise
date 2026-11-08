@@ -183,7 +183,7 @@ func (s *Service) relaySession(ctx context.Context, c *ssh.RPCClient, t *ssh.Tra
 	if prep.Grant != "" {
 		remote += " --grant " + prep.Grant
 	}
-	cmd := exec.CommandContext(ctx, t.Binary(), t.TTYArgs(remote)...)
+	cmd := t.TTYCommand(ctx, remote)
 	recent := &tailBuffer{}
 	out := io.MultiWriter(lio.Stdout, scan, recent)
 	cmd.Stdout, cmd.Stderr = out, out

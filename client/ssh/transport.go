@@ -56,6 +56,10 @@ type Options struct {
 	// access level needs its own prefix: a daily-key master must never be
 	// reused by a full login, or the other way round.
 	ControlName string
+	// Env adds to the environment of every ssh this transport starts: the
+	// askpass relay of a frontend that has no terminal (SSH_ASKPASS and
+	// what it needs). Never secrets themselves.
+	Env []string
 }
 
 // ControlPersistSeconds keeps Valise's master connection alive between calls.
@@ -200,7 +204,41 @@ func (t *Transport) base(first ...string) []string {
 
 // Command returns an unstarted ssh command for remoteCmd.
 func (t *Transport) Command(remoteCmd string) (*exec.Cmd, error) {
-	return exec.Command(t.opts.Binary, t.Args(remoteCmd)...), nil
+	cmd := exec.Command(t.opts.Binary, t.Args(remoteCmd)...)
+	cmd.Env = t.Environ()
+	return cmd, nil
+}
+
+// TTYCommand is an ssh with a terminal for remoteCmd, bound to ctx.
+func (t *Transport) TTYCommand(ctx context.Context, remoteCmd string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, t.opts.Binary, t.TTYArgs(remoteCmd)...)
+	cmd.Env = t.Environ()
+	return cmd
+}
+
+// ForwardCommand is ForwardArgs as a command bound to ctx.
+func (t *Transport) ForwardCommand(ctx context.Context, host string, port int) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, t.opts.Binary, t.ForwardArgs(host, port)...)
+	cmd.Env = t.Environ()
+	return cmd
+}
+
+// Environ is the environment for an ssh of this transport: nil (inherit)
+// unless Options.Env adds to it, in which case askpass settings already in
+// the environment are replaced.
+func (t *Transport) Environ() []string {
+	if len(t.opts.Env) == 0 {
+		return nil
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if k == "SSH_ASKPASS" || k == "SSH_ASKPASS_REQUIRE" || k == "DISPLAY" || strings.HasPrefix(k, "VALISE_ASKPASS") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, t.opts.Env...)
 }
 
 // Result is the outcome of a one-shot remote command.

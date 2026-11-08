@@ -145,7 +145,7 @@ func (l *Listener) forward(ctx context.Context, c net.Conn, dial Dialer) {
 // process per connection over the transport's ControlMaster.
 func SSHDialer(t *ssh.Transport, host string, port int) Dialer {
 	return func(ctx context.Context) (io.ReadWriteCloser, error) {
-		cmd := exec.CommandContext(ctx, t.Binary(), t.ForwardArgs(host, port)...)
+		cmd := t.ForwardCommand(ctx, host, port)
 		in, err := cmd.StdinPipe()
 		if err != nil {
 			return nil, err
