@@ -318,15 +318,16 @@ func (r *Runner) rollback(ctx context.Context, j *revive.Journal, why string) (*
 		j.BodyMoves[i].Moved = false
 		r.Store.Save(j)
 	}
-	if j.NPMInstalled && j.NPMOldVersion != "" && j.NPMOldVersion != j.Plan.Body.Version {
-		r.npmInstall(ctx, j.Plan.Body.Package, j.NPMOldVersion, j.Plan.Body.Registry)
-	}
 	for _, jr := range j.Roots {
 		if jr.LiveExisted && exists(jr.Prev) {
 			if err := r.placeAt(j, jr, jr.Prev); err != nil {
 				return nil, err
 			}
 		}
+	}
+	// After the old directories are back: npm may live in a body inside them.
+	if j.NPMInstalled && j.NPMOldVersion != "" && j.NPMOldVersion != j.Plan.Body.Version {
+		r.npmInstall(ctx, j.Plan.Body.Package, j.NPMOldVersion, j.Plan.Body.Registry)
 	}
 	return r.finishBack(ctx, j, why)
 }
@@ -413,12 +414,10 @@ func exists(p string) bool {
 // directories of other agents (Plan.Keep) into the new live directory.
 func (r *Runner) switchBody(ctx context.Context, j *revive.Journal) error {
 	b := j.Plan.Body
-	if len(j.BodyMoves) == 0 && (b.Action == revive.BodyMoveDirs || len(j.Plan.Keep) > 0) {
-		if b.Action == revive.BodyMoveDirs {
-			for _, d := range b.Dirs {
-				root, rel, _ := strings.Cut(d, "/")
-				j.BodyMoves = append(j.BodyMoves, revive.BodyMove{Root: root, Rel: rel})
-			}
+	if len(j.BodyMoves) == 0 && (len(b.Dirs) > 0 || len(j.Plan.Keep) > 0) {
+		for _, d := range b.Dirs {
+			root, rel, _ := strings.Cut(d, "/")
+			j.BodyMoves = append(j.BodyMoves, revive.BodyMove{Root: root, Rel: rel})
 		}
 		for _, d := range j.Plan.Keep {
 			root, rel, _ := strings.Cut(d, "/")
@@ -434,6 +433,8 @@ func (r *Runner) switchBody(ctx context.Context, j *revive.Journal) error {
 		switch {
 		case !exists(from) && m.Keep:
 			continue // that agent's directory is gone; nothing to carry
+		case !exists(from) && b.Action != revive.BodyMoveDirs:
+			continue // kept or reinstalled body that the target never had in this root
 		case !exists(from):
 			return valise.New("body_missing", "交换前的状态中没有身体目录 "+m.Rel, "身体不在原位，无法保持不变")
 		case exists(to) && m.Keep:

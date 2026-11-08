@@ -135,10 +135,15 @@ const (
 	BodyNPMInstall = "npm_install" // install the recorded exact version in the swap window
 )
 
+// BodyDirsCapability: the porter also carries the target's own body
+// directories (Dirs) into the new live directory for keep and npm_install,
+// skipping those the target does not have (docs/ARCHITECTURE.md 8.2.1).
+const BodyDirsCapability = "revive-body-dirs/1"
+
 // BodyPlan says what happens to the body.
 type BodyPlan struct {
 	Action    string   `json:"action"`
-	Dirs      []string `json:"dirs,omitempty"` // swap-root-relative body dirs for move_dirs
+	Dirs      []string `json:"dirs,omitempty"` // swap-root-relative body dirs carried across the swap
 	Package   string   `json:"package,omitempty"`
 	Version   string   `json:"version,omitempty"`
 	Registry  string   `json:"registry,omitempty"`

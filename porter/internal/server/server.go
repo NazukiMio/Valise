@@ -12,6 +12,7 @@ import (
 	"valise/core/action"
 	"valise/core/identity"
 	"valise/core/protection"
+	corerevive "valise/core/revive"
 	"valise/core/rpc"
 	"valise/core/valise"
 	"valise/core/vaultrpc"
@@ -128,7 +129,7 @@ func hello(ctx context.Context, req rpc.Request, cfg Config) rpc.Response {
 		pendingActions = append(pendingActions, action.PendingAction{OperationID: j.ID, InstanceID: j.Plan.InstanceID, Phase: j.Phase, Published: j.Published})
 	}
 	res := rpc.HelloResult{
-		Capabilities:   []string{action.CapabilityTransactions, identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.BackupCapability, protection.BackupCapabilityV2, sysfix.Capability, vaultrpc.CopyCheckCapability, vaultrpc.CopyVerifyCapability, vaultrpc.CloudCapability, identity.LostSourceCapability},
+		Capabilities:   []string{action.CapabilityTransactions, identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.BackupCapability, protection.BackupCapabilityV2, sysfix.Capability, vaultrpc.CopyCheckCapability, vaultrpc.CopyVerifyCapability, vaultrpc.CloudCapability, identity.LostSourceCapability, corerevive.BodyDirsCapability},
 		PendingActions: pendingActions,
 		PorterVersion:  cfg.Version,
 		Protocol:       rpc.ProtocolVersion,

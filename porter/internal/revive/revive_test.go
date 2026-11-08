@@ -519,3 +519,43 @@ func TestCloneIntoAnotherInstanceDir(t *testing.T) {
 		t.Fatalf("elsewhere: overlapping %v inside %v %v", facts.Overlapping, facts.Inside, err)
 	}
 }
+
+// A kept body inside a replaced root travels into the new live directory in
+// a migration, comes back on failure, and is skipped when the target never
+// had it (docs/ARCHITECTURE.md 8.2.1, body nested in the state dir).
+func TestMigrateCarriesKeptNestedBody(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		broken, noBody bool
+	}{{"healthy", false, false}, {"rolled back", true, false}, {"no body on target", false, true}} {
+		w := newWorld(t)
+		if tc.noBody {
+			os.RemoveAll(filepath.Join(w.state, "runtime"))
+		}
+		if tc.broken {
+			write(t, filepath.Join(w.home, "unit-broken"), "", 0o644)
+		}
+		p := w.plan()
+		p.Mode, p.Carry = revive.ModeMigrate, false
+		p.Body = revive.BodyPlan{Action: revive.BodyKeep, Dirs: []string{"state/runtime"}}
+		w.stage(t, p, snapshot)
+		res, err := w.r.Swap(context.Background(), p.OpID)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		wantState, wantSoul := revive.StateHealthy, "old soul"
+		if tc.broken {
+			wantState, wantSoul = revive.StateRolledBack, "current soul"
+		}
+		if res.State != wantState || read(t, filepath.Join(w.state, "SOUL.md")) != wantSoul {
+			t.Fatalf("%s: %+v soul %q", tc.name, res, read(t, filepath.Join(w.state, "SOUL.md")))
+		}
+		_, err = os.Stat(filepath.Join(w.state, "runtime/bin/tool"))
+		if tc.noBody != os.IsNotExist(err) {
+			t.Fatalf("%s: body present=%v", tc.name, err == nil)
+		}
+		if !tc.broken && exists(filepath.Join(w.state, ".env")) {
+			t.Fatalf("%s: a migration carried the target's credentials", tc.name)
+		}
+	}
+}
