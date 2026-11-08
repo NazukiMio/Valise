@@ -1,7 +1,7 @@
 # UI 规范（TUI 与 mygo 桌面）
 
-> 2026-11-05 用户批准 GUI / TUI 草图及 N1–N5 实施顺序。GUI 是最终用户交付，TUI 服务资源紧凑环境，CLI 面向自动化与诊断。第 1 节的分层原则全程有效；第 9、10 节由各入口共用。M7b 保留里程碑 ID，按 DEV_PLAN.md 的 N4 进入条件恢复，不再等待所有 TUI 边缘功能。
-> 本文规定目标行为，不代表实现状态。N1 [共享服务契约](SERVICE_CONTRACTS.md) 已于 2026-11-05 经用户确认定稿；N2–N5 未实现。草图已经批准，不重复设置同一草图的审批闸门。
+> 2026-11-05 用户批准 GUI / TUI 草图及 N1–N5 实施顺序。2026-11-08 用户决定桌面界面用 mygo 原生 UI（Go 写），第 2–7 节据此重写，原 TS 前端约定作废。GUI 是最终用户交付，TUI 服务资源紧凑环境，CLI 面向自动化与诊断。第 1 节的分层原则全程有效；第 9、10 节由各入口共用。M7b 保留里程碑 ID，按 DEV_PLAN.md 的 N4 进入条件恢复，不再等待所有 TUI 边缘功能。
+> 本文规定目标行为，不代表实现状态。N1 [共享服务契约](SERVICE_CONTRACTS.md) 已于 2026-11-05 经用户确认定稿；N2、N3 已完成，N4 自 2026-11-08 进行中，N5 未实现。草图已经批准，不重复设置同一草图的审批闸门。
 
 ## 1. 分层原则
 
@@ -12,59 +12,50 @@
 
 ## 2. 资料来源
 
-- 官方文档：https://github.com/egoist/mygo/tree/main/docs ，阅读时以锁定 tag 下的版本为准。
-- Go API：`go doc -all github.com/egoist/mygo`
+- 桌面界面用 **mygo 原生 UI**（2026-11-08 用户决定）：界面用 mygo 的 `ui` 包在 Go 里写，由 mygo 在 GPU 上绘制（macOS Metal、Windows Direct3D 11、Linux OpenGL）。没有 HTML、JavaScript、TypeScript、webview 和前端构建，也不需要 Bun。
+- 官方文档：https://github.com/egoist/mygo/tree/main/docs （原生 UI 在 `docs/ui/`），阅读时以锁定 tag 下的版本为准；本地副本在 Go 模块缓存 `github.com/egoist/mygo@v0.7.3/docs/`。
+- Go API：`go doc -all github.com/egoist/mygo/ui`、`go doc -all github.com/egoist/mygo`
 - 开发机检查：`go tool mygo doctor`
 - 不确定的 API 一律查阅文档或源码，**不要凭印象编写**。
 
 ## 3. 版本锁定与 CLI
 
-- 锁定版本：v0.7.3（用户于 2026-10-31 指定，提交 `6f28d7b`；M7b 开工时写入依赖并复核本文约定）。锁定后，升级必须经过用户同意。
-- 把 mygo CLI 作为 Go tool 依赖加入，保证 CLI 和库的版本一致：`go get -tool github.com/egoist/mygo/cmd/mygo@<锁定版本>`。之后统一使用 `go tool mygo <命令>` 调用 CLI。
-- 前端依赖中的 `mygo-runtime` 也锁定为与锁定版本对应的版本。
+- 锁定版本：v0.7.3（用户于 2026-10-31 指定，tag 提交 `6f28d7b`，要求 Go 1.27.3）。锁定后，升级必须经过用户同意。
+- 库与 CLI 都写进 `client/ui/go.mod`：`go get github.com/egoist/mygo@v0.7.3` 与 `go get -tool github.com/egoist/mygo/cmd/mygo@v0.7.3`，之后统一用 `go tool mygo <命令>`（`dev`、`vet`、`build`、`doctor`）。
+- 应用的名称、标识与版本写在 `client/ui/mygo.json`，图标在 `client/ui/resources/`（`mygo init -template native` 的布局）。
 
-## 4. 绑定约定
+## 4. 代码结构与调用约定
 
-- **生成客户端**：`go tool mygo generate`，输出路径为 `client/ui/src/mygo.ts`（在 `mygo.config.ts` 的 `bindings` 中配置）。生成的文件不得手工修改，也不计入"单文件 400 行"的限制。
-- **生成期间会执行 main**：`mygo generate` 会在设置 `MYGO_GENERATE` 的情况下运行程序，直到 `App.Run` 返回。因此建立 SSH 连接、读取 keystore、启动隧道等任何有副作用的初始化，都必须放进 `App.WhenReady`。main 函数中只允许调用 `mygo.Bind` 和注册事件。
-- **服务划分**：按领域绑定，例如 `Servers`、`Instances`、`Vault`、`Revive`、`Relay`、`Keystore`、`Settings`。每个服务对应 `client/ui` 服务层中的一个 Go 类型，方法只负责参数转换。
-- **进度流**：封存、同步、复活、登录中继等长时间操作，通过 `*mygo.Channel[T]` 参数把进度推送给前端。方法的第一个参数接收 `context.Context`。页面订阅与任务执行的生命周期分开，切页、显式取消、关闭窗口和退出进程按 ARCHITECTURE.md 第 11 节定稿的契约处理；不能把关闭进度订阅无条件当作取消任务，恢复进入交换后不得中断（第 6 节）。
-- **全局状态变化**：例如实例的健康状态、隧道的三个状态，使用 `mygo.NewEvent` 声明的事件进行广播。
-- **字段命名**：所有结构体字段必须带 `json` 标签。可能超过 2⁵³ 的整数（目前没有）使用 `json:",string"`。
+- 桌面界面的代码在 `client/ui/gui/`（Go 包，与 `client/ui/tui/` 并列），入口为 `client/ui/cmd/valise-desktop/`。界面直接调用 `client/ui/service`，**不经过绑定、不生成客户端代码**；业务逻辑不得写在 `gui/` 里。
+- **视图模型**：每个窗口有一个应用状态（Go 结构体），视图函数 `func (app *X) view(c *ui.Context)` 每帧从状态构建界面。构建期的值（`ui.Element`）不得存进状态或后台 goroutine；持久身份用 `ui.Handle`，列表等控件状态放在应用状态里。每次改动后跑 `go tool mygo vet` 检查构建期值的生命周期。
+- **启动无副作用**：`main` 只构造状态与窗口；建立 SSH 连接、读取钥匙、启动隧道等有副作用的初始化放进 `mygo.App.WhenReady` 之后按需发起，绝不在视图函数里同步执行。
+- **耗时操作**：SSH、封存、同步、恢复、登录中继等一律在 goroutine 中执行，进度经 service 的进度回调送回，用 `Window.Update` 在主线程改状态并重绘。视图函数里不得阻塞。页面离开与任务生命周期分开：切页不取消任务，取消只来自显式操作；恢复进入交换后不得中断（第 6 节）。
+- **路由**：一个窗口一个 `ui.Router`，一级入口用 `ui.Sidebar`，路径与第 9 节的信息架构一一对应。
+- **主题**：颜色、字体、圆角等集中在 `gui/theme.go`，视图里不写散落的颜色常量；跟随系统深浅色。
+- **文案**：界面文字集中放在少数文件中（与 TUI 的 `flourish.go` 一样便于统一修改），用语以 PRODUCT.md 8.1 为准。
 
 ## 5. 错误约定
 
-mygo 会把 Go 方法返回的 error 文本作为前端 `CallError` 的 message。约定如下：
-
-- 服务层的错误统一为 `valise.UserError{Code, Reason, Suggestion, Detail}`，它的 `Error()` 返回该结构的 JSON 文本。
-- 前端在 `src/errors.ts` 中统一解析：能解析时，展示"原因 + 建议"，细节默认折叠；不能解析时，展示"发生了未预期的错误"，并附上原文。
-- 禁止在前端直接展示未经解析的原始错误文本。
+- 服务层的错误统一为 `valise.UserError{Code, Reason, Suggestion, Detail}`。界面用 `errors.As` 取出后展示“原因 + 建议”，细节默认折叠在“技术信息”里。
+- 不是 `UserError` 的错误展示为“发生了未预期的错误”，原文折叠在技术信息里；禁止直接把未经整理的原始错误文本放在主要位置。
 
 ## 6. 安全铁律
 
-- **入口一律用系统浏览器打开**（通过 mygo 的 shell API 打开 URL），**绝不在 mygo 窗口中加载 agent 的 Web 页面**。原因：开发构建会信任 localhost 页面，经隧道转发的 agent 页面也位于 localhost，在应用窗口中加载它，就等于允许它调用 Go 方法，包括解锁密钥和复活。
-- 禁止设置 `TrustedOrigins: ["*"]`。应用窗口只加载自己的前端。
-- 口令输入框不得把值写进任何前端状态持久化或日志中，提交后立即清空。
-- 复活一旦进入交换阶段，关闭窗口或页面不得中断进行中的交换。服务层持有独立的 context，前端重新打开后，查询实际任务或持久日志并重新订阅进度；退出进程或断连后的恢复按专用 journal 规则处理，不假定事件能重放全部状态。
+- **入口一律用系统浏览器打开**（`mygo.Shell` 打开 URL），**绝不在 Valise 窗口里加载 agent 的 Web 页面**，包括 mygo 原生 UI 里的 web view 控件。经隧道转发的 agent 页面位于 localhost，与 Valise 进程同处一台机器，不让它进入 Valise 的窗口。
+- 原生界面（harness 的终端）在 Valise 自己绘制的终端里显示时，同样不解析、不保存、不记录输入与回显（INSTALL.md 第 2 节）。
+- 口令输入框用 `Password` 模式（不显示、不进剪贴板），值只在提交瞬间交给 service，提交后立即清空，不写入任何持久状态或日志。
+- 复活一旦进入交换阶段，关闭窗口或页面不得中断进行中的交换。服务层持有独立的 context；界面重新打开后，查询实际任务或持久日志并重新跟踪进度；退出进程或断连后的恢复按专用 journal 规则处理。
 
-## 7. 前端结构
+## 7. 测试与自检
 
-```text
-client/ui/src/
-├── mygo.ts            # 生成文件，禁止手改
-├── main.ts            # 入口与路由
-├── state.ts           # 全局状态（订阅 events）
-├── errors.ts          # UserError 解析
-├── views/
-│   ├── instances.ts   # 实例总览
-│   ├── vault.ts       # 金库与快照
-│   ├── revive.ts      # 复活向导
-│   ├── relay.ts       # 登录中继
-│   └── settings.ts    # 设置与信任根
-└── components/        # 状态徽标（三态分离）、进度条、确认对话框等
-```
+- 视图测试用 `ui.NewTester`（不开窗口，按文字查找、点击、输入、推进时钟），与 service 的 fake-ssh 测试一起跑在 `go test` 里；动画用 `tt.Advance` 推进时钟，不 sleep。界面测试只证明界面状态，不代替靶机验收。
+- `client/ui/gui/` 下单个手写 `.go` 文件不得超过 400 行。
+- 自检（AGENTS.md 第 6 节第 5 步）：`go tool mygo vet`，以及 `client/ui` 的 `go test`、`go vet`、`gofmt`。打包应用用 `go tool mygo build`。
 
-单个手写 `.ts` 文件不得超过 400 行。`package.json` 中的 `typecheck` 和 `build:web` 脚本由本项目自己定义：`typecheck` 执行 `tsc --noEmit`，`build:web` 只构建前端。打包应用使用 `go tool mygo build`。
+### 7.1 视觉方向（2026-11-08 用户决定）
+
+- 配色取自用户的参考页 `references/TimelineExample.html`（不纳入版本控制，色值抄录如下）：米白底 `#f7f6f3`，卡片白 `rgba(255,255,255,0.96)`，卡片边 `rgba(220,215,206,0.7)`，主文字 `#2b2825`，次要文字 `#8c857b`，金色柔光 `rgba(212,192,163,0.9)`。深色主题由同一色相推出，草图确认后再定。
+- 布局与交互以 2026-11-05 已批准草图（第 10.1 节）为初稿，先把功能做出来；之后由 Claude 收集优秀案例供用户挑选，再决定更打动人的设计，不在确认前大改。
 
 ## 8. 终端 UI（M7a）
 
@@ -249,6 +240,6 @@ N1 已定义身份及迁移关联、服务器保护计划版本与并发、timel
 
 沿用日常 / 主人 / 管理登录，不把口令或钥匙交给管理方 AI，不自动开启高级模式；受管方 MCP 的禁区保持独立。管理方 MCP 目前不存在，N5a 先设计接口再实现；首批只提供查询、准备允许的计划及已允许任务，不开放恢复/删除执行接口，未来若需请求恢复/删除，其工具清单与人工确认机制须另行评审。跨进程 MCP 只留类型化请求，用户主动打开 GUI/TUI 后重建计划并确认，由该人类进程执行；无人类会话就等待。不传递解锁身份或通用确认票据，重开不能凭磁盘 approved 状态自动执行。
 
-GUI 绑定可在 N4 初期先只读接入，完整交付必须依赖 N3 的副本与失联恢复闭环。mygo v0.7.3 尚未引入，只有达到 DEV_PLAN.md 新进入条件才引入依赖。每个阶段按具体交付验收，fake-ssh 不代替实机；最终必须由用户在 GUI 走完从零/接入已有、备份、同步、恢复、迁移及源服务器失联恢复的全链路。
+GUI 可在 N4 初期先只读接入，完整交付必须依赖 N3 的副本与失联恢复闭环（N3 已于 2026-11-08 完成，mygo v0.7.3 随 N4 骨架引入）。每个阶段按具体交付验收，fake-ssh 不代替实机；最终必须由用户在 GUI 走完从零/接入已有、备份、同步、恢复、迁移及源服务器失联恢复的全链路。
 
 B03 的事务与链接处理已在真实实例上验收（2026-11-07），OpenClaw 的正式入口已开放；其他 harness 须各自核实并登记动作后才显示。该阻塞不作为独立查询或所有 GUI 页面的前提；依赖同一暂存/链接机制的管理动作和恢复路径须完成各自验收才开放。任何新 scope 或链接方案均须先定语义和验收，不能借本轮导航更新绕过。

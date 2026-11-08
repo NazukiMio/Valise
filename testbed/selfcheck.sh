@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Runs the self-check list from AGENTS.md section 6. Before M7b (no mygo in
-# client/ui/go.mod) the mygo generate / bun typecheck / bun build:web steps
-# are skipped.
+# Runs the self-check list from AGENTS.md section 6. Until client/ui/go.mod
+# has mygo, `go tool mygo vet` is skipped.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -42,14 +41,11 @@ gocheck
 
 step "5. client/ui"
 cd "$root/client/ui"
+gocheck
 if grep -q 'github.com/egoist/mygo' go.mod; then
-	go tool mygo generate
-	gocheck
-	bun run typecheck
-	bun run build:web
+	go tool mygo vet
 else
-	echo "(M7b 之前：跳过 mygo generate、bun typecheck、bun build:web)"
-	gocheck
+	echo "(尚未引入 mygo：跳过 mygo vet)"
 fi
 
 go test -count=1 -run '^TestFetchPack$' ./service/
