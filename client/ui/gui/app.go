@@ -29,6 +29,10 @@ type App struct {
 	agentTab int    // 0 overview, 1 journey
 	point    string // snapshot id open in the journey, "" for the list
 	folds    map[string]*bool
+
+	glow        string    // point lit on the journey's line, opening next
+	glowAt      time.Time // when its glow started
+	journeyView int       // 0 points, 1 route
 }
 
 // load is one read and what came of it.
@@ -169,11 +173,12 @@ func (a *App) sidebar(c *ui.Context) {
 			page = top
 		}
 	}
-	ui.Column(c).Width(220).Padding(22, 14).Gap(18).Background(ui.Hex("#f4f2ee")).
+	// The sidebar recedes so the page stays the brightest part (UI.md 7.1).
+	ui.Column(c).Width(212).Padding(22, 12).Gap(18).Background(palette.Side).TextColor(palette.SideText).
 		BorderWidth(0, 1, 0, 0).BorderColor(palette.CardBorder).Children(func() {
 		ui.Row(c).Padding(0, 8).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.valise).FontSize(18)
-			ui.Text(c, "Valise").FontSize(18).Bold()
+			ui.Text(c, "Valise").FontSize(18).Bold().TextColor(palette.Text).Font(displayFont)
 		})
 		if ui.Sidebar(c, &page, func() {
 			ui.SidebarItem(c, "/agents", icons.agent, text.navAgents)

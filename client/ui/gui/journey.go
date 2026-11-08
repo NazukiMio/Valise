@@ -8,10 +8,10 @@ import (
 	"valise/core/journey"
 )
 
-// journey lists the saved points of one agent along a thin line, newest
-// first, grouped by month; a point opens its details. Only successful
-// backups are points (docs/UI.md 10.2). The flowing line, glow and page
-// turns of 10.1 follow once the design is chosen (docs/UI.md 7.1).
+// journey shows the saved points of one agent: the newest on the gold line,
+// then all of them along a thin line, newest first, grouped by month; a
+// point opens its details. Only successful backups are points (docs/UI.md
+// 10.2). An agent that migrated also has its route (docs/UI.md 7.1).
 func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoint) {
 	if a.point != "" {
 		for i, p := range points {
@@ -23,6 +23,14 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		a.point = ""
 	}
 	pageHead(c, row.Name+" 走过的路", text.journeySub)
+	stops := route(a.agents.value.Items, row.Server, row.Instance)
+	if len(stops) > 0 {
+		ui.Row(c).Children(func() { ui.Segmented(c, &a.journeyView, "保存的时刻", "走过的服务器") })
+		if a.journeyView == 1 {
+			routeView(c, stops)
+			return
+		}
+	}
 	if a.timeline.err != nil {
 		errorBox(c, a.timeline.err, a.fold("timeline-err"))
 	}
@@ -34,6 +42,8 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		}
 		return
 	}
+	a.curveStrip(c, points)
+	ui.Text(c, fmt.Sprintf("全部 %d 个时刻", len(points))).Bold().FontSize(14)
 	// One column without gaps, so the line runs unbroken from node to node.
 	ui.Column(c).Gap(0).Children(func() {
 		month := ""

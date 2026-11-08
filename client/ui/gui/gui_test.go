@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 
 	"valise/client/config"
 	"valise/core/enroll"
+	"valise/core/identity"
 	"valise/core/journey"
 	"valise/core/valise"
 	"valise/ui/service"
@@ -64,7 +66,8 @@ func click(t *testing.T, tt *ui.Tester, label string) {
 
 func TestHomeKeepsStatesApart(t *testing.T) {
 	_, tt := world(t)
-	for _, want := range []string{"小满", "阿蓝", "OpenClaw · home", "服务运行中", "管理页端口没有监听", "服务已停止", "nas 这次没有读到：连不上", "本机副本里还没有它的备份"} {
+	// Each fact sits in its own cell of the status board.
+	for _, want := range []string{"小满", "阿蓝", "OpenClaw · home", "服务", "运行中", "管理页端口", "没有监听", "已停止", "nas 这次没有读到：连不上", "本机还没有", "本机副本", "usb"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
@@ -121,5 +124,66 @@ func TestServersPageAndErrors(t *testing.T) {
 	}
 	if err := tt.Click("技术信息"); err != nil || !tt.HasText("x_failed\nopen: denied") {
 		t.Fatalf("details: %v %q", err, tt.Texts())
+	}
+}
+
+// The route links stops only by recorded migrations: a migration made while
+// the source was unreachable starts at “来源未知”; an agent that never
+// migrated has no route.
+func TestRouteFollowsRelations(t *testing.T) {
+	ref := func(uid string) identity.AgentRef {
+		return identity.AgentRef{ServerUID: uid, InstallID: "oc", InstanceID: "oc", Generation: "g-" + uid}
+	}
+	a, b, x := ref("a"), ref("b"), ref("x")
+	items := []service.AgentSummary{
+		{ConnectionID: "home", AgentRef: &a, Instance: enroll.InstanceSummary{InstanceID: "oc"},
+			MigratedTo: &service.AgentMigration{ConnectionID: "cloud", AgentRef: b}},
+		{ConnectionID: "cloud", AgentRef: &b, Instance: enroll.InstanceSummary{InstanceID: "oc"},
+			Relations: []identity.RelationSummary{{Kind: identity.MigrationCompleted, SourceAgent: &a, TargetAgent: b}}},
+		{ConnectionID: "debian", AgentRef: &x, Instance: enroll.InstanceSummary{InstanceID: "oc"},
+			Relations: []identity.RelationSummary{{Kind: identity.MigrationCompleted, TargetAgent: x}}},
+		{ConnectionID: "solo", Instance: enroll.InstanceSummary{InstanceID: "oc"}},
+	}
+	labels := func(st []station) (out []string) {
+		for _, s := range st {
+			out = append(out, s.Label)
+		}
+		return out
+	}
+	if got := labels(route(items, "cloud", "oc")); fmt.Sprint(got) != "[home cloud]" {
+		t.Fatalf("cloud: %v", got)
+	}
+	if got := labels(route(items, "home", "oc")); fmt.Sprint(got) != "[home cloud]" {
+		t.Fatalf("home: %v", got)
+	}
+	if st := route(items, "debian", "oc"); len(st) != 2 || !st[0].Unknown || st[0].Label != "来源未知" || !st[1].Current {
+		t.Fatalf("lost: %+v", st)
+	}
+	if st := route(items, "solo", "oc"); st != nil {
+		t.Fatalf("solo: %+v", st)
+	}
+}
+
+// A click on the gold line lights the point; its details open after the
+// glow's moment, or at once when the desktop asks for less motion.
+func TestCurveGlowThenDetails(t *testing.T) {
+	for _, still := range []bool{false, true} {
+		a, tt := world(t)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: still})
+		a.openAgent("home", "xiaoman")
+		a.agentTab = 1
+		tt.Frame()
+		tt.Advance(time.Second)
+		if err := tt.Click("昨天 07:00"); err != nil { // the first match is the card on the line
+			t.Fatal(err)
+		}
+		tt.Advance(100 * time.Millisecond)
+		if !still && (a.glow != "sb" || a.point != "") {
+			t.Fatalf("glow %q point %q right after the click", a.glow, a.point)
+		}
+		tt.Advance(time.Second)
+		if a.point != "sb" || !tt.HasText("这次带上了什么") {
+			t.Fatalf("still=%v: point %q %q", still, a.point, tt.Texts())
+		}
 	}
 }

@@ -2,8 +2,11 @@ package gui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
+
+	"valise/core/journey"
 )
 
 // fold is a persistent open/closed state for a disclosure, by key.
@@ -20,7 +23,7 @@ func (a *App) fold(key string) *bool {
 // pageHead is a page's title and its one-line flourish.
 func pageHead(c *ui.Context, title, sub string) {
 	ui.Column(c).Gap(6).Children(func() {
-		ui.Text(c, title).FontSize(28).Bold()
+		ui.Text(c, title).FontSize(30).Bold().Font(displayFont)
 		if sub != "" {
 			muted(ui.Text(c, sub)).FontSize(13)
 		}
@@ -80,34 +83,56 @@ func (a *App) homePage(c *ui.Context) {
 
 func (a *App) agentLine(c *ui.Context, r agentRow) {
 	points := pointsFor(a.timeline.value, r.Server, r.Instance)
-	row := ui.Row(c).Padding(14, 18).Gap(16).AlignItems(ui.Center).Cursor(ui.CursorPointer).Label(r.Name)
+	row := ui.Row(c).Padding(16, 18).Gap(18).AlignItems(ui.Center).Cursor(ui.CursorPointer).Label(r.Name)
 	if row.Hovered() {
-		row.Background(ui.Hex("#faf8f4"))
+		row.Background(ui.Hex("#fbfaf6"))
 	}
 	row.OnClick(func() { a.openAgent(r.Server, r.Instance) }).Children(func() {
 		avatar(c, r.Initial, 44)
-		ui.Column(c).Grow(1).Gap(4).Children(func() {
-			ui.Text(c, r.Name).FontSize(16).Bold()
-			muted(ui.Text(c, r.Harness+" · "+r.Server))
-			ui.Row(c).Gap(10).Children(func() {
-				statusDot(c, r.Service, r.ServiceTone)
-				if r.Entry != "" {
-					muted(ui.Text(c, r.Entry))
-				}
-				if r.Note != "" {
-					ui.Text(c, r.Note).FontSize(12).TextColor(palette.Warn)
-				}
-			})
-		})
-		ui.Column(c).Gap(4).AlignItems(ui.End).Children(func() {
-			if len(points) > 0 {
-				ui.Text(c, when(points[0].CreatedAt, c.Now())+" 已备份").FontSize(13)
-				muted(ui.Text(c, "本机副本"))
-			} else {
-				muted(ui.Text(c, text.noLocal))
+		ui.Column(c).Width(190).Gap(4).Children(func() {
+			ui.Text(c, r.Name).FontSize(16).Bold().MaxLines(1)
+			muted(ui.Text(c, r.Harness+" · "+r.Server)).MaxLines(1)
+			if r.Note != "" {
+				ui.Text(c, r.Note).FontSize(12).TextColor(palette.Warn)
 			}
 		})
+		ui.Column(c).Grow(1).Children(func() { statusBoard(c, agentCells(r, points, c), true) })
 	})
+}
+
+// agentCells are the facts of one agent's status board, each in its own
+// cell: the service, the admin page's port, the newest backup this computer
+// holds and where it is kept.
+func agentCells(r agentRow, points []journey.TimelinePoint, c *ui.Context) []cell {
+	cells := []cell{{Label: "服务", Value: shortService(r.Service), Tone: r.ServiceTone}}
+	if r.Entry != "" {
+		tone, v := "stop", "没有监听"
+		if r.Entry == text.entryListening {
+			tone, v = "ok", "在监听"
+		}
+		cells = append(cells, cell{Label: "管理页端口", Value: v, Tone: tone})
+	}
+	if len(points) == 0 {
+		return append(cells, cell{Label: "最近备份", Value: "本机还没有", Tone: "warn"})
+	}
+	var repos []string
+	seen := map[string]bool{}
+	for _, cp := range points[0].Copies {
+		if !seen[cp.LocationRef.ID] {
+			seen[cp.LocationRef.ID] = true
+			repos = append(repos, cp.LocationRef.ID)
+		}
+	}
+	return append(cells, cell{Label: "最近备份", Value: when(points[0].CreatedAt, c.Now())},
+		cell{Label: "本机副本", Value: strings.Join(repos, "、")})
+}
+
+// shortService drops the “服务” the board's label already says.
+func shortService(s string) string {
+	if t, ok := strings.CutPrefix(s, "服务"); ok {
+		return t
+	}
+	return s
 }
 
 func (a *App) openAgent(server, instance string) {
@@ -119,21 +144,5 @@ func (a *App) openAgent(server, instance string) {
 func avatar(c *ui.Context, initial string, side float32) {
 	ui.Column(c).Size(side, side).Radius(side / 4).Center().Background(palette.GoldSoft).Children(func() {
 		ui.Text(c, initial).FontSize(side * 0.42).Bold().TextColor(ui.Hex("#70685d"))
-	})
-}
-
-// statusDot is a small colored dot with its words; the words carry the
-// meaning, the color only helps.
-func statusDot(c *ui.Context, label, tone string) {
-	color := palette.Stop
-	switch tone {
-	case "ok":
-		color = palette.Ok
-	case "warn":
-		color = palette.Warn
-	}
-	ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-		ui.Box(c).Size(7, 7).Radius(4).Background(color)
-		ui.Text(c, label).FontSize(12).TextColor(color)
 	})
 }

@@ -92,5 +92,5 @@
 
 1. 云盘剩余验收（acceptance/N3.md 2.5）：无浏览器授权、这台电脑登录与中转。
 2. N3 已于 2026-11-08 标为 Done（未验证项见 DEV_PLAN.md N3 状态）。N4 开工（2026-11-08 用户决定）：桌面界面用 mygo v0.7.3 **原生 UI**（Go 写，UI.md 第 2–7 节已改写）；先骨架再分段，每段开工前先出草图；配色取用户参考页的米白与金色，功能可看后由 Claude 收集优秀案例供用户挑选设计。
-3. N4 骨架已完成：`client/ui/gui/`（主题、侧栏与路由、错误展示、只读的“我的 Agent”、Agent 概览、旅程与备份详情、服务器列表）与入口 `client/ui/cmd/valise-desktop`（`--config-dir` 可指向演练配置）。视图测试 `gui/gui_test.go`；`gui/shots_test.go` 在设置 `VALISE_SHOTS`（和 `VALISE_SHOTS_CONFIG`）时把页面渲染成 PNG。用演练配置实测读到 15 个 Agent、343 个本机备份记录。下一段：服务器与接入（先出草图）。
+3. N4 骨架已完成：`client/ui/gui/`（主题、侧栏与路由、错误展示、只读的“我的 Agent”、Agent 概览、旅程与备份详情、服务器列表）与入口 `client/ui/cmd/valise-desktop`（`--config-dir` 可指向演练配置）。视图测试 `gui/gui_test.go`；`gui/shots_test.go` 在设置 `VALISE_SHOTS`（和 `VALISE_SHOTS_CONFIG`）时把页面渲染成 PNG。用演练配置实测读到 15 个 Agent、343 个本机备份记录。设计方向已定（UI.md 7.1，用户选混搭）：纸与金线作底色、首页与 Agent 页用分格状态牌、旅程页金线曲线（点击约 300ms 柔光后打开详情，减少动效时直接打开）、迁移过的 Agent 有路线视图（只按记录的迁移关系连线，失联迁移画成“来源未知”），已实现并用演练数据渲染核对。下一段：服务器与接入（先出草图）。
 4. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。

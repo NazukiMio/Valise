@@ -28,23 +28,21 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 	ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
 		avatar(c, row.Initial, 56)
 		ui.Column(c).Gap(6).Children(func() {
-			ui.Text(c, row.Name).FontSize(26).Bold()
+			ui.Text(c, row.Name).FontSize(28).Bold().Font(displayFont)
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 				label := row.Server
 				if row.Harness != "" {
 					label = row.Harness + " · " + row.Server
 				}
 				muted(ui.Text(c, label)).FontSize(13)
-				if row.Service != "" {
-					statusDot(c, row.Service, row.ServiceTone)
-				}
 			})
 		})
 	})
+	points := pointsFor(a.timeline.value, server, instance)
+	statusBoard(c, agentCells(*row, points, c), false)
 	if ui.Tabs(c, &a.agentTab, text.tabOverview, text.tabJourney).Changed() {
 		a.point = ""
 	}
-	points := pointsFor(a.timeline.value, server, instance)
 	if a.agentTab == 1 {
 		a.journey(c, row, points)
 		return

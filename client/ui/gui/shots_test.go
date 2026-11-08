@@ -76,6 +76,15 @@ func TestLiveShots(t *testing.T) {
 			break
 		}
 	}
+	for _, it := range a.agents.value.Items {
+		if len(route(a.agents.value.Items, it.ConnectionID, it.Instance.InstanceID)) > 1 {
+			a.openAgent(it.ConnectionID, it.Instance.InstanceID)
+			a.agentTab, a.journeyView = 1, 1
+			tt.Frame()
+			tt.Advance(time.Second)
+			shot(t, tt, "live-route-"+it.ConnectionID)
+		}
+	}
 	a.router.Push("/servers")
 	tt.Frame()
 	tt.Advance(time.Second)
