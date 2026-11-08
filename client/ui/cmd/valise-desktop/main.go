@@ -4,10 +4,12 @@ package main
 
 import (
 	"flag"
+	"io"
 	"log"
 	"path/filepath"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 
 	"valise/client/config"
@@ -59,6 +61,18 @@ func main() {
 				return "", err
 			}
 			return paths[0], nil
+		})
+		app.SetFilePicker(func(title, message string) (string, error) {
+			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: win, Title: title, Message: message})
+			if err != nil || len(paths) == 0 {
+				return "", err
+			}
+			return paths[0], nil
+		})
+		// The install screen's terminal (docs/UI.md 7.5): Ghostty's
+		// emulator, joined to the install's input and output.
+		app.SetTerminal(func(conn io.ReadWriteCloser) (*terminal.Terminal, error) {
+			return terminal.New(terminal.Options{Conn: conn, NoBlink: true})
 		})
 		app.Start()
 	})

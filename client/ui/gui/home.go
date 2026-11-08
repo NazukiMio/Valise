@@ -82,13 +82,14 @@ func (a *App) homePage(c *ui.Context) {
 }
 
 func (a *App) headerSlot(c *ui.Context, n *Node) {
-	n.box(ui.Row(c).AlignItems(ui.Center)).Children(func() {
+	n.box(ui.Row(c).Gap(8).AlignItems(ui.Center)).Children(func() {
 		muted(ui.Text(c, text.homeTitle)).FontSize(13).Grow(1)
 		if a.agents.busy {
 			ui.Spinner(c)
 		} else {
 			ui.Button(c, text.refresh).OnClick(func() { a.refreshAgents(); a.refreshTimeline() })
 		}
+		ui.Button(c, "添加 Agent").OnClick(func() { a.startWizard(true) })
 	})
 }
 

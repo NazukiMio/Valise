@@ -31,17 +31,17 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 		if obs.Status == "fresh" {
 			continue
 		}
-		it := attention{Key: "srv-" + obs.ConnectionID, Title: obs.ConnectionID + " 这次没有读到", Go: "/servers/" + obs.ConnectionID,
-			Reason: "没有回应。检查服务器是否开机、网络是否通畅。", State: obs.Status}
+		st := a.serverState(obs.ConnectionID, now)
+		it := attention{Key: "srv-" + obs.ConnectionID, Title: obs.ConnectionID + " " + st.Word, Go: "/servers/" + obs.ConnectionID,
+			Reason: st.Reason, State: obs.Status}
+		if st.Suggestion != "" {
+			it.Reason += "。" + st.Suggestion
+		}
 		if obs.Error != nil {
 			it.State += ":" + obs.Error.Code
-			it.Reason = obs.Error.Reason
-			if obs.Error.Suggestion != "" {
-				it.Reason += "。" + obs.Error.Suggestion
-			}
 		}
-		if obs.Status == "stale" && obs.ObservedAt != nil {
-			it.Reason += fmt.Sprintf("（下面显示的是 %s 读到的结果）", when(*obs.ObservedAt, now))
+		if st.Old != "" {
+			it.Reason += "（" + st.Old + "）"
 		}
 		out = append(out, it)
 	}

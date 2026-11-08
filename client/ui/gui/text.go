@@ -5,7 +5,7 @@ package gui
 var text = struct {
 	navAgents, navServers, notFound                       string
 	homeTitle, homeSub, homeEmpty, homeLoading, refresh   string
-	listTitle, serverUnread, serverStale                  string
+	listTitle                                             string
 	running, stopped, failed, noService, unitUnknown      string
 	entryListening, entryClosed                           string
 	migratedTo, superseded                                string
@@ -22,14 +22,12 @@ var text = struct {
 	navServers: "服务器",
 	notFound:   "没有这个页面",
 
-	homeTitle:    "我的 Agent",
-	homeSub:      "—— 熟悉的伙伴，都在这里。",
-	homeEmpty:    "还没有接入任何 Agent。",
-	homeLoading:  "正在读取各台服务器上的 Agent…",
-	refresh:      "重新读取",
-	listTitle:    "已接入的 Agent",
-	serverUnread: "%s 这次没有读到：%s",
-	serverStale:  "%s 这次没有读到，下面是 %s 读到的结果",
+	homeTitle:   "我的 Agent",
+	homeSub:     "—— 熟悉的伙伴，都在这里。",
+	homeEmpty:   "还没有接入任何 Agent。",
+	homeLoading: "正在读取各台服务器上的 Agent…",
+	refresh:     "重新读取",
+	listTitle:   "已接入的 Agent",
 
 	running:     "服务运行中",
 	stopped:     "服务已停止",

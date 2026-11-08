@@ -185,14 +185,17 @@ func size(n int64) string {
 }
 
 // serverRow is one server on the servers page.
-type serverRow struct{ Name, Kind, Address string }
+type serverRow struct {
+	Name, Kind, Address string
+	Valise              bool // added by hand: the user pass and the admin pass apply
+}
 
 func serverRows(list []config.Server) []serverRow {
 	var out []serverRow
 	for _, s := range list {
 		r := serverRow{Name: s.Name, Kind: "用你自己的 SSH 设置"}
 		if s.Source == config.SourceValise {
-			r.Kind = "Valise 添加"
+			r.Kind, r.Valise = "Valise 接入", true
 			r.Address = s.HostName
 			if s.User != "" {
 				r.Address = s.User + "@" + r.Address

@@ -71,7 +71,7 @@ func click(t *testing.T, tt *ui.Tester, label string) {
 // quiet line (docs/UI.md 7.2, 7.3).
 func TestHomePutsAttentionFirst(t *testing.T) {
 	a, tt := world(t)
-	for _, want := range []string{"2 个 Agent，2 件事需要你处理", "nas 这次没有读到", "连不上", "阿蓝 服务已停止", "知道了", "带我去处理",
+	for _, want := range []string{"2 个 Agent，2 件事需要你处理", "nas 离线", "连不上", "阿蓝 服务已停止", "知道了", "带我去处理",
 		"运行中 · 今天 09:00 备份到本机", "在用的 Agent · 2", "卡片视图", "列表视图"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
@@ -93,7 +93,7 @@ func TestHomePutsAttentionFirst(t *testing.T) {
 func TestDismissRemembersTheSituation(t *testing.T) {
 	a, tt := world(t)
 	click(t, tt, "知道了")
-	if !tt.HasText("2 个 Agent，1 件事需要你处理") || !tt.HasText("另有 1 件已知道 ›") || tt.HasText("nas 这次没有读到") {
+	if !tt.HasText("2 个 Agent，1 件事需要你处理") || !tt.HasText("另有 1 件已知道 ›") || tt.HasText("nas 离线") {
 		t.Fatalf("%q", tt.Texts())
 	}
 	b := New(a.svc)
@@ -103,13 +103,13 @@ func TestDismissRemembersTheSituation(t *testing.T) {
 	}
 	click(t, tt, "另有 1 件已知道 ›")
 	click(t, tt, "重新提醒")
-	if !tt.HasText("nas 这次没有读到") || tt.HasText("另有 1 件已知道 ›") {
+	if !tt.HasText("nas 离线") || tt.HasText("另有 1 件已知道 ›") {
 		t.Fatalf("not asked back: %q", tt.Texts())
 	}
 	click(t, tt, "知道了")
 	a.agents.value.Observations[2].Error.Code = "host_key_changed"
 	tt.Frame()
-	if !tt.HasText("nas 这次没有读到") {
+	if !tt.HasText("nas 需要处理") {
 		t.Fatalf("a changed situation stayed hidden: %q", tt.Texts())
 	}
 }

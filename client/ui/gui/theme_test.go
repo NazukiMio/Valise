@@ -70,7 +70,7 @@ func TestImportImmersiveTheme(t *testing.T) {
 		t.Fatalf("copied %v", copied)
 	}
 	// The reminders and the theme menu were left out: they are put back.
-	for _, want := range []string{"nas 这次没有读到", "带我去处理", "主题 · 沉浸", "首页缺少“待处理提醒”，已按经典主题补上",
+	for _, want := range []string{"nas 离线", "带我去处理", "主题 · 沉浸", "首页缺少“待处理提醒”，已按经典主题补上",
 		"外壳缺少“主题菜单”，已按经典主题补上", "2 个 Agent，2 件事需要你处理"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())

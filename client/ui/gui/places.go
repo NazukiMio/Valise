@@ -11,65 +11,7 @@ import (
 	"valise/ui/service"
 )
 
-// The two minimal handling pages of docs/UI.md 7.3: one server that could
-// not be read, and the backup locations on this computer.
-
-// serverPage is one server: whether it was read this time, why not, and
-// reconnecting.
-func (a *App) serverPage(c *ui.Context, name string) {
-	ui.Link(c, "‹ "+text.navServers, "/servers")
-	pageHead(c, name, "")
-	var obs *service.AgentServerObservation
-	for i := range a.agents.value.Observations {
-		if a.agents.value.Observations[i].ConnectionID == name {
-			obs = &a.agents.value.Observations[i]
-		}
-	}
-	card(ui.Column(c)).Gap(10).Children(func() {
-		switch {
-		case a.agents.busy:
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c); ui.Text(c, "正在连接 "+name+"…") })
-		case obs == nil:
-			muted(ui.Text(c, "这次还没有读取这台服务器。")).FontSize(14)
-		case obs.Status == "fresh":
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Box(c).Size(8, 8).Radius(4).Background(toneColor("ok"))
-				ui.Text(c, "这次读到了 "+name+" 上的 Agent 清单").FontSize(15).Bold()
-			})
-			muted(ui.Text(c, "读取于 "+when(a.agents.at, c.Now())))
-		default:
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Box(c).Size(8, 8).Radius(4).Background(palette.Warn)
-				ui.Text(c, name+" 这次没有读到").FontSize(15).Bold().TextColor(palette.Warn)
-			})
-			if obs.Error != nil {
-				fact(c, "原因", obs.Error.Reason)
-				if obs.Error.Suggestion != "" {
-					fact(c, "建议", obs.Error.Suggestion)
-				}
-			} else {
-				fact(c, "原因", "没有回应")
-				fact(c, "建议", "检查服务器是否开机、网络是否通畅")
-			}
-			if !obs.LastAttemptAt.IsZero() {
-				fact(c, "尝试时间", when(obs.LastAttemptAt, c.Now()))
-			}
-			if obs.ObservedAt != nil {
-				fact(c, "上次读到", when(*obs.ObservedAt, c.Now()))
-			}
-		}
-		if !a.agents.busy {
-			ui.Row(c).Children(func() {
-				ui.PrimaryButton(c, "重新连接").OnClick(func() { a.refreshAgents() })
-			})
-		}
-	})
-	if obs != nil && obs.Error != nil && obs.Error.Detail != "" {
-		ui.Collapsible(c, text.techInfo, a.fold("srv-detail-"+name), func() {
-			muted(ui.Text(c, obs.Error.Code+"\n"+obs.Error.Detail)).Font(cur.Fonts.Mono).Wrap()
-		})
-	}
-}
+// The backup locations on this computer (docs/UI.md 7.3).
 
 // syncState is one “现在补到本机” and what came of it.
 type syncState struct {

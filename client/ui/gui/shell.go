@@ -140,6 +140,13 @@ func (a *App) pageSlot(c *ui.Context, n *Node) {
 				case r.Match("/servers"):
 					r.Title(text.navServers)
 					a.serversPage(c)
+				case r.Match("/servers/add"):
+					r.Title("添加服务器")
+					a.wizardPage(c)
+				case r.Match("/servers/{name}/agents"):
+					a.onServerPage(c, r.Param("name"))
+				case r.Match("/servers/{name}/install/{profile}"):
+					a.installPage(c, r.Param("name"), r.Param("profile"))
 				case r.Match("/servers/{name}"):
 					a.serverPage(c, r.Param("name"))
 				case r.Match("/locations"):
