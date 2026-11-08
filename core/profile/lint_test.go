@@ -269,6 +269,10 @@ provenance: { kind: binary, binary: { name: x } }
 		"url_suffix": `entries: [ { id: m, kind: web, host: 127.0.0.1, port: 1, path: "/", auth: { url_suffix: "#t=${TOKEN}" } } ]
 `,
 		"checkup.remedies.nope": "checkup: { remedies: { nope: [a] } }\n",
+		"display.logo.svg":      "display: { logo: { svg: \"<svg onload=x></svg>\", source: s, license: l } }\n",
+		"display.logo.license":  "display: { logo: { svg: \"<svg></svg>\", source: s } }\n",
+		"必须是 SVG":               "display: { logo: { svg: \"<png/>\", source: s, license: l } }\n",
+		"外部引用":                  "display: { logo: { svg: \"<svg><image href='https://x/y.png'/></svg>\", source: s, license: l } }\n",
 	}
 	for want, extra := range cases {
 		d, err := Parse([]byte(base + extra))

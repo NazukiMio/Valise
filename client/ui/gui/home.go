@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -44,12 +43,20 @@ func pageHead(c *ui.Context, title, sub string) {
 }
 
 // homePage answers “is there anything for me to do?” first (docs/UI.md
-// 7.2): a verdict, the things that need attention with their next step,
-// then the agents in use as quiet rows, and the retired ones folded away.
+// 7.2, 7.3): a verdict, the reminders still open with their two buttons,
+// then the agents as cards (or a list) under a search, and the retired ones
+// folded away.
 func (a *App) homePage(c *ui.Context) {
 	rows := a.agentRows(a.agents.value)
 	now := c.Now()
-	items := a.attentionItems(rows, now)
+	var open, known []attention
+	for _, it := range a.attentionItems(rows, now) {
+		if st, ok := a.prefs.Dismissed[it.Key]; ok && st == it.State {
+			known = append(known, it)
+		} else {
+			open = append(open, it)
+		}
+	}
 	var inUse, retired []agentRow
 	for _, r := range rows {
 		if r.Retired() {
@@ -70,14 +77,31 @@ func (a *App) homePage(c *ui.Context) {
 		ui.Text(c, text.homeLoading).FontSize(26).Font(displayFont).TextColor(palette.TextSub)
 		return
 	}
-	ui.Text(c, verdict(len(inUse), len(items))).FontSize(36).Bold().Font(displayFont).Wrap()
+	ui.Column(c).Gap(6).Children(func() {
+		ui.Text(c, verdict(len(inUse), len(open))).FontSize(36).Bold().Font(displayFont).Wrap()
+		if len(known) > 0 {
+			shown := a.fold("known")
+			label := fmt.Sprintf("另有 %d 件已知道 ›", len(known))
+			if *shown {
+				label = fmt.Sprintf("收起已知道的 %d 件", len(known))
+			}
+			textLink(c, label, func() { *shown = !*shown })
+		}
+	})
 	if a.agents.err != nil {
 		errorBox(c, a.agents.err, a.fold("home-err"))
 	}
-	if len(items) > 0 {
+	if len(open) > 0 {
 		ui.Column(c).Gap(10).Children(func() {
-			for i, it := range items {
+			for i, it := range open {
 				a.attentionCard(c.Key(it.Key), it, i == 0)
+			}
+		})
+	}
+	if len(known) > 0 && *a.fold("known") {
+		ui.Column(c).Gap(8).Children(func() {
+			for _, it := range known {
+				a.knownCard(c.Key("k"+it.Key), it)
 			}
 		})
 	}
@@ -87,63 +111,23 @@ func (a *App) homePage(c *ui.Context) {
 		}
 		return
 	}
-	// Agents with something wrong first; otherwise by name.
-	sortTrouble(inUse)
-	ui.Column(c).Gap(8).Margin(12, 0, 0, 0).Children(func() {
-		muted(ui.Text(c, fmt.Sprintf("在用的 Agent · %d", len(inUse)))).FontSize(12).LetterSpacing(0.6)
-		card(ui.Column(c)).Padding(4, 0).Gap(0).Children(func() {
-			for i, r := range inUse {
-				if i > 0 {
-					ui.Divider(c)
-				}
-				a.agentLine(c.Key(r.Server+"/"+r.Instance), r)
-			}
-		})
-	})
-	if len(retired) > 0 {
+	a.agentToolbar(c, len(inUse))
+	shown := filterAgents(inUse, a.query)
+	sortTrouble(shown)
+	switch {
+	case len(shown) == 0:
+		muted(ui.Text(c, "没有找到“"+a.query+"”。可以按名字、harness 或服务器搜索。")).FontSize(14)
+	case a.prefs.View == "list":
+		a.agentList(c, "l", shown)
+	default:
+		a.agentGrid(c, "g", shown)
+	}
+	if retired = filterAgents(retired, a.query); len(retired) > 0 {
 		ui.Collapsible(c, fmt.Sprintf("不再使用 · %d（已迁出或已被替换）", len(retired)), a.fold("retired"), func() {
-			card(ui.Column(c)).Padding(4, 0).Gap(0).Children(func() {
-				for i, r := range retired {
-					if i > 0 {
-						ui.Divider(c)
-					}
-					a.agentLine(c.Key("r"+r.Server+"/"+r.Instance), r)
-				}
-			})
+			a.agentList(c, "r", retired)
 		})
 	}
 	muted(ui.Text(c, text.localNote)).FontSize(11)
-}
-
-// attentionCard is one thing to handle; the first card's step is the page's
-// one primary button.
-func (a *App) attentionCard(c *ui.Context, it attention, first bool) {
-	ui.Row(c).Padding(16, 18).Gap(14).Radius(14).Background(ui.Hex("#fbf3e6")).Border(1, ui.RGBA(214, 178, 128, 0.45)).
-		AlignItems(ui.Center).Children(func() {
-		ui.Box(c).Size(10, 10).Radius(5).Background(palette.Warn).Shadow(0, 0, 8, 1, ui.RGBA(160, 106, 44, 0.35))
-		ui.Column(c).Grow(1).Gap(4).Children(func() {
-			ui.Text(c, it.Title).FontSize(15).Bold().Wrap()
-			ui.Text(c, it.Reason).FontSize(13).TextColor(ui.Hex("#6b5a44")).Wrap()
-		})
-		if it.Next == "" {
-			return
-		}
-		var b ui.Element
-		if first {
-			b = ui.PrimaryButton(c, it.Next)
-		} else {
-			b = ui.Button(c, it.Next)
-		}
-		b.OnClick(func() {
-			switch {
-			case it.Reread:
-				a.refreshAgents()
-				a.refreshTimeline()
-			case it.Instance != "":
-				a.openAgent(it.Server, it.Instance)
-			}
-		})
-	})
 }
 
 func sortTrouble(rows []agentRow) {
@@ -151,38 +135,6 @@ func sortTrouble(rows []agentRow) {
 }
 
 func trouble(r agentRow) bool { return r.HasService && r.ServiceTone != "ok" }
-
-// agentLine is a quiet row: who it is, and one muted line of state; only a
-// problem is colored.
-func (a *App) agentLine(c *ui.Context, r agentRow) {
-	points := pointsFor(a.timeline.value, r.Server, r.Instance)
-	var newest *time.Time
-	if len(points) > 0 {
-		newest = &points[0].CreatedAt
-	}
-	row := ui.Row(c).Padding(11, 18).Gap(14).AlignItems(ui.Center).Cursor(ui.CursorPointer).Label(r.Name)
-	if row.Hovered() {
-		row.Background(ui.Hex("#fbfaf6"))
-	}
-	row.OnClick(func() { a.openAgent(r.Server, r.Instance) }).Children(func() {
-		avatar(c, a.display[r.Profile], 40, false)
-		ui.Column(c).Grow(1).Gap(2).Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
-				ui.Text(c, r.Name).FontSize(15).Bold().MaxLines(1)
-				muted(ui.Text(c, r.Harness+" · "+r.Server)).MaxLines(1)
-			})
-			switch {
-			case r.Retired():
-				muted(ui.Text(c, r.Note))
-			case trouble(r):
-				ui.Text(c, r.Service).FontSize(12).TextColor(palette.Warn)
-			default:
-				muted(ui.Text(c, quietLine(r, newest, c.Now())))
-			}
-		})
-		ui.Text(c, "›").FontSize(18).TextColor(palette.Line)
-	})
-}
 
 // agentCells are the facts of one agent's status board, each in its own
 // cell: the service, the admin page's port, the newest backup this computer

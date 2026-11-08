@@ -549,6 +549,36 @@ func (c *checker) checkDisplay(d *Display) {
 	}
 	c.checkIcon("display.icon", d.Icon, MaxIconLines, MaxIconWidth)
 	c.checkIcon("display.icon_compact", d.IconCompact, MaxCompactIconLines, MaxCompactIconWidth)
+	if l := d.Logo; l != nil {
+		c.checkLogo(l)
+	}
+}
+
+// MaxLogoBytes bounds display.logo.svg.
+const MaxLogoBytes = 64 << 10
+
+var logoBad = regexp.MustCompile(`(?i)<script|<foreignobject|\son[a-z]+\s*=|(?:href|src)\s*=\s*["']?\s*(?:https?:|//|data:|javascript:)|url\(\s*["']?\s*(?:https?:|//)`)
+
+// checkLogo keeps an official logo to plain SVG with its source and terms
+// (PROFILES.md): no scripts, event handlers or outside references.
+func (c *checker) checkLogo(l *Logo) {
+	svg := strings.TrimSpace(l.SVG)
+	switch {
+	case svg == "":
+		c.add("display.logo.svg", "不能为空")
+	case len(l.SVG) > MaxLogoBytes:
+		c.add("display.logo.svg", "超过 %d KiB", MaxLogoBytes>>10)
+	case !strings.Contains(svg, "<svg"):
+		c.add("display.logo.svg", "必须是 SVG")
+	case logoBad.MatchString(svg):
+		c.add("display.logo.svg", "不得含脚本、事件属性、foreignObject 或外部引用")
+	}
+	if strings.TrimSpace(l.Source) == "" {
+		c.add("display.logo.source", "必须写明取自哪里")
+	}
+	if strings.TrimSpace(l.License) == "" {
+		c.add("display.logo.license", "必须写明许可或品牌使用条款")
+	}
 }
 
 func (c *checker) checkIcon(field, icon string, maxLines, maxWidth int) {

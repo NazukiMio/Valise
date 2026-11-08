@@ -9,23 +9,89 @@ import (
 	"valise/core/journey"
 )
 
-// The journey's gold line (docs/UI.md 7.1, 10.1): the newest saved points,
-// oldest on the left, strung on a slowly drifting curve. The curve's rise and
-// fall is only a guide for the eye: it means nothing about health. A click
-// lights the point's glow, and about 300ms later its details open; with
-// reduced motion the line is still and the details open at once.
+// The journey's line (docs/UI.md 7.3, 10.1): a spine that breathes slowly,
+// with fine hair strands streaming along it and fading at their tips, after
+// the user's reference page; the newest saved points hang on the spine,
+// oldest on the left. Its rise and fall is only a guide for the eye: it
+// means nothing about health. A click lights the point's glow, and about
+// 300ms later its details open; with reduced motion everything is still
+// and the details open at once.
 
 const (
 	curveHeight = 300
-	curveBand   = 64 // room for the cards above and below the line
+	curveBand   = 66 // room for the cards above and below the spine
 	curvePoints = 6
 	glowDelay   = 300 * time.Millisecond
+	hairCount   = 32
 )
 
-// curveY is the line's height at t in [0,1] for a box of height h.
-func curveY(t, h, drift float32) float32 {
-	mid, amp := h/2, h/2-curveBand-14
-	return mid + amp*float32(math.Sin(2*math.Pi*0.85*float64(t)+0.6+float64(drift)))
+// spineY is the spine's height at x in [0,1] for a box of height h at
+// animation time t (about 0.54 a second, as on the reference page).
+func spineY(x, h, t float32) float32 {
+	s := h / 300
+	w1 := math.Sin(float64(x)*math.Pi*2.1+float64(t)*0.55) * 24
+	w2 := math.Cos(float64(x)*math.Pi*1.3-float64(t)*0.32) * 11
+	return h/2 + float32(w1+w2)*s
+}
+
+// hair is one strand; its numbers come from its index so every frame and
+// every run draws the same strands.
+type hair struct {
+	length, start, offset, freq, amp, phase, alpha, width, speed float32
+}
+
+var hairs = func() []hair {
+	r := func(i, k int) float32 { // a fixed number in [0,1) for (i, k)
+		v := math.Sin(float64(i*12+k)*12.9898+78.233) * 43758.5453
+		return float32(v - math.Floor(v))
+	}
+	out := make([]hair, hairCount)
+	for i := range out {
+		l := 0.20 + r(i, 1)*0.36
+		out[i] = hair{length: l, start: float32(i)/hairCount*1.5 - 0.35 + (r(i, 2)-0.5)*0.18,
+			offset: (r(i, 3) - 0.5) * 13, freq: 0.004 + r(i, 4)*0.003, amp: 1.8 + r(i, 5)*3.2,
+			phase: r(i, 6) * 2 * math.Pi, alpha: 0.2 + r(i, 7)*0.3, width: 0.45 + r(i, 8)*0.45,
+			speed: (0.00018 + r(i, 9)*0.00028) * 60}
+	}
+	return out
+}()
+
+// paintHairs draws the strands and the spine into r.
+func paintHairs(p *ui.Painter, r ui.Rect, t float32) {
+	span := float32(1.2 + 0.56 + 0.27)
+	for _, h := range hairs {
+		x0 := h.start + h.speed*t/0.54
+		x0 = float32(math.Mod(float64(x0+0.83), float64(span))) - 0.83 // wrap from the right edge back to the left
+		a, b := max(x0, 0), min(x0+h.length, 1)
+		if b <= a {
+			continue
+		}
+		var path ui.Path
+		first := true
+		for x := a * r.W; x <= b*r.W; x += 6 {
+			fx := x / r.W
+			y := spineY(fx, r.H, t) + h.offset + h.amp*float32(math.Sin(float64(x*h.freq+t*0.4+h.phase)))
+			if first {
+				path.MoveTo(r.X+x, r.Y+y)
+				first = false
+			} else {
+				path.LineTo(r.X+x, r.Y+y)
+			}
+		}
+		// Strands fade toward their tips: thinner and lighter where short.
+		fade := min(1, (b-a)/h.length*1.4)
+		p.StrokePath(&path, h.width, ui.RGBA(176, 156, 130, h.alpha*fade))
+	}
+	var spine ui.Path
+	for x := float32(0); x <= r.W; x += 4 {
+		y := spineY(x/r.W, r.H, t)
+		if x == 0 {
+			spine.MoveTo(r.X, r.Y+y)
+		} else {
+			spine.LineTo(r.X+x, r.Y+y)
+		}
+	}
+	p.StrokePath(&spine, 1.6, ui.RGBA(168, 150, 128, 0.85))
 }
 
 // curveStrip draws up to curvePoints of points (newest first in points).
@@ -39,53 +105,36 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 	a.settleGlow(c, still)
 	box := ui.Box(c).Height(curveHeight).Radius(16).Background(ui.Hex("#fbf9f4")).Border(1, palette.CardBorder).Clip()
 	box.Draw(func(p *ui.Painter, r ui.Rect) {
-		drift := float32(0)
+		t := float32(0)
 		if !still {
-			sec := float64(p.Now().UnixMilli()%24000) / 24000
-			drift = 0.18 * float32(math.Sin(2*math.Pi*sec))
-			p.After(50 * time.Millisecond)
+			t = float32(float64(p.Now().UnixMilli()%3_600_000)/1000) * 0.54
+			p.After(33 * time.Millisecond)
 		}
-		// A soft wash of gold behind the line, then the line itself.
-		p.FillGradient(r, ui.LinearGradient{Angle: 100,
-			Stops: []ui.GradientStop{{Color: ui.RGBA(245, 230, 205, 0.0), At: 0}, {Color: ui.RGBA(245, 230, 205, 0.45), At: 0.5}, {Color: ui.RGBA(245, 230, 205, 0.0), At: 1}}}, 16)
-		var line ui.Path
-		for i := 0; i <= 120; i++ {
-			t := float32(i) / 120
-			x, y := r.X+r.W*t, r.Y+curveY(t, r.H, drift)
-			if i == 0 {
-				line.MoveTo(x, y)
-			} else {
-				line.LineTo(x, y)
-			}
-		}
-		p.StrokePath(&line, 6, ui.RGBA(239, 230, 214, 0.7))
-		p.StrokePath(&line, 1.6, palette.Gold)
+		paintHairs(p, r, t)
 		for i, pt := range shown {
-			t := (float32(i) + 0.5) / float32(n)
-			x, y := r.X+r.W*t, r.Y+curveY(t, r.H, drift)
+			fx := (float32(i) + 0.5) / float32(n)
+			x, y := r.X+r.W*fx, r.Y+spineY(fx, r.H, t)
 			stem := r.Y + curveBand
-			if y < r.Y+r.H/2 {
+			if i%2 == 1 {
 				stem = r.Y + r.H - curveBand
 			}
-			p.Line(x, y, x, stem, 1, ui.RGBA(212, 192, 163, 0.6))
+			p.Line(x, y, x, stem, 1, ui.RGBA(188, 172, 150, 0.6))
 			if pt.SnapshotRef.SnapshotID == a.glow {
 				k := min(float32(p.Now().Sub(a.glowAt))/float32(glowDelay), 1)
 				for j, rad := range []float32{30, 20, 12} {
 					p.FillPath((&ui.Path{}).Circle(x, y, rad*(0.5+0.5*k)), ui.RGBA(212, 192, 163, 0.18*float32(j+1)*k))
 				}
 			}
-			p.FillPath((&ui.Path{}).Circle(x, y, 6), ui.Hex("#ffffff"))
-			p.StrokePath((&ui.Path{}).Circle(x, y, 6), 1.6, palette.Gold)
-			p.FillPath((&ui.Path{}).Circle(x, y, 2), ui.Hex("#8c7e6c"))
+			p.FillPath((&ui.Path{}).Circle(x, y, 5.5), ui.Hex("#ffffff"))
+			p.StrokePath((&ui.Path{}).Circle(x, y, 5.5), 1.4, ui.RGBA(168, 150, 128, 0.9))
+			p.FillPath((&ui.Path{}).Circle(x, y, 1.8), ui.Hex("#8c7e6c"))
 		}
 	})
 	box.Children(func() {
 		ui.Row(c).Fill().Children(func() {
 			for i, pt := range shown {
-				t := (float32(i) + 0.5) / float32(n)
-				top := curveY(t, curveHeight, 0) > curveHeight/2
-				col := ui.Column(c.Key(pt.SnapshotRef.SnapshotID)).Grow(1).Basis(0).FillHeight().AlignItems(ui.Center).Padding(10, 6)
-				if top {
+				col := ui.Column(c.Key(pt.SnapshotRef.SnapshotID)).Grow(1).Basis(0).FillHeight().AlignItems(ui.Center).Padding(12, 6)
+				if i%2 == 0 {
 					col.Justify(ui.Start)
 				} else {
 					col.Justify(ui.End)

@@ -44,6 +44,22 @@ func TestShots(t *testing.T) {
 	tt.Frame()
 	tt.Advance(time.Second)
 	shot(t, tt, "point")
+	a.health["cloud/alan"] = &healthState{at: time.Now(), report: &service.HealthReport{Items: []service.HealthItem{
+		{ID: "service", Level: service.HealthBad, Title: "服务没有运行", Text: "hermes.service 已停止", ActionID: "start", ActionName: "启动服务"},
+		{ID: "pods", Level: service.HealthOK, Title: "备份正常", Text: "最近一次在今天 09:00"}}}}
+	a.agentTab = tabHealth
+	a.router.Push("/agents/cloud/alan")
+	tt.Advance(time.Second)
+	shot(t, tt, "health")
+	a.router.Push("/servers/nas")
+	tt.Advance(time.Second)
+	shot(t, tt, "server")
+	a.router.Push("/agents")
+	a.prefs.View = "list"
+	a.dismiss(a.attentionItems(a.agentRows(a.agents.value), time.Now())[0])
+	*a.fold("known") = true
+	tt.Advance(time.Second)
+	shot(t, tt, "home-list")
 }
 
 // TestLiveShots renders the pages over a real data directory (the drill

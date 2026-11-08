@@ -14,9 +14,11 @@ const staleAfter = 7 * 24 * time.Hour
 // wrong, why it matters, and the next step.
 type attention struct {
 	Key, Title, Reason string
-	Next               string // the button's words; "" for none
-	Server, Instance   string // the agent to open, when there is one
-	Reread             bool   // the next step reads the servers again
+	// State is what “知道了” remembers: the reminder comes back when it
+	// changes (docs/UI.md 7.3).
+	State string
+	Go    string // where “带我去处理” leads
+	Tab   int    // the agent page's tab, when Go is an agent
 }
 
 // attentionItems are the only three kinds that count (docs/UI.md 7.2): a
@@ -29,9 +31,10 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 		if obs.Status == "fresh" {
 			continue
 		}
-		it := attention{Key: "srv-" + obs.ConnectionID, Title: obs.ConnectionID + " 这次没有读到", Next: "重新读取", Reread: true,
-			Reason: "没有回应。检查服务器是否开机、网络是否通畅。"}
+		it := attention{Key: "srv-" + obs.ConnectionID, Title: obs.ConnectionID + " 这次没有读到", Go: "/servers/" + obs.ConnectionID,
+			Reason: "没有回应。检查服务器是否开机、网络是否通畅。", State: obs.Status}
 		if obs.Error != nil {
+			it.State += ":" + obs.Error.Code
 			it.Reason = obs.Error.Reason
 			if obs.Error.Suggestion != "" {
 				it.Reason += "。" + obs.Error.Suggestion
@@ -42,20 +45,25 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 		}
 		out = append(out, it)
 	}
-	var stale []string
+	var stale, staleState []string
 	for _, r := range rows {
 		if r.Retired() {
 			continue
 		}
 		if r.HasService && r.ServiceTone != "ok" {
 			out = append(out, attention{Key: "svc-" + r.Server + "/" + r.Instance, Title: r.Name + " " + r.Service,
-				Reason: "在 " + r.Server + " 上，" + r.Harness + " 的服务现在没有运行，Agent 不会响应。", Next: "查看 " + r.Name,
-				Server: r.Server, Instance: r.Instance})
+				Reason: "在 " + r.Server + " 上，" + r.Harness + " 的服务现在没有运行，Agent 不会响应。",
+				State:  r.Service, Go: "/agents/" + r.Server + "/" + r.Instance, Tab: tabHealth})
 		}
 		if a.hasRepos {
 			points := pointsFor(a.timeline.value, r.Server, r.Instance)
 			if len(points) == 0 || now.Sub(points[0].CreatedAt) > staleAfter {
 				stale = append(stale, r.Name+"（"+r.Server+"）")
+				weeks := "none"
+				if len(points) > 0 {
+					weeks = fmt.Sprint(int(now.Sub(points[0].CreatedAt) / staleAfter))
+				}
+				staleState = append(staleState, r.Server+"/"+r.Instance+"@"+weeks)
 			}
 		}
 	}
@@ -65,7 +73,7 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 			names += fmt.Sprintf(" 等 %d 个", len(stale))
 		}
 		out = append(out, attention{Key: "stale", Title: fmt.Sprintf("%d 个 Agent 超过 7 天没有新备份到这台电脑", len(stale)),
-			Reason: names + "。服务器损坏时，只能找回这台电脑上已有的那份。打开 Valise 时会按设置把新备份补到本机仓库；外接盘要先接上。"})
+			Reason: names + "。服务器损坏时，只能找回这台电脑上已有的那份。", State: strings.Join(staleState, ","), Go: "/locations"})
 	}
 	return out
 }

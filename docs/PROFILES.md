@@ -87,6 +87,11 @@ display:                         # 可选：界面上的实例卡片图标（202
   icon_compact: |                # 可选，紧凑图标：最多 6 行 × 12 列；用于窄终端与实例页标题
     ...
   icon_source: "…"               # 出处：据哪个官方图案改画、其许可证；未核实时写 verify: pending
+  logo:                          # 可选，桌面界面用的官方图标（2026-11-08 用户决定）；TUI 不用
+    svg: |                       # 官方发布的 SVG 原文，随签名资料包分发，界面不联网抓取
+      <svg …>…</svg>
+    source: "https://…"          # 取自哪里（官方仓库或品牌资源页的固定地址）
+    license: "…"                 # 许可或品牌使用条款；不确定时写 verify: pending，不分发
 
 capabilities: {}                 # 按能力的核实状态，见 1.2 节
 
@@ -260,6 +265,7 @@ agent_kit:
 - "同时出现"按两种情况判定：glob 字符串完全相同；或者 `secrets` 的 glob 不含通配符，并且能被同一 root 下某条 `body`、`cache`、`ignore` 规则（包括 `body.paths`）匹配。
 - glob 语法：以 `/` 分隔路径段，`**` 匹配零个或多个路径段，其余段使用 Go `path.Match` 的语法。
 - `secret_tables` 中的表名只能包含字母、数字和下划线。
+- `display.logo.svg` 只接受 SVG 文本（不超过 64 KiB，不得含 `<script>`、事件属性、外部引用或 `<foreignObject>`），必须同时写 `source` 与 `license`；只用于展示 harness 自己的标识，不构成背书（AGENTS.md 7.6）。
 - `display.icon` 最多 12 行、每行显示宽度不超过 24；`display.icon_compact` 最多 6 行、每行不超过 12。只允许单宽字符（推荐盲文 U+2800–U+28FF，空白用 `⠀`；也可用框线与 ASCII），不得包含全角字符、emoji、制表符、控制字符或 ANSI 转义；`display.color` 必须是 `#RRGGBB`。图标原样显示、不在运行时缩放；只有标准图标时，紧凑场景按点缩放兜底（UI.md 8.1）。
 - `install.steps` 中 `script` 必须有 `sha256` 与 `runtime_downloads`（没有时写空字符串表示已确认没有）；`url` 必须是 `https`；所有命令都是 argv 数组。
 - `capabilities` 中状态为 `tested` 的项必须有 `versions` 与 `env`。

@@ -6,7 +6,7 @@ import "github.com/egoist/mygo/ui"
 // gold glow, taken from the user's reference page. The dark theme is decided
 // after the sketches; until then the light palette is used in both.
 var palette = struct {
-	Paper, Card, CardBorder, Text, TextSub, Gold, GoldSoft, Line, Ok, Warn, Stop, Board, Side, SideText ui.Color
+	Paper, Card, CardBorder, Text, TextSub, Gold, GoldSoft, Line, Ok, Warn, Stop, Board, Side, SideText, Brand ui.Color
 }{
 	Paper:      ui.Hex("#f7f6f3"),
 	Card:       ui.RGBA(255, 255, 255, 0.96),
@@ -22,6 +22,7 @@ var palette = struct {
 	Board:      ui.Hex("#fcfbf8"),
 	Side:       ui.Hex("#efece6"),
 	SideText:   ui.Hex("#8c857b"),
+	Brand:      ui.Hex("#9a7b4f"),
 }
 
 // displayFont is for page titles only: a Song face where the system has one.

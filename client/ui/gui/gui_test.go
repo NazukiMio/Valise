@@ -67,29 +67,103 @@ func click(t *testing.T, tt *ui.Tester, label string) {
 }
 
 // The home page answers first: a verdict, then only the things that need
-// attention with their next step; agents that are fine get one quiet line
-// (docs/UI.md 7.2).
+// attention, each with “知道了” and “带我去处理”; agents are cards with one
+// quiet line (docs/UI.md 7.2, 7.3).
 func TestHomePutsAttentionFirst(t *testing.T) {
 	a, tt := world(t)
-	for _, want := range []string{"2 个 Agent，2 件事需要你处理", "nas 这次没有读到", "连不上", "阿蓝 服务已停止", "查看 阿蓝",
-		"运行中 · 今天 09:00 备份到本机", "在用的 Agent · 2"} {
+	for _, want := range []string{"2 个 Agent，2 件事需要你处理", "nas 这次没有读到", "连不上", "阿蓝 服务已停止", "知道了", "带我去处理",
+		"运行中 · 今天 09:00 备份到本机", "在用的 Agent · 2", "卡片视图", "列表视图"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
 	}
 	// A fine agent's facts are not laid out as a board on the home page.
-	if tt.HasText("管理页端口") {
-		t.Errorf("status board on the home page: %q", tt.Texts())
+	if tt.HasText("管理页端口") || tt.HasText("工具箱") {
+		t.Errorf("board or unimplemented entry drawn: %q", tt.Texts())
 	}
-	for _, absent := range []string{"工具箱", "备份位置"} {
-		if tt.HasText(absent) {
-			t.Errorf("unimplemented entry %q drawn", absent)
+	// The first card's step opens the server's page.
+	click(t, tt, "带我去处理")
+	if a.router.Path() != "/servers/nas" || !tt.HasText("连不上") || !tt.HasText("重新连接") {
+		t.Fatalf("next step went to %s: %q", a.router.Path(), tt.Texts())
+	}
+}
+
+// “知道了” stops a reminder in its current state, on this computer; a
+// changed situation brings it back, and it can be asked back by hand.
+func TestDismissRemembersTheSituation(t *testing.T) {
+	a, tt := world(t)
+	click(t, tt, "知道了")
+	if !tt.HasText("2 个 Agent，1 件事需要你处理") || !tt.HasText("另有 1 件已知道 ›") || tt.HasText("nas 这次没有读到") {
+		t.Fatalf("%q", tt.Texts())
+	}
+	b := New(a.svc)
+	b.loadPrefs()
+	if b.prefs.Dismissed["srv-nas"] != "unknown:ssh_connect_failed" {
+		t.Fatalf("not kept on disk: %v", b.prefs.Dismissed)
+	}
+	click(t, tt, "另有 1 件已知道 ›")
+	click(t, tt, "重新提醒")
+	if !tt.HasText("nas 这次没有读到") || tt.HasText("另有 1 件已知道 ›") {
+		t.Fatalf("not asked back: %q", tt.Texts())
+	}
+	click(t, tt, "知道了")
+	a.agents.value.Observations[2].Error.Code = "host_key_changed"
+	tt.Frame()
+	if !tt.HasText("nas 这次没有读到") {
+		t.Fatalf("a changed situation stayed hidden: %q", tt.Texts())
+	}
+}
+
+// The service reminder leads to the agent's health tab, where the
+// harness's declared repair action is offered.
+func TestServiceReminderOpensHealth(t *testing.T) {
+	a, tt := world(t)
+	a.health["cloud/alan"] = &healthState{at: time.Now(), report: &service.HealthReport{Items: []service.HealthItem{
+		{ID: "service", Level: service.HealthBad, Title: "服务没有运行", ActionID: "start", ActionName: "启动服务"},
+		{ID: "pods", Level: service.HealthOK, Title: "备份正常"}}}}
+	for _, it := range a.attentionItems(a.agentRows(a.agents.value), time.Now()) {
+		if it.Key == "svc-cloud/alan" {
+			a.goHandle(it)
 		}
 	}
-	// The attention card's step opens the agent.
-	click(t, tt, "查看 阿蓝")
-	if a.router.Path() != "/agents/cloud/alan" {
-		t.Fatalf("next step went to %s", a.router.Path())
+	tt.Advance(time.Second)
+	if a.router.Path() != "/agents/cloud/alan" || a.agentTab != tabHealth {
+		t.Fatalf("went to %s tab %d", a.router.Path(), a.agentTab)
+	}
+	for _, want := range []string{"服务没有运行", "启动服务", "备份正常", "重新检查"} {
+		if !tt.HasText(want) {
+			t.Errorf("missing %q in %q", want, tt.Texts())
+		}
+	}
+}
+
+// The search filters by name, harness and server; the view choice is kept.
+func TestSearchAndViewChoice(t *testing.T) {
+	a, tt := world(t)
+	a.query = "hermes"
+	tt.Frame()
+	if !tt.HasText("阿蓝") || tt.HasText("小满") {
+		t.Fatalf("search: %q", tt.Texts())
+	}
+	a.query = "HOME"
+	tt.Frame()
+	if tt.HasText("阿蓝 的图标") || !tt.HasText("小满") {
+		t.Fatalf("search by server: %q", tt.Texts())
+	}
+	a.query = "nobody"
+	tt.Frame()
+	if !tt.HasText("没有找到“nobody”。可以按名字、harness 或服务器搜索。") {
+		t.Fatalf("no match: %q", tt.Texts())
+	}
+	a.query = ""
+	click(t, tt, "列表视图")
+	b := New(a.svc)
+	b.loadPrefs()
+	if a.prefs.View != "list" || b.prefs.View != "list" {
+		t.Fatalf("view not kept: %q %q", a.prefs.View, b.prefs.View)
+	}
+	if !tt.HasText("OpenClaw · home") {
+		t.Fatalf("list view: %q", tt.Texts())
 	}
 }
 
@@ -110,7 +184,7 @@ func TestStaleCopiesAndRetired(t *testing.T) {
 	}
 	a.timeline.value.Items = nil
 	tt.Frame()
-	if !tt.HasText("1 个 Agent，2 件事需要你处理") || !tt.HasText("小满（home）。服务器损坏时，只能找回这台电脑上已有的那份。打开 Valise 时会按设置把新备份补到本机仓库；外接盘要先接上。") {
+	if !tt.HasText("1 个 Agent，2 件事需要你处理") || !tt.HasText("小满（home）。服务器损坏时，只能找回这台电脑上已有的那份。") {
 		t.Fatalf("no local backup: %q", tt.Texts())
 	}
 }

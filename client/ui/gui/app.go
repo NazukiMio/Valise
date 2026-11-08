@@ -29,7 +29,7 @@ type App struct {
 	display  map[string]*profile.Display
 	hasRepos bool // a local repository is registered (docs/UI.md 7.2)
 
-	agentTab int    // 0 overview, 1 journey
+	agentTab int    // tabOverview, tabJourney, tabHealth
 	point    string // snapshot id open in the journey, "" for the list
 	folds    map[string]*bool
 
@@ -40,6 +40,18 @@ type App struct {
 	entries     map[string]*entryState // admin page tunnels by server/instance
 	entryOpener func(context.Context, string, string, service.OpenOptions) error
 	openURL     func(string) error
+	pickImage   func() (string, error) // the system's open dialog; "" when cancelled
+
+	prefs  prefs
+	images map[string]ui.ImageSource // chosen pictures by server/instance
+	logos  map[string]ui.ImageSource // official logos by profile id
+	query  string                    // the home page's search
+
+	focusSearch bool                    // ⌘F was pressed
+	iconErr     error                   // choosing an agent's picture failed
+	health      map[string]*healthState // by server/instance
+	syncs       map[string]*syncState   // by repo/server
+	asking      *passPrompt             // the admin passphrase being asked for
 }
 
 // load is one read and what came of it.
@@ -55,8 +67,14 @@ type load[T any] struct {
 func New(svc *service.Service) *App {
 	return &App{svc: svc, router: ui.NewRouter("/agents"), harness: map[string]string{}, display: map[string]*profile.Display{},
 		run: func(f func()) { go f() }, update: func(f func()) { f() },
-		entries: map[string]*entryState{}, entryOpener: svc.OpenEntry, openURL: service.OpenURL}
+		entries: map[string]*entryState{}, entryOpener: svc.OpenEntry, openURL: service.OpenURL,
+		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{},
+		health: map[string]*healthState{}, syncs: map[string]*syncState{},
+		prefs: prefs{View: "cards", Dismissed: map[string]string{}}}
 }
+
+// SetImagePicker gives the system's open dialog for an agent's picture.
+func (a *App) SetImagePicker(pick func() (string, error)) { a.pickImage = pick }
 
 // SetUpdate gives the window's Update (mygo.Window.Update).
 func (a *App) SetUpdate(update func(func())) { a.update = update }
@@ -65,6 +83,7 @@ func (a *App) SetUpdate(update func(func())) { a.update = update }
 // main before it (docs/UI.md 4: no side effects at start).
 func (a *App) Start() {
 	a.hasRepos = len(a.svc.Repos()) > 0
+	a.loadPrefs()
 	a.loadHarness()
 	a.refreshAgents()
 	a.refreshTimeline()
@@ -169,6 +188,11 @@ func (a *App) View(c *ui.Context) {
 					case r.Match("/servers"):
 						r.Title(text.navServers)
 						a.serversPage(c)
+					case r.Match("/servers/{name}"):
+						a.serverPage(c, r.Param("name"))
+					case r.Match("/locations"):
+						r.Title("备份位置")
+						a.locationsPage(c)
 					default:
 						ui.Text(c, text.notFound)
 					}
@@ -176,12 +200,13 @@ func (a *App) View(c *ui.Context) {
 			})
 		})
 	})
+	a.passDialog(c)
 }
 
 func (a *App) sidebar(c *ui.Context) {
 	page := a.router.Path()
 	// The sidebar marks the first-level entry the page belongs to.
-	for _, top := range []string{"/agents", "/servers"} {
+	for _, top := range []string{"/agents", "/servers", "/locations"} {
 		if page == top || len(page) > len(top) && page[:len(top)+1] == top+"/" {
 			page = top
 		}
@@ -189,18 +214,20 @@ func (a *App) sidebar(c *ui.Context) {
 	// The sidebar recedes so the page stays the brightest part (UI.md 7.1).
 	ui.Column(c).Width(212).Padding(22, 12).Gap(18).Background(palette.Side).TextColor(palette.SideText).
 		BorderWidth(0, 1, 0, 0).BorderColor(palette.CardBorder).Children(func() {
-		ui.Row(c).Padding(0, 8).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, icons.valise).FontSize(18)
-			ui.Text(c, "Valise").FontSize(18).Bold().TextColor(palette.Text).Font(displayFont)
+		ui.Row(c).Padding(0, 8, 8, 8).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, icons.valise).FontSize(26).TextColor(palette.Brand)
+			ui.Text(c, "Valise").FontSize(22).Bold().TextColor(palette.Text).Font(displayFont)
 		})
 		if ui.Sidebar(c, &page, func() {
 			ui.SidebarItem(c, "/agents", icons.agent, text.navAgents)
 			ui.SidebarItem(c, "/servers", icons.server, text.navServers)
+			ui.SidebarItem(c, "/locations", icons.folder, "备份位置")
 		}).Grow(1).Background(ui.RGBA(0, 0, 0, 0)).Changed() {
 			a.router.Push(page)
 			if page == "/servers" && !a.servers.started {
 				a.refreshServers()
 			}
 		}
+		muted(ui.Text(c, "带着你的 Agent 去旅行。")).FontSize(11).Padding(0, 8)
 	})
 }

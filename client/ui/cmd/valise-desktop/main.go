@@ -35,9 +35,21 @@ func main() {
 			log.Fatal(err)
 		}
 		app := gui.New(svc)
+		// The window has no terminal: OpenSSH must never prompt on one,
+		// and the admin passphrase is asked in the window (docs/UI.md 7.3).
+		svc.NoTerminalLogin = true
+		svc.AdminAuth.Passphrase = app.AdminPassphrase
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "Valise", Width: 1180, Height: 780, MinWidth: 860, MinHeight: 560,
 			Content: ui.View(app.View)})
 		app.SetUpdate(win.Update)
+		app.SetImagePicker(func() (string, error) {
+			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: win, Title: "为 Agent 选择图标",
+				Filters: []mygo.FileFilter{{Name: "图片", Extensions: []string{"png", "jpg", "jpeg", "webp", "svg"}}}})
+			if err != nil || len(paths) == 0 {
+				return "", err
+			}
+			return paths[0], nil
+		})
 		app.Start()
 	})
 	if err := mygo.App.Run(); err != nil {

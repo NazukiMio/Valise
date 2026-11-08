@@ -9,9 +9,16 @@ import (
 	"valise/core/journey"
 )
 
-// agentPage is one agent: overview and journey (docs/UI.md 9.5, 10.1).
-// Health and settings tabs come with their segments; until then they are
-// not drawn.
+// The agent page's tabs. Settings come with their segment; until then the
+// tab is not drawn.
+const (
+	tabOverview = iota
+	tabJourney
+	tabHealth
+)
+
+// agentPage is one agent: overview, journey and health (docs/UI.md 9.5,
+// 10.1, 7.3).
 func (a *App) agentPage(c *ui.Context, server, instance string) {
 	var row *agentRow
 	for _, r := range a.agentRows(a.agents.value) {
@@ -33,7 +40,10 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 	}
 	// Who it is, one sentence about it, and the page's one primary action.
 	ui.Row(c).Gap(18).AlignItems(ui.Center).Children(func() {
-		avatar(c, a.display[row.Profile], 76, true)
+		ui.Column(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			a.avatar(c, *row, 76)
+			a.iconChoice(c, row)
+		})
 		ui.Column(c).Grow(1).Gap(6).Children(func() {
 			ui.Text(c, row.Name).FontSize(32).Bold().Font(displayFont)
 			label := row.Server
@@ -51,12 +61,19 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 			a.entryButton(c, row)
 		}
 	})
+	if a.iconErr != nil {
+		errorBox(c, a.iconErr, a.fold("icon-err"))
+	}
 	a.entryReport(c, row)
-	if ui.Tabs(c, &a.agentTab, text.tabOverview, text.tabJourney).Changed() {
+	if ui.Tabs(c, &a.agentTab, text.tabOverview, text.tabJourney, "健康").Changed() {
 		a.point = ""
 	}
-	if a.agentTab == 1 {
+	switch a.agentTab {
+	case tabJourney:
 		a.journey(c, row, points)
+		return
+	case tabHealth:
+		a.healthTab(c, row)
 		return
 	}
 	a.overview(c, row, points)
@@ -83,7 +100,7 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 			if len(points) > 0 {
 				ui.Row(c).Children(func() {
 					if ui.Button(c, text.journeyAll).Clicked() {
-						a.agentTab = 1
+						a.agentTab = tabJourney
 					}
 				})
 			}

@@ -79,6 +79,16 @@ type Display struct {
 	// IconCompact is the optional small icon (docs/UI.md 8.1).
 	IconCompact string `yaml:"icon_compact" json:"icon_compact,omitempty"`
 	IconSource  string `yaml:"icon_source" json:"icon_source,omitempty"`
+	// Logo is the harness's official icon for the desktop (PROFILES.md):
+	// SVG text shipped in the signed pack, never fetched at run time.
+	Logo *Logo `yaml:"logo" json:"logo,omitempty"`
+}
+
+// Logo is an official SVG with where it came from and under what terms.
+type Logo struct {
+	SVG     string `yaml:"svg" json:"svg"`
+	Source  string `yaml:"source" json:"source"`
+	License string `yaml:"license" json:"license"`
 }
 
 // When is the activation condition of a child profile.
