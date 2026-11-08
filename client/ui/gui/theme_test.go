@@ -171,3 +171,21 @@ func TestDocumentedThemeExample(t *testing.T) {
 		t.Fatalf("example: notes %v", th.Notes)
 	}
 }
+
+// The example theme in examples/themes is one Valise accepts as it is.
+func TestExampleThemes(t *testing.T) {
+	dirs, _ := filepath.Glob(filepath.Join("..", "..", "..", "examples", "themes", "*"))
+	if len(dirs) == 0 {
+		t.Fatal("no example themes")
+	}
+	for _, dir := range dirs {
+		th, _, err := readTheme(dir)
+		if err != nil {
+			t.Errorf("%s: %v", dir, err)
+			continue
+		}
+		if len(th.Notes) != 0 {
+			t.Errorf("%s leaves out slots that must show: %v", dir, th.Notes)
+		}
+	}
+}

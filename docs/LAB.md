@@ -35,6 +35,7 @@ valise/
 ├── client/                   # 客户端核心 (module valise/client)
 ├── client/ui/                # 服务层 + CLI(valise) + TUI (module valise/ui)；N4 起加入 mygo 桌面 UI
 ├── agent-kit/skills/         # Agent 保护技能
+├── examples/themes/          # 桌面主题样例（UI.md 7.4.2；测试核对每个样例都能导入）
 ├── tools/standalone-restore/ # 不依赖 Valise 的恢复脚本（Python 3 标准库 + age + zstd）
 └── testbed/                  # module valise/testbed：fakessh、fakesshenv、selfcheck.sh、drill.sh
 ```

@@ -117,7 +117,7 @@
 
 颜色名：`paper` `card` `card_border` `text` `text_sub` `line` `board` `hover` `ok` `warn` `stop` `side` `side_text` `brand` `accent` `accent_hover` `accent_text` `surface` `surface_hover` `border` `focus` `gold` `gold_soft` `canvas` `strand` `spine` `node` `node_core` `alert_bg` `alert_border` `alert_text` `error_bg` `error_border` `trouble_bg` `trouble_border` `logo_bg` `shadow`。字体：`text` `display` `mono`。尺寸：`radius` `card_radius` `verdict` `title` `text`（0 表示沿用）。变体：`timeline` 为 `strands`、`gold` 或 `plain`。图片名 `backdrop` 铺满窗口背景，`brand` 替换品牌图标；其他名字供布局的 `image` 使用。
 
-示例（沉浸：窄栏导航，Agent 卡片放大占满一行）：
+完整可导入的样例在仓库 `examples/themes/`（“沉浸”：深色夜空背景图、窄栏导航、两列大卡片、金色发丝时间线），测试核对每个样例都能原样导入、不缺始终显示的插槽。下面是精简示例（沉浸：窄栏导航，Agent 卡片放大占满一行）：
 
 ```json
 {

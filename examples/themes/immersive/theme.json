@@ -1,0 +1,42 @@
+{
+  "format": "valise-theme/1",
+  "name": "沉浸",
+  "base": "classic-dark",
+  "colors": {
+    "paper": "#0e1419", "card": "#18212ae6", "card_border": "#ffffff14",
+    "text": "#eef1f2", "text_sub": "#8fa0ab", "line": "#2a3640", "board": "#121a20cc", "hover": "#1d2731",
+    "ok": "#7fc4a0", "warn": "#f0b35e", "stop": "#7c8a94",
+    "side": "#0a0f13cc", "side_text": "#8fa0ab", "brand": "#e2b866",
+    "accent": "#e2b866", "accent_hover": "#efc77c", "accent_text": "#10161b",
+    "surface": "#1b242c", "surface_hover": "#232e38", "border": "#2e3a45", "focus": "#e2b86666",
+    "gold": "#e2b866", "gold_soft": "#3a301f", "canvas": "#10171dcc",
+    "strand": "#d8b878", "spine": "#e8c98a", "node": "#10171d", "node_core": "#f0d39a",
+    "alert_bg": "#2a2216e6", "alert_border": "#f0b35e55", "alert_text": "#e9d3b0",
+    "error_bg": "#2a1d16", "error_border": "#f0905e66",
+    "trouble_bg": "#231c14e6", "trouble_border": "#f0b35e88",
+    "logo_bg": "#f4f1ec", "shadow": "#000000"
+  },
+  "sizes": {"radius": 10, "card_radius": 22, "verdict": 46, "title": 34},
+  "variants": {"timeline": "strands"},
+  "images": {"backdrop": "backdrop.svg"},
+  "layout": {
+    "shell": {"row": [
+      {"column": [
+        {"slot": "brand", "style": "icon"},
+        {"slot": "nav", "style": "rail", "grow": 1},
+        {"slot": "theme", "style": "icon"}
+      ], "width": 84, "padding": [26, 10], "gap": 22, "align": "center", "background": "side"},
+      {"slot": "page", "grow": 1, "padding": [44, 64], "max_width": 1160}
+    ], "align": "stretch"},
+    "home": {"column": [
+      {"slot": "header"},
+      {"slot": "verdict"},
+      {"slot": "reminders"},
+      {"slot": "known"},
+      {"slot": "toolbar"},
+      {"slot": "agents", "style": "large", "columns": 2, "gap": 22},
+      {"slot": "retired"},
+      {"slot": "note"}
+    ], "gap": 28}
+  }
+}
