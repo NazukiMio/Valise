@@ -184,8 +184,26 @@ func TestStaleCopiesAndRetired(t *testing.T) {
 	}
 	a.timeline.value.Items = nil
 	tt.Frame()
-	if !tt.HasText("1 个 Agent，2 件事需要你处理") || !tt.HasText("小满（home）。服务器损坏时，只能找回这台电脑上已有的那份。") {
-		t.Fatalf("no local backup: %q", tt.Texts())
+	// The server was not read about its vault: no cause, no card.
+	if !tt.HasText("1 个 Agent，1 件事需要你处理") {
+		t.Fatalf("judged without the server: %q", tt.Texts())
+	}
+	// The server has a newer backup: copy it here.
+	a.vaults = map[string]vaultRead{"home": {newest: map[string]time.Time{"xiaoman": time.Now().Add(-time.Hour)}}}
+	tt.Frame()
+	if !tt.HasText("1 个 Agent 有新备份还没复制到这台电脑") || tt.HasText("1 个 Agent 超过 7 天没有新备份") {
+		t.Fatalf("to copy: %q", tt.Texts())
+	}
+	// The server has none either: look at the scheduled backups.
+	a.vaults = map[string]vaultRead{"home": {newest: map[string]time.Time{}}}
+	tt.Frame()
+	if !tt.HasText("1 个 Agent 超过 7 天没有新备份") || tt.HasText("1 个 Agent 有新备份还没复制到这台电脑") {
+		t.Fatalf("none on the server: %q", tt.Texts())
+	}
+	for _, it := range a.attentionItems(a.agentRows(a.agents.value), time.Now()) {
+		if it.Key == "nobackup" && (it.Go != "/agents/home/xiaoman" || it.Tab != tabHealth) {
+			t.Fatalf("nobackup leads to %s tab %d", it.Go, it.Tab)
+		}
 	}
 }
 

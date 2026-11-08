@@ -62,6 +62,7 @@ type App struct {
 	// its backups under “debian”). Read with the agents; kept when a read
 	// fails.
 	vaultNames map[string]string
+	vaults     map[string]vaultRead // this read's vault states by connection
 }
 
 // load is one read and what came of it.
@@ -127,20 +128,30 @@ func (a *App) refreshAgents() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		res, err := a.svc.ListAgents(ctx, service.AgentListRequest{})
-		names := a.readVaultNames(ctx, res)
+		vaults := a.readVaults(ctx, res)
 		a.update(func() {
 			a.agents = load[service.AgentListResult]{started: true, value: res, err: err, at: time.Now()}
-			for conn, name := range names {
-				a.vaultNames[conn] = name
+			a.vaults = vaults
+			for conn, vr := range vaults {
+				if vr.name != "" {
+					a.vaultNames[conn] = vr.name
+				}
 			}
 		})
 	})
 }
 
-// readVaultNames asks each server read this time for its vault's name, in
-// parallel (daily access, read only).
-func (a *App) readVaultNames(ctx context.Context, res service.AgentListResult) map[string]string {
-	out := map[string]string{}
+// vaultRead is what one server's vault said this time: its folder name in
+// the repositories and each instance's newest backup there.
+type vaultRead struct {
+	name   string
+	newest map[string]time.Time // instance → newest backup on the server
+}
+
+// readVaults asks each server read this time about its vault, in parallel
+// (daily access, read only). A server that does not answer is left out.
+func (a *App) readVaults(ctx context.Context, res service.AgentListResult) map[string]vaultRead {
+	out := map[string]vaultRead{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for _, obs := range res.Observations {
@@ -150,11 +161,19 @@ func (a *App) readVaultNames(ctx context.Context, res service.AgentListResult) m
 		wg.Add(1)
 		go func(conn string) {
 			defer wg.Done()
-			if st, err := a.svc.VaultStatus(ctx, conn); err == nil && st.ServerName != "" {
-				mu.Lock()
-				out[conn] = st.ServerName
-				mu.Unlock()
+			st, err := a.svc.VaultStatus(ctx, conn)
+			if err != nil {
+				return
 			}
+			vr := vaultRead{name: st.ServerName, newest: map[string]time.Time{}}
+			for _, m := range st.Snapshots {
+				if m.CreatedAt.After(vr.newest[m.InstanceID]) {
+					vr.newest[m.InstanceID] = m.CreatedAt
+				}
+			}
+			mu.Lock()
+			out[conn] = vr
+			mu.Unlock()
 		}(obs.ConnectionID)
 	}
 	wg.Wait()
