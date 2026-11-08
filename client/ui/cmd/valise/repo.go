@@ -16,7 +16,7 @@ func (c *cli) repo(ctx context.Context, args []string) error {
 			return err
 		}
 		fmt.Fprintf(c.out, "已添加仓库 %s：%s\n", r.Name, r.Path)
-		fmt.Fprintln(c.out, "备份会在你同步、打开 Valise 或在界面里建立备份之后补到这里；Valise 不常驻，关着的时候不会更新。")
+		fmt.Fprintln(c.out, "备份会在你同步、打开 Valise 或在这台电脑上建立备份之后补到这里（可用 valise protection copies 按实例调整）；Valise 不常驻，关着的时候不会更新。")
 		return nil
 	case args[0] == "list" && len(args) == 1:
 		if len(c.svc.Repos()) == 0 {

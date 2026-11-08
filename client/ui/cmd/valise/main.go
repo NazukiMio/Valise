@@ -58,8 +58,9 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   version                                        显示版本
 
 备份与异地副本
-  seal <服务器> <实例> [--tier soul|soul-secrets|full|raw] [--reason 原因]
-                                                 建立一个备份（soul=轻装、soul-secrets=标准、full=完整、raw=原样）
+  seal <服务器> <实例> [--tier soul|soul-secrets|full|raw] [--reason 原因] [--no-copy]
+                                                 建立一个备份（soul=轻装、soul-secrets=标准、full=完整、raw=原样）；
+                                                 之后在前台补到本机仓库与这台电脑登录的云盘，--no-copy 跳过
   vault status <服务器> [--json]                   按周期列出备份与备份位置状态（不需要私钥）
   vault copies <服务器> <周期> [--packs] [--skip 位置,…] [--json]
                                                  核对一个周期在服务器、备份位置与本机仓库的副本（--packs 连数据包内容一起核对）
@@ -104,6 +105,8 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   health <服务器> <实例> [--json]                  健康：备份、恢复测试、服务、定时备份、审批（只读）
   protection resolve <服务器> <实例> --verify|--rollback
                                                  确认一次没完成的保护设置修改：核实后完成，或放弃并恢复旧设置（只在新设置写入前可放弃）
+  protection copies <服务器> <实例> [--repo 名 [--after-backup on|off] [--on-open on|off]]...
+                                                 显示或修改这台电脑何时把该实例的备份补到本机仓库
   health fix <服务器> <实例> <linger|clock> [--advanced] [--yes] [--json]
                                                  修复 linger 或服务器时钟：先列出要执行的命令与改动，再次同意后执行并复核
   proposals <服务器> <实例> [--accept id,…|all] [--accept-demotion id,…] [--reject id,…|all]
@@ -216,6 +219,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.prev(ctx, args[1:])
 	case args[0] == "protection" && len(args) > 1 && args[1] == "resolve":
 		return c.protectionResolve(ctx, args[2:])
+	case args[0] == "protection" && len(args) > 1 && args[1] == "copies":
+		return c.protectionCopies(ctx, args[2:])
 	case args[0] == "old" && len(args) > 1:
 		return c.old(ctx, args[1:])
 	case args[0] == "agent" && len(args) > 1 && args[1] == "name":

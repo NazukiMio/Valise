@@ -96,15 +96,30 @@ type RepoSyncResult struct {
 
 // RepoSync copies host's escape pods the repository lacks, then verifies
 // each period without a key.
-func (s *Service) RepoSync(ctx context.Context, host, name string) (res *RepoSyncResult, err error) {
+// A copy another Valise process is making to the same repository is waited
+// for.
+func (s *Service) RepoSync(ctx context.Context, host, name string) (*RepoSyncResult, error) {
+	return s.repoSync(ctx, host, name, true)
+}
+
+// repoSync without wait returns *LocationBusyError when the repository is
+// being copied to by another process (automatic copies skip it).
+func (s *Service) repoSync(ctx context.Context, host, name string, wait bool) (res *RepoSyncResult, err error) {
 	r, err := s.repo(name)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { s.recordRepo(name, host, res, err) }()
-	if _, err := os.Stat(r.Path); err != nil {
-		return nil, valise.New("repo_unavailable", "仓库 "+name+" 的文件夹现在不可用："+r.Path, "接上外接硬盘或检查路径后重试").WithDetail(err.Error())
+	if !s.repoAvailable(r.Path) {
+		err = valise.New("repo_unavailable", "仓库 "+name+" 的文件夹现在不可用："+r.Path, "接上外接硬盘或检查路径后重试")
+		s.recordRepo(name, host, nil, err)
+		return nil, err
 	}
+	unlock, err := s.lockLocation(ctx, "repo", name, host, wait)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	defer func() { s.recordRepo(name, host, res, err) }()
 	st, err := s.VaultStatus(ctx, host)
 	if err != nil {
 		return nil, err
@@ -138,6 +153,13 @@ func (s *Service) RepoSync(ctx context.Context, host, name string) (res *RepoSyn
 		return res, valise.New("repo_verify_failed", "仓库 "+name+" 里的副本没有通过校验", "检查硬盘后重新同步；有问题的文件不会被覆盖，需要时删掉那个周期的文件夹再同步")
 	}
 	return res, nil
+}
+
+// repoAvailable reports whether a repository's folder is there (an
+// external disk may be unplugged).
+func (s *Service) repoAvailable(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // writeTree writes <base>/TREE once.
@@ -177,6 +199,12 @@ func (s *Service) loadRepoStates() repoStates {
 }
 
 func (s *Service) recordRepo(repo, host string, res *RepoSyncResult, err error) {
+	// Other repositories' copies (in other processes) write the same file.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if unlock, lerr := s.lockLocation(ctx, "state", "repo-state", "all", true); lerr == nil {
+		defer unlock()
+	}
 	all := s.loadRepoStates()
 	if all[repo] == nil {
 		all[repo] = map[string]RepoState{}

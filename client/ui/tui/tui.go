@@ -266,8 +266,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd, _ := m.top().update(m, msg)
 			return m, tea.Batch(c, cmd)
 		}
-	case repoSynced:
-		m.handleRepoSynced(msg)
+	case autoCopied:
+		m.handleAutoCopied(msg)
 	case pushMsg:
 		return m, m.push(msg.s)
 	case refreshed:

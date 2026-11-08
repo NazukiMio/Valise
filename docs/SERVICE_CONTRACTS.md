@@ -73,7 +73,7 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 | `schedule` | `enabled`, `daily_at`, `timezone`, `catch_up` | 首版新向导用每天 HH:mm + IANA 时区；旧非每日设置保留 legacy 表达，转换须显示差异。返回最近/下次触发及 linger 等实际条件；错过记录与可选补跑见 4.4 |
 | `period` | `unit`, `timezone` | 复用现有 week/month/quarter 与周期边界规则；与 schedule 时区分开，修改只影响下一个叶子。旧 `.vault.json` 是兼容投影，不再作为第二个可独立覆盖的权威 |
 | `server_copies[]` | `target_ref`, `enabled`, `minimum_interval` | 引用现有目标，不含密码；直传/证书/中转条件分别报告，配置开启不等于实际可更新 |
-| `ClientProtectionBinding` | `client_id`, `agent_ref`, `revision`, `server_revision_seen`, `local_copies[]` | 本客户端私有；每项引用 repo_id 和是否随成功备份/客户端重新打开时补齐；路径仍取已有 repos 配置 |
+| `ClientProtectionBinding` | `client_id`, `agent_ref`, `revision`, `server_revision_seen`, `local_copies[]` | 本客户端私有；每项引用 repo_id 和是否随成功备份/客户端重新打开时补齐；路径仍取已有 repos 配置。执行规则与设置入口见 ARCHITECTURE.md 7.4（2026-11-08） |
 
 持久化到服务器 `protection/<instance_id>.json`（`valise-protection/1`）和客户端 `protection-bindings.json`（`valise-protection-bindings/1`）；均在现有 Valise 配置目录内，0600，原子替换，不放金库或活动 roots。
 

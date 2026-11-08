@@ -191,6 +191,12 @@ func TestCloudHereRelay(t *testing.T) {
 	if err != nil || len(cr.Checks) != 2 || cr.Checks[1].Where != "here" || cr.Checks[1].State != CopyComplete {
 		t.Fatalf("%+v %v", cr, err)
 	}
+	// The same cloud is filled by the automatic copy (docs/ARCHITECTURE.md
+	// 7.4), with the path it took.
+	ac, err := s.AutoCopy(ctx, "box", TriggerOpen, AutoCopyOptions{})
+	if err != nil || len(ac.Locations) != 1 || ac.Locations[0].Kind != "cloud" || ac.Locations[0].State != CopyCopied || ac.Locations[0].Path != PathTemp {
+		t.Fatalf("%+v %v", ac, err)
+	}
 	if err := s.CloudRemoveHere(ctx, "here"); err != nil || s.IsCloudHere("here") {
 		t.Fatal(err)
 	}

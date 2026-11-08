@@ -1,22 +1,24 @@
 package tui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
+
+	"valise/ui/service"
 )
 
-// Repositories are filled by the client (docs/ARCHITECTURE.md section 7):
-// when Valise opens (once per server and run) and after an escape pod is
-// built here, in the background.
+// Copies only this computer makes (local repositories, clouds logged in
+// here) run through the shared service (docs/ARCHITECTURE.md 7.4): once
+// per server and run when it first loads, and after a backup made here.
 
-type repoSynced struct {
+type autoCopied struct {
 	host string
-	text string
+	res  *service.AutoCopyResult
 	err  error
 }
 
-// repoAuto starts this run's background work for a freshly loaded
-// server (once per server and run): copying to the repositories, and
-// renewing station certificates while the Valise passphrase is unlocked.
+// repoAuto starts the open trigger for a freshly loaded server.
 func (m *Model) repoAuto(d *srvData) tea.Cmd {
 	if d.status == nil || d.status.ServerName == "" {
 		return nil
@@ -28,67 +30,33 @@ func (m *Model) repoAuto(d *srvData) tea.Cmd {
 		return nil
 	}
 	m.repoDone[d.host] = true
-	var cmds []tea.Cmd
-	if d.status.Exists && len(m.svc.Repos()) > 0 {
-		cmds = append(cmds, repoSyncAll(m, d.host))
-	}
-	if exp := m.svc.ExpiringCerts(d.host); len(exp) > 0 {
-		svc, ctx, host := m.svc, m.ctx, d.host
-		cmds = append(cmds, func() tea.Msg {
-			done, err := svc.RenewCerts(ctx, host)
-			switch {
-			case err != nil:
-				return repoSynced{host: host, err: err}
-			case len(done) > 0:
-				return repoSynced{host: host, text: host + " 到远程备份位置 " + joinNames(done) + " 的证书已续期"}
-			}
-			return repoSynced{host: host, text: host + " 到远程备份位置 " + joinNames(exp) + " 的证书快到期了：同步一次即可续期（自动同步才不会中断）"}
-		})
-	}
-	return tea.Batch(cmds...)
+	return autoCopy(m, d.host, service.TriggerOpen, "")
 }
 
-// repoSyncAll copies host's escape pods to every repository.
-func repoSyncAll(m *Model, host string) tea.Cmd {
-	if len(m.svc.Repos()) == 0 {
-		return nil
-	}
+// autoCopy runs one trigger in the background.
+func autoCopy(m *Model, host string, trigger service.CopyTrigger, instance string) tea.Cmd {
 	svc, ctx := m.svc, m.ctx
 	return func() tea.Msg {
-		var done []string
-		for _, r := range svc.Repos() {
-			res, err := svc.RepoSync(ctx, host, r.Name)
-			if err != nil {
-				return repoSynced{host: host, err: err}
-			}
-			if res.Downloaded > 0 {
-				done = append(done, r.Name)
-			}
-		}
-		if len(done) == 0 {
-			return repoSynced{host: host}
-		}
-		return repoSynced{host: host, text: host + " 的新备份已补到仓库 " + joinNames(done)}
+		res, err := svc.AutoCopy(ctx, host, trigger, service.AutoCopyOptions{Instance: instance})
+		return autoCopied{host: host, res: res, err: err}
 	}
 }
 
-func joinNames(names []string) string {
-	out := ""
-	for i, n := range names {
-		if i > 0 {
-			out += "、"
-		}
-		out += n
-	}
-	return out
+// hasLocalCopies reports whether anything is copied by this computer.
+func hasLocalCopies(m *Model) bool {
+	return len(m.svc.Repos()) > 0 || len(m.svc.Config.Clouds) > 0
 }
 
-// handleRepoSynced reports a background copy; quiet when nothing changed.
-func (m *Model) handleRepoSynced(msg repoSynced) {
+// handleAutoCopied reports a background copy; quiet when nothing changed.
+func (m *Model) handleAutoCopied(msg autoCopied) {
 	switch {
 	case msg.err != nil:
-		m.flash, m.flashErr = "补到仓库失败："+firstLine(errText(msg.err)), true
-	case msg.text != "":
-		m.flash, m.flashErr = msg.text, false
+		m.flash, m.flashErr = msg.host+" 自动补齐失败："+firstLine(errText(msg.err)), true
+	case msg.res != nil && msg.res.Changed():
+		failed := false
+		for _, o := range msg.res.Locations {
+			failed = failed || o.State == service.CopyFailed
+		}
+		m.flash, m.flashErr = msg.host+"："+strings.Join(service.AutoCopyLines(msg.res, false), "；"), failed || msg.res.CertError != ""
 	}
 }

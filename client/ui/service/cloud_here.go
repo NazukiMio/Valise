@@ -142,6 +142,17 @@ func (s *Service) CloudRemoveHere(ctx context.Context, name string) error {
 // server when it is logged in there, else (or when that fails to reach
 // the drive) relayed through this computer when logged in here.
 func (s *Service) SyncCloud(ctx context.Context, host, name string) (*StationSyncResult, error) {
+	return s.syncCloud(ctx, host, name, true)
+}
+
+// syncCloud without wait returns *LocationBusyError when another Valise
+// process is copying to the cloud (automatic copies skip it).
+func (s *Service) syncCloud(ctx context.Context, host, name string, wait bool) (*StationSyncResult, error) {
+	unlock, err := s.lockLocation(ctx, "cloud", name, host, wait)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	status, err := s.VaultStatus(ctx, host)
 	if err != nil {
 		return nil, err

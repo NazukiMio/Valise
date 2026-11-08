@@ -44,6 +44,7 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 	fs.StringVar(&p.Tier, "tier", vault.TierSoul, "")
 	fs.StringVar(&p.Reason, "reason", "", "")
 	asJSON := fs.Bool("json", false, "")
+	noCopy := fs.Bool("no-copy", false, "")
 	pos, err := parseArgs(fs, args, 2)
 	if err != nil {
 		return err
@@ -54,8 +55,15 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 		return err
 	}
 	if *asJSON {
-		return c.printJSON(rep)
+		// The report stays the only thing on stdout; the copy's lines go
+		// to stderr.
+		if err := c.printJSON(rep); err != nil {
+			return err
+		}
+		c.copyAfterBackup(ctx, c.errOut, pos[0], rep.InstanceID, *noCopy)
+		return nil
 	}
+	defer c.copyAfterBackup(ctx, c.out, pos[0], rep.InstanceID, *noCopy)
 	w := c.out
 	fmt.Fprintf(w, "已为 %s 上的 %s 建立备份（%s）\n备份：%s（epoch %d", pos[0], rep.InstanceID, tierLabel(rep.Tier), rep.SnapshotID, rep.Epoch)
 	if rep.NewEpoch {
