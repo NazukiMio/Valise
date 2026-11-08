@@ -16,7 +16,7 @@ import (
 // reduced motion the line is still and the details open at once.
 
 const (
-	curveHeight = 260
+	curveHeight = 300
 	curveBand   = 64 // room for the cards above and below the line
 	curvePoints = 6
 	glowDelay   = 300 * time.Millisecond
@@ -105,7 +105,7 @@ func (a *App) curveCard(c *ui.Context, pt journey.TimelinePoint) {
 	}
 	card.OnClick(func() { a.lightPoint(id) }).Children(func() {
 		ui.Text(c, when(pt.CreatedAt, c.Now())).FontSize(12).Bold().MaxLines(1)
-		muted(ui.Text(c, tierText(pt.Scope.Tier))).FontSize(11).MaxLines(1)
+		muted(ui.Text(c, tierShort(pt.Scope.Tier))).FontSize(11).MaxLines(1)
 	})
 }
 

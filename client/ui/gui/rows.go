@@ -21,7 +21,12 @@ type agentRow struct {
 	Entry                                    string // "" when the harness has no admin page
 	Note                                     string // migrated or superseded
 	Roots                                    []string
+	HasService                               bool
+	Profile                                  string // profile id, for its display
 }
+
+// Retired is an agent no longer in use here: migrated away or superseded.
+func (r agentRow) Retired() bool { return r.Note != "" }
 
 func (a *App) agentRows(res service.AgentListResult) []agentRow {
 	var rows []agentRow
@@ -37,6 +42,7 @@ func (a *App) agentRows(res service.AgentListResult) []agentRow {
 			r.Harness = in.ProfileID
 		}
 		r.Service, r.ServiceTone = serviceText(in.Service)
+		r.HasService, r.Profile = len(in.Service) > 0, in.ProfileID
 		if len(in.Entries) > 0 {
 			r.Entry = text.entryClosed
 			for _, e := range in.Entries {
@@ -118,6 +124,21 @@ func tierText(tier string) string {
 		return "完整备份"
 	case vault.TierRaw:
 		return "原样备份"
+	}
+	return tier
+}
+
+// tierShort is the scope in two characters, for small cards.
+func tierShort(tier string) string {
+	switch tier {
+	case vault.TierSoul:
+		return "轻装"
+	case vault.TierSoulSecrets:
+		return "标准"
+	case vault.TierFull:
+		return "完整"
+	case vault.TierRaw:
+		return "原样"
 	}
 	return tier
 }

@@ -43,50 +43,55 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		return
 	}
 	a.curveStrip(c, points)
-	ui.Text(c, fmt.Sprintf("全部 %d 个时刻", len(points))).Bold().FontSize(14)
-	// One column without gaps, so the line runs unbroken from node to node.
-	ui.Column(c).Gap(0).Children(func() {
-		month := ""
-		for i, p := range points {
-			m := fmt.Sprintf("%d 年 %d 月", p.CreatedAt.Local().Year(), p.CreatedAt.Local().Month())
-			if m != month {
-				month = m
-				ui.Row(c.Key("m"+m)).Padding(10, 0, 12, 0).Children(func() {
-					ui.Text(c, m).Bold()
-				})
-			}
-			a.pointLine(c.Key(p.SnapshotRef.SnapshotID), p, i == 0, i == len(points)-1)
+	// The full list stays below, folded by month; only the newest month is
+	// open (docs/UI.md 7.2).
+	muted(ui.Text(c, fmt.Sprintf("全部 %d 个时刻", len(points)))).FontSize(12).LetterSpacing(0.6).Margin(8, 0, 0, 0)
+	var months []string
+	byMonth := map[string][]journey.TimelinePoint{}
+	for _, p := range points {
+		m := fmt.Sprintf("%d 年 %d 月", p.CreatedAt.Local().Year(), p.CreatedAt.Local().Month())
+		if byMonth[m] == nil {
+			months = append(months, m)
 		}
-	})
+		byMonth[m] = append(byMonth[m], p)
+	}
+	for mi, m := range months {
+		open := a.foldDefault("month-"+row.Server+row.Instance+m, mi == 0)
+		ui.Collapsible(c.Key("m"+m), fmt.Sprintf("%s · %d 个", m, len(byMonth[m])), open, func() {
+			// One column without gaps, so the line runs unbroken.
+			ui.Column(c).Gap(0).Children(func() {
+				list := byMonth[m]
+				for i, p := range list {
+					a.pointLine(c.Key(p.SnapshotRef.SnapshotID), p, i == 0, i == len(list)-1)
+				}
+			})
+		})
+	}
 	muted(ui.Text(c, text.journeyLocalOnly))
 }
 
-// pointLine is a node on the line and its card.
+// pointLine is a node on the thin line and a one-line card.
 func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool) {
-	ui.Row(c).Gap(14).AlignItems(ui.Stretch).Children(func() {
-		ui.Column(c).Width(18).AlignItems(ui.Center).Children(func() {
-			lineColor := palette.Line
-			top := ui.Box(c).Width(1).Height(18).Background(lineColor)
+	ui.Row(c).Gap(12).AlignItems(ui.Stretch).Children(func() {
+		ui.Column(c).Width(16).AlignItems(ui.Center).Children(func() {
+			top := ui.Box(c).Width(1).Height(13).Background(palette.Line)
 			if first {
 				top.Background(ui.RGBA(0, 0, 0, 0))
 			}
-			ui.Box(c).Size(11, 11).Radius(6).Background(ui.Hex("#ffffff")).Border(2, palette.Gold).
-				Shadow(0, 0, 8, 1, palette.GoldSoft)
-			bottom := ui.Box(c).Width(1).Grow(1).Background(lineColor)
+			ui.Box(c).Size(8, 8).Radius(4).Background(ui.Hex("#ffffff")).Border(1.5, palette.Gold)
+			bottom := ui.Box(c).Width(1).Grow(1).Background(palette.Line)
 			if last {
 				bottom.Background(ui.RGBA(0, 0, 0, 0))
 			}
 		})
-		box := card(ui.Column(c)).Grow(1).Padding(12, 16).Gap(3).Margin(0, 0, 12, 0).Cursor(ui.CursorPointer).
-			Label(when(p.CreatedAt, c.Now()))
+		box := ui.Row(c).Grow(1).Padding(7, 12).Gap(12).Radius(8).Margin(0, 0, 4, 0).AlignItems(ui.Center).
+			Cursor(ui.CursorPointer).Label(when(p.CreatedAt, c.Now()))
 		if box.Hovered() {
-			box.Border(1, palette.Gold)
+			box.Background(palette.Card).Border(1, palette.CardBorder)
 		}
 		box.OnClick(func() { a.point = p.SnapshotRef.SnapshotID }).Children(func() {
-			ui.Row(c).Gap(10).AlignItems(ui.End).Children(func() {
-				ui.Text(c, when(p.CreatedAt, c.Now())).Bold().FontSize(14)
-				muted(ui.Text(c, tierText(p.Scope.Tier)))
-			})
+			ui.Text(c, when(p.CreatedAt, c.Now())).FontSize(13).Bold().Width(120)
+			muted(ui.Text(c, tierText(p.Scope.Tier))).Grow(1)
 			muted(ui.Text(c, fmt.Sprintf(text.pointFiles, p.FileCount, size(p.PlainBytes))))
 		})
 	})

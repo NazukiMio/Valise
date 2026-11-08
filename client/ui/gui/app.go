@@ -9,6 +9,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"valise/core/profile"
 	"valise/ui/service"
 )
 
@@ -25,6 +26,8 @@ type App struct {
 	timeline load[service.JourneyPage]
 	servers  load[[]serverRow]
 	harness  map[string]string // profile id → display name
+	display  map[string]*profile.Display
+	hasRepos bool // a local repository is registered (docs/UI.md 7.2)
 
 	agentTab int    // 0 overview, 1 journey
 	point    string // snapshot id open in the journey, "" for the list
@@ -33,6 +36,10 @@ type App struct {
 	glow        string    // point lit on the journey's line, opening next
 	glowAt      time.Time // when its glow started
 	journeyView int       // 0 points, 1 route
+
+	entries     map[string]*entryState // admin page tunnels by server/instance
+	entryOpener func(context.Context, string, string, service.OpenOptions) error
+	openURL     func(string) error
 }
 
 // load is one read and what came of it.
@@ -46,8 +53,9 @@ type load[T any] struct {
 
 // New makes the state; nothing is read until Start.
 func New(svc *service.Service) *App {
-	return &App{svc: svc, router: ui.NewRouter("/agents"), harness: map[string]string{},
-		run: func(f func()) { go f() }, update: func(f func()) { f() }}
+	return &App{svc: svc, router: ui.NewRouter("/agents"), harness: map[string]string{}, display: map[string]*profile.Display{},
+		run: func(f func()) { go f() }, update: func(f func()) { f() },
+		entries: map[string]*entryState{}, entryOpener: svc.OpenEntry, openURL: service.OpenURL}
 }
 
 // SetUpdate gives the window's Update (mygo.Window.Update).
@@ -56,6 +64,7 @@ func (a *App) SetUpdate(update func(func())) { a.update = update }
 // Start begins the first reads. Called after the app is ready, never from
 // main before it (docs/UI.md 4: no side effects at start).
 func (a *App) Start() {
+	a.hasRepos = len(a.svc.Repos()) > 0
 	a.loadHarness()
 	a.refreshAgents()
 	a.refreshTimeline()
@@ -68,6 +77,10 @@ func (a *App) loadHarness() {
 	}
 	for _, p := range set.Effective() {
 		a.harness[p.ID] = p.DisplayName
+		if p.Display != nil {
+			d := *p.Display
+			a.display[p.ID] = &d
+		}
 	}
 }
 

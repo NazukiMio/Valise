@@ -1,7 +1,9 @@
 package gui
 
 import (
+	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,18 +66,80 @@ func click(t *testing.T, tt *ui.Tester, label string) {
 	tt.Advance(time.Second)
 }
 
-func TestHomeKeepsStatesApart(t *testing.T) {
-	_, tt := world(t)
-	// Each fact sits in its own cell of the status board.
-	for _, want := range []string{"小满", "阿蓝", "OpenClaw · home", "服务", "运行中", "管理页端口", "没有监听", "已停止", "nas 这次没有读到：连不上", "本机还没有", "本机副本", "usb"} {
+// The home page answers first: a verdict, then only the things that need
+// attention with their next step; agents that are fine get one quiet line
+// (docs/UI.md 7.2).
+func TestHomePutsAttentionFirst(t *testing.T) {
+	a, tt := world(t)
+	for _, want := range []string{"2 个 Agent，2 件事需要你处理", "nas 这次没有读到", "连不上", "阿蓝 服务已停止", "查看 阿蓝",
+		"运行中 · 今天 09:00 备份到本机", "在用的 Agent · 2"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}
 	}
-	// The sidebar shows only what exists.
+	// A fine agent's facts are not laid out as a board on the home page.
+	if tt.HasText("管理页端口") {
+		t.Errorf("status board on the home page: %q", tt.Texts())
+	}
 	for _, absent := range []string{"工具箱", "备份位置"} {
 		if tt.HasText(absent) {
 			t.Errorf("unimplemented entry %q drawn", absent)
+		}
+	}
+	// The attention card's step opens the agent.
+	click(t, tt, "查看 阿蓝")
+	if a.router.Path() != "/agents/cloud/alan" {
+		t.Fatalf("next step went to %s", a.router.Path())
+	}
+}
+
+// Local copies count only when a repository is registered; stale ones are
+// one card, not one per agent. Retired agents are folded away and never
+// count.
+func TestStaleCopiesAndRetired(t *testing.T) {
+	a, tt := world(t)
+	a.hasRepos = true
+	a.agents.value.Items[1].MigratedTo = &service.AgentMigration{ConnectionID: "home"}
+	tt.Frame()
+	// 小满 was backed up today: nothing stale yet.
+	if !tt.HasText("1 个 Agent，1 件事需要你处理") || tt.HasText("1 个 Agent 超过 7 天没有新备份到这台电脑") {
+		t.Fatalf("%q", tt.Texts())
+	}
+	if tt.HasText("阿蓝 服务已停止") || !tt.HasText("不再使用 · 1（已迁出或已被替换）") {
+		t.Fatalf("retired agent counted: %q", tt.Texts())
+	}
+	a.timeline.value.Items = nil
+	tt.Frame()
+	if !tt.HasText("1 个 Agent，2 件事需要你处理") || !tt.HasText("小满（home）。服务器损坏时，只能找回这台电脑上已有的那份。打开 Valise 时会按设置把新备份补到本机仓库；外接盘要先接上。") {
+		t.Fatalf("no local backup: %q", tt.Texts())
+	}
+}
+
+// The agent page's one primary action opens the admin page through a
+// tunnel; each step is reported apart and the token never shows.
+func TestOpenEntrySteps(t *testing.T) {
+	a, tt := world(t)
+	var opened string
+	a.openURL = func(u string) error { opened = u; return nil }
+	a.entryOpener = func(ctx context.Context, server, instance string, o service.OpenOptions) error {
+		o.Status(service.EntryStatus{Step: service.EntryTunnel, OK: true, Detail: "本机 → 服务器"})
+		o.Status(service.EntryStatus{Step: service.EntryRemote, OK: false, Detail: "服务器上没有程序监听端口 18789"})
+		o.Status(service.EntryStatus{Step: service.EntryAuth, OK: true, Detail: "secret-token"})
+		o.Ready("http://127.0.0.1:18789/#token=secret-token", "http://127.0.0.1:18789/")
+		return nil
+	}
+	a.run = func(f func()) { f() }
+	click(t, tt, "小满")
+	click(t, tt, "打开管理页")
+	if opened != "http://127.0.0.1:18789/#token=secret-token" {
+		t.Fatalf("browser got %q", opened)
+	}
+	if !tt.HasText("隧道已建立") || !tt.HasText("服务器端口在监听") || !tt.HasText("服务器上没有程序监听端口 18789") {
+		t.Fatalf("%q", tt.Texts())
+	}
+	for _, x := range tt.Texts() {
+		if strings.Contains(x, "secret-token") {
+			t.Fatalf("token shown: %q", x)
 		}
 	}
 }
