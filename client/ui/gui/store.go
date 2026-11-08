@@ -17,7 +17,8 @@ import (
 // leaves this computer.
 
 type prefs struct {
-	View string `json:"view"` // "cards" (default) or "list"
+	View  string `json:"view"`  // "cards" (default) or "list"
+	Theme string `json:"theme"` // ThemeSystem (default), a built-in or an imported id
 	// Dismissed maps a reminder's key to the state it was acknowledged in;
 	// a different state shows the reminder again.
 	Dismissed map[string]string `json:"dismissed"`

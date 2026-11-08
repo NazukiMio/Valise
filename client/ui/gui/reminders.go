@@ -11,12 +11,12 @@ import (
 // the situation changes. The first card's step is the page's one primary
 // button.
 func (a *App) attentionCard(c *ui.Context, it attention, first bool) {
-	ui.Row(c).Padding(16, 18).Gap(14).Radius(14).Background(ui.Hex("#fbf3e6")).Border(1, ui.RGBA(214, 178, 128, 0.45)).
+	ui.Row(c).Padding(16, 18).Gap(14).Radius(14).Background(palette.AlertBg).Border(1, palette.AlertBorder).
 		AlignItems(ui.Center).Children(func() {
-		ui.Box(c).Size(10, 10).Radius(5).Background(palette.Warn).Shadow(0, 0, 8, 1, ui.RGBA(160, 106, 44, 0.35))
+		ui.Box(c).Size(10, 10).Radius(5).Background(palette.Warn).Shadow(0, 0, 8, 1, palette.Warn.Alpha(0.35))
 		ui.Column(c).Grow(1).Gap(4).Children(func() {
 			ui.Text(c, it.Title).FontSize(15).Bold().Wrap()
-			ui.Text(c, it.Reason).FontSize(13).TextColor(ui.Hex("#6b5a44")).Wrap()
+			ui.Text(c, it.Reason).FontSize(13).TextColor(palette.AlertText).Wrap()
 		})
 		ui.Row(c).Gap(8).Children(func() {
 			ui.Button(c, "知道了").OnClick(func() { a.dismiss(it) })

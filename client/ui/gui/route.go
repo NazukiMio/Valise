@@ -90,7 +90,7 @@ func route(items []service.AgentSummary, server, instance string) []station {
 // An unknown stop is drawn hollow and dashed, never as a guessed server.
 func routeView(c *ui.Context, stops []station) {
 	n := len(stops)
-	box := ui.Box(c).Height(190).Radius(16).Background(ui.Hex("#fbf9f4")).Border(1, palette.CardBorder).Clip()
+	box := ui.Box(c).Height(190).Radius(16).Background(palette.Canvas).Border(1, palette.CardBorder).Clip()
 	box.Draw(func(p *ui.Painter, r ui.Rect) {
 		y := func(i int) float32 { return r.Y + r.H*0.42 + float32(i%2)*18 - 9 }
 		x := func(i int) float32 { return r.X + r.W*(float32(i)+0.5)/float32(n) }
@@ -106,14 +106,14 @@ func routeView(c *ui.Context, stops []station) {
 			switch {
 			case st.Current:
 				for j, rad := range []float32{22, 15} {
-					p.FillPath((&ui.Path{}).Circle(x(i), y(i), rad), ui.RGBA(212, 192, 163, 0.22*float32(j+1)))
+					p.FillPath((&ui.Path{}).Circle(x(i), y(i), rad), palette.Gold.Alpha(0.22*float32(j+1)))
 				}
-				p.FillPath(dot, ui.Hex("#8c7e6c"))
+				p.FillPath(dot, palette.NodeCore)
 			case st.Unknown:
-				p.FillPath(dot, ui.Hex("#fbf9f4"))
+				p.FillPath(dot, palette.Canvas)
 				p.StrokePath(dot.Dash(0, 2, 2), 1.4, palette.TextSub)
 			default:
-				p.FillPath(dot, ui.Hex("#ffffff"))
+				p.FillPath(dot, palette.Node)
 				p.StrokePath(dot, 1.6, palette.Gold)
 			}
 		}

@@ -21,15 +21,15 @@ func errorBox(c *ui.Context, err error, open *bool) {
 			detail = ue.Code + "\n" + detail
 		}
 	}
-	ui.Column(c).Padding(14, 16).Gap(6).Radius(10).Background(ui.Hex("#fbf4e8")).
-		Border(1, ui.RGBA(220, 190, 150, 0.6)).Children(func() {
+	ui.Column(c).Padding(14, 16).Gap(6).Radius(10).Background(palette.ErrorBg).
+		Border(1, palette.ErrorBorder).Children(func() {
 		ui.Text(c, reason).Bold().TextColor(palette.Warn)
 		if suggestion != "" {
 			ui.Text(c, suggestion).TextColor(palette.Text)
 		}
 		if detail != "" {
 			ui.Collapsible(c, text.techInfo, open, func() {
-				muted(ui.Text(c, detail)).Font("monospace")
+				muted(ui.Text(c, detail)).Font(cur.Fonts.Mono)
 			})
 		}
 	})

@@ -52,6 +52,10 @@ type App struct {
 	health      map[string]*healthState // by server/instance
 	syncs       map[string]*syncState   // by repo/server
 	asking      *passPrompt             // the admin passphrase being asked for
+
+	pickFolder func() (string, error) // the system's folder dialog; "" when cancelled
+	themes     map[string]themeEntry  // imported themes by id, read at start and after an import
+	themeErr   error                  // the chosen theme could not be used, or an import failed
 }
 
 // load is one read and what came of it.
@@ -76,6 +80,9 @@ func New(svc *service.Service) *App {
 // SetImagePicker gives the system's open dialog for an agent's picture.
 func (a *App) SetImagePicker(pick func() (string, error)) { a.pickImage = pick }
 
+// SetFolderPicker gives the system's folder dialog, for importing themes.
+func (a *App) SetFolderPicker(pick func() (string, error)) { a.pickFolder = pick }
+
 // SetUpdate gives the window's Update (mygo.Window.Update).
 func (a *App) SetUpdate(update func(func())) { a.update = update }
 
@@ -84,6 +91,7 @@ func (a *App) SetUpdate(update func(func())) { a.update = update }
 func (a *App) Start() {
 	a.hasRepos = len(a.svc.Repos()) > 0
 	a.loadPrefs()
+	a.loadThemes()
 	a.loadHarness()
 	a.refreshAgents()
 	a.refreshTimeline()
@@ -167,67 +175,5 @@ func (a *App) refreshServers() {
 		a.update(func() {
 			a.servers = load[[]serverRow]{started: true, value: rows, err: err, at: time.Now()}
 		})
-	})
-}
-
-// View builds the window.
-func (a *App) View(c *ui.Context) {
-	c.SetTheme(theme(c.Theme()))
-	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(palette.Paper).Children(func() {
-		a.sidebar(c)
-		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).Padding(36, 44).Gap(20).MaxWidth(980).Children(func() {
-				a.router.View(c, func(r *ui.Route) {
-					r.Page().Gap(20)
-					switch {
-					case r.Match("/agents"):
-						r.Title(text.navAgents)
-						a.homePage(c)
-					case r.Match("/agents/{server}/{instance}"):
-						a.agentPage(c, r.Param("server"), r.Param("instance"))
-					case r.Match("/servers"):
-						r.Title(text.navServers)
-						a.serversPage(c)
-					case r.Match("/servers/{name}"):
-						a.serverPage(c, r.Param("name"))
-					case r.Match("/locations"):
-						r.Title("备份位置")
-						a.locationsPage(c)
-					default:
-						ui.Text(c, text.notFound)
-					}
-				})
-			})
-		})
-	})
-	a.passDialog(c)
-}
-
-func (a *App) sidebar(c *ui.Context) {
-	page := a.router.Path()
-	// The sidebar marks the first-level entry the page belongs to.
-	for _, top := range []string{"/agents", "/servers", "/locations"} {
-		if page == top || len(page) > len(top) && page[:len(top)+1] == top+"/" {
-			page = top
-		}
-	}
-	// The sidebar recedes so the page stays the brightest part (UI.md 7.1).
-	ui.Column(c).Width(212).Padding(22, 12).Gap(18).Background(palette.Side).TextColor(palette.SideText).
-		BorderWidth(0, 1, 0, 0).BorderColor(palette.CardBorder).Children(func() {
-		ui.Row(c).Padding(0, 8, 8, 8).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, icons.valise).FontSize(26).TextColor(palette.Brand)
-			ui.Text(c, "Valise").FontSize(22).Bold().TextColor(palette.Text).Font(displayFont)
-		})
-		if ui.Sidebar(c, &page, func() {
-			ui.SidebarItem(c, "/agents", icons.agent, text.navAgents)
-			ui.SidebarItem(c, "/servers", icons.server, text.navServers)
-			ui.SidebarItem(c, "/locations", icons.folder, "备份位置")
-		}).Grow(1).Background(ui.RGBA(0, 0, 0, 0)).Changed() {
-			a.router.Push(page)
-			if page == "/servers" && !a.servers.started {
-				a.refreshServers()
-			}
-		}
-		muted(ui.Text(c, "带着你的 Agent 去旅行。")).FontSize(11).Padding(0, 8)
 	})
 }

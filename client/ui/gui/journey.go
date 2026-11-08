@@ -78,7 +78,7 @@ func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool
 			if first {
 				top.Background(ui.RGBA(0, 0, 0, 0))
 			}
-			ui.Box(c).Size(8, 8).Radius(4).Background(ui.Hex("#ffffff")).Border(1.5, palette.Gold)
+			ui.Box(c).Size(8, 8).Radius(4).Background(palette.Node).Border(1.5, palette.Gold)
 			bottom := ui.Box(c).Width(1).Grow(1).Background(palette.Line)
 			if last {
 				bottom.Background(ui.RGBA(0, 0, 0, 0))
@@ -138,6 +138,6 @@ func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int) 
 		})
 	}
 	ui.Collapsible(c, text.techInfo, a.fold("point-tech"), func() {
-		muted(ui.Text(c, "备份 "+p.SnapshotRef.SnapshotID+"\n金库 "+p.SnapshotRef.VaultID)).Font("monospace")
+		muted(ui.Text(c, "备份 "+p.SnapshotRef.SnapshotID+"\n金库 "+p.SnapshotRef.VaultID)).Font(cur.Fonts.Mono)
 	})
 }

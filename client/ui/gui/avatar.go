@@ -12,7 +12,7 @@ import (
 // art is for the TUI only.
 func (a *App) avatar(c *ui.Context, r agentRow, side float32) {
 	d := a.display[r.Profile]
-	ink := ui.Hex("#8c7e6c")
+	ink := palette.NodeCore
 	if d != nil && d.Color != "" {
 		ink = ui.Hex(d.Color)
 	}
@@ -24,7 +24,7 @@ func (a *App) avatar(c *ui.Context, r agentRow, side float32) {
 		return
 	}
 	if logo := a.logo(r.Profile, d); logo != nil {
-		box.Background(ui.Hex("#ffffff")).Border(1, palette.CardBorder).Center().Children(func() {
+		box.Background(palette.LogoBg).Border(1, palette.CardBorder).Center().Children(func() {
 			ui.Image(c, logo).Size(side*0.66, side*0.66)
 		})
 		return

@@ -35,37 +35,54 @@ func (a *App) foldDefault(key string, open bool) *bool {
 // pageHead is a page's title and its one-line flourish.
 func pageHead(c *ui.Context, title, sub string) {
 	ui.Column(c).Gap(6).Children(func() {
-		ui.Text(c, title).FontSize(30).Bold().Font(displayFont)
+		ui.Text(c, title).FontSize(cur.Sizes.Title).Bold().Font(cur.Fonts.Display)
 		if sub != "" {
 			muted(ui.Text(c, sub)).FontSize(13)
 		}
 	})
 }
 
+// homeData is what the home page's slots show.
+type homeData struct {
+	open, known    []attention
+	inUse, retired []agentRow
+	loading        bool
+}
+
 // homePage answers “is there anything for me to do?” first (docs/UI.md
-// 7.2, 7.3): a verdict, the reminders still open with their two buttons,
-// then the agents as cards (or a list) under a search, and the retired ones
-// folded away.
+// 7.2, 7.3); the theme's layout says where each part goes (7.4).
 func (a *App) homePage(c *ui.Context) {
 	rows := a.agentRows(a.agents.value)
-	now := c.Now()
-	var open, known []attention
-	for _, it := range a.attentionItems(rows, now) {
+	d := &homeData{loading: a.agents.busy && len(rows) == 0}
+	for _, it := range a.attentionItems(rows, c.Now()) {
 		if st, ok := a.prefs.Dismissed[it.Key]; ok && st == it.State {
-			known = append(known, it)
+			d.known = append(d.known, it)
 		} else {
-			open = append(open, it)
+			d.open = append(d.open, it)
 		}
 	}
-	var inUse, retired []agentRow
 	for _, r := range rows {
 		if r.Retired() {
-			retired = append(retired, r)
+			d.retired = append(d.retired, r)
 		} else {
-			inUse = append(inUse, r)
+			d.inUse = append(d.inUse, r)
 		}
 	}
-	ui.Row(c).AlignItems(ui.Center).Children(func() {
+	page := *cur.Home
+	render(c, &page, map[string]func(*ui.Context, *Node){
+		"header":    a.headerSlot,
+		"verdict":   func(c *ui.Context, n *Node) { a.verdictSlot(c, n, d) },
+		"reminders": func(c *ui.Context, n *Node) { a.remindersSlot(c, n, d) },
+		"known":     func(c *ui.Context, n *Node) { a.knownSlot(c, n, d) },
+		"toolbar":   func(c *ui.Context, n *Node) { a.toolbarSlot(c, n, d) },
+		"agents":    func(c *ui.Context, n *Node) { a.agentsSlot(c, n, d) },
+		"retired":   func(c *ui.Context, n *Node) { a.retiredSlot(c, n, d) },
+		"note":      func(c *ui.Context, n *Node) { muted(n.box(ui.Text(c, text.localNote))).FontSize(11) },
+	})
+}
+
+func (a *App) headerSlot(c *ui.Context, n *Node) {
+	n.box(ui.Row(c).AlignItems(ui.Center)).Children(func() {
 		muted(ui.Text(c, text.homeTitle)).FontSize(13).Grow(1)
 		if a.agents.busy {
 			ui.Spinner(c)
@@ -73,46 +90,69 @@ func (a *App) homePage(c *ui.Context) {
 			ui.Button(c, text.refresh).OnClick(func() { a.refreshAgents(); a.refreshTimeline() })
 		}
 	})
-	if a.agents.busy && len(rows) == 0 {
-		ui.Text(c, text.homeLoading).FontSize(26).Font(displayFont).TextColor(palette.TextSub)
-		return
-	}
-	ui.Column(c).Gap(6).Children(func() {
-		ui.Text(c, verdict(len(inUse), len(open))).FontSize(36).Bold().Font(displayFont).Wrap()
-		if len(known) > 0 {
+}
+
+func (a *App) verdictSlot(c *ui.Context, n *Node, d *homeData) {
+	n.box(ui.Column(c).Gap(6)).Children(func() {
+		if d.loading {
+			ui.Text(c, text.homeLoading).FontSize(26).Font(cur.Fonts.Display).TextColor(palette.TextSub)
+			return
+		}
+		ui.Text(c, verdict(len(d.inUse), len(d.open))).FontSize(cur.Sizes.Verdict).Bold().Font(cur.Fonts.Display).Wrap()
+		if len(d.known) > 0 {
 			shown := a.fold("known")
-			label := fmt.Sprintf("另有 %d 件已知道 ›", len(known))
+			label := fmt.Sprintf("另有 %d 件已知道 ›", len(d.known))
 			if *shown {
-				label = fmt.Sprintf("收起已知道的 %d 件", len(known))
+				label = fmt.Sprintf("收起已知道的 %d 件", len(d.known))
 			}
 			textLink(c, label, func() { *shown = !*shown })
 		}
+		if a.agents.err != nil {
+			errorBox(c, a.agents.err, a.fold("home-err"))
+		}
 	})
-	if a.agents.err != nil {
-		errorBox(c, a.agents.err, a.fold("home-err"))
+}
+
+func (a *App) remindersSlot(c *ui.Context, n *Node, d *homeData) {
+	if len(d.open) == 0 {
+		return
 	}
-	if len(open) > 0 {
-		ui.Column(c).Gap(10).Children(func() {
-			for i, it := range open {
-				a.attentionCard(c.Key(it.Key), it, i == 0)
-			}
-		})
+	n.box(ui.Column(c).Gap(10)).Children(func() {
+		for i, it := range d.open {
+			a.attentionCard(c.Key(it.Key), it, i == 0)
+		}
+	})
+}
+
+func (a *App) knownSlot(c *ui.Context, n *Node, d *homeData) {
+	if len(d.known) == 0 || !*a.fold("known") {
+		return
 	}
-	if len(known) > 0 && *a.fold("known") {
-		ui.Column(c).Gap(8).Children(func() {
-			for _, it := range known {
-				a.knownCard(c.Key("k"+it.Key), it)
-			}
-		})
+	n.box(ui.Column(c).Gap(8)).Children(func() {
+		for _, it := range d.known {
+			a.knownCard(c.Key("k"+it.Key), it)
+		}
+	})
+}
+
+func (a *App) toolbarSlot(c *ui.Context, n *Node, d *homeData) {
+	if d.loading || len(d.inUse) == 0 {
+		return
 	}
-	if len(inUse) == 0 {
+	a.agentToolbar(c, n, len(d.inUse))
+}
+
+func (a *App) agentsSlot(c *ui.Context, n *Node, d *homeData) {
+	if d.loading {
+		return
+	}
+	if len(d.inUse) == 0 {
 		if a.agents.err == nil {
 			muted(ui.Text(c, text.homeEmpty)).FontSize(14)
 		}
 		return
 	}
-	a.agentToolbar(c, len(inUse))
-	shown := filterAgents(inUse, a.query)
+	shown := filterAgents(d.inUse, a.query)
 	sortTrouble(shown)
 	switch {
 	case len(shown) == 0:
@@ -120,14 +160,16 @@ func (a *App) homePage(c *ui.Context) {
 	case a.prefs.View == "list":
 		a.agentList(c, "l", shown)
 	default:
-		a.agentGrid(c, "g", shown)
+		a.agentGrid(c, n, shown)
 	}
-	if retired = filterAgents(retired, a.query); len(retired) > 0 {
+}
+
+func (a *App) retiredSlot(c *ui.Context, n *Node, d *homeData) {
+	if retired := filterAgents(d.retired, a.query); len(retired) > 0 {
 		ui.Collapsible(c, fmt.Sprintf("不再使用 · %d（已迁出或已被替换）", len(retired)), a.fold("retired"), func() {
 			a.agentList(c, "r", retired)
 		})
 	}
-	muted(ui.Text(c, text.localNote)).FontSize(11)
 }
 
 func sortTrouble(rows []agentRow) {

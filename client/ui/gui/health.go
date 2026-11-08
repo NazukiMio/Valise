@@ -182,7 +182,7 @@ func (a *App) fixReport(c *ui.Context, row *agentRow, st *healthState) {
 				ui.Text(c, f.action.Explain).FontSize(13).Wrap()
 				ui.Column(c).Gap(4).Padding(10, 12).Radius(8).Background(palette.Board).Children(func() {
 					muted(ui.Text(c, "在 "+row.Server+" 上执行的命令（来自 harness 资料）"))
-					ui.Text(c, strings.Join(f.action.Argv, " ")).FontSize(12).Font("monospace").Wrap()
+					ui.Text(c, strings.Join(f.action.Argv, " ")).FontSize(12).Font(cur.Fonts.Mono).Wrap()
 				})
 				muted(ui.Text(c, "需要管理登录：有管理钥匙时会请你输入管理口令。")).FontSize(12).Wrap()
 				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
@@ -237,7 +237,7 @@ func (a *App) fixError(c *ui.Context, row *agentRow, f *fixState) {
 	if ue, ok := valise.As(f.err); ok && ue.Code == "admin_needs_password" {
 		ui.Text(c, "桌面版暂时不能代为输入服务器密码").Bold().TextColor(palette.Warn)
 		ui.Text(c, "这台服务器没有管理钥匙，管理登录要用服务器密码，而 OpenSSH 的密码提示还不能转交到这个窗口。请在终端里执行同一步：").FontSize(13).Wrap()
-		ui.Text(c, "valise action "+row.Server+" "+row.Instance+" "+f.item.ActionID).FontSize(12).Font("monospace").Selectable()
+		ui.Text(c, "valise action "+row.Server+" "+row.Instance+" "+f.item.ActionID).FontSize(12).Font(cur.Fonts.Mono).Selectable()
 		muted(ui.Text(c, "也可以先创建管理钥匙（valise server admin-key "+row.Server+"），之后在这里输入管理口令即可。")).Wrap()
 		return
 	}

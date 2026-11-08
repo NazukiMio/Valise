@@ -31,7 +31,7 @@
 - **启动无副作用**：`main` 只构造状态与窗口；建立 SSH 连接、读取钥匙、启动隧道等有副作用的初始化放进 `mygo.App.WhenReady` 之后按需发起，绝不在视图函数里同步执行。
 - **耗时操作**：SSH、封存、同步、恢复、登录中继等一律在 goroutine 中执行，进度经 service 的进度回调送回，用 `Window.Update` 在主线程改状态并重绘。视图函数里不得阻塞。页面离开与任务生命周期分开：切页不取消任务，取消只来自显式操作；恢复进入交换后不得中断（第 6 节）。
 - **路由**：一个窗口一个 `ui.Router`，一级入口用 `ui.Sidebar`，路径与第 9 节的信息架构一一对应。
-- **主题**：颜色、字体、圆角等集中在 `gui/theme.go`，视图里不写散落的颜色常量；跟随系统深浅色。
+- **主题**：颜色、字体、圆角等令牌、样式变体与布局都来自当前主题（7.4），视图里不写散落的颜色常量；默认跟随系统深浅色。
 - **文案**：界面文字集中放在少数文件中（与 TUI 的 `flourish.go` 一样便于统一修改），用语以 PRODUCT.md 8.1 为准。
 
 ## 5. 错误约定
@@ -54,7 +54,7 @@
 
 ### 7.1 视觉方向（2026-11-08 用户决定）
 
-- 配色取自用户的参考页 `references/TimelineExample.html`（不纳入版本控制，色值抄录如下）：米白底 `#f7f6f3`，卡片白 `rgba(255,255,255,0.96)`，卡片边 `rgba(220,215,206,0.7)`，主文字 `#2b2825`，次要文字 `#8c857b`，金色柔光 `rgba(212,192,163,0.9)`。深色主题由同一色相推出，草图确认后再定。
+- 配色取自用户的参考页 `references/TimelineExample.html`（不纳入版本控制，色值抄录如下）：米白底 `#f7f6f3`，卡片白 `rgba(255,255,255,0.96)`，卡片边 `rgba(220,215,206,0.7)`，主文字 `#2b2825`，次要文字 `#8c857b`，金色柔光 `rgba(212,192,163,0.9)`。深色主题由同一色相推出（“经典深色”，7.4）。
 - 布局与交互以 2026-11-05 已批准草图（第 10.1 节）为初稿。
 - **设计方向（2026-11-08 用户从五个方向中选定混搭）**：
   - **底色：纸与金线**。米白纸面、白卡片、金色柔光；旅程页用一条缓缓起伏的金线串起各次保存，选中的时刻亮起柔光（10.1 的细线与柔光）。
@@ -84,6 +84,58 @@
 - **图标**：界面的品牌与导航图标用 2026-11-05 草图那套线条图标（小行李箱、机器人等）。Agent 头像优先级：用户为这个 Agent 选的本机图片 > harness 资料的官方图标（`display.logo`，PROFILES.md）> 草图的线条机器人（以 harness 颜色着色）。用户图片只复制到本机数据目录，不上传。GUI 不再画字符画；字符画只用于 TUI。
 - **发丝时间线**：旅程的线改为 `references/TimelineExample.html` 的画法：一根主脊线缓缓呼吸起伏，约 32 根极细的发丝贴着它错落流动、两端淡出，节点挂在主脊线上；减少动效时全部静止。点击节点的柔光与 300ms 后展开保留。
 - **功能设计先查 2026-11-05 草图**，好用优先；草图没有覆盖时再提问。
+
+### 7.4 主题（2026-11-08 用户决定）
+
+桌面界面的外观由主题决定；功能先在“经典”主题上接好，以后换外观只需切换主题，用户也可以自己设计。只覆盖桌面 GUI；TUI 到它的阶段再按同一份令牌映射。
+
+- **主题能改什么**：
+  - **令牌**：颜色（含提醒、错误、状态色）、字体（正文、标题、等宽）、字号阶梯、圆角、阴影、间距。视图里不写散落的颜色与字体，一律取当前主题的令牌。
+  - **样式变体**：从 Valise 内置的具名变体里选，例如时间线“发丝 / 金线 / 简洁”、导航“侧栏 / 窄栏 / 顶栏”、Agent 卡片“标准 / 大 / 紧凑”。
+  - **布局**：声明式布局树。每页由 Valise 暴露一组固定插槽（例如结论句、提醒、搜索、Agent 列表、导航），主题只用行、列、网格与尺寸、间距、对齐、背景把插槽摆到位置上。没有条件、循环、表达式或脚本，是模板而不是解释器（AGENTS.md 第 3 节）。所有按钮与动作仍是同一套，只是设计与位置不同；例如“沉浸模式”：导航缩成窄栏，Agent 卡片放大占满一页。
+  - **本机图片**：页面背景、品牌图等，随主题文件夹一起复制到本机。
+- **始终显示（主题不能隐藏）**：待处理提醒；错误与失败原因；确认框与口令框；各项独立状态（隧道 / 端口 / 健康、退出码 / 服务状态等，AGENTS.md 7.5）；“未核实”提示；切回经典主题的入口。主题的布局缺了其中的插槽，Valise 按经典主题的位置补上，并在主题菜单里说明补了哪些。确认框、口令框不在布局树里，任何主题下都由 Valise 以经典方式画出。其他插槽主题可以不放。
+- **内置主题**：“经典浅色”（7.1 的配色）与“经典深色”（同一色相推出）；默认“跟随系统”，在两者间随系统深浅色切换。
+- **切换入口**：侧栏底部的主题菜单（以后挪进设置页）：跟随系统、经典浅色、经典深色、本机已导入的主题、“导入主题…”。选择记在本机（`desktop/prefs.json`）。
+- **主题文件**：一个文件夹，内含 `theme.json` 与它引用的图片；导入时用系统对话框选这个文件夹，检查通过后整个复制到数据目录的 `desktop/themes/<id>/`，不从网络加载。
+  - `theme.json` 的 `format` 为 `valise-theme/1`；`base` 指定继承的内置主题，没写的令牌、变体与布局都取自它；未知字段、未知插槽、同一插槽出现两次、布局树超过 12 层都算错误。
+  - 颜色写 `#rrggbb` 或 `#rrggbbaa`；图片只能引用文件夹内的相对路径（不得含 `..` 或绝对路径），只认能解码的图片格式（PNG、JPEG、WebP、SVG），单张不超过 4 MiB，整个文件夹不超过 16 MiB，`theme.json` 不超过 256 KiB。
+  - 检查不过就不导入，或（已导入的）退回经典主题，并写明哪一项不对、怎么改。
+  - 不点名推荐第三方主题（AGENTS.md 7.6）。
+- **分步落地**：第一轮把令牌、深色、主题文件与导入、外壳（导航与页面区）和首页的插槽做好；其余页面先只用令牌与变体，之后逐页开放插槽。每页开放了哪些插槽，记在本节下方的插槽表里。
+
+#### 7.4.1 插槽表
+
+| 页面 | 插槽 | 始终显示 |
+| --- | --- | --- |
+| 外壳 | `brand` 品牌（`icon`：只显示图标）、`nav` 导航（`sidebar` 侧栏 / `rail` 窄栏 / `top` 顶栏）、`tagline` 标语、`theme` 主题菜单（`icon`：只写“主题”）、`page` 页面区 | `theme`（补在 `nav` 下方）、`page` |
+| 首页 | `header` 标题与重新读取、`verdict` 结论句（含“另有 N 件已知道”与读取错误）、`reminders` 待处理提醒、`known` 已知道、`toolbar` 搜索与视图切换、`agents` Agent（`normal` 标准 / `large` 大 / `compact` 紧凑，`columns` 设列数）、`retired` 不再使用、`note` 数据来源说明 | `verdict`、`reminders`（补在 `verdict` 后面） |
+
+#### 7.4.2 主题文件参考
+
+布局节点恰好是 `row`、`column`、`grid`（子节点数组）或 `slot`（插槽名）之一，可带：`columns`、`gap`、`padding`（1、2 或 4 个数）、`width`、`height`、`max_width`、`grow`、`align` 与 `justify`（`start`、`center`、`end`、`stretch`、`between`）、`background`（颜色名）、`image`（主题的图片名，铺满）、`radius`；`style` 只能写在插槽上。`page` 插槽的 `padding` 与 `max_width` 作用于页面内容。
+
+颜色名：`paper` `card` `card_border` `text` `text_sub` `line` `board` `hover` `ok` `warn` `stop` `side` `side_text` `brand` `accent` `accent_hover` `accent_text` `surface` `surface_hover` `border` `focus` `gold` `gold_soft` `canvas` `strand` `spine` `node` `node_core` `alert_bg` `alert_border` `alert_text` `error_bg` `error_border` `trouble_bg` `trouble_border` `logo_bg` `shadow`。字体：`text` `display` `mono`。尺寸：`radius` `card_radius` `verdict` `title` `text`（0 表示沿用）。变体：`timeline` 为 `strands`、`gold` 或 `plain`。图片名 `backdrop` 铺满窗口背景，`brand` 替换品牌图标；其他名字供布局的 `image` 使用。
+
+示例（沉浸：窄栏导航，Agent 卡片放大占满一行）：
+
+```json
+{
+  "format": "valise-theme/1", "name": "沉浸", "base": "classic-dark",
+  "colors": {"paper": "#101820", "warn": "#ffb347"},
+  "fonts": {"display": "Georgia"},
+  "sizes": {"verdict": 44},
+  "variants": {"timeline": "gold"},
+  "images": {"backdrop": "img/bg.png"},
+  "layout": {
+    "shell": {"row": [
+      {"column": [{"slot": "nav", "style": "rail"}, {"slot": "theme", "style": "icon"}], "width": 72, "padding": [20, 8], "gap": 16},
+      {"slot": "page", "grow": 1, "padding": [24]}
+    ]},
+    "home": {"column": [{"slot": "verdict"}, {"slot": "reminders"}, {"slot": "agents", "style": "large", "columns": 1}], "gap": 28}
+  }
+}
+```
 
 ## 8. 终端 UI（M7a）
 

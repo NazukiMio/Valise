@@ -28,6 +28,9 @@ const (
 // spineY is the spine's height at x in [0,1] for a box of height h at
 // animation time t (about 0.54 a second, as on the reference page).
 func spineY(x, h, t float32) float32 {
+	if cur.Timeline == TimelinePlain {
+		return h / 2 // the plain line is straight and still
+	}
 	s := h / 300
 	w1 := math.Sin(float64(x)*math.Pi*2.1+float64(t)*0.55) * 24
 	w2 := math.Cos(float64(x)*math.Pi*1.3-float64(t)*0.32) * 11
@@ -56,10 +59,14 @@ var hairs = func() []hair {
 	return out
 }()
 
-// paintHairs draws the strands and the spine into r.
+// paintHairs draws the strands (in the strands variant) and the spine into
+// r; the gold variant is the spine alone, a little stronger.
 func paintHairs(p *ui.Painter, r ui.Rect, t float32) {
 	span := float32(1.2 + 0.56 + 0.27)
 	for _, h := range hairs {
+		if cur.Timeline != TimelineStrands {
+			break
+		}
 		x0 := h.start + h.speed*t/0.54
 		x0 = float32(math.Mod(float64(x0+0.83), float64(span))) - 0.83 // wrap from the right edge back to the left
 		a, b := max(x0, 0), min(x0+h.length, 1)
@@ -80,7 +87,7 @@ func paintHairs(p *ui.Painter, r ui.Rect, t float32) {
 		}
 		// Strands fade toward their tips: thinner and lighter where short.
 		fade := min(1, (b-a)/h.length*1.4)
-		p.StrokePath(&path, h.width, ui.RGBA(176, 156, 130, h.alpha*fade))
+		p.StrokePath(&path, h.width, palette.Strand.Alpha(h.alpha*fade))
 	}
 	var spine ui.Path
 	for x := float32(0); x <= r.W; x += 4 {
@@ -91,7 +98,11 @@ func paintHairs(p *ui.Painter, r ui.Rect, t float32) {
 			spine.LineTo(r.X+x, r.Y+y)
 		}
 	}
-	p.StrokePath(&spine, 1.6, ui.RGBA(168, 150, 128, 0.85))
+	if cur.Timeline == TimelineGold {
+		p.StrokePath(&spine, 2.4, palette.Gold)
+		return
+	}
+	p.StrokePath(&spine, 1.6, palette.Spine.Alpha(0.85))
 }
 
 // curveStrip draws up to curvePoints of points (newest first in points).
@@ -103,7 +114,8 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 	}
 	still := c.Preferences().ReduceMotion
 	a.settleGlow(c, still)
-	box := ui.Box(c).Height(curveHeight).Radius(16).Background(ui.Hex("#fbf9f4")).Border(1, palette.CardBorder).Clip()
+	still = still || cur.Timeline == TimelinePlain
+	box := ui.Box(c).Height(curveHeight).Radius(16).Background(palette.Canvas).Border(1, palette.CardBorder).Clip()
 	box.Draw(func(p *ui.Painter, r ui.Rect) {
 		t := float32(0)
 		if !still {
@@ -118,16 +130,16 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 			if i%2 == 1 {
 				stem = r.Y + r.H - curveBand
 			}
-			p.Line(x, y, x, stem, 1, ui.RGBA(188, 172, 150, 0.6))
+			p.Line(x, y, x, stem, 1, palette.Strand.Alpha(0.6))
 			if pt.SnapshotRef.SnapshotID == a.glow {
 				k := min(float32(p.Now().Sub(a.glowAt))/float32(glowDelay), 1)
 				for j, rad := range []float32{30, 20, 12} {
-					p.FillPath((&ui.Path{}).Circle(x, y, rad*(0.5+0.5*k)), ui.RGBA(212, 192, 163, 0.18*float32(j+1)*k))
+					p.FillPath((&ui.Path{}).Circle(x, y, rad*(0.5+0.5*k)), palette.Gold.Alpha(0.18*float32(j+1)*k))
 				}
 			}
-			p.FillPath((&ui.Path{}).Circle(x, y, 5.5), ui.Hex("#ffffff"))
-			p.StrokePath((&ui.Path{}).Circle(x, y, 5.5), 1.4, ui.RGBA(168, 150, 128, 0.9))
-			p.FillPath((&ui.Path{}).Circle(x, y, 1.8), ui.Hex("#8c7e6c"))
+			p.FillPath((&ui.Path{}).Circle(x, y, 5.5), palette.Node)
+			p.StrokePath((&ui.Path{}).Circle(x, y, 5.5), 1.4, palette.Spine.Alpha(0.9))
+			p.FillPath((&ui.Path{}).Circle(x, y, 1.8), palette.NodeCore)
 		}
 	})
 	box.Children(func() {
@@ -148,9 +160,9 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 func (a *App) curveCard(c *ui.Context, pt journey.TimelinePoint) {
 	id := pt.SnapshotRef.SnapshotID
 	card := ui.Column(c).Gap(2).Padding(7, 11).Radius(10).Background(palette.Card).Border(1, palette.CardBorder).
-		Shadow(0, 4, 14, 0, ui.RGBA(62, 54, 44, 0.06)).Cursor(ui.CursorPointer).Label(when(pt.CreatedAt, c.Now()))
+		Shadow(0, 4, 14, 0, palette.Shadow.Alpha(0.06)).Cursor(ui.CursorPointer).Label(when(pt.CreatedAt, c.Now()))
 	if card.Hovered() || a.glow == id {
-		card.Border(1, palette.Gold).Shadow(0, 0, 18, 0, ui.RGBA(212, 192, 163, 0.7))
+		card.Border(1, palette.Gold).Shadow(0, 0, 18, 0, palette.Gold.Alpha(0.7))
 	}
 	card.OnClick(func() { a.lightPoint(id) }).Children(func() {
 		ui.Text(c, when(pt.CreatedAt, c.Now())).FontSize(12).Bold().MaxLines(1)

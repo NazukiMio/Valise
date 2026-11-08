@@ -45,7 +45,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 			a.iconChoice(c, row)
 		})
 		ui.Column(c).Grow(1).Gap(6).Children(func() {
-			ui.Text(c, row.Name).FontSize(32).Bold().Font(displayFont)
+			ui.Text(c, row.Name).FontSize(32).Bold().Font(cur.Fonts.Display)
 			label := row.Server
 			if row.Harness != "" {
 				label = row.Harness + " · " + row.Server
@@ -111,7 +111,7 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 			if len(row.Roots) > 0 {
 				ui.Collapsible(c, text.techInfo, a.fold("roots-"+row.Server+row.Instance), func() {
 					for _, r := range row.Roots {
-						muted(ui.Text(c, r)).Font("monospace")
+						muted(ui.Text(c, r)).Font(cur.Fonts.Mono)
 					}
 				})
 			}

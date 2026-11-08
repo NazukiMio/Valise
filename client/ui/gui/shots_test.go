@@ -60,6 +60,23 @@ func TestShots(t *testing.T) {
 	*a.fold("known") = true
 	tt.Advance(time.Second)
 	shot(t, tt, "home-list")
+	a.prefs.View = "cards"
+	a.undismiss(a.attentionItems(a.agentRows(a.agents.value), time.Now())[0])
+	a.setTheme(ThemeDark)
+	tt.Frame()
+	tt.Advance(time.Second)
+	shot(t, tt, "home-dark")
+	a.openAgent("home", "xiaoman")
+	a.agentTab = tabJourney
+	tt.Frame()
+	tt.Advance(time.Second)
+	shot(t, tt, "journey-dark")
+	a.pickFolder = func() (string, error) { return writeTheme(t, immersive), nil }
+	a.importChosen()
+	a.router.Push("/agents")
+	tt.Frame()
+	tt.Advance(time.Second)
+	shot(t, tt, "home-immersive")
 }
 
 // TestLiveShots renders the pages over a real data directory (the drill

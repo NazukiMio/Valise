@@ -50,6 +50,14 @@ func main() {
 			}
 			return paths[0], nil
 		})
+		app.SetFolderPicker(func() (string, error) {
+			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: win, Title: "导入主题",
+				Message: "选择含有 theme.json 的主题文件夹", Directory: true})
+			if err != nil || len(paths) == 0 {
+				return "", err
+			}
+			return paths[0], nil
+		})
 		app.Start()
 	})
 	if err := mygo.App.Run(); err != nil {

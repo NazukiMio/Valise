@@ -32,9 +32,9 @@ func filterAgents(rows []agentRow, query string) []agentRow {
 }
 
 // agentToolbar is the section's title, the search and the view switch.
-func (a *App) agentToolbar(c *ui.Context, count int) {
+func (a *App) agentToolbar(c *ui.Context, n *Node, count int) {
 	c.OnShortcut(ui.Cmd, ui.KeyF, func() { a.focusSearch = true })
-	ui.Row(c).Gap(12).AlignItems(ui.Center).Margin(12, 0, 0, 0).Children(func() {
+	n.box(ui.Row(c).Gap(12).AlignItems(ui.Center).Margin(12, 0, 0, 0)).Children(func() {
 		muted(ui.Text(c, fmt.Sprintf("在用的 Agent · %d", count))).FontSize(12).LetterSpacing(0.6).Grow(1)
 		f := ui.SearchField(c, &a.query).Width(260).Placeholder("搜索名字、harness 或服务器  ⌘F").Label("搜索 Agent")
 		if a.focusSearch {
@@ -53,7 +53,7 @@ func (a *App) viewButton(c *ui.Context, view string, icon *ui.SVG, label string)
 	b := ui.Box(c).Size(30, 26).Radius(7).Center().Cursor(ui.CursorPointer).Label(label).Selected(on)
 	ink := palette.TextSub
 	if on {
-		b.Background(palette.Card).Shadow(0, 1, 2, 0, ui.RGBA(60, 40, 20, 0.12))
+		b.Background(palette.Card).Shadow(0, 1, 2, 0, palette.Shadow.Alpha(0.12))
 		ink = palette.Text
 	}
 	b.OnClick(func() {
@@ -74,31 +74,57 @@ func (a *App) newest(r agentRow) *time.Time {
 	return nil
 }
 
-// agentGrid lays the agents out as cards, three to a row; one or two
-// agents fill their row without looking lost.
-func (a *App) agentGrid(c *ui.Context, key string, rows []agentRow) {
-	ui.Grid(c).Columns(3).Gap(14).Children(func() {
+// cardLook is an agent card's variant (docs/UI.md 7.4.1).
+type cardLook struct {
+	avatar, name, pad, minH float32
+	columns                 int
+}
+
+var cardLooks = map[string]cardLook{
+	"normal":  {avatar: 52, name: 17, pad: 18, columns: 3},
+	"large":   {avatar: 112, name: 30, pad: 32, minH: 300, columns: 1},
+	"compact": {avatar: 36, name: 14, pad: 12, columns: 4},
+}
+
+// agentGrid lays the agents out as cards in the slot's variant and
+// columns; one or two agents fill their row without looking lost.
+func (a *App) agentGrid(c *ui.Context, n *Node, rows []agentRow) {
+	look, ok := cardLooks[n.Style]
+	if !ok {
+		look = cardLooks["normal"]
+	}
+	if n.Columns > 0 {
+		look.columns = n.Columns
+	}
+	grid := Node{Gap: n.Gap, Padding: n.Padding, Width: n.Width, MaxWidth: n.MaxWidth, Grow: n.Grow, Background: n.Background, Image: n.Image, Radius: n.Radius}
+	if grid.Gap == nil {
+		grid.Gap = gap(14)
+	}
+	grid.box(ui.Grid(c).Columns(look.columns)).Children(func() {
 		for _, r := range rows {
-			a.agentCard(c.Key(key+r.Server+"/"+r.Instance), r)
+			a.agentCard(c.Key(r.Server+"/"+r.Instance), r, look)
 		}
 	})
 }
 
 // agentCard is who the agent is and one line of state; a card with a
 // problem is marked on its own (AGENTS.md 7.5: only problems are colored).
-func (a *App) agentCard(c *ui.Context, r agentRow) {
+func (a *App) agentCard(c *ui.Context, r agentRow, look cardLook) {
 	bad := trouble(r)
-	box := card(ui.Column(c)).Padding(18).Gap(14).Cursor(ui.CursorPointer).Label(r.Name)
+	box := card(ui.Column(c)).Padding(look.pad).Gap(14).Cursor(ui.CursorPointer).Label(r.Name)
+	if look.minH > 0 {
+		box.MinHeight(look.minH).Justify(ui.SpaceBetween)
+	}
 	if bad {
-		box.Border(1, ui.RGBA(214, 150, 90, 0.7)).Background(ui.Hex("#fffaf2"))
+		box.Border(1, palette.TroubleBorder).Background(palette.TroubleBg)
 	} else if box.Hovered() {
-		box.Border(1, palette.Line).Shadow(0, 6, 18, 0, ui.RGBA(60, 40, 20, 0.08))
+		box.Border(1, palette.Line).Shadow(0, 6, 18, 0, palette.Shadow.Alpha(0.08))
 	}
 	box.OnClick(func() { a.openAgent(r.Server, r.Instance) }).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			a.avatar(c, r, 52)
+			a.avatar(c, r, look.avatar)
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
-				ui.Text(c, r.Name).FontSize(17).Bold().MaxLines(1)
+				ui.Text(c, r.Name).FontSize(look.name).Bold().MaxLines(1)
 				muted(ui.Text(c, r.Harness)).MaxLines(1)
 			})
 		})
@@ -142,7 +168,7 @@ func (a *App) agentList(c *ui.Context, key string, rows []agentRow) {
 func (a *App) agentLine(c *ui.Context, r agentRow) {
 	row := ui.Row(c).Padding(11, 18).Gap(14).AlignItems(ui.Center).Cursor(ui.CursorPointer).Label(r.Name)
 	if row.Hovered() {
-		row.Background(ui.Hex("#fbfaf6"))
+		row.Background(palette.Hover)
 	}
 	row.OnClick(func() { a.openAgent(r.Server, r.Instance) }).Children(func() {
 		a.avatar(c, r, 40)

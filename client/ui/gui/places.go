@@ -66,7 +66,7 @@ func (a *App) serverPage(c *ui.Context, name string) {
 	})
 	if obs != nil && obs.Error != nil && obs.Error.Detail != "" {
 		ui.Collapsible(c, text.techInfo, a.fold("srv-detail-"+name), func() {
-			muted(ui.Text(c, obs.Error.Code+"\n"+obs.Error.Detail)).Font("monospace").Wrap()
+			muted(ui.Text(c, obs.Error.Code+"\n"+obs.Error.Detail)).Font(cur.Fonts.Mono).Wrap()
 		})
 	}
 }
@@ -115,7 +115,7 @@ func (a *App) locationsPage(c *ui.Context) {
 				ui.Icon(c, icons.folder).FontSize(22).TextColor(palette.Brand)
 				ui.Column(c).Grow(1).Gap(2).Children(func() {
 					ui.Text(c, r.Name).FontSize(16).Bold()
-					muted(ui.Text(c, r.Path)).Font("monospace")
+					muted(ui.Text(c, r.Path)).Font(cur.Fonts.Mono)
 				})
 			})
 			if len(hosts) == 0 {
