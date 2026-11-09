@@ -1,0 +1,485 @@
+<title>Valise 钥匙与备份草图</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&display=swap">
+<style>
+/* Layout: a long sheet of screens, each a desktop window mock with its notes beside it, in the order a person meets them. */
+:root{
+  --paper:#f7f6f3; --card:#ffffff; --line:#e3ddd2; --board:#fcfbf8; --side:#efece6;
+  --ink:#2b2825; --sub:#8c857b; --gold:#9a7b4f; --gold-soft:#f3e7d3; --accent:#70685d; --on-accent:#fff;
+  --ok:#5f7d5a; --warn:#a06a2c; --warn-bg:#fbf3e6; --note:#fffdf7; --note-line:#e9dcc3;
+  --display:"Noto Serif SC","Songti SC",serif; --body:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif; --mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#1f1d1a; --card:#2a2723; --line:#3d3832; --board:#24221f; --side:#191816;
+  --ink:#ece7df; --sub:#a39b8f; --gold:#c9a66f; --gold-soft:#3a3226; --accent:#d8cbb6; --on-accent:#1f1d1a;
+  --ok:#94b28b; --warn:#dba45f; --warn-bg:#382d20; --note:#26231f; --note-line:#4a4033; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#1f1d1a; --card:#2a2723; --line:#3d3832; --board:#24221f; --side:#191816;
+  --ink:#ece7df; --sub:#a39b8f; --gold:#c9a66f; --gold-soft:#3a3226; --accent:#d8cbb6; --on-accent:#1f1d1a;
+  --ok:#94b28b; --warn:#dba45f; --warn-bg:#382d20; --note:#26231f; --note-line:#4a4033; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.6;
+  padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+header.top h1{font-family:var(--display);font-size:34px;margin:0 0 6px;text-wrap:balance}
+header.top p{margin:0;color:var(--sub);max-width:70ch}
+.decisions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-size:12px;color:var(--sub);background:var(--card)}
+.chip b{color:var(--ink);font-weight:600}
+section.scene{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}
+@media (max-width:900px){section.scene{grid-template-columns:minmax(0,1fr)}}
+.scene h2{grid-column:1/-1;margin:0;font-family:var(--display);font-size:22px;display:flex;gap:12px;align-items:baseline}
+.scene h2 small{font-family:var(--body);font-size:12px;color:var(--sub);font-weight:400}
+.win{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--paper);box-shadow:0 10px 30px rgba(40,30,20,.08);min-width:0}
+.bar{height:30px;background:var(--card);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;padding:0 12px}
+.bar i{width:10px;height:10px;border-radius:50%;background:var(--line)}
+.app{display:grid;grid-template-columns:150px minmax(0,1fr);min-height:420px}
+@media (max-width:600px){.app{grid-template-columns:minmax(0,1fr)}.side{display:none}}
+.side{background:var(--side);padding:18px 10px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--sub)}
+.brand{display:flex;gap:8px;align-items:center;font-family:var(--display);font-size:17px;color:var(--ink);padding:0 6px 12px}
+.brand svg{color:var(--gold)}
+.nav{display:flex;gap:8px;align-items:center;padding:5px 8px;border-radius:7px}
+.nav.on{background:var(--card);color:var(--ink)}
+.page{padding:26px 30px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.crumb{font-size:12px;color:var(--sub)}
+.h{font-family:var(--display);font-size:26px;margin:0;line-height:1.25}
+.lede{color:var(--sub);margin:-8px 0 0;font-size:13px}
+.steps{display:flex;gap:6px;flex-wrap:wrap;font-size:12px}
+.steps span{padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--sub)}
+.steps .now{border-color:var(--gold);color:var(--ink);background:var(--gold-soft)}
+.steps .done{color:var(--ok)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub);min-width:0}
+.input{border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:var(--card);color:var(--ink);font-size:13px;min-height:34px}
+.split{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:10px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 14px;font-size:13px;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--gold);padding-inline:0}
+.foot{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.mono{font-family:var(--mono);font-size:12px;word-break:break-all}
+.muted{color:var(--sub);font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.run{background:var(--gold);box-shadow:0 0 0 4px var(--gold-soft)}
+.stepline{display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line)}
+.stepline:first-child{border-top:0}
+.stepline .dot{margin-top:7px}
+.warnbox{background:var(--warn-bg);border:1px solid var(--note-line);border-radius:12px;padding:12px 14px;font-size:13px}
+.warnbox b{color:var(--warn)}
+.tag{font-size:11px;border-radius:999px;padding:1px 9px;border:1px solid var(--line);color:var(--sub);white-space:nowrap}
+.tag.ok{color:var(--ok);border-color:currentColor} .tag.warn{color:var(--warn);border-color:currentColor}
+.avatar{width:42px;height:42px;border-radius:11px;background:var(--gold-soft);display:grid;place-items:center;color:var(--gold);flex:none}
+.modal{position:relative;margin:4px auto;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:10px}
+.dim{background:repeating-linear-gradient(135deg,transparent 0 10px,rgba(0,0,0,.025) 10px 20px);padding:30px 16px;border-radius:10px}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:13px}
+.check i{width:16px;height:16px;border:1.5px solid var(--sub);border-radius:4px;flex:none;margin-top:3px}
+.check i.on{background:var(--accent);border-color:var(--accent)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+td{padding:6px 4px;border-top:1px solid var(--line);vertical-align:top}
+.tablebox{overflow-x:auto}
+aside.notes{background:var(--note);border:1px solid var(--note-line);border-radius:12px;padding:14px 16px;font-size:13px;display:flex;flex-direction:column;gap:8px}
+aside.notes h3{margin:0;font-size:12px;letter-spacing:.08em;color:var(--gold)}
+aside.notes ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+aside.notes .from{color:var(--sub);font-size:12px}
+.out{border:1px dashed var(--line);border-radius:12px;padding:14px 16px;color:var(--sub);font-size:13px}
+.out b{color:var(--ink)}
+.namecard{background:linear-gradient(160deg,var(--card),var(--board));border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:14px;box-shadow:0 14px 34px rgba(40,30,20,.10)}
+.namecard .big{font-family:var(--display);font-size:22px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--card);display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub)}
+.tile b{color:var(--ink);font-size:13px}
+.tile.on{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+.addr{font-size:17px;padding:10px 12px;font-family:var(--mono)}
+.two{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:760px){.two{grid-template-columns:minmax(0,1fr)}}
+.next{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--sub)}
+.next div{display:flex;gap:8px;align-items:center}
+.next em{font-style:normal;width:18px;height:18px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font-size:10px;flex:none}
+.pass{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--board)}
+.pass .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold);flex:none}
+.term{background:#1b1916;color:#e8e2d6;border-radius:10px;padding:12px 14px;font-family:var(--mono);font-size:12px;line-height:1.55;overflow-x:auto;white-space:pre}
+.state{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:760px){.state{grid-template-columns:minmax(0,1fr)}}
+.tag.bad{color:var(--warn);border-color:currentColor;background:var(--warn-bg)}
+
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.tabs span{padding:6px 14px;font-size:13px;color:var(--sub);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs .on{color:var(--ink);border-color:var(--gold)}
+.setrow{display:flex;gap:12px;align-items:center;padding:11px 2px;border-top:1px solid var(--line);flex-wrap:wrap}
+.setrow:first-child{border-top:0}
+.need{font-size:11px;color:var(--gold);border:1px dashed var(--note-line);border-radius:999px;padding:1px 9px;white-space:nowrap}
+.danger{border-color:var(--note-line)}
+.btn.warnbtn{color:var(--warn);border-color:currentColor}
+.btn.warnbtn.solid{background:var(--warn);border-color:var(--warn);color:var(--on-accent)}
+.modal.wide{max-width:560px;display:flex;flex-direction:column;gap:12px}
+.choice{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--card)}
+.choice.on{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+.radio{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--sub);flex:none;margin-top:4px}
+.radio.on{border:4px solid var(--gold)}
+.box{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--sub);flex:none;display:inline-block;vertical-align:-2px;margin-right:8px}
+.box.on{background:var(--gold);border-color:var(--gold)}
+.checks{display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:13px}
+.agentskills{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:4px}
+.agentskills .tag{margin-left:8px}
+.keepbox{background:var(--board);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:13px}
+.fold{background:var(--board)}
+
+.modebar{background:var(--gold-soft);border-bottom:1px solid var(--note-line);padding:8px 16px;font-size:12px;display:flex;gap:10px;align-items:center}
+.modebar b{color:var(--gold)}
+.prog{height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.prog i{display:block;height:100%;background:var(--gold)}
+.code{font-family:var(--mono);font-size:20px;letter-spacing:.3em;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);text-align:center}
+.ask{border:1px solid var(--gold);background:var(--gold-soft);border-radius:12px;padding:10px 14px;font-size:13px}
+.ask b{color:var(--gold)}
+.part{font-family:var(--display);font-size:26px;margin:0;border-top:1px solid var(--line);padding-top:28px}
+</style>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="case" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="14" rx="3"/><path d="M9 7V4h6v3M9 11v6m6-6v6"/></symbol>
+  <symbol id="bot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="6" width="14" height="13" rx="4"/><path d="M12 3v3M8 12h.01M16 12h.01M9 16h6"/></symbol>
+  <symbol id="srv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/><path d="M8 7h.01M8 17h.01M13 7h3m-3 10h3"/></symbol>
+  <symbol id="fold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8m-3 3 2 2m-4 0 2 2"/></symbol>
+</svg>
+<div class="wrap">
+<header class="top">
+  <h1>钥匙与备份</h1>
+  <p>N4 第三段：Valise 口令与加密钥匙（设置、备份钥匙、导入、修改）、Agent 的保护计划与“现在备份”、错过的定时备份；以及找回 Valise 口令、忘了管理口令时重办管理员通行证。每一屏右边写着它来自哪里、需要什么、不做什么。标 <b style="color:var(--gold)">待你决定</b> 的是规范没写到、我先给的建议。确认后再写代码。</p>
+  <div class="decisions">
+    <span class="chip"><b>口令</b>：第一次需要时再设</span>
+    <span class="chip"><b>第一次备份前</b>：导出恢复套件，或明确“稍后备份钥匙”</span>
+    <span class="chip"><b>新计划默认</b>：完整备份</span>
+    <span class="chip"><b>找回口令</b>：备用锁 + 你自己跑 sudo 命令</span>
+    <span class="chip"><b>管理口令忘了</b>：重办，不恢复</span>
+  </div>
+</header>
+
+<h2 class="part">第一部分 · 钥匙与 Agent 备份</h2>
+
+<!-- A1 -->
+<section class="scene">
+  <h2>A1 · 侧栏多一个“设置”，第一页是“钥匙与口令” <small>UI.md 9.7</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="app">
+    <div class="side"><div class="brand"><svg width="20" height="20"><use href="#case"/></svg>Valise</div>
+      <div class="nav">我的 Agent</div><div class="nav">服务器</div><div class="nav">备份位置</div><div class="nav on">设置</div></div>
+    <div class="page">
+      <h3 class="h">设置</h3>
+      <div class="tabs"><span class="on">钥匙与口令</span><span>备份</span></div>
+      <div class="card">
+        <div class="row"><span class="avatar"><svg width="22" height="22"><use href="#key"/></svg></span>
+          <div class="grow"><b>你的加密钥匙已创建，由 Valise 口令保护</b>
+            <div class="muted mono">~/Library/Application Support/valise/keystore.age · 指纹 3f9a 21c0 7be4 d815</div></div>
+          <span class="tag ok">已备份钥匙 · 11 月 3 日</span></div>
+        <div class="muted">备份用这把钥匙加密。<br>服务器只拿到“只能上锁、不能开锁”的那一半。<br>换电脑时导入同一把钥匙、输入口令，就能打开以前的备份。</div>
+      </div>
+      <div class="card" style="gap:0">
+        <div class="setrow"><div class="grow"><b>备份钥匙</b><div class="muted">导出恢复套件到一个文件夹（U 盘、密码管理器的附件）</div></div><span class="btn">导出恢复套件…</span></div>
+        <div class="setrow"><div class="grow"><b>Valise 口令</b><div class="muted">至少 12 个字符；Valise 不保存它</div></div><span class="need">旧口令</span><span class="btn">修改…</span></div>
+        <div class="setrow"><div class="grow"><b>忘了 Valise 口令</b><div class="muted">用备用锁找回：3 台服务器里 2 台可用（见第二部分）</div></div><span class="btn">找回…</span></div>
+        <div class="setrow"><div class="grow"><b>管理口令</b><div class="muted">2 台服务器办了管理员通行证 · 解锁后 15 分钟内不再问</div></div><span class="btn">修改…</span><span class="btn quiet">忘了管理口令</span></div>
+      </div>
+    </div></div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>状态卡写钥匙在哪里、指纹、是否已经备份过钥匙（导出时在这台电脑记下日期；没导出过写黄色“还没有备份钥匙”）。</li>
+    <li>三行白话照 UI.md 9.7 原文。</li>
+    <li>“在这台电脑上导入钥匙”只在还没有钥匙时出现（A4）；已有钥匙时不画这个按钮，换钥匙属于“高级”，这一段不做。</li>
+    <li>“设置”的“备份”页签放分离模式开关（A8 说明）。主题与语言仍在侧栏底部的菜单里，不搬。</li>
+    <li class="ask"><b>待你决定</b>：侧栏新增第四项“设置”，还是放进侧栏底部的菜单？我建议第四项：口令、找回都在这里，藏在菜单里不好找。</li>
+  </ul><p class="from">来自：UI.md 9.7 钥匙与口令；ARCHITECTURE.md 第 3 节。</p></aside>
+</section>
+
+<!-- A2 -->
+<section class="scene">
+  <h2>A2 · 第一次需要钥匙时设 Valise 口令 <small>不在第一次启动时强迫</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page"><div class="dim">
+    <div class="modal">
+      <b style="font-size:16px">先设一个 Valise 口令</b>
+      <div class="muted">备份要用加密钥匙上锁。口令保护这把钥匙：Valise 不保存它，<b style="color:var(--ink)">丢了口令就打不开备份</b>（可以事先留好恢复套件和备用锁）。</div>
+      <div class="field">Valise 口令<div class="input">••••••••••••••</div></div>
+      <div class="field">再输一次<div class="input">••••••••••••••</div></div>
+      <div class="muted">至少 12 个字符；不能与管理口令相同。</div>
+      <div class="check"><span class="box on"></span>同时留一把备用锁（忘了口令时，用服务器的 sudo 找回；见第二部分）</div>
+      <div class="muted" style="margin-left:22px">代价：任一台服务器的 root 加上这台电脑上的文件，可以打开全部备份。</div>
+      <div class="foot"><span class="btn">取消</span><span class="btn primary">设好口令</span></div>
+      <div class="muted" style="border-top:1px solid var(--line);padding-top:8px">我在别的电脑上已经有钥匙 → <span style="color:var(--gold)">导入恢复套件</span></div>
+    </div>
+  </div></div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>出现时机：第一次点“现在备份”或保存保护计划、登记钥匙时，这台电脑还没有钥匙（UI.md 9.1 第 5 条）。</li>
+    <li>设好后马上进入 A3，再回到原来那件事。</li>
+    <li>备用锁默认勾上（你的决定：默认开启，可关），代价当场写明。</li>
+  </ul><p class="from">来自：UI.md 9.1；ARCHITECTURE.md 3、3.2。</p></aside>
+</section>
+
+<!-- A3 -->
+<section class="scene">
+  <h2>A3 · 第一次备份前：备份钥匙 <small>必须二选一</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <h3 class="h">先把钥匙备份一份</h3>
+    <p class="lede">这台电脑坏了或丢了，只有这份能打开你的备份。</p>
+    <div class="choice on"><span class="radio on"></span><div class="grow"><b>导出恢复套件</b>
+      <div class="muted">选一个文件夹（建议 U 盘），里面会有 4 个文件：keystore.age（用口令加密的钥匙）、recipient.txt、FINGERPRINT、RECOVERY.md（不用 Valise 怎么恢复）。</div>
+      <div class="row" style="margin-top:6px"><span class="input mono grow">/Volumes/USB/valise-恢复套件</span><span class="btn">选择文件夹…</span></div>
+      <div class="muted">请把指纹抄在纸上，导入时用来核对：<span class="mono">3f9a 21c0 7be4 d815</span></div></div></div>
+    <div class="choice"><span class="radio"></span><div class="grow"><b>我知道风险，稍后备份</b>
+      <div class="muted">口令或这台电脑上的钥匙丢了，所有备份都无法打开。设置 › 钥匙与口令里随时可以再导出。</div></div></div>
+    <div class="foot"><span class="btn primary">导出并继续</span></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>只拦第一次建立备份；选了“稍后”之后不再拦，A1 状态卡保持黄色“还没有备份钥匙”。</li>
+    <li>导出不覆盖已有文件；结果写“已导出到 …，4 个文件”。</li>
+    <li>恢复套件不含口令；不打印、不显示钥匙内容。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 第 3 节“第一次启动”“离线恢复套件”。</p></aside>
+</section>
+
+<!-- A4 -->
+<section class="scene">
+  <h2>A4 · 在这台电脑上导入钥匙 <small>换电脑时</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <h3 class="h">导入恢复套件</h3>
+    <div class="field">恢复套件文件夹<div class="row"><span class="input mono grow">/Volumes/USB/valise-恢复套件</span><span class="btn">选择…</span></div></div>
+    <div class="card">
+      <div class="row"><span class="dot ok"></span><span class="grow">FINGERPRINT 与 recipient.txt 一致</span></div>
+      <div class="row"><span class="dot"></span><span class="grow">输入口令后核对钥匙本身</span></div>
+      <div class="field">这把钥匙的 Valise 口令<div class="input">••••••••••••••</div></div>
+    </div>
+    <div class="warnbox">请与你抄下的指纹比对：<span class="mono" style="font-size:15px">3f9a 21c0 7be4 d815</span></div>
+    <div class="foot"><span class="btn">取消</span><span class="btn primary">导入</span></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>两次核对分开写（文件一致 / 解锁后公钥一致），都通过才保存。</li>
+    <li>导入后提示：这台电脑还没有服务器的用户通行证时，到各服务器设置里“重新装…”。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 第 3 节“离线恢复套件”、3.1。</p></aside>
+</section>
+
+<!-- A5 -->
+<section class="scene">
+  <h2>A5 · 修改 Valise 口令</h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page"><div class="dim">
+    <div class="modal">
+      <b style="font-size:16px">修改 Valise 口令</b>
+      <div class="field">现在的口令<div class="input">••••••••••••••</div></div>
+      <div class="field">新口令<div class="input">••••••••••••••</div></div>
+      <div class="field">再输一次<div class="input">••••••••••••••</div></div>
+      <div class="muted">只换保护钥匙的那把锁，钥匙本身不变：以前的备份照常能打开，服务器上不用改什么。<b style="color:var(--ink)">之前导出的恢复套件仍用旧口令</b>，建议改完重新导出一份。</div>
+      <div class="foot"><span class="btn">取消</span><span class="btn primary">修改</span></div>
+    </div>
+  </div></div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>重新加密 <span class="mono">keystore.age</span>；开了备用锁的，同时重新加密 <span class="mono">recovery/r.age</span>。</li>
+    <li>服务层现在还没有这个功能，这一段补上（用 age 标准口令加密，不自研）。</li>
+  </ul><p class="from">来自：UI.md 9.7“修改 Valise 口令”。</p></aside>
+</section>
+
+<!-- A6 -->
+<section class="scene">
+  <h2>A6 · Agent 页的第四个页签“管理与设置”：保护计划 <small>UI.md 9.5</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="app">
+    <div class="side"><div class="brand"><svg width="20" height="20"><use href="#case"/></svg>Valise</div>
+      <div class="nav on">我的 Agent</div><div class="nav">服务器</div><div class="nav">备份位置</div><div class="nav">设置</div></div>
+    <div class="page">
+      <div class="crumb">‹ 我的 Agent</div>
+      <div class="row"><h3 class="h grow">小满 <span class="muted">· xiaoman</span></h3><span class="btn primary">现在备份</span></div>
+      <div class="tabs"><span>概览</span><span>旅程</span><span>健康</span><span class="on">管理与设置</span></div>
+      <div class="card" style="gap:0">
+        <div class="row" style="padding-bottom:6px"><b class="grow">保护计划</b><span class="tag ok">已生效 · 第 4 版 · 服务器已核实</span></div>
+        <div class="setrow"><div class="grow"><b>备份什么</b><div class="muted">完整：记忆、设置、技能、登录凭据（单独标记）、程序以外的全部</div></div><span class="btn quiet">其他内容（高级）</span></div>
+        <div class="setrow"><div class="grow"><b>定时备份</b><div class="muted">每天 04:40（Asia/Shanghai，服务器时间）· 服务器关机错过时，开机后补一次</div></div><span class="btn">修改…</span></div>
+        <div class="setrow"><div class="grow"><b>备份分组</b><div class="muted">按月保存一组；删除时整组删除；修改从下一组开始生效</div></div><span class="btn">修改…</span></div>
+        <div class="setrow"><div class="grow"><b>备份后复制到</b><div class="muted">gdrive（云盘）· 上次 今天 04:52 成功</div></div><span class="btn">修改…</span></div>
+      </div>
+      <div class="card" style="gap:0">
+        <div class="setrow"><div class="grow"><b>Agent 保护技能</b><div class="muted">已装 3 个 · 与这台电脑上的版本一致</div></div></div>
+        <div class="setrow"><div class="grow"><b>名字</b><div class="muted">小满（只改 Valise 里的显示）</div></div><span class="btn">改名…</span></div>
+      </div>
+    </div></div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>每行改完不是立刻生效：先在服务器上准备（核对版本号），确认后发布，再由服务器核实。状态分开写：<b>已提交</b> / <b>服务器已核实</b> / <b>待核实</b>（崩溃或核实失败留下的，给“处理…”）。</li>
+    <li>“定时备份”的修改框：开关、每天几点、时区（默认服务器时区）、“错过时开机补一次”。</li>
+    <li>“其他内容（高级）”展开旧档位（轻装、标准、原样）并写明各自实际包含什么；新计划默认完整（PRODUCT.md 8.1）。</li>
+    <li>“现在备份”是 Agent 页唯一的主按钮之一，在概览页签也有。</li>
+    <li>归类规则、重新登记等其他管理项不在这一段。</li>
+  </ul><p class="from">来自：UI.md 9.5；SERVICE_CONTRACTS.md 保护计划；N2 已实现的服务层。</p></aside>
+</section>
+
+<!-- A7 -->
+<section class="scene">
+  <h2>A7 · 现在备份：进度与结果 <small>每一步单独写</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <h3 class="h">正在备份 小满</h3>
+    <div class="card" style="gap:0">
+      <div class="stepline"><span class="dot ok"></span><div class="grow"><b>清点文件</b><div class="muted">1,284 个文件 · 212 MB</div></div></div>
+      <div class="stepline"><span class="dot ok"></span><div class="grow"><b>数据库一致副本</b><div class="muted">2 个 SQLite</div></div></div>
+      <div class="stepline"><span class="dot run"></span><div class="grow"><b>打包加密</b><div class="prog" style="margin:6px 0"><i style="width:62%"></i></div><div class="muted">131 / 212 MB · 约 20 秒（已等 14 秒）</div></div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow"><b>校验</b></div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow"><b>复制到 gdrive</b></div></div>
+    </div>
+    <div class="foot"><span class="btn">停止</span></div>
+    <div class="card" style="margin-top:6px">
+      <b>结果（完成后替换上面）</b>
+      <div class="row"><span class="dot ok"></span><span class="grow">已写入服务器上的备份库 · 今天 15:02</span></div>
+      <div class="row"><span class="dot warn"></span><span class="grow">没有复制到 gdrive：云盘没有回应 · 下次同步时补上</span><span class="btn">现在重试</span></div>
+      <div class="row"><span class="dot"></span><span class="grow muted">还没复制到这台电脑（本机仓库 usb 没接上）</span></div>
+    </div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>步骤名与 UI.md 9.5 一致；桌面版不放火箭动画，只用步骤列表（减少动效时也一样）。</li>
+    <li>“已写入服务器”和“已复制到别处”是两件事，分开写（AGENTS.md 7.5 诚实状态）。</li>
+    <li>关掉这一屏不会中断：备份在服务器上跑；回到 Agent 页概览能看到进度。开了分离模式时，关掉 Valise 也继续。</li>
+    <li>停止 = 取消这次备份（服务层 backup_run_cancel），已写的半成品由服务器丢弃。</li>
+  </ul><p class="from">来自：UI.md 9.5“建立备份的进度”；N2 按计划备份与分离执行。</p></aside>
+</section>
+
+<!-- A8 -->
+<section class="scene">
+  <h2>A8 · 错过的定时备份 <small>首页提醒 → Agent 健康页</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="tabs"><span>概览</span><span>旅程</span><span class="on">健康</span><span>管理与设置</span></div>
+    <div class="warnbox"><b>错过了 2 次定时备份</b>
+      <div class="muted" style="margin:4px 0">11 月 7 日 04:40、11 月 8 日 04:40 · 那时服务器关着机 · 11 月 8 日 09:13 开机后已补一次</div>
+      <div class="row"><span class="btn">标记已读</span><span class="btn">现在备份</span><span class="btn quiet">定时备份设置 ›</span></div></div>
+    <div class="card" style="gap:0">
+      <div class="setrow"><div class="grow"><b>定时备份</b><div class="muted">已开启 · 下次 明天 04:40 · 服务器不登录也会跑（linger 已开）</div></div><span class="tag ok">正常</span></div>
+    </div>
+    <div class="out"><b>设置 › 备份</b>：分离模式（关掉 Valise 后，正在进行的备份由服务器上的一次性任务继续）· 默认关闭 · 开关一个</div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>“补跑”只写事实（“开机后已补一次”），不再写“服务器从停机状态恢复”（N2 已知的措辞问题，这里一并改）。</li>
+    <li>首页“超过 7 天没有新备份”的提醒，“带我去处理”现在可以直接打开定时备份设置（UI.md 7.2 写着做好之前不画按钮）。</li>
+    <li class="ask"><b>待你决定</b>：“标记已读”记在哪里？建议只记在这台电脑（和“知道了”一样，按错过的时间点记），不写服务器。</li>
+  </ul><p class="from">来自：N2 错过与补跑；UI.md 7.2、9.5 健康。</p></aside>
+</section>
+
+<!-- A9 -->
+<section class="scene">
+  <h2>A9 · 服务器设置的“加密钥匙”行可以动手了</h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="card" style="gap:0">
+      <div class="setrow"><div class="grow"><b>加密钥匙</b><div class="muted">还没登记到这台服务器 · 登记后服务器才能给备份上锁</div></div><span class="btn">登记</span></div>
+      <div class="setrow"><div class="grow"><b>加密钥匙</b><div class="muted">服务器上已经有别的钥匙（2 把），这台电脑的还没登记</div></div><span class="need">Valise 口令</span><span class="btn">登记</span></div>
+      <div class="setrow"><div class="grow"><b>备用锁</b><div class="muted">已做 · 用这台服务器的 ssh-ed25519 主机密钥</div></div></div>
+    </div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>第一把钥匙用用户通行证就能登记；服务器上已有钥匙时再加一把要 Valise 口令（ARCHITECTURE.md 2.2）。</li>
+    <li>这台电脑没有钥匙时，点“登记”先走 A2。</li>
+    <li>“备用锁”一行写这台服务器的状态（已做 / 主机密钥变了 / 不支持：没有 ssh-ed25519），不放按钮；开关在设置 › 钥匙与口令。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 2.2、3.2。</p></aside>
+</section>
+
+<h2 class="part">第二部分 · 找回 Valise 口令与重办管理员通行证</h2>
+
+<!-- B1 -->
+<section class="scene">
+  <h2>B1 · 备用锁：每台服务器的状态 <small>设置 › 钥匙与口令 › 找回</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <h3 class="h">忘了 Valise 口令时</h3>
+    <p class="lede">备用锁让你用“这台电脑上的文件 + 一台服务器的 sudo”找回口令。</p>
+    <div class="card" style="gap:0">
+      <div class="setrow"><span class="dot ok"></span><div class="grow"><b>home-vps</b><div class="muted">已做 · 11 月 9 日</div></div><span class="btn">用它找回…</span></div>
+      <div class="setrow"><span class="dot ok"></span><div class="grow"><b>debian-vm</b><div class="muted">已做 · 11 月 9 日</div></div><span class="btn">用它找回…</span></div>
+      <div class="setrow"><span class="dot warn"></span><div class="grow"><b>nas</b><div class="muted">主机密钥变了（可能重装过系统）· 下次输入 Valise 口令时重做</div></div></div>
+      <div class="setrow"><span class="dot"></span><div class="grow"><b>old-box</b><div class="muted">不支持：服务器没有 ssh-ed25519 主机密钥</div></div></div>
+    </div>
+    <div class="card"><div class="row"><div class="grow"><b>备用锁</b><div class="muted">开着。代价：任一台上面“已做”的服务器的 root，加上这台电脑上的文件，可以打开全部备份。</div></div><span class="btn warnbtn">关闭并删除备用锁</span></div></div>
+    <div class="out"><b>救不了的情况</b>：电脑也丢了（用恢复套件）；服务器重装、主机密钥变了（换一台）；没有 sudo 的服务器。</div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>“已做 / 主机密钥变了 / 不支持”三种状态分开写；没做的不画“找回”按钮。</li>
+    <li>关闭 = 删除 <span class="mono">recovery/</span> 下全部文件，要确认一次；以后可以再开（要输入 Valise 口令）。</li>
+    <li>“补做”不单独放按钮：每次输入 Valise 口令时自动为缺的服务器补做（规范如此）。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 3.2 备用锁、何时做、不能救的。</p></aside>
+</section>
+
+<!-- B2 -->
+<section class="scene">
+  <h2>B2 · 进入找回模式，先扫描 porter <small>只作提醒</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div>
+    <div class="modebar"><b>找回模式</b><span class="grow">暂停：Agent 的 MCP 请求、自动复制、其他后台任务 · 只做找回这一件事</span><span class="btn">取消找回</span></div>
+    <div class="page">
+    <h3 class="h">用 home-vps 找回 Valise 口令</h3>
+    <div class="card" style="gap:0">
+      <div class="stepline"><span class="dot ok"></span><div class="grow"><b>核对服务器上的 porter</b><div class="muted">版本 0.9.2 · SHA-256 与这台电脑 11 月 9 日部署时记下的一致</div></div></div>
+      <div class="stepline"><span class="dot run"></span><div class="grow"><b>放下找回请求</b><div class="muted">把备用锁和一次性公钥写到服务器上你自己的暂存目录…</div></div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow"><b>你在服务器上运行 sudo 命令</b></div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow"><b>填回验证码，设新口令</b></div></div>
+    </div>
+    <div class="warnbox"><b>如果对不上</b>（或这台电脑没有记录）：在这里停下。先到服务器设置“更新 porter”重新部署（管理登录，与 Valise 口令无关），再回来。</div>
+    <div class="muted">为什么只是提醒：读取要经过 porter 本身，被替换的 porter 可以谎报。真正的保证在下一步的命令里。</div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>找回模式顶部一条横幅，整个窗口只剩这件事；侧栏不可点。取消随时可以，会删掉服务器上的请求文件。</li>
+    <li>扫描用用户通行证，不要任何口令。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 3.2 找回流程 1–3。</p></aside>
+</section>
+
+<!-- B3 -->
+<section class="scene">
+  <h2>B3 · 你自己在服务器上跑 sudo 命令，填回验证码</h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div>
+    <div class="modebar"><b>找回模式</b><span class="grow">暂停：MCP 请求、自动复制、后台任务</span><span class="btn">取消找回</span></div>
+    <div class="page">
+    <h3 class="h">在 home-vps 上运行这条命令</h3>
+    <p class="lede">用你平时登录服务器的方式（ssh、控制台都行）。Valise 不会替你运行它，高级模式也不行：它要证明的就是“服务器上的你”。</p>
+    <div class="term">sudo sh -c 'f=$(mktemp) && cat /home/me/.local/bin/valise-porter > "$f" && echo "45d82e75…c6cd  $f" | sha256sum -c --quiet && chmod 700 "$f" && "$f" recovery-code --for me; r=$?; rm "$f"; exit $r'</div>
+    <div class="row"><span class="btn">复制命令</span><span class="muted grow">这条命令会先把 porter 复制成只有 root 能改的副本，核对 SHA-256 一致才运行；对不上就什么都不做。</span></div>
+    <div class="field">命令最后显示的 8 位验证码<div class="code">4817 · 2209</div></div>
+    <div class="foot"><span class="btn primary">下一步</span></div>
+    <div class="muted">验证码错 3 次，这次请求作废，需要重新开始。</div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>命令全文展示，SHA-256 显示完整值（这里为了排版缩写）。</li>
+    <li>porter 读完主机密钥立即放下 root 权限，再写结果（规范如此）。</li>
+    <li class="ask"><b>待你决定</b>：验证码错几次作废？规范没写。我建议 3 次。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 3.2 找回流程 4–6。</p></aside>
+</section>
+
+<!-- B4 -->
+<section class="scene">
+  <h2>B4 · 设新口令，重做备用锁，退出找回模式</h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <h3 class="h">设一个新的 Valise 口令</h3>
+    <div class="field">新口令<div class="input">••••••••••••••</div></div>
+    <div class="field">再输一次<div class="input">••••••••••••••</div></div>
+    <div class="muted">钥匙本身没变：以前的备份照常能打开，服务器上登记的钥匙不用动。</div>
+    <div class="card" style="gap:0">
+      <b style="padding-bottom:6px">完成后（替换上面）</b>
+      <div class="stepline"><span class="dot ok"></span><div class="grow">新口令已生效</div></div>
+      <div class="stepline"><span class="dot ok"></span><div class="grow">备用锁已换新：home-vps、debian-vm</div></div>
+      <div class="stepline"><span class="dot ok"></span><div class="grow">服务器上的请求与结果文件已删除</div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow muted">建议：重新导出一份恢复套件（旧的用旧口令）</div><span class="btn">导出…</span></div>
+    </div>
+    <div class="foot"><span class="btn primary">退出找回模式</span></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>每台服务器的备用锁重做结果单独写；连不上的写“下次输入口令时补做”。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 3.2 找回流程 6。</p></aside>
+</section>
+
+<!-- B5 -->
+<section class="scene">
+  <h2>B5 · 忘了管理口令：全部重办 <small>不恢复</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <h3 class="h">重办管理员通行证</h3>
+    <p class="lede">管理员通行证只管操作权限、不锁数据，所以不找回，直接换新的。</p>
+    <div class="field">新的管理口令<div class="input">••••••••••••••</div></div>
+    <div class="field">再输一次<div class="input">••••••••••••••</div></div>
+    <div class="muted">至少 12 个字符，不能与 Valise 口令相同。每台服务器要用服务器密码（或你自己的私钥）登录一次。</div>
+    <div class="card" style="gap:0">
+      <div class="stepline"><span class="dot ok"></span><div class="grow"><b>home-vps</b><div class="muted">旧的一行已删去，新通行证已装上</div></div></div>
+      <div class="stepline"><span class="dot run"></span><div class="grow"><b>debian-vm</b><div class="muted">等你在弹框里输入服务器密码…（已等 8 秒）</div></div><span class="btn">停止</span></div>
+      <div class="stepline"><span class="dot warn"></span><div class="grow"><b>nas</b><div class="muted">连不上 · 待重办：下次连上时提示继续；在那之前它的管理操作用服务器密码</div></div></div>
+    </div>
+    <div class="foot"><span class="btn">取消</span><span class="btn primary">开始重办</span></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>入口在设置 › 钥匙与口令 › 管理口令旁的“忘了管理口令”。</li>
+    <li>按这台电脑留着的旧公钥准确删去旧行；旧公钥保留到那台服务器重办完成。</li>
+    <li>这台电脑上的旧通行证文件在全部办完后删除；“待重办”的服务器在服务器列表和设置里都标出来。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 3.3。</p></aside>
+</section>
+
+<div class="out"><b>这一段不含</b>：多把钥匙与收件人管理、生成新钥匙（设置 › 高级）；备份位置的添加与同步（下一段“备份位置与同步”）；恢复、迁移、创建副本；删除备份周期。这些都不画按钮。</div>
+</div>
