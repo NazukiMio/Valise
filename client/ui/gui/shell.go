@@ -147,6 +147,12 @@ func (a *App) pageSlot(c *ui.Context, n *Node) {
 					a.onServerPage(c, r.Param("name"))
 				case r.Match("/servers/{name}/install/{profile}"):
 					a.installPage(c, r.Param("name"), r.Param("profile"))
+				case r.Match("/servers/{name}/rename"):
+					a.renamePage(c, r.Param("name"))
+				case r.Match("/servers/{name}/migrate"):
+					a.migratePage(c, r.Param("name"))
+				case r.Match("/servers/{name}/porter"):
+					a.porterPage(c, r.Param("name"))
 				case r.Match("/servers/{name}"):
 					a.serverPage(c, r.Param("name"))
 				case r.Match("/locations"):

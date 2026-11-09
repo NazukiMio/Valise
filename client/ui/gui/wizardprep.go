@@ -89,20 +89,8 @@ func (a *App) prepareStep(c *ui.Context, w *wizard) {
 	})
 }
 
-// doingNow is the step's current sub-step with how long it has waited, or
-// that OpenSSH is waiting for the user's answer in the dialog.
-func (a *App) doingNow(w *wizard, now time.Time) string {
-	for _, p := range a.asks {
-		if p.kind == askServer {
-			return T("prepare.ssh_asking")
-		}
-	}
-	text := orText(w.doing, T("prepare.running"))
-	if secs := int(now.Sub(w.doingAt).Seconds()); !w.doingAt.IsZero() && secs >= 3 {
-		return T("prepare.waited", "what", text, "n", secs)
-	}
-	return T("prepare.doing", "what", text)
-}
+// doingNow is the step's current sub-step with how long it has waited.
+func (a *App) doingNow(w *wizard, now time.Time) string { return a.doingText(w.doing, w.doingAt, now) }
 
 // stopPrepare ends the running work and the questions it asked.
 func (a *App) stopPrepare(w *wizard) {

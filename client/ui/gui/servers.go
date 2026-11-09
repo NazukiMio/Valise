@@ -20,6 +20,7 @@ func (a *App) serversPage(c *ui.Context) {
 		errorBox(c, a.servers.err, a.fold("servers-err"))
 	}
 	rows := a.servers.value
+	defer a.removedSection(c)
 	if len(rows) == 0 {
 		if a.servers.busy {
 			ui.Spinner(c)
@@ -56,7 +57,7 @@ func (a *App) serverLine(c *ui.Context, r serverRow) {
 	if line.Hovered() {
 		line.Background(palette.Hover)
 	}
-	line.OnClick(func() { a.router.Push("/servers/" + r.Name) }).Children(func() {
+	line.OnClick(func() { a.serverTab = 0; a.router.Push("/servers/" + r.Name) }).Children(func() {
 		ui.Box(c).Size(8, 8).Radius(4).Background(toneColor(st.Tone))
 		ui.Column(c).Grow(1).Gap(3).Children(func() {
 			ui.Text(c, r.Name).Bold()

@@ -2,11 +2,15 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"valise/client/porter"
 	"valise/client/ssh"
@@ -25,6 +29,40 @@ type DeployReport struct {
 	Source   DeploySource    `json:"source"`
 	Platform porter.Platform `json:"platform"`
 	Porter   porter.Found    `json:"porter"`
+	// SHA256 is the deployed file's, recorded per server: finding the
+	// Valise passphrase again checks porter against it (ARCHITECTURE.md 3.2).
+	SHA256 string `json:"sha256"`
+}
+
+// DeployRecord is what this computer remembers of host's last deploy.
+type DeployRecord struct {
+	SHA256  string       `json:"sha256"`
+	Version string       `json:"version,omitempty"`
+	Source  DeploySource `json:"source"`
+	At      time.Time    `json:"at"`
+}
+
+func (s *Service) deploysPath() string { return filepath.Join(s.Dirs.Data, "porter-deploys.json") }
+
+func (s *Service) deployRecords() map[string]DeployRecord {
+	all := map[string]DeployRecord{}
+	if b, err := os.ReadFile(s.deploysPath()); err == nil {
+		_ = json.Unmarshal(b, &all)
+	}
+	return all
+}
+
+// LastDeploy is this computer's record of host's last porter deploy.
+func (s *Service) LastDeploy(host string) (DeployRecord, bool) {
+	r, ok := s.deployRecords()[host]
+	return r, ok
+}
+
+func (s *Service) recordDeploy(host string, r DeployRecord) {
+	all := s.deployRecords()
+	all[host] = r
+	b, _ := json.MarshalIndent(all, "", "  ")
+	_ = writeAtomicFile(s.deploysPath(), b)
 }
 
 const maxLocalPorterBytes = 64 << 20
@@ -67,7 +105,10 @@ func (s *Service) deployOn(ctx context.Context, t *ssh.Transport, src DeploySour
 	if err != nil {
 		return nil, err
 	}
-	return &DeployReport{Host: host, Source: src, Platform: p, Porter: *found}, nil
+	sum := sha256.Sum256(bin)
+	rep := &DeployReport{Host: host, Source: src, Platform: p, Porter: *found, SHA256: hex.EncodeToString(sum[:])}
+	s.recordDeploy(host, DeployRecord{SHA256: rep.SHA256, Version: found.Info.Version, Source: src, At: time.Now().UTC()})
+	return rep, nil
 }
 
 func readLocal(path string) ([]byte, error) {

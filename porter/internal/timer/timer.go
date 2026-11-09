@@ -193,3 +193,41 @@ func Seal(ctx context.Context, e *porterenroll.Env, home, instance string) error
 		return err
 	})
 }
+
+// RemoveAll stops and deletes every timed seal on the server, for removing
+// the server from Valise (docs/ARCHITECTURE.md 2.3). Protection plans stay
+// as records; with the units gone nothing seals on its own any more. It
+// returns the instances whose timer was removed.
+func RemoveAll(ctx context.Context, e *porterenroll.Env, home string) ([]string, error) {
+	dir := unitDir(home)
+	timers, _ := filepath.Glob(filepath.Join(dir, "valise-seal@*.timer"))
+	services, _ := filepath.Glob(filepath.Join(dir, "valise-seal@*.service"))
+	if len(timers)+len(services) == 0 {
+		return nil, nil
+	}
+	run := func(args ...string) error {
+		out, err := e.Run(ctx, runTimeout, home, append([]string{"systemctl", "--user"}, args...)...)
+		if err != nil {
+			return valise.New("timer_failed", "无法运行 systemctl --user", "确认服务器使用 systemd 并且用户实例可用").WithDetail(err.Error())
+		}
+		if out.Code != 0 {
+			return valise.New("timer_failed", "systemctl --user "+args[0]+" 失败", "查看细节后重试").WithDetail(strings.TrimSpace(string(out.Stderr)))
+		}
+		return nil
+	}
+	var done []string
+	for _, t := range timers {
+		name := filepath.Base(t)
+		if err := run("disable", "--now", name); err != nil {
+			return done, err
+		}
+		inst := strings.TrimSuffix(strings.TrimPrefix(name, "valise-seal@"), ".timer")
+		done = append(done, inst)
+	}
+	for _, f := range append(timers, services...) {
+		if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
+			return done, err
+		}
+	}
+	return done, run("daemon-reload")
+}

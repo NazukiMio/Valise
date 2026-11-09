@@ -316,6 +316,7 @@ func (s *Service) AddServer(ctx context.Context, o AddServerOptions) error {
 	if err := config.SaveServerList(s.Dirs.Data, list); err != nil {
 		return err
 	}
+	s.unmarkRemoved(srv.Name)
 	o.Setup.doing(SetupKeys, "生成用户通行证")
 	keys := []string{dailyKeyName}
 	if err := s.ensureDailyKey(ctx, srv.Name); err != nil {

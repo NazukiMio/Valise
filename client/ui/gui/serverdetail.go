@@ -65,7 +65,7 @@ func (a *App) serverPage(c *ui.Context, name string) {
 		if a.agents.busy {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c); muted(ui.Text(c, T("server.connecting", "name", name))) })
 		} else {
-			ui.Button(c, T("server.reconnect")).OnClick(func() { a.refreshAgents(); a.readDoctor(name) })
+			ui.Button(c, T("server.reconnect")).OnClick(func() { a.refreshAgents(); a.readDoctor(name); a.readSettings(name) })
 		}
 	})
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
@@ -85,6 +85,11 @@ func (a *App) serverPage(c *ui.Context, name string) {
 			plainTag(c, T("server.kind.ssh"))
 		}
 	})
+	ui.Tabs(c, &a.serverTab, T("server.tab.overview"), T("server.tab.settings"))
+	if a.serverTab == 1 {
+		a.settingsTab(c, name, row, ps)
+		return
+	}
 	if st.Key == "offline" || st.Key == "attention" {
 		a.serverTrouble(c, name, st)
 	}

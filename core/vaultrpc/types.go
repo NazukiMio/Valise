@@ -32,6 +32,7 @@ const (
 	MethodTimerSet      = "timer_set"
 	MethodTimerStatus   = "timer_status"
 	MethodSealLog       = "seal_log"
+	MethodServerLeave   = "server_leave"
 )
 
 // Initiators recorded in the audit log.
@@ -491,4 +492,24 @@ type TargetVerifyResult struct {
 	PendingBytes int64            `json:"pending_bytes"`
 	FetchedBytes int64            `json:"fetched_bytes"`
 	CheckedAt    time.Time        `json:"checked_at"`
+}
+
+// Steps of server_leave, the server side of removing a server from Valise
+// and cleaning it (docs/ARCHITECTURE.md 2.3). Developer mode.
+const (
+	LeaveTimers = "timers" // stop and delete every timed seal
+	LeaveMark   = "mark"   // write removed_at into server.json
+	LeavePorter = "porter" // delete the deployed porter, last
+)
+
+// ServerLeaveParams names one step.
+type ServerLeaveParams struct {
+	Step string `json:"step"`
+}
+
+// ServerLeaveResult says what the step removed: the instances whose timer
+// was stopped, or the porter's path ("" when none was at the deployed path).
+type ServerLeaveResult struct {
+	Timers []string `json:"timers,omitempty"`
+	Porter string   `json:"porter,omitempty"`
 }

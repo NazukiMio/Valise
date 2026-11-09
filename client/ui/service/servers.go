@@ -34,6 +34,7 @@ func (s *Service) AddServers(aliases ...string) ([]string, error) {
 		if !slices.Contains(list, a) {
 			list = append(list, a)
 			added = append(added, a)
+			s.unmarkRemoved(a)
 		}
 	}
 	return added, config.SaveServers(s.Dirs.Data, list)

@@ -30,7 +30,7 @@ func TestNoInterfaceWordsInCode(t *testing.T) {
 // Every key the code names is in the built-in catalog, and every key in
 // the catalog is named somewhere (a key built at run time is listed here).
 func TestCatalogMatchesCode(t *testing.T) {
-	built := []string{"service.short."} // shortService joins the state's name
+	built := []string{"service.short.", "leave.item."} // shortService joins the state's name
 	used := map[string]bool{}
 	keyLit := regexp.MustCompile(`"([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)"`)
 	files, _ := filepath.Glob("*.go")

@@ -65,6 +65,7 @@ func (a *App) locationsPage(c *ui.Context) {
 			for _, h := range hosts {
 				a.repoLine(c.Key(h), r.Name, h)
 			}
+			a.removedRepoLines(c, r.Name)
 		})
 	}
 	muted(ui.Text(c, T("locations.note"))).FontSize(11).Wrap()

@@ -74,6 +74,9 @@ type App struct {
 	installable []installable          // harnesses with an official install plan
 	newTerminal func(io.ReadWriteCloser) (*terminal.Terminal, error)
 	passes      map[string]*passState // admin pass actions by server
+	settings    map[string]*settingsState
+	serverTab   int                     // the server detail's tab: 0 overview, 1 settings
+	removed     []service.RemovedServer // removed servers, read with the list
 
 	locales map[string]localeEntry // imported catalogs by id (docs/UI.md 7.6)
 	langErr error                  // the chosen language could not be used, or an import failed
@@ -96,7 +99,8 @@ func New(svc *service.Service) *App {
 		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{},
 		health: map[string]*healthState{}, syncs: map[string]*syncState{}, vaultNames: map[string]string{},
 		scans: map[string]*serverScan{}, installs: map[string]*installRun{}, passes: map[string]*passState{},
-		prefs: prefs{View: "cards", Dismissed: map[string]string{}}}
+		settings: map[string]*settingsState{},
+		prefs:    prefs{View: "cards", Dismissed: map[string]string{}}}
 }
 
 // SetImagePicker gives the system's open dialog for an agent's picture.
@@ -257,8 +261,10 @@ func (a *App) refreshServers() {
 	a.run(func() {
 		list, err := a.svc.ServerList()
 		rows := serverRows(list)
+		removed, _ := a.svc.RemovedServers()
 		a.update(func() {
 			a.servers = load[[]serverRow]{started: true, value: rows, err: err, at: time.Now()}
+			a.removed = removed
 		})
 	})
 }

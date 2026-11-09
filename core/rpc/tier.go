@@ -142,6 +142,9 @@ var adminMethods = map[string]bool{
 	"recipient_remove": true,
 	"old_cleanup":      true,
 	"install_check":    true,
+	// Removing the server from Valise: stops timers, marks server.json and
+	// deletes porter (docs/ARCHITECTURE.md 2.3).
+	"server_leave": true,
 	// Ends a process: only one Valise started, after the user confirms.
 	"terminal_session_end": true,
 }

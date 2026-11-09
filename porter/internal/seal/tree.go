@@ -49,6 +49,41 @@ func (p Paths) LeafDir(leaf string) (string, error) {
 // ServerInfo is server.json.
 type ServerInfo struct {
 	Name string `json:"name"`
+	// RemovedAt is set when the user removed the server from Valise and
+	// cleaned it; the backup library stays (docs/ARCHITECTURE.md 2.3).
+	RemovedAt *time.Time `json:"removed_at,omitempty"`
+}
+
+func readServerInfo(p Paths) (ServerInfo, error) {
+	var si ServerInfo
+	b, err := os.ReadFile(p.ServerFile())
+	if errors.Is(err, os.ErrNotExist) {
+		return si, nil
+	}
+	if err != nil {
+		return si, err
+	}
+	if err := json.Unmarshal(b, &si); err != nil {
+		return si, valise.New("server_file_invalid", "服务器上的 server.json 无法解析", "检查 ~/.config/valise/server.json").WithDetail(err.Error())
+	}
+	return si, nil
+}
+
+func writeServerInfo(p Paths, si ServerInfo) error {
+	b, _ := json.MarshalIndent(si, "", "  ")
+	return writeAtomic(p.ServerFile(), append(b, '\n'), 0o600)
+}
+
+// MarkServerRemoved writes removed_at into server.json; the backup library
+// and the name stay. A server without a name has nothing to mark.
+func MarkServerRemoved(p Paths, at time.Time) error {
+	si, err := readServerInfo(p)
+	if err != nil || si.Name == "" {
+		return err
+	}
+	at = at.UTC().Truncate(time.Second)
+	si.RemovedAt = &at
+	return writeServerInfo(p, si)
 }
 
 // ReadServerName returns the server name, "" when not set yet.
@@ -78,6 +113,11 @@ func SetServerName(p Paths, name string) error {
 		return err
 	}
 	if cur == name {
+		// Adding the server again clears the removed mark.
+		if si, err := readServerInfo(p); err == nil && si.RemovedAt != nil {
+			si.RemovedAt = nil
+			return writeServerInfo(p, si)
+		}
 		return nil
 	}
 	if cur != "" {
