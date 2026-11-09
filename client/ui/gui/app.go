@@ -77,6 +77,8 @@ type App struct {
 	settings    map[string]*settingsState
 	serverTab   int                     // the server detail's tab: 0 overview, 1 settings
 	removed     []service.RemovedServer // removed servers, read with the list
+	forgetting  string                  // the removed server whose record is being forgotten
+	forgetErr   error
 
 	locales map[string]localeEntry // imported catalogs by id (docs/UI.md 7.6)
 	langErr error                  // the chosen language could not be used, or an import failed

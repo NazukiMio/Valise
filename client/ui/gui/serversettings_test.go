@@ -136,6 +136,15 @@ func TestLeaveDialog(t *testing.T) {
 	a.removed = rm
 	tt.Frame()
 	hasAll(t, tt.Texts(), "已删除的服务器 · 1")
+	*a.fold("removed-servers") = true
+	tt.Frame()
+	tt.Advance(time.Second) // the removal dialog finishes closing
+	click(t, tt, "忘记")
+	hasAll(t, tt.Texts(), "忘记 home？", "不删任何备份")
+	click(t, tt, "忘记这台服务器")
+	if rm, _ := a.svc.RemovedServers(); len(rm) != 0 || a.forgetting != "" {
+		t.Fatalf("not forgotten: %+v", rm)
+	}
 }
 
 func TestVersionAndName(t *testing.T) {

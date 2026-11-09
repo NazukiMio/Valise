@@ -88,4 +88,21 @@ func TestRemoveServerHere(t *testing.T) {
 	if rm, _ := s.RemovedServers(); len(rm) != 0 {
 		t.Fatalf("still marked: %+v", rm)
 	}
+	// Forgetting drops only the record.
+	s.saveLeftovers("box", left)
+	s.RemoveServerHere("box", left)
+	if err := s.ForgetRemoved("box"); err != nil {
+		t.Fatal(err)
+	}
+	if rm, _ := s.RemovedServers(); len(rm) != 0 || s.LastLeftovers("box") != nil {
+		t.Fatalf("not forgotten: %+v", rm)
+	}
+}
+
+// Scanning with no harness profile at all says so instead of reporting an
+// empty server.
+func TestDetectWithoutProfiles(t *testing.T) {
+	s := newService(t, "ssh")
+	_, err := s.DetectInstances(context.Background(), "box")
+	wantCode(t, err, "no_profiles")
 }

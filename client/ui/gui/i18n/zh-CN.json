@@ -594,6 +594,10 @@
       "one": "{n} 个备份 · {state} · 不再补到本机",
       "other": "{n} 个备份 · {state} · 不再补到本机"
     },
-    "leave.offline_plain": "{name} 现在连不上。只能从这台电脑移除；服务器上的东西要等连上后再清，或你自己去清。"
+    "leave.offline_plain": "{name} 现在连不上。只能从这台电脑移除；服务器上的东西要等连上后再清，或你自己去清。",
+    "removed.forget": "忘记",
+    "removed.forget_title": "忘记 {name}？",
+    "removed.forget_what": "只删掉这台电脑上的这条记录，不删任何备份：服务器上的备份库和备份位置里的副本都还在，只是这里不再列出它们。以后再添加这台服务器，或从备份位置恢复，仍能用这些备份。",
+    "removed.forget_go": "忘记这台服务器"
   }
 }

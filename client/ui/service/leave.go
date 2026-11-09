@@ -318,3 +318,26 @@ func writeAtomicFile(path string, b []byte) error {
 	}
 	return os.Rename(tmp, path)
 }
+
+// ForgetRemoved drops a removed server's record from this computer; no
+// backup anywhere is touched (docs/ARCHITECTURE.md 2.3).
+func (s *Service) ForgetRemoved(host string) error {
+	list, err := s.RemovedServers()
+	if err != nil {
+		return err
+	}
+	list = slices.DeleteFunc(list, func(r RemovedServer) bool { return r.Name == host })
+	if err := s.saveRemoved(list); err != nil {
+		return err
+	}
+	all := map[string]*ServerLeftovers{}
+	if b, err := os.ReadFile(s.leftoversPath()); err == nil {
+		_ = json.Unmarshal(b, &all)
+	}
+	if _, ok := all[host]; ok {
+		delete(all, host)
+		b, _ := json.MarshalIndent(all, "", "  ")
+		return writeAtomicFile(s.leftoversPath(), b)
+	}
+	return nil
+}

@@ -34,10 +34,41 @@ func (a *App) removedSection(c *ui.Context) {
 						srv := *r.Server
 						ui.Button(c, T("removed.add_again")).OnClick(func() { a.wizardFor(srv, wzConnect) })
 					}
+					ui.Button(c, T("removed.forget")).OnClick(func() { a.forgetting, a.forgetErr = r.Name, nil })
 				})
 			}
 		})
 	})
+	if a.forgetting != "" {
+		a.forgetDialog(c)
+	}
+}
+
+// forgetDialog confirms dropping a removed server's record; the backups
+// stay where they are.
+func (a *App) forgetDialog(c *ui.Context) {
+	open := true
+	name := a.forgetting
+	if ui.Modal(c, &open, func() {
+		ui.Column(c).Width(440).Padding(24).Gap(12).Children(func() {
+			ui.Text(c, T("removed.forget_title", "name", name)).FontSize(18).Bold()
+			muted(ui.Text(c, T("removed.forget_what"))).FontSize(13).Wrap()
+			if a.forgetErr != nil {
+				errorBox(c, a.forgetErr, a.fold("forget-err"))
+			}
+			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+				ui.Button(c, T("common.cancel")).OnClick(func() { a.forgetting = "" })
+				ui.PrimaryButton(c, T("removed.forget_go")).OnClick(func() {
+					if a.forgetErr = a.svc.ForgetRemoved(name); a.forgetErr == nil {
+						a.forgetting = ""
+						a.refreshServers()
+					}
+				})
+			})
+		})
+	}).Dismissed() {
+		a.forgetting = ""
+	}
 }
 
 // rekeyServer opens the add wizard at the login step for a server already

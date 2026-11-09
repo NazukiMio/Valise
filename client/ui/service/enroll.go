@@ -199,6 +199,11 @@ func (s *Service) DetectInstances(ctx context.Context, host string) ([]DetectedI
 	if err != nil {
 		return nil, err
 	}
+	// Without any profile nothing can be recognized: say so instead of
+	// reporting an empty server.
+	if err := needProfiles(set); err != nil {
+		return nil, err
+	}
 	var det enroll.DetectResult
 	if err := s.call(ctx, host, enroll.MethodDetect, enroll.DetectParams{Profiles: set.Effective()}, &det); err != nil {
 		return nil, err
