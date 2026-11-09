@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	"valise/client/config"
 	"valise/client/porter"
@@ -19,9 +20,14 @@ type Service struct {
 	// pod elsewhere: the user accepted the risk for this one operation
 	// (docs/INSTALL.md 4.2). Only the CLI sets it, for one command.
 	RiskAccepted bool
-	Dirs         config.Dirs
-	Config       config.Config
-	Version      string
+	// locking is set while backup locks are being made (recovery_lock.go).
+	locking atomic.Bool
+	// recovering is set in recovery mode: background work waits
+	// (docs/ARCHITECTURE.md 3.2).
+	recovering atomic.Bool
+	Dirs       config.Dirs
+	Config     config.Config
+	Version    string
 	// Home is the local user's home, for ~/.ssh/config.
 	Home string
 	// SSHConfigPath defaults to ~/.ssh/config.

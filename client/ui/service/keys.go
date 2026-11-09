@@ -119,6 +119,8 @@ func (s *Service) Unlock(passphrase string) (*keystore.UnlockedKey, error) {
 		k.Lock()
 		return nil, valise.New("keystore_mismatch", "keystore.age 与 recipient.txt 不一致", "从离线恢复套件重新导入")
 	}
+	// Typing the passphrase is when missing backup locks are made.
+	s.refreshLocks(passphrase)
 	return k, nil
 }
 
@@ -135,6 +137,7 @@ func (s *Service) ExportKit(dir string) (*KeyInfo, error) {
 	if err := keystore.ExportKit(dir, data, info.Recipient); err != nil {
 		return nil, keyErr(err)
 	}
+	s.recordKitExport(dir)
 	return info, nil
 }
 

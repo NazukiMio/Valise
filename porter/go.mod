@@ -9,6 +9,8 @@ require (
 	valise/core v0.0.0
 )
 
+require filippo.io/edwards25519 v1.1.0 // indirect
+
 require (
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect

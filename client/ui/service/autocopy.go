@@ -88,6 +88,9 @@ func (s *Service) AutoCopy(ctx context.Context, host string, trigger CopyTrigger
 	if trigger != TriggerOpen && trigger != TriggerBackup {
 		return nil, valise.New("request_invalid", "未知的自动复制时机", "")
 	}
+	if s.RecoveryMode() {
+		return nil, valise.New("recovery_mode", "正在找回 Valise 口令，自动复制暂停", "找回完成或取消后再复制")
+	}
 	res := &AutoCopyResult{Host: host, Trigger: trigger, Locations: []AutoCopyOutcome{}}
 	if trigger == TriggerOpen {
 		s.renewForOpen(ctx, host, res)

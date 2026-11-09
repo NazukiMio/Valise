@@ -83,6 +83,11 @@ var dailyMethods = map[string]bool{
 	"server_name_set":    true,
 	MethodOwnerChallenge: true,
 	MethodOwnerProve:     true,
+	// Finding the Valise passphrase again: a request and its answer in the
+	// user's own staging folder; opening it needs the user's sudo.
+	"recovery_request": true,
+	"recovery_result":  true,
+	"recovery_clear":   true,
 }
 
 // conditionalMethods reach their handler on the daily tier, which picks the

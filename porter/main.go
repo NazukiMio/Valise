@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 	_ "time/tzdata" // period time zones (docs/VAULT_FORMAT.md 10.2) on servers without zoneinfo
+	"valise/porter/internal/recovery"
 
 	"valise/core/identity"
 	"valise/core/login"
@@ -62,6 +63,7 @@ const usage = `用法：
   valise-porter vault-cat <周期> <备份库内的相对路径>
   valise-porter stage-write --op <op_id>
   valise-porter tool-put <名称> <sha256>
+  valise-porter recovery-code --for <用户>（用 sudo 运行：找回 Valise 口令）
   valise-porter login-run <会话> [<列数> <行数>]
   valise-porter browser-shim <链接>...
   valise-porter mcp --instance <实例>`
@@ -195,6 +197,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(stdout, "%d\n", n)
+		return 0
+	case "recovery-code":
+		if len(args) != 3 || args[1] != "--for" {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		code, err := recovery.Run(args[2])
+		if err != nil {
+			fmt.Fprintln(stderr, "recovery-code:", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "验证码：%s %s\n在 Valise 里输入这 8 位数字。\n", code[:4], code[4:])
 		return 0
 	case "tool-put":
 		if len(args) != 3 {
