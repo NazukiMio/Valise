@@ -36,7 +36,7 @@ func (r *rcloneRemote) argv(args ...string) []string {
 // rcloneFailure explains a failed rclone run, naming login and network
 // causes.
 func rcloneFailure(st Station, what, stderr string) *valise.UserError {
-	reason, hint := what, "检查网络后重试；金库只追加，可以断点续传"
+	reason, hint := what, "检查网络后重试；备份库只追加，可以断点续传"
 	code := "sync_failed"
 	switch Cause(stderr) {
 	case CauseAuthDenied:

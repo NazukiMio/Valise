@@ -90,7 +90,7 @@ func (s *Service) pullFrom(ctx context.Context, list vaultrpc.FilesResult, snaps
 	fetch func(f vaultrpc.VaultFile, local string, w io.Writer) error) (*vault.Vault, *SnapshotPull, error) {
 	dir := s.DefaultPullDir(list.VaultID)
 	if b, err := os.ReadFile(filepath.Join(dir, vault.DescriptorFile)); err == nil && !strings.Contains(string(b), `"`+list.VaultID+`"`) {
-		return nil, nil, valise.New("pull_wrong_vault", "本机缓存目录里已经是另一个金库", "删除 "+dir+" 后重试")
+		return nil, nil, valise.New("pull_wrong_vault", "本机缓存目录里已经是另一个备份库", "删除 "+dir+" 后重试")
 	}
 	res := &SnapshotPull{Dir: dir, VaultID: list.VaultID, Partial: true}
 	// Persist the conservative state before changing any cache files. A

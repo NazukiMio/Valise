@@ -138,6 +138,6 @@ func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int) 
 		})
 	}
 	ui.Collapsible(c, text.techInfo, a.fold("point-tech"), func() {
-		muted(ui.Text(c, "备份 "+p.SnapshotRef.SnapshotID+"\n金库 "+p.SnapshotRef.VaultID)).Font(cur.Fonts.Mono)
+		muted(ui.Text(c, "备份 "+p.SnapshotRef.SnapshotID+"\n备份库 "+p.SnapshotRef.VaultID)).Font(cur.Fonts.Mono)
 	})
 }

@@ -178,7 +178,7 @@ func (s *Service) Pull(ctx context.Context, host, leaf, dir string) (*PullResult
 		dir = s.DefaultPullDir(list.VaultID)
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, vault.DescriptorFile)); err == nil && !strings.Contains(string(b), `"`+list.VaultID+`"`) {
-		return nil, valise.New("pull_wrong_vault", "目标目录里已经是另一个金库", "换一个目录，或不指定 --to")
+		return nil, valise.New("pull_wrong_vault", "目标目录里已经是另一个备份库", "换一个目录，或不指定 --to")
 	}
 	res := &PullResult{Leaf: leaf, Dir: dir, VaultID: list.VaultID}
 	sort.SliceStable(list.Files, func(i, j int) bool { return pullRank(list.Files[i].Path) < pullRank(list.Files[j].Path) })
@@ -196,7 +196,7 @@ func (s *Service) Pull(ctx context.Context, host, leaf, dir string) (*PullResult
 		local := filepath.Join(dir, filepath.FromSlash(f.Path))
 		if st, err := os.Stat(local); err == nil {
 			if st.Size() != f.Size {
-				return res, valise.New("pull_conflict", "本机副本中的 "+f.Path+" 与服务器不一致", "金库文件不应被修改；检查本机副本是否损坏")
+				return res, valise.New("pull_conflict", "本机副本中的 "+f.Path+" 与服务器不一致", "备份库文件不应被修改；检查本机副本是否损坏")
 			}
 			res.Present++
 			continue
@@ -283,7 +283,7 @@ func (s *Service) VerifyLocal(dir string, passphrase *string) (*VerifyLocalResul
 	}
 	probs, err := vault.VerifyNoKey(dir)
 	if err != nil {
-		return nil, valise.New("vault_unreadable", "无法读取本机金库 "+dir, "先运行 valise pull <服务器>").WithDetail(err.Error())
+		return nil, valise.New("vault_unreadable", "无法读取本机备份库 "+dir, "先运行 valise pull <服务器>").WithDetail(err.Error())
 	}
 	res.Problems = append(res.Problems, probs...)
 	v, _ := vault.Open(dir)

@@ -290,7 +290,7 @@ func (s *settingsScreen) view(m *Model) string {
 		body = s.advancedView(m, w)
 	case ssAbout:
 		body = box("关于", kv("版本", m.svc.Version, "项目", "github.com/NazukiMio/Valise",
-			"不用 Valise 也能恢复", "金库格式公开：用 age、zstd 和仓库里的 tools/standalone-restore/ 即可，把它指向任一周期文件夹",
+			"不用 Valise 也能恢复", "备份库格式公开：用 age、zstd 和仓库里的 tools/standalone-restore/ 即可，把它指向任一周期文件夹",
 			"第一次使用", "上手清单与各功能的小引导：按 g 打开"), w)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(16).Render(strings.Join(side, "\n")), body)

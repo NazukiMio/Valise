@@ -339,7 +339,7 @@ func cloudLine(r cloudRow) string {
 	inst, period, _ := vault.SplitLeaf(r.leaf)
 	label := inst + "  " + strings.Replace(period, "_", " ~ ", 1)
 	if r.leaf == vault.LegacyLeaf {
-		label = "分档之前的旧金库"
+		label = "分档之前的旧备份库"
 	}
 	n, bytes := 0, int64(0)
 	if r.server != nil {

@@ -101,7 +101,7 @@ func (r *JourneyReader) sources(req JourneyListRequest) ([]journey.Source, error
 	for _, source := range req.Vaults {
 		loc := source.LocationRef
 		if (loc.Kind != "local_repo" && loc.Kind != "recovery_cache") || loc.ID == "" || loc.AuthorityID == "" || !filepath.IsAbs(source.Root) || seen[loc] {
-			return nil, journeyError("source_conflict", "本机金库选择无效或位置身份重复")
+			return nil, journeyError("source_conflict", "本机备份库选择无效或位置身份重复")
 		}
 		source.Root = filepath.Clean(source.Root)
 		sources = append(sources, source)

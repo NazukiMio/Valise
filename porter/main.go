@@ -59,7 +59,7 @@ const usage = `用法：
   valise-porter protection-timer --instance <实例>（已接受保护计划的定时器）
   valise-porter task-run --id <运行标识>（一次性 systemd 单元执行已接受的备份运行记录）
   valise-porter autosync                    （由封存后自动启动，同步到期的备份位置）
-  valise-porter vault-cat <周期> <金库内的相对路径>
+  valise-porter vault-cat <周期> <备份库内的相对路径>
   valise-porter stage-write --op <op_id>
   valise-porter tool-put <名称> <sha256>
   valise-porter login-run <会话> [<列数> <行数>]

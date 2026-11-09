@@ -26,7 +26,7 @@ func keyErr(err error) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, keystore.ErrPassphraseTooShort):
-		return valise.New("passphrase_too_short", err.Error(), "换一个更长的口令；它是你恢复金库的唯一钥匙，请离线抄写保存")
+		return valise.New("passphrase_too_short", err.Error(), "换一个更长的口令；它是你恢复备份库的唯一钥匙，请离线抄写保存")
 	case errors.Is(err, keystore.ErrWrongPassphrase):
 		return valise.New("passphrase_wrong", "口令错误", "重新输入；如果忘记口令，Valise 无法帮你找回")
 	case errors.Is(err, keystore.ErrCorrupt):

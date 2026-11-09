@@ -75,7 +75,7 @@ func (c *cleanupScreen) items(m *Model) []cleanItem {
 				n += l.Bytes
 			}
 			out = append(out, cleanItem{kind: "已被取代的旧实例", label: e.InstanceID + dimStyle.Render("（被 "+e.Superseded.By+" 取代）"), bytes: n,
-				what: "删除它的实例记录和那次操作保留的旧目录；它的备份还在金库里。",
+				what: "删除它的实例记录和那次操作保留的旧目录；它的备份还在备份库里。",
 				act: func(m *Model) tea.Cmd {
 					return m.push(confirm("永久删除旧实例 "+e.InstanceID+" 的记录和旧目录？", nil, func(m *Model) tea.Cmd {
 						svc, ctx := m.svc, m.ctx
@@ -97,7 +97,7 @@ func (c *cleanupScreen) items(m *Model) []cleanItem {
 			l := l
 			label := strings.Replace(l.Leaf, "_", " ~ ", 1)
 			if l.Leaf == vault.LegacyLeaf {
-				label = "分档之前的旧金库"
+				label = "分档之前的旧备份库"
 			}
 			out = append(out, cleanItem{kind: "服务器上已结束的周期", label: label + dimStyle.Render("（"+itoa(len(l.Snapshots))+" 个备份）"), bytes: l.Bytes,
 				what: "只删除服务器上的这一份；备份位置上的副本不受影响。删除前会告诉你其他地方有没有完整副本。",

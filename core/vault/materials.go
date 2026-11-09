@@ -196,7 +196,7 @@ func IntegrityCheck(list []Material, read func(rel string) ([]byte, error)) []Pr
 		}
 	}
 	if _, ok := have["VAULT"]; !ok {
-		add("VAULT", "缺少金库描述文件")
+		add("VAULT", "缺少备份库描述文件")
 	}
 	for _, m := range list {
 		switch {

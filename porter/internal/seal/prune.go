@@ -238,7 +238,7 @@ func TargetLeafDelete(ctx context.Context, e *porterenroll.Env, p Paths, name, l
 	parent, dirName := tree+"/"+inst, period
 	if leaf == vault.LegacyLeaf {
 		if legacy == "" {
-			return valise.New("leaf_missing", "无法确定旧金库在 "+t.Name+" 上的位置", "服务器上的旧金库已经不存在")
+			return valise.New("leaf_missing", "无法确定旧备份库在 "+t.Name+" 上的位置", "服务器上的旧备份库已经不存在")
 		}
 		parent, dirName = strings.TrimRight(t.Dest, "/"), filepath.Base(legacy)
 	} else if tree == "" {

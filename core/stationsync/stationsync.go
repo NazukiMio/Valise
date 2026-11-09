@@ -173,7 +173,7 @@ func skipName(name string) bool {
 // failure explains a failed copy, naming the usual SSH causes.
 func failure(st Station, what, stderr string) *valise.UserError {
 	host := st.Host
-	reason, hint := what, "确认能用 SSH 登录 "+host+"，然后重试；金库只追加，可以断点续传"
+	reason, hint := what, "确认能用 SSH 登录 "+host+"，然后重试；备份库只追加，可以断点续传"
 	switch {
 	case strings.Contains(stderr, "Could not resolve hostname"):
 		reason, hint = what+"：不认识主机名 "+host, "检查远程备份位置的地址；服务器自己配置的远程备份位置要在它的 ~/.ssh/config 里写上 Host "+host

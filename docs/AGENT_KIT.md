@@ -237,7 +237,7 @@ tools:
 - `format: jsonl` 的会话文件以 `.zst` 或 `.zstd` 结尾时先解压；大小按磁盘上的字节计，token 估算按解压后的字节计。Valise 不执行这条命令，也不修改 harness 配置。
 - 技能正文用英文书写，并要求 agent 用用户的语言与用户交流；触发说明同时列出中英文说法。
 - `valise kit status <服务器> <实例>`（M7a）：逐个列出四个技能在技能目录中的状态（与本客户端发布的版本一致 / 已被修改 / 未安装）以及 Valise 留下的备份数；MCP 方面只报告最近一次 agent 经 MCP 调用的时间（来自审计记录）。Valise 不读取 harness 的配置，因此不声称"MCP 已配置"。
-- `valise kit uninstall <服务器> <实例> [--force]`（M7a）：先列出将删除的文件，用户确认后由 porter 在 Go 代码中删除：内容与当前发布版本一致的 `SKILL.md`、Valise 写的 `SKILL.md.valise-bak-*` 备份，以及因此变空的技能目录。被修改过的 `SKILL.md` 保留并列出，加 `--force` 才删除。然后打印撤除 MCP 的方法：profile 的 `agent_kit.mcp_remove_argv`（harness 自己的命令，Valise 不执行），或提示从配置片段所在文件删除相应条目；并提醒 agent 可能在常驻指令里加过一行提及 `valise_seal` 的提醒，需要用户或 agent 自行删除。MCP 状态、审计记录与金库不受影响。
+- `valise kit uninstall <服务器> <实例> [--force]`（M7a）：先列出将删除的文件，用户确认后由 porter 在 Go 代码中删除：内容与当前发布版本一致的 `SKILL.md`、Valise 写的 `SKILL.md.valise-bak-*` 备份，以及因此变空的技能目录。被修改过的 `SKILL.md` 保留并列出，加 `--force` 才删除。然后打印撤除 MCP 的方法：profile 的 `agent_kit.mcp_remove_argv`（harness 自己的命令，Valise 不执行），或提示从配置片段所在文件删除相应条目；并提醒 agent 可能在常驻指令里加过一行提及 `valise_seal` 的提醒，需要用户或 agent 自行删除。MCP 状态、审计记录与备份库不受影响。
 
 ## 9. 管理方接口与技能（N5a，规划未实现）
 

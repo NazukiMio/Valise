@@ -119,7 +119,7 @@ func Verify(p Paths) (*vaultrpc.VerifyResult, error) {
 		checked++
 	}
 	if checked == 0 && len(res.Problems) == 0 {
-		return nil, valise.New("vault_missing", "服务器上还没有金库", "先建立一个备份：valise seal <服务器> <实例>")
+		return nil, valise.New("vault_missing", "服务器上还没有备份库", "先建立一个备份：valise seal <服务器> <实例>")
 	}
 	return res, nil
 }
@@ -311,7 +311,7 @@ func Sync(ctx context.Context, e *porterenroll.Env, p Paths, name, initiator str
 		return nil, err
 	}
 	if !st.Exists {
-		return nil, valise.New("vault_missing", "服务器上还没有金库", "先建立一个备份：valise seal <服务器> <实例>")
+		return nil, valise.New("vault_missing", "服务器上还没有备份库", "先建立一个备份：valise seal <服务器> <实例>")
 	}
 	unlock, err := p.Lock()
 	if err != nil {

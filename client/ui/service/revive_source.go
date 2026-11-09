@@ -112,7 +112,7 @@ func (s *Service) settleUnverifiedSource(ctx context.Context, rp *RevivePlan, as
 			Reason: "恢复来源无法核实的快照 " + rp.Plan.SnapshotID + " 之前，先备份当前状态（操作 " + rp.Plan.OpID + "）"})
 		if err != nil {
 			e := valise.New("pre_restore_backup_failed", "恢复前的 full 备份没有完成，恢复没有开始，目标未改动",
-				"检查服务器与金库后重试；也可以改选“我清楚，继续”")
+				"检查服务器与备份库后重试；也可以改选“我清楚，继续”")
 			if ue, ok := valise.As(err); ok {
 				return e.WithDetail(ue.Code + "：" + ue.Reason)
 			}

@@ -270,7 +270,7 @@ func (s *Service) checkStation(ctx context.Context, host, serverName, leaf strin
 		err = valise.New("server_name_missing", "这台服务器还没有名字", "先给服务器起名")
 	}
 	if err == nil && leaf == vault.LegacyLeaf {
-		err = valise.New("verify_legacy", "分档之前的旧金库在这个位置上不能逐项核对", "删除前先把它取回到本机仓库再核对")
+		err = valise.New("verify_legacy", "分档之前的旧备份库在这个位置上不能逐项核对", "删除前先把它取回到本机仓库再核对")
 	}
 	if err != nil {
 		c.State, c.Reason = CopyUnknown, reasonOf(err)
@@ -288,7 +288,7 @@ func (s *Service) checkHere(ctx context.Context, host, serverName, leaf string, 
 		err = valise.New("server_name_missing", "这台服务器还没有名字", "先给服务器起名")
 	}
 	if err == nil && leaf == vault.LegacyLeaf {
-		err = valise.New("verify_legacy", "分档之前的旧金库不复制到云盘", "")
+		err = valise.New("verify_legacy", "分档之前的旧备份库不复制到云盘", "")
 	}
 	if err != nil {
 		c.State, c.Reason = CopyUnknown, reasonOf(err)

@@ -24,7 +24,7 @@ var (
 
 const recoveryDoc = `# Valise 离线恢复套件
 
-这个目录可以让你在没有 Valise 的情况下恢复金库中的数据。请离线保存，并另外抄下下面的指纹。
+这个目录可以让你在没有 Valise 的情况下恢复备份库中的数据。请离线保存，并另外抄下下面的指纹。
 
 - 公钥：%s
 - 指纹：%s
@@ -32,7 +32,7 @@ const recoveryDoc = `# Valise 离线恢复套件
 ## 文件
 
 - keystore.age：用你的恢复口令加密的 age 身份（标准 age 口令加密格式）。
-- recipient.txt：对应的 age 公钥，服务器金库用它加密。
+- recipient.txt：对应的 age 公钥，服务器备份库用它加密。
 - FINGERPRINT：公钥指纹（公钥字符串 SHA-256 十六进制值的前 16 位）。
 
 ## 不依赖 Valise 的恢复步骤
@@ -43,8 +43,8 @@ const recoveryDoc = `# Valise 离线恢复套件
        age -d -o identity.txt keystore.age
 
 3. 使用 Valise 仓库中的 tools/standalone-restore/（只需要 Python 3 标准库、age 与 zstd），
-   按 docs/VAULT_FORMAT.md 第 9 节恢复任意快照。金库按 <服务器>/<实例>/<周期>/ 分文件夹，
-   每个周期文件夹就是一个完整的金库：把 --vault 指向那个周期文件夹即可。
+   按 docs/VAULT_FORMAT.md 第 9 节恢复任意快照。备份库按 <服务器>/<实例>/<周期>/ 分文件夹，
+   每个周期文件夹就是一个完整的备份库：把 --vault 指向那个周期文件夹即可。
 4. 恢复完成后，妥善删除 identity.txt。
 `
 

@@ -75,7 +75,7 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 			fmt.Fprintf(w, "  %-28s %6d 个文件  %10s\n", categoryNames[cat], t.Files, size(t.Bytes))
 		}
 	}
-	fmt.Fprintf(w, "合计 %d 个文件，%s；本次新写入金库 %s，用时 %.1f 秒\n", rep.Files, size(rep.PlainBytes), size(rep.AddedBytes), float64(rep.DurationMS)/1000)
+	fmt.Fprintf(w, "合计 %d 个文件，%s；本次新写入备份库 %s，用时 %.1f 秒\n", rep.Files, size(rep.PlainBytes), size(rep.AddedBytes), float64(rep.DurationMS)/1000)
 	for _, s := range rep.SQLite {
 		if len(s.StrippedTables) > 0 {
 			fmt.Fprintf(w, "  %s:%s 的副本已清空凭据表 %v\n", s.Root, s.Path, s.StrippedTables)
@@ -101,9 +101,9 @@ func (c *cli) seal(ctx context.Context, args []string) error {
 	}
 	fmt.Fprintf(w, "周期：%s\n", rep.Leaf)
 	if len(rep.AutoSync) > 0 {
-		fmt.Fprintf(w, "状态：已写入服务器金库；正在后台顺带同步到 %s（结果见 valise vault status）\n", strings.Join(rep.AutoSync, "、"))
+		fmt.Fprintf(w, "状态：已写入服务器备份库；正在后台顺带同步到 %s（结果见 valise vault status）\n", strings.Join(rep.AutoSync, "、"))
 	} else {
-		fmt.Fprintln(w, "状态：已写入服务器金库；尚未同步到备份位置（valise sync <服务器> <目标>）")
+		fmt.Fprintln(w, "状态：已写入服务器备份库；尚未同步到备份位置（valise sync <服务器> <目标>）")
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 		for _, l := range st.Leaves {
 			label := l.Leaf
 			if l.Leaf == vault.LegacyLeaf {
-				label = "分档之前的旧金库（-）"
+				label = "分档之前的旧备份库（-）"
 			}
 			extra := ""
 			switch {
@@ -222,7 +222,7 @@ func (c *cli) vaultCmd(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		return c.printProblems("服务器金库（不需要私钥的校验）", res.Problems)
+		return c.printProblems("服务器备份库（不需要私钥的校验）", res.Problems)
 	}
 	return errUsage
 }
@@ -381,9 +381,9 @@ func (c *cli) verify(args []string) error {
 	if err != nil {
 		return err
 	}
-	what := "本机金库（不需要私钥的校验）"
+	what := "本机备份库（不需要私钥的校验）"
 	if res.WithKey {
-		what = fmt.Sprintf("本机金库（用钥匙打开并校验了 %d 个备份中的 %d 个文件）", res.Snapshots, res.Files)
+		what = fmt.Sprintf("本机备份库（用钥匙打开并校验了 %d 个备份中的 %d 个文件）", res.Snapshots, res.Files)
 	}
 	return c.printProblems(what, res.Problems)
 }

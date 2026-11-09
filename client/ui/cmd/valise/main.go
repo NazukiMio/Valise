@@ -70,7 +70,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   target auto <服务器> <名称> <间隔|off>            开关自动同步
   target list <服务器> <名称> [--json]              列出备份位置上的周期，并与服务器对照
   target delete <服务器> <名称> <周期> [--skip 位置,…] [--yes]  删除备份位置上一整个已结束的周期（先核对其他各处副本）
-  sync <服务器> <目标>                            把服务器金库同步到备份位置
+  sync <服务器> <目标>                            把服务器备份库同步到备份位置
   cloud list                                     列出可以添加的云盘（经 rclone）
   cloud rclone                                   准备这台电脑的 rclone（PATH 中已有就直接用）
   cloud add <服务器> <名称> --cloud <id> [--headless] [--allow-pending]
@@ -78,7 +78,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   cloud add --here <名称> --cloud <id> [--allow-pending]
                                                  在这台电脑上登录云盘（复制经这台电脑中转，只在 Valise 打开时进行）
   cloud remove <服务器> <名称> | --here <名称>       移除云盘位置与登录（网盘里的备份不删除）
-  pull <服务器> [--leaf 周期] [--to 目录]          把金库拉取到本机（默认全部周期）
+  pull <服务器> [--leaf 周期] [--to 目录]          把备份库拉取到本机（默认全部周期）
   period <服务器> <实例> week|month|quarter [--tz 时区]
                                                  设置备份分组（从下一组开始生效）
   timer <服务器> <实例> <间隔|off|status>          定时备份（systemd 用户定时器）
@@ -105,7 +105,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   doctor <服务器> [--json]                       检查服务器：架构、porter 版本、可用工具
   porter check <服务器>                           检查服务器上的 porter 有没有新版本（更新用 porter deploy --release）
   vault verify <服务器>                           在服务器上做不需要私钥的校验
-  verify --vault <目录> [--key]                   校验本机金库；--key 用私钥解密并逐个文件校验
+  verify --vault <目录> [--key]                   校验本机备份库；--key 用私钥解密并逐个文件校验
   checkup <服务器> <实例> [--json]                 会话与记忆检查（只读）
   health <服务器> <实例> [--json]                  健康：备份、恢复测试、服务、定时备份、审批（只读）
   protection resolve <服务器> <实例> --verify|--rollback

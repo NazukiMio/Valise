@@ -1,6 +1,6 @@
 # 共享服务契约
 
-> 状态：**已于 2026-11-05 经用户确认定稿，尚未实现**。用户明确决定“按这三项建议定稿，同步正式规范”；决定记录见第 14 节。本文是 N2–N5 后续实现的服务契约依据，正式规范已同步。设计定稿不等于代码、协议发布或实机验收完成；本文不提升 porter 协议、profile 或金库格式版本，不引入 mygo。
+> 状态：**已于 2026-11-05 经用户确认定稿，尚未实现**。用户明确决定“按这三项建议定稿，同步正式规范”；决定记录见第 14 节。本文是 N2–N5 后续实现的服务契约依据，正式规范已同步。设计定稿不等于代码、协议发布或实机验收完成；本文不提升 porter 协议、profile 或备份库格式版本，不引入 mygo。
 >
 > 原 `docs/N1_SERVICE_CONTRACTS_2026-11-05.md`（2026-11-07 改名）。N1 于 2026-11-05 定稿第 1–15 节；2026-11-07 用户在 N2 实施中追加的决定已并入正文相应章节（标“2026-11-07 增补”），第 16 节保留决定与位置对照。实现映射与验收记录见 [acceptance/N2.md](acceptance/N2.md)。
 >
@@ -40,7 +40,7 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 
 ### 3.1 权威记录与旧记录
 
-在服务器配置目录保存独立私有身份记录：`identity/server.json` 和 `identity/agents/<instance_id>.json`，设计格式为 `valise-identity/1`（实现时引入，不属于金库或 profile 格式）。后者包括 AgentRef、接受的 roots / profile 摘要、状态、创建时间和明确的接续记录引用；不含文件内容、环境值或凭据。目录 0700、文件 0600，写入采用锁、同目录临时文件、fsync 与 rename；只由主人权限的接入/重新接入/恢复收尾写入。日常读取不初始化这些文件。
+在服务器配置目录保存独立私有身份记录：`identity/server.json` 和 `identity/agents/<instance_id>.json`，设计格式为 `valise-identity/1`（实现时引入，不属于备份库或 profile 格式）。后者包括 AgentRef、接受的 roots / profile 摘要、状态、创建时间和明确的接续记录引用；不含文件内容、环境值或凭据。目录 0700、文件 0600，写入采用锁、同目录临时文件、fsync 与 rename；只由主人权限的接入/重新接入/恢复收尾写入。日常读取不初始化这些文件。
 
 身份独立于现有 dossier 文件，避免旧客户端重新保存 `valise-dossier/1` 时丢掉新字段。身份与 dossier 更新以固定的接入提交记录协调；未完成提交不发布新 generation，后续查询报告需要核实，不猜测成功。读取旧实例返回 `identity_state: legacy_unbound` 和本客户端的定位引用，不能伪造远端稳定身份。下一次用户明确接受接入时才建立身份。
 
@@ -53,11 +53,11 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 - 恢复当前实例保留目标 generation；记录“由 SnapshotRef 恢复”，不把时间点之前的世代重新写成当前世代。
 - 成功迁移：目标拥有新的 AgentRef，以 `migration_completed` 边接续原旅程。创建副本：新 AgentRef 与独立旅程，仅有 `clone_from` 来源关系。失败、回退、仅暂存通过、仅文件恢复都不生成成功迁移边。
 - 迁移关系字段：`relation_id`, `kind`, `source_agent?`, `source_snapshot`, `target_agent`, `operation_ref`, `verified_at`, `source_disposition`。source_disposition = stopped_verified / exclusive_omitted / unresolved；unresolved 不能宣称完整迁移完成。
-- 成功目标端保存关系的权威记录；客户端缓存，原服务器可达时补记，补记失败不撤销已成功恢复。关系不进入金库，源失联且没有任何可靠 AgentRef 证据时，只关联 source_snapshot，保留“来源实例身份未知”。
+- 成功目标端保存关系的权威记录；客户端缓存，原服务器可达时补记，补记失败不撤销已成功恢复。关系不进入备份库，源失联且没有任何可靠 AgentRef 证据时，只关联 source_snapshot，保留“来源实例身份未知”。
 
 ### 3.3 与快照的关联
 
-不为新世代改写旧快照。新备份在服务器外部运行记录中保存 AgentRef → SnapshotRef 的明确绑定；旧快照无绑定时展示在该金库历史中。仅靠同 instance_id / 同周期不能把旧世代全部挂到当前 Agent。丢失运行/迁移记录后仍可从完整金库重建保存点和导出，只会缺少世代、原因、教学标记和迁移关联。
+不为新世代改写旧快照。新备份在服务器外部运行记录中保存 AgentRef → SnapshotRef 的明确绑定；旧快照无绑定时展示在该备份库历史中。仅靠同 instance_id / 同周期不能把旧世代全部挂到当前 Agent。丢失运行/迁移记录后仍可从完整备份库重建保存点和导出，只会缺少世代、原因、教学标记和迁移关联。
 
 ## 4. 保护计划：权威、版本与兼容
 
@@ -75,7 +75,7 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 | `server_copies[]` | `target_ref`, `enabled`, `minimum_interval` | 引用现有目标，不含密码；直传/证书/中转条件分别报告，配置开启不等于实际可更新 |
 | `ClientProtectionBinding` | `client_id`, `agent_ref`, `revision`, `server_revision_seen`, `local_copies[]` | 本客户端私有；每项引用 repo_id 和是否随成功备份/客户端重新打开时补齐；路径仍取已有 repos 配置。执行规则与设置入口见 ARCHITECTURE.md 7.4（2026-11-08） |
 
-持久化到服务器 `protection/<instance_id>.json`（`valise-protection/1`）和客户端 `protection-bindings.json`（`valise-protection-bindings/1`）；均在现有 Valise 配置目录内，0600，原子替换，不放金库或活动 roots。
+持久化到服务器 `protection/<instance_id>.json`（`valise-protection/1`）和客户端 `protection-bindings.json`（`valise-protection-bindings/1`）；均在现有 Valise 配置目录内，0600，原子替换，不放备份库或活动 roots。
 
 日程的解释由目标 systemd 校验；计划返回下一次触发时间及夏令时预览。无相应时区/日程能力就拒绝启用，不由客户端偷偷转成固定 UTC。首版不承诺 exactly-once 每天触发；漏执行按实际记录显示（4.4）。
 
@@ -119,7 +119,7 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 | --- | --- | --- |
 | `ListAgents` | 服务器筛选、是否含旧实例、cursor/limit、refresh_policy | AgentSummary：AgentRef/legacy 定位、安装归属、显示名、各自 Observation 的运行/保护/健康摘要、可用能力；部分失败独立列出 |
 | `GetAgent` | AgentRef 或 legacy 定位 | 详情、来源、已接受布局版本、共享服务影响、入口元信息；敏感 URL 和环境内容不返回 |
-| `ListTimeline` | subject（AgentRef 或一个已打开金库集合）、from/to、tier、cursor/limit | TimelinePoint、缺口与查询完整性；不依赖连接原服务器 |
+| `ListTimeline` | subject（AgentRef 或一个已打开备份库集合）、from/to、tier、cursor/limit | TimelinePoint、缺口与查询完整性；不依赖连接原服务器 |
 | `GetTimelinePoint` | SnapshotRef + 可选 location_refs | 当时 tier、时间/大小、已知原因、每处材料/校验 Observation、已记录恢复动作 |
 | `ListTaskHistory` | AgentRef / SnapshotRef、时间窗、cursor/limit | 操作记录；失败任务不混作恢复点 |
 
@@ -137,7 +137,7 @@ TimelinePoint 的核心字段：`snapshot_ref`, `created_at`, `recorded_instance
 | --- | --- | --- |
 | metadata | 发现且解析了元数据与头文件位置 | 材料齐全、可解密 |
 | snapshot_material | 已解密定位文件列表及引用，所有必要加密材料齐全 | 其他时间点或整周期齐全 |
-| period_material | 与参照金库的快照/索引/pack/epoch/key 集合一致并已核对 | 明文能解、运行环境可用 |
+| period_material | 与参照备份库的快照/索引/pack/epoch/key 集合一致并已核对 | 明文能解、运行环境可用 |
 | integrity | 指定范围内 pack 哈希、索引边界、头/meta/epoch 关系通过 | 明文正确、可启动 |
 | decrypt | 指定快照文件全量解密并核对 SHA-256 | 暂存可写、服务健康 |
 | staging | 指定目标 profile/版本/roots 的暂存与 SQLite 校验通过 | 已交换或启动 |
@@ -171,7 +171,7 @@ result = passed / failed / unknown / stale / not_applicable；不得把其中一
 
 ### 6.1 读取来源
 
-`OpenRecoverySource(location_ref, vault_locator)` 只建立可查询的来源 handle，不能直接将任意路径交给旧 PlanRevive。服务器金库、用户明确添加/选择的本机目录、已配置远端位置分别用适配器；定位参数按各自安全规则验证。handle 不包含钥匙，不能授权写目标。
+`OpenRecoverySource(location_ref, vault_locator)` 只建立可查询的来源 handle，不能直接将任意路径交给旧 PlanRevive。服务器备份库、用户明确添加/选择的本机目录、已配置远端位置分别用适配器；定位参数按各自安全规则验证。handle 不包含钥匙，不能授权写目标。
 
 内部 `RecoverySource` 只提供 `InspectVault`、`ListSnapshots`、`ReadEncryptedObject`（允许的 VAULT/PERIOD/epoch/index/snapshot/pack 对象键）与 `Close`，不提供任意远端文件读取。大数据按流读取并验证；多位置补齐前核对 VaultID、SnapshotID、头摘要和 pack 内容哈希，冲突就停止。恢复缓存保留现有 partial 标记的原子写入和中断规则。
 
@@ -245,7 +245,7 @@ wait.kind = confirmation / owner_unlock / admin_login / risk_ack / stage_confirm
 
 | 请求类型 | 必需选择及版本约束 |
 | --- | --- |
-| `BackupRequest` | AgentRef、mode = accepted_plan / explicit_preset、expected_server_revision（按计划模式必填）、可选 explicit_tier（显式模式必填）、受限 purpose。reason 为可选用户文字，限长、不得写入金库元数据 |
+| `BackupRequest` | AgentRef、mode = accepted_plan / explicit_preset、expected_server_revision（按计划模式必填）、可选 explicit_tier（显式模式必填）、受限 purpose。reason 为可选用户文字，限长、不得写入备份库元数据 |
 | `CopyRequest` | subject = SnapshotRef / 指定 vault 基准、source_location、destination_refs、expected_destination_revisions；全周期复制仍使用现有布局，不因只选时间点就把 partial 标完整 |
 | `ActionRequest` | AgentRef、action_id、dossier/profile 摘要、操作前备份选择、允许的风险选择；实际命令只取远端已接受 profile，不接受 argv 输入 |
 | `RestoreRequest` | 第 6 节请求字段；target_agent 时需 generation，迁移/副本的新目标需明确新 id/roots；不通过旧 host 字符串暗中指定恢复来源 |
@@ -295,7 +295,7 @@ wait.kind = confirmation / owner_unlock / admin_login / risk_ack / stage_confirm
 | 远端备份/复制运行记录 | `~/.local/state/valise/runs/<run_id>.json` | 固定 backup/copy 执行器在副作用前记录 accepted，完成后记产物；分离执行时由一次性单元认领（9.4）；timer 与 MCP 也可映射为外部任务历史 |
 | 保护计划提交 | 服务器 state `protection-changes/<change_id>.json` | 只协调固定设置/timer 发布；不能执行自定义步骤 |
 | 恢复/B03 | 现有 journal / action-journal | 原状态机、锁、intent、恢复许可与损坏拒绝继续权威 |
-| 迁移关系 | 目标端 identity 目录下按 relation_id 记录，客户端缓存 | 丢失关系只降级关联，不阻断读金库 |
+| 迁移关系 | 目标端 identity 目录下按 relation_id 记录，客户端缓存 | 丢失关系只降级关联，不阻断读备份库 |
 
 任务记录不存口令、环境、原生输出、快照文件内容或解密后的文件名清单。配置/目标路径等本来可见的元信息仍按 0600 保护；向 MCP 投影再删掉非必要的敏感字段。
 
@@ -366,7 +366,7 @@ B03 操作前仍使用已确认标准备份要求；新日常 full 不擅自改�
 | --- | --- | --- | --- |
 | I1 | 两台服务器同 profile/id/显示名 | 两个 Agent，不能合并 | N2 fake-ssh |
 | I2 | 旧实例只读；接受接入；profile 升级；重用已清理 id | 只读不写身份；明确建代；升级保代；重用新代 | N2 fake-ssh + 实机 |
-| I3 | 成功迁移、失败回退、创建副本、身份关系丢失 | 仅成功迁移接续；副本独立；关系缺失不阻断金库读取 | N2/N3 |
+| I3 | 成功迁移、失败回退、创建副本、身份关系丢失 | 仅成功迁移接续；副本独立；关系缺失不阻断备份库读取 | N2/N3 |
 | P1 | 新建计划/未确认/旧 timer | 默认 full 尚未启用；未确认不落盘；旧 soul 保持 | N2 |
 | P2 | 两客户端同时改同 revision；修改中崩溃；本地绑定写失败 | 拒绝陈旧写入；pending 阻断/核实；分项结果真实 | N2 fake-ssh + systemd 实机 |
 | P3 | 接管后旧客户端改 timer/targets.auto；旧 seal / MCP | 无版本变更被拒；旧显式范围与 MCP 限频不变 | N2 |
@@ -391,7 +391,7 @@ N1 的设计验收包括用户确认第 14 节决定、契约与现有方法映�
 
 用户明确确认：“按这三项建议定稿，同步正式规范。”
 
-1. **身份与历史的关系**：采用第 3 节方案 A。每次新实例有独立世代，成功迁移用明确关系接续旅程，创建副本独立；身份/迁移关系保存在金库外。关系记录丢失后仍可从完整副本找回保存点，但世代和迁移关联显示未知；本轮不引入必须随快照携带的永久 AgentID。
+1. **身份与历史的关系**：采用第 3 节方案 A。每次新实例有独立世代，成功迁移用明确关系接续旅程，创建副本独立；身份/迁移关系保存在备份库外。关系记录丢失后仍可从完整副本找回保存点，但世代和迁移关联显示未知；本轮不引入必须随快照携带的永久 AgentID。
 2. **原服务器失联、独占身份不能核实隔离时**：首版只提供排除声明的独占凭据后恢复，或导出/暂存并等待处理。不把“连不上”视为已关机，不增加仅凭用户声明已关机/撤销身份就带独占身份完整启动的分支。
 3. **管理方跨进程确认**：采用第 8.1 节的人类进程执行方案。MCP 只留允许的请求，用户打开 GUI/TUI 后重建计划并确认，由该人类进程执行；不跨进程共享解锁身份、ssh-agent 凭据或通用确认票据，不由 MCP 进程凭 GUI 许可自行执行。
 

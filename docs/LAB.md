@@ -14,7 +14,7 @@ valise/
 │   ├── PRODUCT.md            # 定位、用户、非目标、术语与界面用语
 │   ├── ARCHITECTURE.md       # 传输、钥匙与登录、接入、备份、恢复、交换日志
 │   ├── SERVICE_CONTRACTS.md  # 共享服务契约（N1 定稿，2026-11-07 增补已并入正文）
-│   ├── VAULT_FORMAT.md       # 金库公开格式
+│   ├── VAULT_FORMAT.md       # 备份库公开格式
 │   ├── PROFILES.md           # Harness Profile 规范
 │   ├── LOGIN_RELAY.md        # 登录中继、管理页与本地页面转发
 │   ├── INSTALL.md            # 安装、原生界面、管理动作、第三方工具与高级模式
@@ -62,7 +62,7 @@ fake-ssh 只能验证本地协议连通性。凡是涉及真实 Linux 用户态�
 - **ARM 靶机断连时的应急穿透**：单条命令用 `/usr/local/bin/prlctl exec "Ubuntu 26.04 ARM64" <命令>`。复杂脚本先写到共享目录 `/media/psf/Home/`，在 VM 内执行，并把输出重定向到 `/tmp/out.log`。注意 `prlctl exec` 默认以 root 身份运行，切勿改动 `parallels` 用户目录下文件的属主。
 - **NAS 访问**：在 NAT 后的靶机（如 `ubuntu-vm`）访问 NAS 要走 Tailscale；局域网地址不可直连。
 - **x86 靶机容量很紧**：根分区可用空间约 3.8G。安装 Hermes 前先执行 `df -h ~`。Hermes 的虚拟环境可能占用数百 MB；空间不足时**询问用户**，不要自行清理任何文件。测试产物用 `: > file` 截断或 `t.TempDir()`。复活流程需要的暂存空间约为灵魂数据大小的 2 倍，演练前要先算清楚。
-- **NAS 路径约定**：所有数据只能写到 `/mnt/test/nas/` 下，金库同步目标固定为 `/mnt/test/nas/valise-vault/`。
+- **NAS 路径约定**：所有数据只能写到 `/mnt/test/nas/` 下，备份库同步目标固定为 `/mnt/test/nas/valise-vault/`。
 
 ### systemd 真机铁律（防止 218/CAPABILITIES 崩溃）
 
