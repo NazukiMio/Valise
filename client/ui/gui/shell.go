@@ -17,10 +17,12 @@ func (a *App) View(c *ui.Context) {
 		root.Draw(func(p *ui.Painter, r ui.Rect) { p.Image(img, r, ui.Cover) })
 	}
 	root.Children(func() {
+		a.recoveryBanner(c)
 		render(c, &shell, map[string]func(*ui.Context, *Node){
 			"brand": a.brandSlot, "nav": a.navSlot, "tagline": taglineSlot, "theme": a.themeSlot, "page": a.pageSlot,
 		})
 	})
+	a.keyDialog(c)
 	a.passDialog(c)
 }
 
@@ -50,7 +52,7 @@ type navItem struct {
 
 func navItems() []navItem {
 	return []navItem{{"/agents", icons.agent, T("nav.agents")}, {"/servers", icons.server, T("nav.servers")},
-		{"/locations", icons.folder, T("nav.locations")}}
+		{"/locations", icons.folder, T("nav.locations")}, {"/settings", icons.settings, T("nav.settings")}}
 }
 
 // section is the first-level entry the page belongs to.
@@ -155,6 +157,13 @@ func (a *App) pageSlot(c *ui.Context, n *Node) {
 					a.porterPage(c, r.Param("name"))
 				case r.Match("/servers/{name}"):
 					a.serverPage(c, r.Param("name"))
+				case r.Match("/settings"):
+					r.Title(T("nav.settings"))
+					a.settingsPage(c)
+				case r.Match("/settings/recover"):
+					a.recoverPage(c)
+				case r.Match("/settings/admin-rebuild"):
+					a.rebuildPage(c)
 				case r.Match("/locations"):
 					r.Title(T("nav.locations"))
 					a.locationsPage(c)

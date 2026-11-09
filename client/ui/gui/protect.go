@@ -1,0 +1,258 @@
+package gui
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/egoist/mygo/ui"
+
+	"valise/core/identity"
+	"valise/core/protection"
+	"valise/ui/service"
+)
+
+// The agent's “管理与设置” tab (docs/UI.md 9.5, 7.8): its protection plan,
+// each change prepared, confirmed here and checked by the server.
+
+// protState is what was read and is being done for one agent's plan.
+type protState struct {
+	ref  *identity.AgentRef
+	view *protection.View
+	err  error
+	read job
+
+	sched   *schedEdit
+	changeJ job
+	task    *service.ProtectionTask
+
+	backup *backupRun
+}
+
+// schedEdit is the schedule being edited.
+type schedEdit struct {
+	on, catchUp bool
+	at, tz      string
+	period      string
+}
+
+func (a *App) protOf(row *agentRow) *protState {
+	key := row.Server + "/" + row.Instance
+	if a.prots[key] == nil {
+		ps := &protState{}
+		for _, it := range a.agents.value.Items {
+			if it.ConnectionID == row.Server && it.Instance.InstanceID == row.Instance && it.AgentRef != nil {
+				ref := *it.AgentRef
+				ps.ref = &ref
+			}
+		}
+		a.prots[key] = ps
+		a.readProt(row.Server, ps)
+	}
+	return a.prots[key]
+}
+
+func (a *App) readProt(host string, ps *protState) {
+	if ps.ref == nil {
+		return
+	}
+	ref := *ps.ref
+	var v protection.View
+	a.start(&ps.read, time.Minute, func(ctx context.Context) (err error) {
+		v, err = a.svc.GetProtection(ctx, host, protection.GetParams{AgentRef: ref})
+		return err
+	}, func(err error) {
+		ps.err = err
+		if err == nil {
+			ps.view = &v
+		}
+	})
+}
+
+// desired is the plan in force, or a starting point when there is none.
+func (ps *protState) desired() protection.Desired {
+	if ps.view != nil && ps.view.ServerPlan != nil {
+		return ps.view.ServerPlan.Desired
+	}
+	d := protection.NewDefault()
+	d.Period = protection.Period{Unit: "month", Timezone: localZone()}
+	return d
+}
+
+func (a *App) manageTab(c *ui.Context, row *agentRow) {
+	ps := a.protOf(row)
+	if ps.ref == nil {
+		muted(ui.Text(c, T("protect.no_ref"))).FontSize(13).Wrap()
+		return
+	}
+	if ps.read.busy && ps.view == nil {
+		a.jobLine(c, &ps.read)
+		return
+	}
+	if ps.err != nil {
+		errorBox(c, ps.err, a.fold("prot-err-"+row.Instance))
+	}
+	if ps.view == nil {
+		return
+	}
+	if ps.backup != nil {
+		a.backupProgress(c, row, ps)
+	}
+	a.missedCard(c, row, ps)
+	d := ps.desired()
+	card(ui.Column(c)).Gap(8).Children(func() {
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, T("protect.title")).FontSize(16).Bold().Grow(1)
+			a.planTag(c, ps)
+			if ps.backup == nil || !ps.backup.j.busy {
+				ui.PrimaryButton(c, T("backup.now")).OnClick(func() { a.startBackupNow(row, ps) })
+			}
+		})
+		settingRow(c, T("protect.what"), T("protect.full"), "", nil)
+		settingRow(c, T("protect.schedule"), scheduleText(d.Schedule), "", func() {
+			ui.Button(c, T("protect.change")).OnClick(func() { ps.sched = newSchedEdit(d) })
+		})
+		settingRow(c, T("protect.period"), T("protect.period."+orText(d.Period.Unit, "month")), "", nil)
+		settingRow(c, T("protect.copies"), a.copiesText(ps), "", nil)
+		if ps.changeJ.busy {
+			a.jobLine(c, &ps.changeJ)
+		}
+		if ps.changeJ.err != nil {
+			errorBox(c, ps.changeJ.err, a.fold("chg-err-"+row.Instance))
+		}
+	})
+	if ps.sched != nil {
+		a.scheduleDialog(c, row, ps)
+	}
+}
+
+// planTag says where the plan stands: in force and checked, waiting to be
+// checked, or none yet.
+func (a *App) planTag(c *ui.Context, ps *protState) {
+	switch {
+	case len(ps.view.PendingChanges) > 0:
+		ui.Text(c, T("protect.pending")).FontSize(12).TextColor(palette.Warn)
+	case ps.view.ServerPlan != nil:
+		plainTag(c, T("protect.in_force", "n", ps.view.ServerPlan.Revision))
+	default:
+		plainTag(c, T("protect.none"))
+	}
+}
+
+func scheduleText(s protection.Schedule) string {
+	if s.Enabled == nil || !*s.Enabled {
+		return T("protect.schedule_off")
+	}
+	out := T("protect.schedule_on", "at", s.DailyAt, "tz", s.Timezone)
+	if s.CatchUpEnabled() {
+		out += T("common.dot_sep") + T("protect.catch_up")
+	}
+	return out
+}
+
+func (a *App) copiesText(ps *protState) string {
+	d := ps.desired()
+	if len(d.ServerCopies) == 0 {
+		return T("protect.copies_none")
+	}
+	var names []string
+	for _, cp := range d.ServerCopies {
+		names = append(names, cp.TargetRef.ID)
+	}
+	return strings.Join(names, T("common.list_sep"))
+}
+
+func newSchedEdit(d protection.Desired) *schedEdit {
+	e := &schedEdit{at: orText(d.Schedule.DailyAt, "04:40"), tz: orText(d.Schedule.Timezone, localZone()),
+		catchUp: d.Schedule.CatchUpEnabled(), period: orText(d.Period.Unit, "month")}
+	e.on = d.Schedule.Enabled != nil && *d.Schedule.Enabled
+	return e
+}
+
+func (a *App) scheduleDialog(c *ui.Context, row *agentRow, ps *protState) {
+	e := ps.sched
+	open := true
+	if ui.Modal(c, &open, func() {
+		ui.Column(c).Width(440).Padding(24).Gap(12).Children(func() {
+			ui.Text(c, T("protect.schedule_title")).FontSize(18).Bold()
+			ui.Checkbox(c, &e.on, T("protect.schedule_enable"))
+			if e.on {
+				ui.Row(c).Gap(10).Children(func() {
+					labeled(c, T("protect.at"), func() { ui.TextInput(c, &e.at).Label(T("protect.at")).Placeholder("04:40") }).Width(110)
+					labeled(c, T("protect.tz"), func() { ui.TextInput(c, &e.tz).Label(T("protect.tz")).Placeholder("Asia/Shanghai") }).Grow(1)
+				})
+				ui.Checkbox(c, &e.catchUp, T("protect.catch_up_ask"))
+			}
+			labeled(c, T("protect.period"), func() {
+				ui.RadioGroup(c, func() {
+					for _, u := range []string{"week", "month", "quarter"} {
+						ui.Radio(c.Key("p-"+u), &e.period, u, T("protect.period."+u))
+					}
+				}).Row().Gap(16).Label(T("protect.period"))
+			})
+			muted(ui.Text(c, T("protect.period_note"))).Wrap()
+			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+				ui.Button(c, T("common.cancel")).OnClick(func() { ps.sched = nil })
+				ui.PrimaryButton(c, T("protect.save")).OnClick(func() { a.saveSchedule(row, ps) })
+			})
+		})
+	}).Dismissed() {
+		ps.sched = nil
+	}
+}
+
+// saveSchedule prepares the change, confirms it (the click above is the
+// person's confirmation) and follows it until the server checked it.
+func (a *App) saveSchedule(row *agentRow, ps *protState) {
+	e := ps.sched
+	d := ps.desired()
+	on := e.on
+	d.Schedule.Enabled = &on
+	if on {
+		catch := e.catchUp
+		d.Schedule.DailyAt, d.Schedule.Timezone, d.Schedule.CatchUp = strings.TrimSpace(e.at), strings.TrimSpace(e.tz), &catch
+	}
+	d.Period.Unit = e.period
+	if d.Period.Timezone == "" {
+		d.Period.Timezone = orText(d.Schedule.Timezone, localZone())
+	}
+	var rev protection.Revision
+	if ps.view.ServerPlan != nil {
+		rev = ps.view.ServerPlan.Revision
+	}
+	ps.sched = nil
+	host, ref := row.Server, *ps.ref
+	a.start(&ps.changeJ, 5*time.Minute, func(ctx context.Context) error {
+		a.says(&ps.changeJ)(T("protect.preparing"))
+		fc, err := a.svc.PrepareProtectionChange(ctx, host, protection.PrepareParams{AgentRef: ref, ExpectedRevision: rev, Desired: d})
+		if err != nil {
+			return err
+		}
+		a.confirm(fc.PlanID)
+		a.says(&ps.changeJ)(T("protect.applying"))
+		t, err := a.svc.StartProtectionChange(ctx, fc.PlanID, "desktop-"+fc.PlanID)
+		for err == nil && t.State != "succeeded" && t.State != "failed" && t.State != "cancelled" && ctx.Err() == nil {
+			time.Sleep(time.Second)
+			t, err = a.svc.GetProtectionTask(ctx, t.TaskRef)
+		}
+		if err == nil && t.Error != nil {
+			err = taskErr(t.Error)
+		}
+		return err
+	}, func(error) { a.readProt(host, ps) })
+}
+
+// localZone is this computer's IANA time zone, "UTC" when unknown.
+func localZone() string {
+	if tz := os.Getenv("TZ"); tz != "" {
+		return tz
+	}
+	if p, err := os.Readlink("/etc/localtime"); err == nil {
+		if _, rest, ok := strings.Cut(filepath.ToSlash(p), "zoneinfo/"); ok {
+			return rest
+		}
+	}
+	return "UTC"
+}

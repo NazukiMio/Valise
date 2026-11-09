@@ -97,7 +97,7 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 	if len(none) > 0 {
 		out = append(out, attention{Key: "nobackup", Title: T("attention.stale.title", "n", len(none)),
 			Reason: T("attention.stale.reason", "names", names(none)),
-			State:  strings.Join(noneState, ","), Go: noneGo, Tab: tabHealth})
+			State:  strings.Join(noneState, ","), Go: noneGo, Tab: tabManage})
 	}
 	return out
 }

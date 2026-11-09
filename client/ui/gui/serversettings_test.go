@@ -32,12 +32,12 @@ func settingsWorld(t *testing.T) (*App, *ui.Tester) {
 // a button tagged with what it asks for; removing is its own block.
 func TestServerSettingsTab(t *testing.T) {
 	a, tt := settingsWorld(t)
+	a.serverTab = 1 // the nav also has a “设置”
 	a.router.Push("/servers/home")
 	tt.Frame()
-	click(t, tt, "设置")
 	hasAll(t, tt.Texts(), "服务器名", "也是备份位置里的文件夹名", "改名…", "Valise 口令", "Valise 通行证（用户通行证）",
 		"0.9.0 · 比这台电脑上的 Valise（0.9.2）旧", "更新到 0.9.2…", "管理登录", "这台电脑的用户通行证",
-		"这台电脑上没有（换了电脑或导入了配置）", "重新装…", "服务器密码", "这台电脑还没有加密钥匙", "删除服务器…")
+		"这台电脑上没有（换了电脑或导入了配置）", "重新装…", "服务器密码", "还没登记", "登记", "删除服务器…")
 	a.passes["home"].doc.PorterVersion = "0.9.2"
 	a.settings["home"].vault.ServerName = ""
 	tt.Frame()

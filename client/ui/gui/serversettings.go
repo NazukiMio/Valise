@@ -45,6 +45,8 @@ type settingsState struct {
 	deployJ  job
 	deployed *service.DeployReport
 
+	regJ job // registering the key
+
 	leave *leaveState
 }
 
@@ -114,7 +116,7 @@ func (a *App) settingsTab(c *ui.Context, name string, row *serverRow, ps *passSt
 				})
 			}
 		}
-		a.keyRow(c, ss)
+		a.keyRow(c, name, ss)
 		if ss.vaultErr != nil {
 			errorBox(c, ss.vaultErr, a.fold("set-err-"+name))
 		}
@@ -243,18 +245,43 @@ func (a *App) porterRow(c *ui.Context, name string, ps *passState) {
 	}
 }
 
-func (a *App) keyRow(c *ui.Context, ss *settingsState) {
+func (a *App) keyRow(c *ui.Context, name string, ss *settingsState) {
 	key, err := a.svc.KeyShow()
 	switch {
-	case err != nil:
-		settingRow(c, T("set.key"), T("set.key_none_here"), "", nil)
 	case ss.vault == nil:
 		settingRow(c, T("set.key"), T("set.unknown"), "", nil)
-	case slices.Contains(ss.vault.Recipients, key.Fingerprint):
+	case err == nil && slices.Contains(ss.vault.Recipients, key.Fingerprint):
 		settingRow(c, T("set.key"), T("set.key_registered"), "", nil)
+	case ss.regJ.busy:
+		settingRow(c, T("set.key"), T("set.key_not_yet"), "", func() { ui.Spinner(c) })
 	default:
-		settingRow(c, T("set.key"), T("set.key_not_yet"), T("set.key_auto"), nil)
+		need := ""
+		if len(ss.vault.Recipients) > 0 {
+			need = T("need.valise")
+		}
+		settingRow(c, T("set.key"), T("set.key_not_yet"), T("set.key_auto"), func() {
+			actionWith(c, T("set.key_register"), need, func() { a.needKey(func() { a.registerKey(name, ss) }) })
+		})
 	}
+	if ss.regJ.err != nil {
+		errorBox(c, ss.regJ.err, a.fold("reg-err-"+name))
+	}
+	if a.svc.RecoveryEnabled() {
+		for _, l := range a.svc.ServerLocks() {
+			if l.Server == name {
+				settingRow(c, T("lock.title"), T("lock.state."+l.State), "", nil)
+			}
+		}
+	}
+}
+
+func (a *App) registerKey(name string, ss *settingsState) {
+	a.start(&ss.regJ, 2*time.Minute, func(ctx context.Context) error { return a.ensureRegistered(ctx, name) },
+		func(err error) {
+			if err == nil {
+				a.readSettings(name)
+			}
+		})
 }
 
 // versionLess compares dotted versions (“0.9.0” < “0.9.2”); anything after

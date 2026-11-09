@@ -14,6 +14,7 @@ const (
 	tabOverview = iota
 	tabJourney
 	tabHealth
+	tabManage
 )
 
 // agentPage is one agent: overview, journey and health (docs/UI.md 9.5,
@@ -64,7 +65,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 		errorBox(c, a.iconErr, a.fold("icon-err"))
 	}
 	a.entryReport(c, row)
-	if ui.Tabs(c, &a.agentTab, T("agent.tab.overview"), T("agent.tab.journey"), T("agent.tab.health")).Changed() {
+	if ui.Tabs(c, &a.agentTab, T("agent.tab.overview"), T("agent.tab.journey"), T("agent.tab.health"), T("agent.tab.manage")).Changed() {
 		a.point = ""
 	}
 	switch a.agentTab {
@@ -73,6 +74,9 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 		return
 	case tabHealth:
 		a.healthTab(c, row)
+		return
+	case tabManage:
+		a.manageTab(c, row)
 		return
 	}
 	a.overview(c, row, points)

@@ -77,6 +77,14 @@ type App struct {
 	settings    map[string]*settingsState
 	serverTab   int                     // the server detail's tab: 0 overview, 1 settings
 	removed     []service.RemovedServer // removed servers, read with the list
+	setTab      int                     // 0 keys, 1 backup
+	keyFlow     *keyFlow                // the key dialog, nil when closed
+	keyNote     string                  // a done key action, said once
+	lockOff     bool                    // the backup lock's off confirmation is open
+	prots       map[string]*protState   // protection plans by server/instance
+	recover     *recoverState           // finding the passphrase again, nil when not
+	copyText    func(string) error      // the system clipboard; nil hides 复制
+	rebuild     *rebuildState           // rebuilding the admin passes
 	forgetting  string                  // the removed server whose record is being forgotten
 	forgetErr   error
 
@@ -95,15 +103,20 @@ type load[T any] struct {
 
 // New makes the state; nothing is read until Start.
 func New(svc *service.Service) *App {
-	return &App{svc: svc, router: ui.NewRouter("/agents"), harness: map[string]string{}, display: map[string]*profile.Display{},
+	a := &App{svc: svc, router: ui.NewRouter("/agents"), harness: map[string]string{}, display: map[string]*profile.Display{},
 		run: func(f func()) { go f() }, update: func(f func()) { f() },
 		entries: map[string]*entryState{}, entryOpener: svc.OpenEntry, openURL: service.OpenURL,
 		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{},
 		health: map[string]*healthState{}, syncs: map[string]*syncState{}, vaultNames: map[string]string{},
 		scans: map[string]*serverScan{}, installs: map[string]*installRun{}, passes: map[string]*passState{},
-		settings: map[string]*settingsState{},
-		prefs:    prefs{View: "cards", Dismissed: map[string]string{}}}
+		settings: map[string]*settingsState{}, prots: map[string]*protState{},
+		prefs: prefs{View: "cards", Dismissed: map[string]string{}}}
+	a.installReviews()
+	return a
 }
+
+// SetClipboard gives the system clipboard, for copying a command.
+func (a *App) SetClipboard(copy func(string) error) { a.copyText = copy }
 
 // SetImagePicker gives the system's open dialog for an agent's picture.
 func (a *App) SetImagePicker(pick func() (string, error)) { a.pickImage = pick }

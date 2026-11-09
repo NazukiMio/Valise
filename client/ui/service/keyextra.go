@@ -76,3 +76,7 @@ func (s *Service) ChangePassphrase(old, new string) error {
 	}
 	return keystore.SaveFile(s.keystorePath(), data)
 }
+
+// KitImportedFrom records that the key came from a recovery kit, which is
+// itself a backup of the key.
+func (s *Service) KitImportedFrom(dir string) { s.recordKitExport(dir) }

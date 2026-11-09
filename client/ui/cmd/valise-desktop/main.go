@@ -4,6 +4,7 @@ package main
 
 import (
 	"flag"
+	"github.com/egoist/mygo/transfer"
 	"io"
 	"log"
 	"path/filepath"
@@ -46,6 +47,7 @@ func main() {
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "Valise", Width: 1180, Height: 780, MinWidth: 860, MinHeight: 560,
 			Content: ui.View(app.View)})
 		app.SetUpdate(win.Update)
+		app.SetClipboard(func(text string) error { return mygo.Clipboard.Write(transfer.TextData(text)) })
 		app.SetImagePicker(func() (string, error) {
 			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: win, Title: "为 Agent 选择图标",
 				Filters: []mygo.FileFilter{{Name: "图片", Extensions: []string{"png", "jpg", "jpeg", "webp", "svg"}}}})

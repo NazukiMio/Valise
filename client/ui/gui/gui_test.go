@@ -203,7 +203,7 @@ func TestStaleCopiesAndRetired(t *testing.T) {
 		t.Fatalf("none on the server: %q", tt.Texts())
 	}
 	for _, it := range a.attentionItems(a.agentRows(a.agents.value), time.Now()) {
-		if it.Key == "nobackup" && (it.Go != "/agents/home/xiaoman" || it.Tab != tabHealth) {
+		if it.Key == "nobackup" && (it.Go != "/agents/home/xiaoman" || it.Tab != tabManage) {
 			t.Fatalf("nobackup leads to %s tab %d", it.Go, it.Tab)
 		}
 	}
