@@ -457,3 +457,37 @@ func TestAgentReaderMigratedSourceNeedsExactGenerationFakeSSH(t *testing.T) {
 		}
 	}
 }
+
+// A server that never answers is bounded on its own: the others are still
+// read, and it is said as a timeout, not hidden behind one overall error.
+func TestAgentReaderOneServerHangs(t *testing.T) {
+	e := fakesshenv.New(t)
+	for _, host := range []string{"alpha", "stuck"} {
+		agentFixture(t, e.AddHost(host), "server-"+host, "generation-"+host)
+		e.InstallPorter(host)
+	}
+	s := newService(t, e.SSH)
+	if _, err := s.AddServers("alpha", "stuck"); err != nil {
+		t.Fatal(err)
+	}
+	old := ServerReadTimeout
+	ServerReadTimeout = 2 * time.Second
+	t.Cleanup(func() { ServerReadTimeout = old })
+	t.Setenv("FAKESSH_HANG", "stuck")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	start := time.Now()
+	res, err := NewAgentReader(s).ListAgents(ctx, AgentListRequest{})
+	if err != nil {
+		t.Fatalf("one hung server failed the whole read: %v", err)
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Fatalf("took %s", time.Since(start))
+	}
+	if a := agentObservation(t, res, "alpha"); a.Status != "fresh" {
+		t.Fatalf("alpha not read: %+v", a)
+	}
+	if st := agentObservation(t, res, "stuck"); st.Status != "unknown" || st.Error == nil || st.Error.Code != "server_timeout" {
+		t.Fatalf("stuck: %+v", st)
+	}
+}

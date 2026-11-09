@@ -62,14 +62,22 @@ func addVPS(t *testing.T, adminPass string) (*Service, *fakesshenv.Env, string) 
 	if err := s.TrustHostKeys(ctx, srv, keys); err != nil {
 		t.Fatal(err)
 	}
-	var steps []string
+	var steps, doing []string
 	err = s.AddServer(ctx, AddServerOptions{Server: srv, AdminPassphrase: adminPass,
-		Setup: SetupOptions{Deploy: DeploySource{LocalPath: e.Porter()}, Step: func(st SetupStep) { steps = append(steps, st.Step) }}})
+		Setup: SetupOptions{Deploy: DeploySource{LocalPath: e.Porter()}, Step: func(st SetupStep) { steps = append(steps, st.Step) },
+			Doing: func(step, what string) { doing = append(doing, step+":"+what) }}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.Join(steps, ","); got != "keys,check,deploy,register,name,daily" {
 		t.Fatalf("steps %s", got)
+	}
+	// Each step says what it is doing before it may take a while.
+	all := strings.Join(doing, "\n")
+	for _, want := range []string{"keys:生成用户通行证", "keys:用 SSH 连接", "check:连接服务器", "register:连接 porter", "daily:用用户通行证连接 porter"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("no %q in %s", want, all)
+		}
 	}
 	return s, e, home
 }

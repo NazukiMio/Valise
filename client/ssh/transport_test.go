@@ -18,12 +18,12 @@ func TestArgs(t *testing.T) {
 		short = privateTmpDir()
 	}
 	tr, _ := New("box", Options{ControlDir: short})
-	want := []string{"-T", "-o", "ControlMaster=auto", "-o", "ControlPath=" + short + "/cm-%C", "-o", "ControlPersist=60", "--", "box", "uname"}
+	want := []string{"-T", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3", "-o", "ControlMaster=auto", "-o", "ControlPath=" + short + "/cm-%C", "-o", "ControlPersist=60", "--", "box", "uname"}
 	if got := tr.Args("uname"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%q", got)
 	}
 	tr, _ = New("box", Options{ControlDir: short, HostConfig: &HostConfig{ControlPath: "~/.ssh/cm-%C"}})
-	if got := tr.Args("uname"); !reflect.DeepEqual(got, []string{"-T", "--", "box", "uname"}) || !tr.ReusesUserControlMaster() {
+	if got := tr.Args("uname"); !reflect.DeepEqual(got, []string{"-T", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3", "--", "box", "uname"}) || !tr.ReusesUserControlMaster() {
 		t.Fatalf("user ControlMaster must be reused: %q", got)
 	}
 	for _, bad := range []string{"", "-oProxyCommand=x", "a b"} {
@@ -105,13 +105,13 @@ func TestMissingSSHBinary(t *testing.T) {
 
 func TestTTYAndForwardArgs(t *testing.T) {
 	tr, _ := New("box", Options{})
-	if got := tr.TTYArgs("login"); !reflect.DeepEqual(got, []string{"-tt", "--", "box", "login"}) {
+	if got := tr.TTYArgs("login"); !reflect.DeepEqual(got, []string{"-tt", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3", "--", "box", "login"}) {
 		t.Fatalf("%v", got)
 	}
-	if got := tr.ForwardArgs("::1", 1455); !reflect.DeepEqual(got, []string{"-W", "[::1]:1455", "--", "box"}) {
+	if got := tr.ForwardArgs("::1", 1455); !reflect.DeepEqual(got, []string{"-W", "[::1]:1455", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3", "--", "box"}) {
 		t.Fatalf("%v", got)
 	}
-	if got := tr.ForwardArgs("127.0.0.1", 18789); !reflect.DeepEqual(got, []string{"-W", "127.0.0.1:18789", "--", "box"}) {
+	if got := tr.ForwardArgs("127.0.0.1", 18789); !reflect.DeepEqual(got, []string{"-W", "127.0.0.1:18789", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3", "--", "box"}) {
 		t.Fatalf("%v", got)
 	}
 }

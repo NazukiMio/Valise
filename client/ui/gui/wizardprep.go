@@ -2,6 +2,7 @@ package gui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -49,7 +50,7 @@ func (a *App) prepareStep(c *ui.Context, w *wizard) {
 			case ok:
 				mark, ink, detail = "✓", palette.Ok, stepDetail(s)
 			case next && w.busy:
-				mark, ink, detail, next = "▸", palette.Text, "进行中…", false
+				mark, ink, detail, next = "▸", palette.Text, a.doingNow(w, c.Now()), false
 			case next && w.err != nil:
 				mark, ink, detail, next = "✗", palette.Warn, "没有完成，见下方原因；之后的步骤没有执行", false
 			}
@@ -69,6 +70,8 @@ func (a *App) prepareStep(c *ui.Context, w *wizard) {
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			switch {
 			case w.busy:
+				muted(ui.Text(c, "可以随时停止；已经做完的步骤会保留。")).Grow(1)
+				ui.Button(c, "停止").OnClick(func() { a.stopPrepare(w) })
 			case w.err != nil:
 				ui.Button(c, "取消").OnClick(func() { a.closeWizard() })
 				ui.PrimaryButton(c, "重试").OnClick(func() {
@@ -84,4 +87,43 @@ func (a *App) prepareStep(c *ui.Context, w *wizard) {
 			}
 		})
 	})
+}
+
+// doingNow is the step's current sub-step with how long it has waited, or
+// that OpenSSH is waiting for the user's answer in the dialog.
+func (a *App) doingNow(w *wizard, now time.Time) string {
+	for _, p := range a.asks {
+		if p.kind == askServer {
+			return "等你在弹框里回答 OpenSSH 的提问"
+		}
+	}
+	text := orText(w.doing, "进行中")
+	if secs := int(now.Sub(w.doingAt).Seconds()); !w.doingAt.IsZero() && secs >= 3 {
+		text += "…（已等 " + itoa(secs) + " 秒）"
+	} else {
+		text += "…"
+	}
+	return text
+}
+
+// stopPrepare ends the running work and the questions it asked.
+func (a *App) stopPrepare(w *wizard) {
+	if w.cancel != nil {
+		w.cancel()
+	}
+	a.dropServerPrompts()
+}
+
+// dropServerPrompts answers OpenSSH's open questions with “cancelled” when
+// the user stops: the ssh asking is being ended anyway.
+func (a *App) dropServerPrompts() {
+	keep := a.asks[:0]
+	for _, p := range a.asks {
+		if p.kind == askServer {
+			p.reply <- passReply{err: errStopped}
+			continue
+		}
+		keep = append(keep, p)
+	}
+	a.asks = keep
 }

@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"sort"
@@ -88,6 +90,35 @@ func agentReadError(code string) *valise.UserError {
 		reason, suggestion = "上次接入提交尚未完成，身份需要核实", "核对接入提交记录后重新接受接入"
 	}
 	return valise.New(code, reason, suggestion)
+}
+
+// ServerReadTimeout bounds reading one server's agents.
+var ServerReadTimeout = 30 * time.Second
+
+// connCodes are SSH failures whose own reason and suggestion say more than
+// the generic one.
+var connCodes = map[string]bool{"ssh_connect_failed": true, "ssh_auth_failed": true, "host_key_mismatch": true, "ssh_not_runnable": true}
+
+// readFailure keeps a connection failure's own code and words, says a
+// timeout as one, and otherwise gives the generic reason.
+func readFailure(host string, err error) *valise.UserError {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return serverTimeout(host)
+	}
+	if ue, ok := valise.As(err); ok {
+		switch {
+		case connCodes[ue.Code]:
+			return ue
+		case ue.Code == "identity_conflict" || ue.Code == "identity_needs_reconciliation":
+			return agentReadError(ue.Code)
+		}
+	}
+	return agentReadError("agent_query_failed").WithDetail(err.Error())
+}
+
+func serverTimeout(host string) *valise.UserError {
+	return valise.New("server_timeout", fmt.Sprintf("服务器 %s 在 %d 秒内没有回应", host, int(ServerReadTimeout/time.Second)),
+		"检查服务器是否开机、网络是否通畅；刚换过网络的话，稍等片刻后重新读取")
 }
 
 // observationKey prevents stale values from being reused after a connection is
@@ -251,27 +282,25 @@ func (r *AgentReader) ListAgents(ctx context.Context, req AgentListRequest) (Age
 			select {
 			case slots <- struct{}{}:
 			case <-ctx.Done():
+				obs.Error = serverTimeout(srv.Name)
 				observations[i] = obs
 				return
 			}
 			defer func() { <-slots }()
-			values, err := r.readServer(ctx, srv)
+			sctx, cancel := context.WithTimeout(ctx, ServerReadTimeout)
+			values, err := r.readServer(sctx, srv)
+			cancel()
 			if err != nil {
-				code := "agent_query_failed"
-				if ue, ok := valise.As(err); ok && (ue.Code == "identity_conflict" || ue.Code == "identity_needs_reconciliation") {
-					code = ue.Code
-				}
-				obs.Error = agentReadError(code)
+				obs.Error = readFailure(srv.Name, err)
 			} else {
 				obs.Status, obs.Value, obs.ObservedAt = "fresh", &values, &at
 			}
 			observations[i] = obs
 		}(i, srv)
 	}
+	// One server that does not answer never hides the others: each is
+	// bounded on its own, and what was read is kept when time runs out.
 	wg.Wait()
-	if err := ctx.Err(); err != nil {
-		return AgentListResult{}, err
-	}
 	for i := range observations {
 		obs := &observations[i]
 		if obs.Status == "fresh" {

@@ -17,7 +17,7 @@ type serverState struct {
 }
 
 // offlineCodes are the failures that mean the server could not be reached.
-var offlineCodes = map[string]bool{"ssh_connect_failed": true}
+var offlineCodes = map[string]bool{"ssh_connect_failed": true, "server_timeout": true}
 
 func (a *App) observation(name string) *service.AgentServerObservation {
 	for i := range a.agents.value.Observations {

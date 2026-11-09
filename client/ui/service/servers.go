@@ -104,11 +104,21 @@ type SetupOptions struct {
 	Name     string
 	KeyLabel string
 	Step     func(SetupStep)
+	// Doing is told what is happening now within a step, in plain words,
+	// before it may take a while (connecting, waiting for a password or the
+	// user's SSH agent, downloading).
+	Doing func(step, what string)
 }
 
 func (o SetupOptions) step(st SetupStep) {
 	if o.Step != nil {
 		o.Step(st)
+	}
+}
+
+func (o SetupOptions) doing(step, what string) {
+	if o.Doing != nil {
+		o.Doing(step, what)
 	}
 }
 
@@ -140,6 +150,7 @@ func (s *Service) SetupServer(ctx context.Context, host string, o SetupOptions) 
 // before the first seal (the daily key may register the first recipient).
 func (s *Service) setupOn(ctx context.Context, t *ssh.Transport, hc ssh.HostConfig, o SetupOptions) error {
 	host := t.Host()
+	o.doing(SetupCheck, "连接服务器，检查系统、架构与 porter")
 	doc, err := s.doctorOn(ctx, t, hc, false)
 	if err != nil {
 		return err
@@ -150,6 +161,11 @@ func (s *Service) setupOn(ctx context.Context, t *ssh.Transport, hc ssh.HostConf
 			return valise.New("setup_need_porter", "服务器上还没有可用的 porter："+doc.Problem.Reason,
 				"选择 porter 的来源：--release <版本>（从 GitHub Release 下载并校验）或 --local <文件>")
 		}
+		if o.Deploy.LocalPath != "" {
+			o.doing(SetupDeploy, "核对并上传本地构建的 porter")
+		} else {
+			o.doing(SetupDeploy, "从 GitHub Release 下载 porter "+o.Deploy.ReleaseTag+"，核对签名与 SHA-256 后上传")
+		}
 		rep, err := s.deployOn(ctx, t, o.Deploy)
 		if err != nil {
 			return err
@@ -158,6 +174,7 @@ func (s *Service) setupOn(ctx context.Context, t *ssh.Transport, hc ssh.HostConf
 	} else {
 		o.step(SetupStep{Step: SetupDeploy, OK: true, Detail: "已有 porter " + doc.PorterVersion})
 	}
+	o.doing(SetupRegister, "连接 porter，登记这台电脑")
 	found, err := porter.Probe(ctx, t)
 	if err != nil {
 		return err

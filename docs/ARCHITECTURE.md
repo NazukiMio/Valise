@@ -54,6 +54,7 @@ GUI 为最终用户交付，TUI 为资源紧凑环境的交互入口，CLI 与�
 - **数据面**：大数据流使用独立的一次性 SSH 调用，例如 `porter blob-read`（加密 blob 从服务器流向客户端）和 `porter stage-write --op <id>`（复活时，明文 tar 流从客户端流向服务器）。明文只会出现在客户端内存中，以及目标服务器的暂存目录里。
 - **连接复用**：优先复用用户已有的 ControlMaster；没有时，使用 `-o ControlMaster=auto -o ControlPath=<客户端缓存目录>/cm-%C -o ControlPersist=60`。Unix 套接字路径有长度上限（macOS 为 104 字节，OpenSSH 建立 master 时还会追加约 17 字节的临时后缀），缓存目录过长时改用 `/tmp/valise-<uid>`（必须是本人所有、权限 0700 的真实目录）；仍不满足时不使用连接复用。
 - **主连接按访问级别分开命名**：OpenSSH 只按主机、端口、用户区分主连接，复用时不看用的是哪把钥匙。日常钥匙的主连接套接字用 `cmd-%C`，你自己 SSH 设置的用 `cm-%C`，管理操作用一次性的 `op-<随机>`，三者绝不互相复用（M10 真机发现：两个配置目录都退回 `/tmp/valise-<uid>` 时，完整登录复用了日常钥匙的主连接）。
+- **连接与保活超时**（2026-11-09，用户反馈：换网络后已有服务器全部读不到）：Valise 发起的每条 ssh 都带 `-o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3`。连不上的服务器 15 秒内失败；网络变化后已经断掉、却还挂着的复用连接约 30 秒内被发现并结束，下次新开连接，而不是一直卡住。读取 Agent 清单时每台服务器单独限时 30 秒，一台不回应不影响其他服务器的结果，超时记为 `server_timeout`（界面算“离线”）。
 - **只有日常钥匙使用持续的连接复用**：管理操作每次新开自己的连接（`-o IdentitiesOnly=yes`，不连到日常钥匙的 ControlMaster），需要时只为这一次操作开临时 ControlMaster，结束即关（第 2.1 节）。
 - **协议版本**：格式为 `<主>.<次>`，当前为 `1.3`（1.1：M10 的访问级别；1.2：M11 的 `install_check`、`install_audit`、`entry_port_set`；1.3：B03 固定配置事务、操作状态与恢复）。主版本号不一致时客户端拒绝继续；次版本号只表示向后兼容的新增。
 - **porter 部署**：客户端从 GitHub Release 下载目标架构的二进制，用随客户端发布的公钥校验 `SHA256SUMS` 的 minisign 签名，再核对哈希；或者由用户显式选择本地构建产物。上传时先执行 `cat > ~/.local/bin/valise-porter.tmp`，再 `chmod 0755`，最后 `mv` 原子替换。

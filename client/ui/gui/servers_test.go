@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"valise/core/enroll"
 	"valise/core/install"
@@ -181,4 +182,36 @@ func TestServerDetail(t *testing.T) {
 	a.router.Push("/servers/nas")
 	tt.Frame()
 	hasAll(t, tt.Texts(), "离线", "来自 SSH 配置", "用你自己的 SSH 设置登录", "原因", "连不上", "重新连接")
+}
+
+// While preparing, the running step says what it is doing and for how
+// long; OpenSSH's open question is said as such; 停止 ends the work and
+// closes the question.
+func TestPrepareSaysWhatItDoes(t *testing.T) {
+	a, tt := world(t)
+	a.startWizard(false)
+	w := a.wiz
+	stopped := false
+	w.step, w.host, w.busy = wzPrepare, "lab", true
+	w.cancel = func() { stopped = true }
+	w.doing, w.doingAt = "用 SSH 连接 192.0.2.24，登录后写入通行证", time.Now().Add(-12*time.Second)
+	tt.Frame()
+	hasAll(t, tt.Texts(), "用 SSH 连接 192.0.2.24，登录后写入通行证…（已等 1", "停止", "可以随时停止")
+	reply := make(chan passReply, 1)
+	a.asks = append(a.asks, &passPrompt{host: "agent@192.0.2.24's password:", kind: askServer, open: true, reply: reply})
+	tt.Frame()
+	hasAll(t, tt.Texts(), "等你在弹框里回答 OpenSSH 的提问")
+	a.stopPrepare(w) // the dialog covers the page; 停止 does this
+	if !stopped || len(a.asks) != 0 {
+		t.Fatalf("stop: %v, %d questions left", stopped, len(a.asks))
+	}
+	if r := <-reply; r.err == nil {
+		t.Fatal("the question was not answered as stopped")
+	}
+	stopped = false
+	tt.Frame()
+	click(t, tt, "停止")
+	if !stopped {
+		t.Fatal("停止 did not stop")
+	}
 }

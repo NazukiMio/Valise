@@ -50,6 +50,12 @@ func run(args []string) int {
 	if ms, err := strconv.Atoi(os.Getenv("FAKESSH_DELAY_MS")); err == nil && ms > 0 {
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 	}
+	// FAKESSH_HANG lists hosts that never answer (a dead network path).
+	for _, a := range strings.Split(os.Getenv("FAKESSH_HANG"), ",") {
+		if a != "" && a == inv.alias {
+			time.Sleep(time.Hour)
+		}
+	}
 	for _, a := range strings.Split(os.Getenv("FAKESSH_FAIL_CONNECT"), ",") {
 		if a != "" && a == inv.alias {
 			fmt.Fprintf(os.Stderr, "ssh: connect to host %s port 22: Connection refused\n", inv.alias)

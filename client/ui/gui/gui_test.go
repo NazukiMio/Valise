@@ -25,7 +25,9 @@ func world(t *testing.T) (*App, *ui.Tester) {
 	a := New(svc)
 	a.run = func(f func()) { f() }
 	a.harness["openclaw"] = "OpenClaw"
-	at := time.Date(2026, 11, 8, 9, 0, 0, 0, time.Local)
+	// Today at 09:00, so that “今天” and “昨天” hold whenever tests run.
+	y, m, d := time.Now().Date()
+	at := time.Date(y, m, d, 9, 0, 0, 0, time.Local)
 	a.agents = load[service.AgentListResult]{started: true, value: service.AgentListResult{
 		Items: []service.AgentSummary{
 			{ConnectionID: "home", Instance: enroll.InstanceSummary{InstanceID: "xiaoman", Label: "小满", ProfileID: "openclaw",

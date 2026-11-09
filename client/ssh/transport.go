@@ -62,6 +62,13 @@ type Options struct {
 	Env []string
 }
 
+// ConnectTimeoutSeconds bounds opening a connection; AliveIntervalSeconds
+// (three missed answers) ends a connection that stopped answering.
+const (
+	ConnectTimeoutSeconds = 15
+	AliveIntervalSeconds  = 10
+)
+
 // ControlPersistSeconds keeps Valise's master connection alive between calls.
 const ControlPersistSeconds = 60
 
@@ -176,6 +183,11 @@ func (t *Transport) base(first ...string) []string {
 	if t.opts.NoPubkey {
 		args = append(args, "-o", "PubkeyAuthentication=no", "-o", "IdentitiesOnly=yes")
 	}
+	// A server that does not answer fails within ConnectTimeout, and a
+	// connection that died (the network changed under a shared master)
+	// is noticed by the keep-alives instead of hanging.
+	args = append(args, "-o", fmt.Sprintf("ConnectTimeout=%d", ConnectTimeoutSeconds),
+		"-o", fmt.Sprintf("ServerAliveInterval=%d", AliveIntervalSeconds), "-o", "ServerAliveCountMax=3")
 	if t.opts.BatchMode {
 		args = append(args, "-o", "BatchMode=yes")
 	}

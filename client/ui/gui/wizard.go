@@ -47,6 +47,9 @@ type wizard struct {
 	localPorter                  string
 	steps                        []service.SetupStep
 	host                         string // the server's name once it is added
+	doing                        string // what is happening now, in plain words
+	doingAt                      time.Time
+	cancel                       context.CancelFunc // stops the running step
 }
 
 // startWizard opens the wizard; from the home page it goes on to the
@@ -207,6 +210,8 @@ func (a *App) connectStep(c *ui.Context, w *wizard) {
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, "取消").OnClick(func() { a.wiz = nil; a.router.Push("/servers") })
 				if w.busy {
+					srv := w.server()
+					muted(ui.Text(c, "正在连接 "+knownHostsName(srv.HostName, srv.Port)+" 读取指纹（最多约 10 秒）…"))
 					ui.Spinner(c)
 				} else {
 					b := ui.PrimaryButton(c, "下一步：确认身份").OnClick(func() { a.scanKeys(w) })

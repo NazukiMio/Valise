@@ -224,7 +224,7 @@ func (a *App) pickPorter(w *wizard) {
 // runAdd adds the server: the passes, then preparing it, step by step.
 func (a *App) runAdd(w *wizard) {
 	srv := w.server()
-	opts := service.AddServerOptions{Server: srv, Setup: service.SetupOptions{Name: srv.Name, Deploy: a.deploySource(w)}}
+	opts := service.AddServerOptions{Server: srv, Setup: service.SetupOptions{Name: srv.Name, Deploy: a.deploySource(w), Doing: a.doingFor(w)}}
 	if w.admin == "yes" {
 		opts.AdminPassphrase = w.adminPass
 	}
@@ -235,7 +235,7 @@ func (a *App) runAdd(w *wizard) {
 }
 
 func (a *App) runImport(w *wizard, alias string) {
-	opts := service.SetupOptions{Name: defaultName(alias), Deploy: a.deploySource(w)}
+	opts := service.SetupOptions{Name: defaultName(alias), Deploy: a.deploySource(w), Doing: a.doingFor(w)}
 	a.prepare(w, alias, func(ctx context.Context, step func(service.SetupStep)) error {
 		opts.Step = step
 		return a.svc.SetupServer(ctx, alias, opts)
@@ -244,13 +244,17 @@ func (a *App) runImport(w *wizard, alias string) {
 
 // prepare runs one way of adding and shows its steps as they come.
 func (a *App) prepare(w *wizard, host string, add func(context.Context, func(service.SetupStep)) error) {
-	w.step, w.host, w.busy, w.err, w.steps = wzPrepare, host, true, nil, nil
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	w.step, w.host, w.busy, w.err, w.steps, w.cancel = wzPrepare, host, true, nil, nil, cancel
+	w.doing, w.doingAt = "开始", time.Now()
 	a.run(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		defer cancel()
 		err := add(ctx, func(s service.SetupStep) { a.update(func() { w.steps = append(w.steps, s) }) })
+		if ctx.Err() == context.Canceled {
+			err = valise.New("cancelled", "已停止，后面的步骤没有执行", "已经做完的步骤保留着；可以重试，或者取消")
+		}
 		a.update(func() {
-			w.busy, w.err = false, err
+			w.busy, w.err, w.cancel, w.doing = false, err, nil, ""
 			a.refreshServers()
 			if err != nil {
 				return
@@ -264,7 +268,15 @@ func (a *App) prepare(w *wizard, host string, add func(context.Context, func(ser
 	})
 }
 
+// doingFor shows the service's “what is happening now” on the wizard.
+func (a *App) doingFor(w *wizard) func(step, what string) {
+	return func(_, what string) { a.update(func() { w.doing, w.doingAt = what, time.Now() }) }
+}
+
 func (a *App) closeWizard() {
+	if a.wiz != nil && a.wiz.cancel != nil {
+		a.wiz.cancel()
+	}
 	a.wiz = nil
 	a.router.Push("/servers")
 }

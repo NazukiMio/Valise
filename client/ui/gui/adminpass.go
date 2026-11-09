@@ -26,6 +26,9 @@ type passPrompt struct {
 	reply chan passReply
 }
 
+// errStopped answers a question whose work the user stopped.
+var errStopped = valise.New("cancelled", "已停止", "")
+
 type passReply struct {
 	pass string
 	err  error

@@ -316,11 +316,13 @@ func (s *Service) AddServer(ctx context.Context, o AddServerOptions) error {
 	if err := config.SaveServerList(s.Dirs.Data, list); err != nil {
 		return err
 	}
+	o.Setup.doing(SetupKeys, "生成用户通行证")
 	keys := []string{dailyKeyName}
 	if err := s.ensureDailyKey(ctx, srv.Name); err != nil {
 		return err
 	}
 	if o.AdminPassphrase != "" {
+		o.Setup.doing(SetupKeys, "生成管理员通行证（用你的管理口令加密）")
 		if err := s.createAdminKey(ctx, srv.Name, o.AdminPassphrase); err != nil {
 			return err
 		}
@@ -331,6 +333,7 @@ func (s *Service) AddServer(ctx context.Context, o AddServerOptions) error {
 		return err
 	}
 	defer t.CloseMaster()
+	o.Setup.doing(SetupKeys, loginDoing(srv))
 	if err := s.installKeys(ctx, t, srv.Name, keys...); err != nil {
 		return err
 	}
@@ -340,6 +343,7 @@ func (s *Service) AddServer(ctx context.Context, o AddServerOptions) error {
 	if err := s.setupOn(ctx, t, hc, o.Setup); err != nil {
 		return err
 	}
+	o.Setup.doing(SetupDaily, "核对用户通行证只能查看和备份")
 	if err := s.verifyRestricted(ctx, srv.Name); err != nil {
 		_ = s.uninstallKeys(ctx, t, srv.Name, keys...)
 		s.forgetServer(srv.Name)
@@ -348,7 +352,17 @@ func (s *Service) AddServer(ctx context.Context, o AddServerOptions) error {
 	if o.AdminPassphrase != "" {
 		_ = s.loadAdmin(ctx, srv.Name, o.AdminPassphrase)
 	}
+	o.Setup.doing(SetupDaily, "用用户通行证连接 porter")
 	return s.checkDaily(ctx, srv.Name, step)
+}
+
+// loginDoing says what the one login is waiting for.
+func loginDoing(srv config.Server) string {
+	addr := knownHostsField(srv.HostName, srv.Port)
+	if srv.Login == config.LoginKey {
+		return "用你的私钥登录 " + addr + "，写入通行证（SSH Agent 要你确认时，请在它的窗口里放行）"
+	}
+	return "用 SSH 连接 " + addr + "，登录后写入通行证（OpenSSH 会问服务器密码）"
 }
 
 // forgetServer drops a server added by hand from the list.
