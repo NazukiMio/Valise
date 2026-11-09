@@ -72,11 +72,11 @@ func (a *App) installPage(c *ui.Context, host, id string) {
 		})
 	}
 	name := orText(a.harness[id], id)
-	ui.Link(c, "‹ 这台服务器上的 Agent", "/servers/"+host+"/agents")
-	pageHead(c, "安装 "+name, "在「"+host+"」上按官方方案安装。先看清，再确认。")
+	ui.Link(c, "‹ "+T("wizard.step.agents"), "/servers/"+host+"/agents")
+	pageHead(c, T("install.title", "name", name), T("install.sub", "host", host))
 	switch {
 	case ir.planning:
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c); ui.Text(c, "正在准备安装计划…") })
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c); ui.Text(c, T("install.planning")) })
 		return
 	case ir.planErr != nil:
 		errorBox(c, ir.planErr, a.fold("plan-err-"+key))
@@ -85,11 +85,11 @@ func (a *App) installPage(c *ui.Context, host, id string) {
 	p := ir.plan
 	if p.Existing != nil {
 		card(ui.Column(c)).Gap(10).Children(func() {
-			ui.Text(c, "服务器上已经有 "+name).FontSize(16).Bold().TextColor(palette.Warn)
+			ui.Text(c, T("install.existing", "name", name)).FontSize(16).Bold().TextColor(palette.Warn)
 			mono(muted(ui.Text(c, p.Existing.StateDir))).Wrap()
-			ui.Text(c, "再装一遍可能覆盖它。先停在这里，由你决定：接入已有的那个，或者去服务器上自己处理后再回来。").FontSize(13).Wrap()
+			ui.Text(c, T("install.existing_why")).FontSize(13).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				ui.PrimaryButton(c, "去接入它").OnClick(func() { a.rescanAndGo(host) })
+				ui.PrimaryButton(c, T("install.adopt_existing")).OnClick(func() { a.rescanAndGo(host) })
 			})
 		})
 		return
@@ -105,9 +105,9 @@ func (a *App) planCard(c *ui.Context, key, host string, ir *installRun, name str
 	p := ir.plan
 	card(ui.Column(c)).Gap(12).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "会做这些事").FontSize(16).Bold().Grow(1)
+			ui.Text(c, T("install.will_do")).FontSize(16).Bold().Grow(1)
 			if len(p.Missing) == 0 && len(p.Unfixable) == 0 {
-				ui.Text(c, "前提都满足").FontSize(12).TextColor(palette.Ok)
+				ui.Text(c, T("install.ready")).FontSize(12).TextColor(palette.Ok)
 			}
 		})
 		for i := range p.Steps {
@@ -115,33 +115,33 @@ func (a *App) planCard(c *ui.Context, key, host string, ir *installRun, name str
 		}
 		var facts []string
 		if p.Where != "" {
-			facts = append(facts, "装在 "+p.Where)
+			facts = append(facts, T("install.where", "where", p.Where))
 		}
 		if p.Takes != "" {
-			facts = append(facts, "大约 "+p.Takes)
+			facts = append(facts, T("install.takes", "takes", p.Takes))
 		}
-		facts = append(facts, "需要管理员通行证（或服务器密码）")
-		muted(ui.Text(c, strings.Join(facts, " · ")+"。基础检查未发现疑点，不代表安全。")).Wrap()
+		facts = append(facts, T("install.needs_admin"))
+		muted(ui.Text(c, T("install.facts", "facts", strings.Join(facts, T("common.dot_sep"))))).Wrap()
 		for _, n := range p.Notes {
 			ui.Text(c, n).FontSize(12).Wrap()
 		}
 		if p.ProfileLocal {
-			ui.Text(c, "这份资料来自你自己的电脑，未经审核").FontSize(12).TextColor(palette.Warn)
+			ui.Text(c, T("profile.local")).FontSize(12).TextColor(palette.Warn)
 		}
 		missing := append(append([]string{}, reasons(p.Missing)...), reasons(p.Unfixable)...)
 		if len(missing) > 0 {
 			ui.Column(c).Gap(4).Padding(12, 14).Radius(10).Background(palette.AlertBg).Children(func() {
-				ui.Text(c, "服务器还缺这些，装不了：").Bold().TextColor(palette.AlertText)
+				ui.Text(c, T("install.missing")).Bold().TextColor(palette.AlertText)
 				for _, m := range missing {
 					ui.Text(c.Key(m), "· "+m).FontSize(13).TextColor(palette.AlertText).Wrap()
 				}
-				ui.Text(c, "先装好它们（自己在服务器上装，或交给服务器管理员），再回来。").FontSize(12).TextColor(palette.AlertText).Wrap()
+				ui.Text(c, T("install.missing_how")).FontSize(12).TextColor(palette.AlertText).Wrap()
 			})
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			ui.Button(c, "取消").OnClick(func() { delete(a.installs, key); a.router.Push("/servers/" + host + "/agents") })
+			ui.Button(c, T("common.cancel")).OnClick(func() { delete(a.installs, key); a.router.Push("/servers/" + host + "/agents") })
 			if len(missing) == 0 {
-				ui.PrimaryButton(c, "开始安装").OnClick(func() { a.startInstall(host, ir) })
+				ui.PrimaryButton(c, T("install.start")).OnClick(func() { a.startInstall(host, ir) })
 			}
 		})
 	})
@@ -160,7 +160,7 @@ func (a *App) planStep(c *ui.Context, key string, i int, st *service.PlanStep) {
 	ui.Column(c).Gap(6).Padding(12, 14).Radius(10).Background(palette.Board).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			if st.Optional {
-				ui.Checkbox(c, &st.Selected, "可选："+st.Summary)
+				ui.Checkbox(c, &st.Selected, T("install.optional", "what", st.Summary))
 			} else {
 				ui.Text(c, fmt.Sprintf("%d. %s", i+1, st.Summary)).Bold()
 			}
@@ -169,17 +169,17 @@ func (a *App) planStep(c *ui.Context, key string, i int, st *service.PlanStep) {
 			mono(muted(ui.Text(c, st.URL))).Wrap()
 		}
 		if st.SHA256 != "" {
-			muted(ui.Text(c, "SHA-256 "+st.SHA256+" · 已核对")).Wrap()
+			muted(ui.Text(c, T("install.sha_checked", "sha", st.SHA256))).Wrap()
 		}
 		if len(st.Command) > 0 && st.Kind != profile.StepScript {
 			mono(ui.Text(c, strings.Join(st.Command, " "))).FontSize(12).Wrap()
 		}
 		if st.Optional && st.SkipEffect != "" {
-			muted(ui.Text(c, "不选的话："+st.SkipEffect)).Wrap()
+			muted(ui.Text(c, T("install.skip_effect", "what", st.SkipEffect))).Wrap()
 		}
 		if len(st.Script) > 0 {
 			lines := strings.Count(string(st.Script), "\n") + 1
-			ui.Collapsible(c, fmt.Sprintf("查看脚本全文（%d 行）", lines), a.fold("script-"+key+itoa(i)), func() {
+			ui.Collapsible(c, T("install.script", "n", lines), a.fold("script-"+key+itoa(i)), func() {
 				mono(ui.Text(c, string(st.Script))).FontSize(11).Wrap()
 			})
 		}
@@ -215,7 +215,7 @@ func (a *App) startInstall(host string, ir *installRun) {
 		defer cancel()
 		res, err := a.svc.RunInstall(ctx, plan, service.InstallIO{Stdin: conn.in, Stdout: conn.outW, Stderr: conn.outW,
 			Step: func(i int, st service.PlanStep) {
-				a.update(func() { ir.step = fmt.Sprintf("第 %d 步 · %s", i+1, st.Summary) })
+				a.update(func() { ir.step = T("install.step", "n", i+1, "what", st.Summary) })
 			}})
 		conn.outW.Close()
 		a.update(func() { ir.running, ir.res, ir.err = false, res, err })
@@ -225,18 +225,18 @@ func (a *App) startInstall(host string, ir *installRun) {
 func (a *App) runView(c *ui.Context, key, host string, ir *installRun, name string) {
 	card(ui.Column(c)).Gap(10).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, orText(ir.step, "正在连接服务器…")).Bold().Grow(1)
+			ui.Text(c, orText(ir.step, T("install.connecting"))).Bold().Grow(1)
 			if ir.running {
 				ui.Spinner(c)
 			}
 		})
-		muted(ui.Text(c, "脚本问你问题时，直接在下面输入。"))
+		muted(ui.Text(c, T("install.type_here_hint")))
 		if ir.term != nil {
 			terminal.View(c, ir.term).Height(320).AutoFocus()
 		} else {
-			mono(ui.Text(c, orText(ir.text, "（还没有输出）"))).FontSize(12).Wrap().Padding(10).Radius(8).Background(palette.Board)
+			mono(ui.Text(c, orText(ir.text, T("install.no_output")))).FontSize(12).Wrap().Padding(10).Radius(8).Background(palette.Board)
 			if ir.running {
-				in := ui.TextInput(c, &ir.input).Placeholder("在这里输入，回车发送")
+				in := ui.TextInput(c, &ir.input).Placeholder(T("install.input"))
 				if in.Submitted() {
 					line := ir.input + "\n"
 					ir.input = ""
@@ -257,13 +257,13 @@ func (a *App) installResult(c *ui.Context, key, host string, ir *installRun, nam
 	card(ui.Column(c)).Gap(8).Children(func() {
 		switch {
 		case r != nil && r.Found != nil:
-			ui.Text(c, "装好了，并在服务器上找到了它").FontSize(16).Bold().TextColor(palette.Ok)
-			muted(ui.Text(c, "Valise 用资料包重新检测，确认 "+name+" 在 "+r.Found.StateDir+"。")).Wrap()
+			ui.Text(c, T("install.found")).FontSize(16).Bold().TextColor(palette.Ok)
+			muted(ui.Text(c, T("install.found_where", "name", name, "dir", r.Found.StateDir))).Wrap()
 		case r != nil && r.Completed:
-			ui.Text(c, "命令执行完了，但重新检测没有找到它").FontSize(16).Bold().TextColor(palette.Warn)
-			muted(ui.Text(c, "可能装到了别的位置，或者还需要在原生界面里完成设置。")).Wrap()
+			ui.Text(c, T("install.not_found")).FontSize(16).Bold().TextColor(palette.Warn)
+			muted(ui.Text(c, T("install.not_found_why"))).Wrap()
 		default:
-			ui.Text(c, "没有装完").FontSize(16).Bold().TextColor(palette.Warn)
+			ui.Text(c, T("install.unfinished")).FontSize(16).Bold().TextColor(palette.Warn)
 		}
 		if r != nil && len(r.Exits) > 0 {
 			muted(ui.Text(c, exitLine(r.Exits))).Wrap()
@@ -272,9 +272,9 @@ func (a *App) installResult(c *ui.Context, key, host string, ir *installRun, nam
 			errorBox(c, ir.err, a.fold("install-err-"+key))
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			ui.Button(c, "回到这台服务器").OnClick(func() { delete(a.installs, key); a.rescanAndGo(host) })
+			ui.Button(c, T("install.back_server")).OnClick(func() { delete(a.installs, key); a.rescanAndGo(host) })
 			if r != nil && r.Found != nil {
-				ui.PrimaryButton(c, "接入它").OnClick(func() { delete(a.installs, key); a.rescanAndGo(host) })
+				ui.PrimaryButton(c, T("install.adopt")).OnClick(func() { delete(a.installs, key); a.rescanAndGo(host) })
 			}
 		})
 	})
@@ -285,12 +285,12 @@ func exitLine(exits []int) string {
 	var parts []string
 	for i, e := range exits {
 		if e == -1 {
-			parts = append(parts, fmt.Sprintf("第 %d 步没选，跳过", i+1))
+			parts = append(parts, T("install.exit.skipped", "n", i+1))
 		} else {
-			parts = append(parts, fmt.Sprintf("第 %d 步退出码 %d", i+1, e))
+			parts = append(parts, T("install.exit.code", "n", i+1, "code", e))
 		}
 	}
-	return "命令：" + strings.Join(parts, "，")
+	return T("install.exits", "list", strings.Join(parts, T("common.comma")))
 }
 
 func (a *App) rescanAndGo(host string) {

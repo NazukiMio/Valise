@@ -23,7 +23,10 @@ const (
 	wzPrepare
 )
 
-var wizardSteps = []string{"连接服务器", "确认身份", "登录", "准备服务器", "这台服务器上的 Agent"}
+// wizardSteps are the wizard's five steps in the current language.
+func wizardSteps() []string {
+	return []string{T("wizard.step.connect"), T("wizard.step.identity"), T("wizard.step.login"), T("wizard.step.prepare"), T("wizard.step.agents")}
+}
 
 // wizard is one run of the wizard. Secrets typed here (the admin
 // passphrase) live only until the server is added or the wizard closes.
@@ -112,13 +115,13 @@ func (w *wizard) problem() string {
 	srv := w.server()
 	switch {
 	case srv.HostName == "":
-		return "填上服务器的地址"
+		return T("wizard.err.no_host")
 	case w.port != "" && (srv.Port <= 0 || srv.Port > 65535):
-		return "端口要是 1 到 65535 之间的数"
+		return T("wizard.err.port")
 	case enroll.ValidInstanceID(srv.Name) != nil:
-		return "名字只能用小写字母、数字和连字符（它是备份位置里的文件夹名）"
+		return T("wizard.err.name")
 	case srv.Login == config.LoginKey && srv.LoginKey == "":
-		return "选一个私钥文件"
+		return T("wizard.err.no_key")
 	}
 	if err := srv.Validate(); err != nil {
 		return err.Error()
@@ -132,7 +135,7 @@ func (a *App) wizardPage(c *ui.Context) {
 		a.startWizard(false)
 		w = a.wiz
 	}
-	ui.Link(c, "‹ "+text.navServers, "/servers")
+	ui.Link(c, "‹ "+T("nav.servers"), "/servers")
 	stepper(c, w.step)
 	switch w.step {
 	case wzConnect:
@@ -153,7 +156,7 @@ func (a *App) wizardPage(c *ui.Context) {
 // stepper is the wizard's five steps, the done ones ticked.
 func stepper(c *ui.Context, at int) {
 	ui.Row(c).Gap(6).AlignItems(ui.Center).Wrap().Children(func() {
-		for i, s := range wizardSteps {
+		for i, s := range wizardSteps() {
 			if i > 0 {
 				ui.Box(c.Key(i)).Size(18, 1).Background(palette.Line)
 			}
@@ -176,30 +179,32 @@ func stepper(c *ui.Context, at int) {
 func (a *App) connectStep(c *ui.Context, w *wizard) {
 	ui.Row(c).Gap(24).AlignItems(ui.Start).Children(func() {
 		card(ui.Column(c)).Grow(1).Basis(0).Gap(14).Padding(22).Children(func() {
-			ui.Text(c, "它在哪里？").FontSize(20).Bold().Font(cur.Fonts.Display)
-			labeled(c, "地址", func() { ui.TextInput(c, &w.addr).Label("地址").Placeholder("agent@192.0.2.24:22").AutoFocus() })
-			muted(ui.Text(c, "粘贴 用户@地址:端口 会自动拆开；只填地址也行，用户名和端口在下面补。")).Wrap()
+			ui.Text(c, T("wizard.connect.title")).FontSize(20).Bold().Font(cur.Fonts.Display)
+			labeled(c, T("wizard.field.address"), func() {
+				ui.TextInput(c, &w.addr).Label(T("wizard.field.address")).Placeholder("agent@192.0.2.24:22").AutoFocus()
+			})
+			muted(ui.Text(c, T("wizard.connect.paste_hint"))).Wrap()
 			user, _, port := splitAddress(w.addr)
 			ui.Row(c).Gap(10).Children(func() {
-				labeled(c, "用户名", func() { ui.TextInput(c, &w.user).Label("用户名").Placeholder(orText(user, "root")) }).Grow(1)
-				labeled(c, "端口", func() { ui.TextInput(c, &w.port).Label("端口").Placeholder(orText(port, "22")) }).Width(110)
+				labeled(c, T("wizard.field.user"), func() { ui.TextInput(c, &w.user).Label(T("wizard.field.user")).Placeholder(orText(user, "root")) }).Grow(1)
+				labeled(c, T("wizard.field.port"), func() { ui.TextInput(c, &w.port).Label(T("wizard.field.port")).Placeholder(orText(port, "22")) }).Width(110)
 			})
-			ui.Text(c, "怎么登录").Bold()
+			ui.Text(c, T("wizard.connect.how")).Bold()
 			ui.Row(c).Gap(10).Children(func() {
-				loginTile(c, w, config.LoginPassword, "服务器密码", "第一次登录时问你，Valise 不保存。")
-				loginTile(c, w, config.LoginKey, "我的私钥", "选一个私钥文件；只记位置，不读内容。")
+				loginTile(c, w, config.LoginPassword, T("wizard.login.password"), T("wizard.login.password_sub"))
+				loginTile(c, w, config.LoginKey, T("wizard.login.key"), T("wizard.login.key_sub"))
 			})
 			if w.login == config.LoginKey {
 				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-					mono(muted(ui.Text(c, orText(w.keyPath, "还没有选")))).Grow(1).MaxLines(1)
-					ui.Button(c, "选择私钥…").OnClick(func() { a.pickKeyFile(w) })
+					mono(muted(ui.Text(c, orText(w.keyPath, T("wizard.key.none"))))).Grow(1).MaxLines(1)
+					ui.Button(c, T("wizard.key.pick")).OnClick(func() { a.pickKeyFile(w) })
 				})
 			}
-			labeled(c, "名字", func() {
-				ui.TextInput(c, &w.name).Label("名字").Placeholder(orText(defaultName(w.server().HostName), "home-vps"))
+			labeled(c, T("wizard.field.name"), func() {
+				ui.TextInput(c, &w.name).Label(T("wizard.field.name")).Placeholder(orText(defaultName(w.server().HostName), "home-vps"))
 			})
-			muted(ui.Text(c, "名字也是备份位置里的文件夹名：小写字母、数字和连字符，之后不改。")).Wrap()
-			textLink(c, "改为从已有 SSH 配置导入…", func() { a.openImport(w) })
+			muted(ui.Text(c, T("wizard.name.hint"))).Wrap()
+			textLink(c, T("wizard.import.link"), func() { a.openImport(w) })
 			why := w.problem()
 			if why != "" && (w.addr != "" || w.name != "") {
 				ui.Text(c, why).FontSize(12).TextColor(palette.Warn)
@@ -208,13 +213,13 @@ func (a *App) connectStep(c *ui.Context, w *wizard) {
 				errorBox(c, w.err, a.fold("wiz-err"))
 			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				ui.Button(c, "取消").OnClick(func() { a.wiz = nil; a.router.Push("/servers") })
+				ui.Button(c, T("common.cancel")).OnClick(func() { a.wiz = nil; a.router.Push("/servers") })
 				if w.busy {
 					srv := w.server()
-					muted(ui.Text(c, "正在连接 "+knownHostsName(srv.HostName, srv.Port)+" 读取指纹（最多约 10 秒）…"))
+					muted(ui.Text(c, T("wizard.scanning", "addr", knownHostsName(srv.HostName, srv.Port))))
 					ui.Spinner(c)
 				} else {
-					b := ui.PrimaryButton(c, "下一步：确认身份").OnClick(func() { a.scanKeys(w) })
+					b := ui.PrimaryButton(c, T("wizard.connect.next")).OnClick(func() { a.scanKeys(w) })
 					if why != "" {
 						b.Disabled(true)
 					}
@@ -224,18 +229,18 @@ func (a *App) connectStep(c *ui.Context, w *wizard) {
 		ui.Column(c).Width(300).Gap(14).Children(func() {
 			a.liveCard(c, w)
 			card(ui.Column(c)).Gap(10).Children(func() {
-				muted(ui.Text(c, "接下来会发生什么")).FontSize(12)
-				how := "用服务器密码登录一次"
+				muted(ui.Text(c, T("wizard.next.title"))).FontSize(12)
+				how := T("wizard.next.password")
 				if w.login == config.LoginKey {
-					how = "用你的私钥登录一次"
+					how = T("wizard.next.key")
 				}
-				for i, s := range []string{"核对服务器的指纹，确认没连错", how, "办好用户通行证，需要时部署 porter", "看看上面有哪些 Agent"} {
+				for i, s := range []string{T("wizard.next.fingerprint"), how, T("wizard.next.passes"), T("wizard.next.agents")} {
 					ui.Row(c.Key(i)).Gap(10).Children(func() {
 						ui.Text(c, itoa(i+1)).FontSize(12).Bold().TextColor(palette.Brand)
 						ui.Text(c, s).FontSize(13).Wrap()
 					})
 				}
-				muted(ui.Text(c, "这一步不连接服务器。")).FontSize(11)
+				muted(ui.Text(c, T("wizard.next.offline"))).FontSize(11)
 			})
 		})
 	})
@@ -271,8 +276,8 @@ func (a *App) liveCard(c *ui.Context, w *wizard) {
 	card(ui.Column(c)).Gap(10).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.server).FontSize(22).TextColor(palette.Brand)
-			ui.Text(c, orText(srv.Name, "新服务器")).FontSize(16).Bold().Grow(1)
-			stateTag(c, serverState{Word: "未知", Tone: "stop"})
+			ui.Text(c, orText(srv.Name, T("wizard.card.new"))).FontSize(16).Bold().Grow(1)
+			stateTag(c, serverState{Key: "unknown", Word: T("server.state.unknown"), Tone: "stop"})
 		})
 		addr := srv.HostName
 		if srv.User != "" {
@@ -281,12 +286,12 @@ func (a *App) liveCard(c *ui.Context, w *wizard) {
 		if srv.Port != 0 {
 			addr += ":" + strconv.Itoa(srv.Port)
 		}
-		mono(muted(ui.Text(c, orText(addr, "地址还没填")))).FontSize(13)
-		how := "服务器密码登录"
+		mono(muted(ui.Text(c, orText(addr, T("wizard.card.no_addr"))))).FontSize(13)
+		how := T("wizard.card.password")
 		if w.login == config.LoginKey {
-			how = "私钥登录"
+			how = T("wizard.card.key")
 		}
-		muted(ui.Text(c, how+" · 还没有 Agent"))
+		muted(ui.Text(c, how+T("common.dot_sep")+T("servers.no_agents")))
 	})
 }
 
@@ -302,7 +307,7 @@ func (a *App) pickKeyFile(w *wizard) {
 		return
 	}
 	a.run(func() {
-		p, err := a.pickFile("选择私钥文件", "Valise 只记下它的位置，登录时交给 OpenSSH，不读内容。")
+		p, err := a.pickFile(T("wizard.key.pick_title"), T("wizard.key.pick_msg"))
 		a.update(func() {
 			if err == nil && p != "" {
 				w.keyPath = p

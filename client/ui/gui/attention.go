@@ -48,7 +48,7 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 	for _, r := range rows {
 		if !r.Retired() && r.HasService && r.ServiceTone != "ok" {
 			out = append(out, attention{Key: "svc-" + r.Server + "/" + r.Instance, Title: r.Name + " " + r.Service,
-				Reason: "在 " + r.Server + " 上，" + r.Harness + " 的服务现在没有运行，Agent 不会响应。",
+				Reason: T("attention.service.reason", "server", r.Server, "harness", r.Harness),
 				State:  r.Service, Go: "/agents/" + r.Server + "/" + r.Instance, Tab: tabHealth})
 		}
 	}
@@ -90,13 +90,13 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 		}
 	}
 	if len(toCopy) > 0 {
-		out = append(out, attention{Key: "stale", Title: fmt.Sprintf("%d 个 Agent 有新备份还没复制到这台电脑", len(toCopy)),
-			Reason: names(toCopy) + "。服务器上有更新的备份，这台电脑上的还停在 7 天以前；服务器损坏时，只能找回这台电脑上已有的那份。",
+		out = append(out, attention{Key: "stale", Title: T("attention.copy.title", "n", len(toCopy)),
+			Reason: T("attention.copy.reason", "names", names(toCopy)),
 			State:  strings.Join(toCopyState, ","), Go: "/locations"})
 	}
 	if len(none) > 0 {
-		out = append(out, attention{Key: "nobackup", Title: fmt.Sprintf("%d 个 Agent 超过 7 天没有新备份", len(none)),
-			Reason: names(none) + "。服务器上最近一次备份也在 7 天以前，或从来没有：这段时间的新内容没有被保存。看看定时备份是否开着、是否在运行。",
+		out = append(out, attention{Key: "nobackup", Title: T("attention.stale.title", "n", len(none)),
+			Reason: T("attention.stale.reason", "names", names(none)),
 			State:  strings.Join(noneState, ","), Go: noneGo, Tab: tabHealth})
 	}
 	return out
@@ -104,9 +104,9 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 
 // names lists up to four agents, then how many in all.
 func names(list []string) string {
-	s := strings.Join(list[:min(len(list), 4)], "、")
+	s := strings.Join(list[:min(len(list), 4)], T("common.list_sep"))
 	if len(list) > 4 {
-		s += fmt.Sprintf(" 等 %d 个", len(list))
+		s = T("attention.names_more", "names", s, "n", len(list))
 	}
 	return s
 }
@@ -115,11 +115,11 @@ func names(list []string) string {
 func verdict(agents, issues int) string {
 	switch {
 	case agents == 0:
-		return "还没有接入 Agent"
+		return T("verdict.none")
 	case issues == 0:
-		return fmt.Sprintf("%d 个 Agent，一切正常", agents)
+		return T("verdict.fine", "n", agents)
 	}
-	return fmt.Sprintf("%d 个 Agent，%d 件事需要你处理", agents, issues)
+	return T("verdict.issues", "n", agents, "issues", issues)
 }
 
 // quietLine is an agent's state when nothing needs attention: one muted
@@ -127,25 +127,25 @@ func verdict(agents, issues int) string {
 func quietLine(r agentRow, newest *time.Time, now time.Time) string {
 	parts := []string{shortService(r.Service)}
 	if !r.HasService {
-		parts = []string{"没有 Valise 控制的服务"}
+		parts = []string{T("service.none")}
 	}
 	if newest != nil {
-		parts = append(parts, when(*newest, now)+" 备份到本机")
+		parts = append(parts, T("agent.backed_up_local", "when", when(*newest, now)))
 	}
-	return strings.Join(parts, " · ")
+	return strings.Join(parts, T("common.dot_sep"))
 }
 
 // agentVerdict is one sentence about an agent for its page.
 func agentVerdict(r agentRow, newest *time.Time, now time.Time) (string, bool) {
 	if r.Note != "" {
-		return r.Note + "，这里是它原来的位置", true
+		return T("agent.verdict.moved", "note", r.Note), true
 	}
 	if r.HasService && r.ServiceTone != "ok" {
-		return r.Service + "，Agent 现在不会响应", true
+		return T("agent.verdict.down", "service", r.Service), true
 	}
 	s := quietLine(r, newest, now)
 	if newest == nil {
-		return s + " · 这台电脑上还没有它的备份", false
+		return T("agent.verdict.no_local", "line", s), false
 	}
 	return s, false
 }

@@ -74,6 +74,9 @@ type App struct {
 	installable []installable          // harnesses with an official install plan
 	newTerminal func(io.ReadWriteCloser) (*terminal.Terminal, error)
 	passes      map[string]*passState // admin pass actions by server
+
+	locales map[string]localeEntry // imported catalogs by id (docs/UI.md 7.6)
+	langErr error                  // the chosen language could not be used, or an import failed
 }
 
 // load is one read and what came of it.
@@ -119,6 +122,8 @@ func (a *App) Start() {
 	a.hasRepos = len(a.svc.Repos()) > 0
 	a.loadPrefs()
 	a.loadThemes()
+	a.loadLocales()
+	a.chooseLocale()
 	a.loadHarness()
 	a.refreshAgents()
 	a.refreshTimeline()

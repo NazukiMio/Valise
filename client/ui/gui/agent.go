@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -30,7 +29,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 	if row == nil {
 		row = &agentRow{Server: server, Instance: instance, Name: instance, Initial: initial(instance)}
 	}
-	if ui.Link(c, "‹ "+text.back, "/agents").Clicked() {
+	if ui.Link(c, "‹ "+T("agent.back"), "/agents").Clicked() {
 		a.point = ""
 	}
 	points := a.pointsOf(server, instance)
@@ -65,7 +64,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 		errorBox(c, a.iconErr, a.fold("icon-err"))
 	}
 	a.entryReport(c, row)
-	if ui.Tabs(c, &a.agentTab, text.tabOverview, text.tabJourney, "健康").Changed() {
+	if ui.Tabs(c, &a.agentTab, T("agent.tab.overview"), T("agent.tab.journey"), T("agent.tab.health")).Changed() {
 		a.point = ""
 	}
 	switch a.agentTab {
@@ -84,9 +83,9 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 	statusBoard(c, agentCells(*row, points, c), false)
 	ui.Row(c).Gap(18).AlignItems(ui.Start).Children(func() {
 		card(ui.Column(c)).Grow(1).Basis(0).Children(func() {
-			ui.Text(c, text.recentTitle).Bold()
+			ui.Text(c, T("agent.recent")).Bold()
 			if len(points) == 0 {
-				muted(ui.Text(c, text.noLocal))
+				muted(ui.Text(c, T("backup.no_local")))
 			}
 			for i, p := range points {
 				if i == 3 {
@@ -99,17 +98,17 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 			}
 			if len(points) > 0 {
 				ui.Row(c).Children(func() {
-					if ui.Button(c, text.journeyAll).Clicked() {
+					if ui.Button(c, T("journey.all")).Clicked() {
 						a.agentTab = tabJourney
 					}
 				})
 			}
 		})
 		card(ui.Column(c)).Grow(1).Basis(0).Children(func() {
-			ui.Text(c, fmt.Sprintf(text.whereTitle, row.Server)).Bold()
-			fact(c, text.harnessLabel, row.Harness)
+			ui.Text(c, T("agent.where", "server", row.Server)).Bold()
+			fact(c, T("agent.harness"), row.Harness)
 			if len(row.Roots) > 0 {
-				ui.Collapsible(c, text.techInfo, a.fold("roots-"+row.Server+row.Instance), func() {
+				ui.Collapsible(c, T("error.tech_info"), a.fold("roots-"+row.Server+row.Instance), func() {
 					for _, r := range row.Roots {
 						muted(ui.Text(c, r)).Font(cur.Fonts.Mono)
 					}
@@ -117,7 +116,7 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 			}
 		})
 	})
-	muted(ui.Text(c, text.localNote)).FontSize(11)
+	muted(ui.Text(c, T("backup.local_note"))).FontSize(11)
 }
 
 // fact is one labelled line of a card.

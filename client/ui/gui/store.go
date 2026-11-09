@@ -19,6 +19,7 @@ import (
 type prefs struct {
 	View  string `json:"view"`  // "cards" (default) or "list"
 	Theme string `json:"theme"` // ThemeSystem (default), a built-in or an imported id
+	Lang  string `json:"lang"`  // "" or zh-CN (default), or an imported catalog's id
 	// Dismissed maps a reminder's key to the state it was acknowledged in;
 	// a different state shows the reminder again.
 	Dismissed map[string]string `json:"dismissed"`
@@ -64,7 +65,7 @@ func (a *App) setAgentImage(server, instance, src string) error {
 		return err
 	}
 	if st.Size() > MaxAgentImage {
-		return errors.New("图片超过 4 MiB，请换一张小一些的")
+		return errors.New(T("store.err.image_size"))
 	}
 	b, err := os.ReadFile(src)
 	if err != nil {
@@ -72,7 +73,7 @@ func (a *App) setAgentImage(server, instance, src string) error {
 	}
 	img, err := ui.DecodeImage(b)
 	if err != nil {
-		return errors.New("这个文件不是能显示的图片（支持 PNG、JPEG、WebP、SVG）")
+		return errors.New(T("store.err.image_type"))
 	}
 	dst := a.imagePath(server, instance)
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {

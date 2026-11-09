@@ -38,7 +38,7 @@ func (a *App) brandSlot(c *ui.Context, n *Node) {
 }
 
 func taglineSlot(c *ui.Context, n *Node) {
-	muted(ui.Text(c, "带着你的 Agent 去旅行。")).FontSize(11).Padding(0, 8)
+	muted(ui.Text(c, T("shell.tagline"))).FontSize(11).Padding(0, 8)
 }
 
 // navItem is one first-level entry.
@@ -49,8 +49,8 @@ type navItem struct {
 }
 
 func navItems() []navItem {
-	return []navItem{{"/agents", icons.agent, text.navAgents}, {"/servers", icons.server, text.navServers},
-		{"/locations", icons.folder, "备份位置"}}
+	return []navItem{{"/agents", icons.agent, T("nav.agents")}, {"/servers", icons.server, T("nav.servers")},
+		{"/locations", icons.folder, T("nav.locations")}}
 }
 
 // section is the first-level entry the page belongs to.
@@ -133,15 +133,15 @@ func (a *App) pageSlot(c *ui.Context, n *Node) {
 				r.Page().Gap(20)
 				switch {
 				case r.Match("/agents"):
-					r.Title(text.navAgents)
+					r.Title(T("nav.agents"))
 					a.homePage(c)
 				case r.Match("/agents/{server}/{instance}"):
 					a.agentPage(c, r.Param("server"), r.Param("instance"))
 				case r.Match("/servers"):
-					r.Title(text.navServers)
+					r.Title(T("nav.servers"))
 					a.serversPage(c)
 				case r.Match("/servers/add"):
-					r.Title("添加服务器")
+					r.Title(T("servers.add"))
 					a.wizardPage(c)
 				case r.Match("/servers/{name}/agents"):
 					a.onServerPage(c, r.Param("name"))
@@ -150,10 +150,10 @@ func (a *App) pageSlot(c *ui.Context, n *Node) {
 				case r.Match("/servers/{name}"):
 					a.serverPage(c, r.Param("name"))
 				case r.Match("/locations"):
-					r.Title("备份位置")
+					r.Title(T("nav.locations"))
 					a.locationsPage(c)
 				default:
-					ui.Text(c, text.notFound)
+					ui.Text(c, T("page.not_found"))
 				}
 			})
 		})

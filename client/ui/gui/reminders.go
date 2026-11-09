@@ -19,12 +19,12 @@ func (a *App) attentionCard(c *ui.Context, it attention, first bool) {
 			ui.Text(c, it.Reason).FontSize(13).TextColor(palette.AlertText).Wrap()
 		})
 		ui.Row(c).Gap(8).Children(func() {
-			ui.Button(c, "知道了").OnClick(func() { a.dismiss(it) })
+			ui.Button(c, T("reminder.ok")).OnClick(func() { a.dismiss(it) })
 			var b ui.Element
 			if first {
-				b = ui.PrimaryButton(c, "带我去处理")
+				b = ui.PrimaryButton(c, T("reminder.go"))
 			} else {
-				b = ui.Button(c, "带我去处理")
+				b = ui.Button(c, T("reminder.go"))
 			}
 			b.OnClick(func() { a.goHandle(it) })
 		})
@@ -39,10 +39,10 @@ func (a *App) knownCard(c *ui.Context, it attention) {
 		ui.Icon(c, icons.check).FontSize(16).TextColor(palette.TextSub)
 		ui.Column(c).Grow(1).Gap(2).Children(func() {
 			ui.Text(c, it.Title).FontSize(13).Wrap()
-			muted(ui.Text(c, "已知道；情况变化时会重新提醒"))
+			muted(ui.Text(c, T("reminder.known")))
 		})
-		ui.Button(c, "重新提醒").OnClick(func() { a.undismiss(it) })
-		ui.Button(c, "带我去处理").OnClick(func() { a.goHandle(it) })
+		ui.Button(c, T("reminder.again")).OnClick(func() { a.undismiss(it) })
+		ui.Button(c, T("reminder.go")).OnClick(func() { a.goHandle(it) })
 	})
 }
 

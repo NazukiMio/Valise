@@ -1,8 +1,6 @@
 package gui
 
 import (
-	"fmt"
-
 	"github.com/egoist/mygo/ui"
 
 	"valise/core/journey"
@@ -22,10 +20,10 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		}
 		a.point = ""
 	}
-	pageHead(c, row.Name+" 走过的路", text.journeySub)
+	pageHead(c, T("journey.title", "name", row.Name), T("journey.sub"))
 	stops := route(a.agents.value.Items, row.Server, row.Instance)
 	if len(stops) > 0 {
-		ui.Row(c).Children(func() { ui.Segmented(c, &a.journeyView, "保存的时刻", "走过的服务器") })
+		ui.Row(c).Children(func() { ui.Segmented(c, &a.journeyView, T("journey.view.points"), T("journey.view.route")) })
 		if a.journeyView == 1 {
 			routeView(c, stops)
 			return
@@ -38,18 +36,18 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		if a.timeline.busy {
 			ui.Spinner(c)
 		} else {
-			muted(ui.Text(c, text.journeyEmpty)).FontSize(14)
+			muted(ui.Text(c, T("journey.empty"))).FontSize(14)
 		}
 		return
 	}
 	a.curveStrip(c, points)
 	// The full list stays below, folded by month; only the newest month is
 	// open (docs/UI.md 7.2).
-	muted(ui.Text(c, fmt.Sprintf("全部 %d 个时刻", len(points)))).FontSize(12).LetterSpacing(0.6).Margin(8, 0, 0, 0)
+	muted(ui.Text(c, T("journey.count", "n", len(points)))).FontSize(12).LetterSpacing(0.6).Margin(8, 0, 0, 0)
 	var months []string
 	byMonth := map[string][]journey.TimelinePoint{}
 	for _, p := range points {
-		m := fmt.Sprintf("%d 年 %d 月", p.CreatedAt.Local().Year(), p.CreatedAt.Local().Month())
+		m := T("time.year_month", "y", p.CreatedAt.Local().Year(), "m", int(p.CreatedAt.Local().Month()))
 		if byMonth[m] == nil {
 			months = append(months, m)
 		}
@@ -57,7 +55,7 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 	}
 	for mi, m := range months {
 		open := a.foldDefault("month-"+row.Server+row.Instance+m, mi == 0)
-		ui.Collapsible(c.Key("m"+m), fmt.Sprintf("%s · %d 个", m, len(byMonth[m])), open, func() {
+		ui.Collapsible(c.Key("m"+m), T("journey.month", "month", m, "n", len(byMonth[m])), open, func() {
 			// One column without gaps, so the line runs unbroken.
 			ui.Column(c).Gap(0).Children(func() {
 				list := byMonth[m]
@@ -67,7 +65,7 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 			})
 		})
 	}
-	muted(ui.Text(c, text.journeyLocalOnly))
+	muted(ui.Text(c, T("journey.local_only")))
 }
 
 // pointLine is a node on the thin line and a one-line card.
@@ -92,7 +90,7 @@ func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool
 		box.OnClick(func() { a.point = p.SnapshotRef.SnapshotID }).Children(func() {
 			ui.Text(c, when(p.CreatedAt, c.Now())).FontSize(13).Bold().Width(120)
 			muted(ui.Text(c, tierText(p.Scope.Tier))).Grow(1)
-			muted(ui.Text(c, fmt.Sprintf(text.pointFiles, p.FileCount, size(p.PlainBytes))))
+			muted(ui.Text(c, T("point.files", "n", p.FileCount, "size", size(p.PlainBytes))))
 		})
 	})
 }
@@ -103,41 +101,41 @@ func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool
 func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int) {
 	p := points[i]
 	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-		if ui.Button(c, "‹ "+text.pointBack).Clicked() {
+		if ui.Button(c, "‹ "+T("point.back")).Clicked() {
 			a.point = ""
 		}
 		ui.Spacer(c)
-		if i+1 < len(points) && ui.Button(c, "更早").Clicked() {
+		if i+1 < len(points) && ui.Button(c, T("point.earlier")).Clicked() {
 			a.point = points[i+1].SnapshotRef.SnapshotID
 		}
-		if i > 0 && ui.Button(c, "更晚").Clicked() {
+		if i > 0 && ui.Button(c, T("point.later")).Clicked() {
 			a.point = points[i-1].SnapshotRef.SnapshotID
 		}
 	})
 	pageHead(c, when(p.CreatedAt, c.Now()), p.CreatedAt.Local().Format("2006-01-02 15:04:05"))
 	card(ui.Column(c)).Children(func() {
-		ui.Text(c, "这次带上了什么").Bold()
-		fact(c, text.pointScope, tierText(p.Scope.Tier))
-		fact(c, "内容", fmt.Sprintf(text.pointFiles, p.FileCount, size(p.PlainBytes)))
+		ui.Text(c, T("point.carried")).Bold()
+		fact(c, T("point.scope"), tierText(p.Scope.Tier))
+		fact(c, T("point.content"), T("point.files", "n", p.FileCount, "size", size(p.PlainBytes)))
 	})
 	card(ui.Column(c)).Children(func() {
-		ui.Text(c, text.pointCopies).Bold()
+		ui.Text(c, T("point.copies")).Bold()
 		for _, cp := range p.Copies {
 			ui.Column(c.Key(cp.LocationRef.ID + cp.SourceLocator)).Gap(2).Children(func() {
-				ui.Text(c, "仓库 "+cp.LocationRef.ID).FontSize(13)
-				muted(ui.Text(c, "只读了备份记录，没有核对数据包，也没有试着解开"))
+				ui.Text(c, T("point.repo", "name", cp.LocationRef.ID)).FontSize(13)
+				muted(ui.Text(c, T("point.records_only")))
 			})
 		}
 	})
 	if len(p.Warnings) > 0 {
 		card(ui.Column(c)).Children(func() {
-			ui.Text(c, text.pointWarn).Bold().TextColor(palette.Warn)
+			ui.Text(c, T("point.warn")).Bold().TextColor(palette.Warn)
 			for _, w := range p.Warnings {
 				ui.Text(c, w).FontSize(13)
 			}
 		})
 	}
-	ui.Collapsible(c, text.techInfo, a.fold("point-tech"), func() {
-		muted(ui.Text(c, "备份 "+p.SnapshotRef.SnapshotID+"\n备份库 "+p.SnapshotRef.VaultID)).Font(cur.Fonts.Mono)
+	ui.Collapsible(c, T("error.tech_info"), a.fold("point-tech"), func() {
+		muted(ui.Text(c, T("point.ids", "snapshot", p.SnapshotRef.SnapshotID, "vault", p.SnapshotRef.VaultID))).Font(cur.Fonts.Mono)
 	})
 }

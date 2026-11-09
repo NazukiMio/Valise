@@ -93,7 +93,7 @@ func classicSizes() Sizes { return Sizes{Radius: 8, CardRadius: 14, Verdict: 36,
 // classicLight is the palette of docs/UI.md 7.1: cream paper, white cards
 // and a gold glow, from the user's reference page.
 func classicLight() *Theme {
-	return &Theme{ID: ThemeLight, Name: "经典浅色", Fonts: classicFonts(), Sizes: classicSizes(), Timeline: TimelineStrands,
+	return &Theme{ID: ThemeLight, Name: "Classic light", Fonts: classicFonts(), Sizes: classicSizes(), Timeline: TimelineStrands,
 		Shell: classicShell(), Home: classicHome(), Pal: Palette{
 			Paper: ui.Hex("#f7f6f3"), Card: ui.RGBA(255, 255, 255, 0.96), CardBorder: ui.RGBA(220, 215, 206, 0.7),
 			Text: ui.Hex("#2b2825"), TextSub: ui.Hex("#8c857b"), Line: ui.Hex("#dfdad0"), Board: ui.Hex("#fcfbf8"), Hover: ui.Hex("#fbfaf6"),
@@ -113,7 +113,7 @@ func classicLight() *Theme {
 // classicDark is the same hues at night.
 func classicDark() *Theme {
 	t := classicLight()
-	t.ID, t.Name, t.Dark = ThemeDark, "经典深色", true
+	t.ID, t.Name, t.Dark = ThemeDark, "Classic dark", true
 	t.Pal = Palette{
 		Paper: ui.Hex("#1f1d1a"), Card: ui.Hex("#2a2723"), CardBorder: ui.RGBA(255, 240, 220, 0.09),
 		Text: ui.Hex("#ece7df"), TextSub: ui.Hex("#a39b8f"), Line: ui.Hex("#45403a"), Board: ui.Hex("#24221f"), Hover: ui.Hex("#302d29"),

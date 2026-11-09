@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -77,34 +76,34 @@ func (a *App) homePage(c *ui.Context) {
 		"toolbar":   func(c *ui.Context, n *Node) { a.toolbarSlot(c, n, d) },
 		"agents":    func(c *ui.Context, n *Node) { a.agentsSlot(c, n, d) },
 		"retired":   func(c *ui.Context, n *Node) { a.retiredSlot(c, n, d) },
-		"note":      func(c *ui.Context, n *Node) { muted(n.box(ui.Text(c, text.localNote))).FontSize(11) },
+		"note":      func(c *ui.Context, n *Node) { muted(n.box(ui.Text(c, T("backup.local_note")))).FontSize(11) },
 	})
 }
 
 func (a *App) headerSlot(c *ui.Context, n *Node) {
 	n.box(ui.Row(c).Gap(8).AlignItems(ui.Center)).Children(func() {
-		muted(ui.Text(c, text.homeTitle)).FontSize(13).Grow(1)
+		muted(ui.Text(c, T("home.title"))).FontSize(13).Grow(1)
 		if a.agents.busy {
 			ui.Spinner(c)
 		} else {
-			ui.Button(c, text.refresh).OnClick(func() { a.refreshAgents(); a.refreshTimeline() })
+			ui.Button(c, T("common.refresh")).OnClick(func() { a.refreshAgents(); a.refreshTimeline() })
 		}
-		ui.Button(c, "添加 Agent").OnClick(func() { a.startWizard(true) })
+		ui.Button(c, T("home.add_agent")).OnClick(func() { a.startWizard(true) })
 	})
 }
 
 func (a *App) verdictSlot(c *ui.Context, n *Node, d *homeData) {
 	n.box(ui.Column(c).Gap(6)).Children(func() {
 		if d.loading {
-			ui.Text(c, text.homeLoading).FontSize(26).Font(cur.Fonts.Display).TextColor(palette.TextSub)
+			ui.Text(c, T("home.loading")).FontSize(26).Font(cur.Fonts.Display).TextColor(palette.TextSub)
 			return
 		}
 		ui.Text(c, verdict(len(d.inUse), len(d.open))).FontSize(cur.Sizes.Verdict).Bold().Font(cur.Fonts.Display).Wrap()
 		if len(d.known) > 0 {
 			shown := a.fold("known")
-			label := fmt.Sprintf("另有 %d 件已知道 ›", len(d.known))
+			label := T("home.known_more", "n", len(d.known))
 			if *shown {
-				label = fmt.Sprintf("收起已知道的 %d 件", len(d.known))
+				label = T("home.known_less", "n", len(d.known))
 			}
 			textLink(c, label, func() { *shown = !*shown })
 		}
@@ -149,7 +148,7 @@ func (a *App) agentsSlot(c *ui.Context, n *Node, d *homeData) {
 	}
 	if len(d.inUse) == 0 {
 		if a.agents.err == nil {
-			muted(ui.Text(c, text.homeEmpty)).FontSize(14)
+			muted(ui.Text(c, T("home.empty"))).FontSize(14)
 		}
 		return
 	}
@@ -157,7 +156,7 @@ func (a *App) agentsSlot(c *ui.Context, n *Node, d *homeData) {
 	sortTrouble(shown)
 	switch {
 	case len(shown) == 0:
-		muted(ui.Text(c, "没有找到“"+a.query+"”。可以按名字、harness 或服务器搜索。")).FontSize(14)
+		muted(ui.Text(c, T("home.no_match", "query", a.query))).FontSize(14)
 	case a.prefs.View == "list":
 		a.agentList(c, "l", shown)
 	default:
@@ -167,7 +166,7 @@ func (a *App) agentsSlot(c *ui.Context, n *Node, d *homeData) {
 
 func (a *App) retiredSlot(c *ui.Context, n *Node, d *homeData) {
 	if retired := filterAgents(d.retired, a.query); len(retired) > 0 {
-		ui.Collapsible(c, fmt.Sprintf("不再使用 · %d（已迁出或已被替换）", len(retired)), a.fold("retired"), func() {
+		ui.Collapsible(c, T("home.retired", "n", len(retired)), a.fold("retired"), func() {
 			a.agentList(c, "r", retired)
 		})
 	}
@@ -183,16 +182,16 @@ func trouble(r agentRow) bool { return r.HasService && r.ServiceTone != "ok" }
 // cell: the service, the admin page's port, the newest backup this computer
 // holds and where it is kept.
 func agentCells(r agentRow, points []journey.TimelinePoint, c *ui.Context) []cell {
-	cells := []cell{{Label: "服务", Value: shortService(r.Service), Tone: r.ServiceTone}}
+	cells := []cell{{Label: T("board.service"), Value: shortService(r.Service), Tone: r.ServiceTone}}
 	if r.Entry != "" {
-		tone, v := "stop", "没有监听"
-		if r.Entry == text.entryListening {
-			tone, v = "ok", "在监听"
+		tone, v := "stop", T("board.not_listening")
+		if r.Entry == T("entry.listening") {
+			tone, v = "ok", T("board.listening")
 		}
-		cells = append(cells, cell{Label: "管理页端口", Value: v, Tone: tone})
+		cells = append(cells, cell{Label: T("board.entry_port"), Value: v, Tone: tone})
 	}
 	if len(points) == 0 {
-		return append(cells, cell{Label: "最近备份", Value: "本机还没有", Tone: "warn"})
+		return append(cells, cell{Label: T("board.recent"), Value: T("board.none_local"), Tone: "warn"})
 	}
 	var repos []string
 	seen := map[string]bool{}
@@ -202,14 +201,17 @@ func agentCells(r agentRow, points []journey.TimelinePoint, c *ui.Context) []cel
 			repos = append(repos, cp.LocationRef.ID)
 		}
 	}
-	return append(cells, cell{Label: "最近备份", Value: when(points[0].CreatedAt, c.Now())},
-		cell{Label: "本机副本", Value: strings.Join(repos, "、")})
+	return append(cells, cell{Label: T("board.recent"), Value: when(points[0].CreatedAt, c.Now())},
+		cell{Label: T("board.local_copies"), Value: strings.Join(repos, T("common.list_sep"))})
 }
 
-// shortService drops the “服务” the board's label already says.
+// shortService is a service state without the word the board's label
+// already says.
 func shortService(s string) string {
-	if t, ok := strings.CutPrefix(s, "服务"); ok {
-		return t
+	for _, k := range []string{"running", "stopped", "failed", "unknown"} {
+		if s == T("service."+k) {
+			return T("service.short." + k)
+		}
 	}
 	return s
 }

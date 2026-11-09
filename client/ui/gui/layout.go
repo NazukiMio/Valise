@@ -1,7 +1,7 @@
 package gui
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -45,11 +45,11 @@ type slotSpec struct {
 	after  map[string]string // a slot that must show → its classic neighbor
 }
 
-var shellSlots = slotSpec{page: "外壳",
+var shellSlots = slotSpec{page: "layout.page.shell",
 	styles: map[string][]string{"brand": {"icon"}, "nav": {"sidebar", "rail", "top"}, "tagline": nil, "theme": {"icon"}, "page": nil},
 	always: []string{"page", "theme"}, after: map[string]string{"theme": "nav"}}
 
-var homeSlots = slotSpec{page: "首页",
+var homeSlots = slotSpec{page: "layout.page.home",
 	styles: map[string][]string{"header": nil, "verdict": nil, "reminders": nil, "known": nil, "toolbar": nil,
 		"agents": {"normal", "large", "compact"}, "retired": nil, "note": nil},
 	always: []string{"verdict", "reminders"}, after: map[string]string{"reminders": "verdict"}}
@@ -61,7 +61,7 @@ func (s slotSpec) check(n *Node, images map[string]bool) error {
 	var walk func(n *Node, depth int) error
 	walk = func(n *Node, depth int) error {
 		if depth > maxDepth {
-			return fmt.Errorf("%s的布局超过 %d 层", s.page, maxDepth)
+			return errors.New(T("layout.err.depth", "page", T(s.page), "n", maxDepth))
 		}
 		kinds := 0
 		for _, k := range []bool{n.Row != nil, n.Column != nil, n.Grid != nil, n.Slot != ""} {
@@ -70,37 +70,37 @@ func (s slotSpec) check(n *Node, images map[string]bool) error {
 			}
 		}
 		if kinds != 1 {
-			return fmt.Errorf("%s的布局里有一项不是恰好一种：row、column、grid 或 slot", s.page)
+			return errors.New(T("layout.err.kind", "page", T(s.page)))
 		}
 		if n.Slot != "" {
 			styles, ok := s.styles[n.Slot]
 			if !ok {
-				return fmt.Errorf("%s没有叫 %q 的插槽", s.page, n.Slot)
+				return errors.New(T("layout.err.slot", "page", T(s.page), "slot", n.Slot))
 			}
 			if seen[n.Slot] {
-				return fmt.Errorf("%s的插槽 %q 出现了两次", s.page, n.Slot)
+				return errors.New(T("layout.err.twice", "page", T(s.page), "slot", n.Slot))
 			}
 			seen[n.Slot] = true
 			if n.Style != "" && !contains(styles, n.Style) {
-				return fmt.Errorf("%s的插槽 %q 没有样式 %q", s.page, n.Slot, n.Style)
+				return errors.New(T("layout.err.style", "page", T(s.page), "slot", n.Slot, "style", n.Style))
 			}
 		} else if n.Style != "" {
-			return fmt.Errorf("%s的布局里只有插槽能写 style", s.page)
+			return errors.New(T("layout.err.style_place", "page", T(s.page)))
 		}
 		if n.Align != "" && aligns[n.Align] == 0 && n.Align != "start" {
-			return fmt.Errorf("%s的布局里 align 不认识 %q", s.page, n.Align)
+			return errors.New(T("layout.err.align", "page", T(s.page), "value", n.Align))
 		}
 		if n.Justify != "" && aligns[n.Justify] == 0 && n.Justify != "start" {
-			return fmt.Errorf("%s的布局里 justify 不认识 %q", s.page, n.Justify)
+			return errors.New(T("layout.err.justify", "page", T(s.page), "value", n.Justify))
 		}
 		if n.Background != "" && colorFields(&Palette{})[n.Background] == nil {
-			return fmt.Errorf("%s的布局里没有叫 %q 的颜色", s.page, n.Background)
+			return errors.New(T("layout.err.color", "page", T(s.page), "color", n.Background))
 		}
 		if n.Image != "" && !images[n.Image] {
-			return fmt.Errorf("%s的布局引用了主题里没有的图片 %q", s.page, n.Image)
+			return errors.New(T("layout.err.image", "page", T(s.page), "image", n.Image))
 		}
 		if l := len(n.Padding); l != 0 && l != 1 && l != 2 && l != 4 {
-			return fmt.Errorf("%s的布局里 padding 要写 1、2 或 4 个数", s.page)
+			return errors.New(T("layout.err.padding", "page", T(s.page)))
 		}
 		for _, list := range [][]Node{n.Row, n.Column, n.Grid} {
 			for i := range list {
@@ -141,7 +141,7 @@ func (s slotSpec) complete(n *Node) []string {
 				n.Column = append(n.Column, add)
 			}
 		}
-		notes = append(notes, fmt.Sprintf("%s缺少“%s”，已按经典主题补上", s.page, slotNames[slot]))
+		notes = append(notes, T("layout.note.added", "page", T(s.page), "slot", T(slotNames[slot])))
 	}
 	return notes
 }
@@ -188,7 +188,7 @@ func (n *Node) insertAfter(anchor string, add Node) bool {
 	return false
 }
 
-var slotNames = map[string]string{"page": "页面区", "theme": "主题菜单", "verdict": "结论句", "reminders": "待处理提醒"}
+var slotNames = map[string]string{"page": "layout.slot.page", "theme": "layout.slot.theme", "verdict": "layout.slot.verdict", "reminders": "layout.slot.reminders"}
 
 func contains(list []string, s string) bool {
 	for _, x := range list {

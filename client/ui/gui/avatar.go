@@ -16,7 +16,7 @@ func (a *App) avatar(c *ui.Context, r agentRow, side float32) {
 	if d != nil && d.Color != "" {
 		ink = ui.Hex(d.Color)
 	}
-	box := ui.Box(c).Size(side, side).Radius(side / 4).Clip().Label(r.Name + " 的图标")
+	box := ui.Box(c).Size(side, side).Radius(side / 4).Clip().Label(T("avatar.label", "name", r.Name))
 	if img := a.agentImage(r.Server, r.Instance); img != nil {
 		box.Background(palette.Card).Border(1, palette.CardBorder).Children(func() {
 			ui.Image(c, img).Size(side, side)
@@ -56,7 +56,7 @@ func (a *App) iconChoice(c *ui.Context, row *agentRow) {
 	if a.pickImage == nil {
 		return
 	}
-	textLink(c, "更换图标", func() {
+	textLink(c, T("avatar.change"), func() {
 		path, err := a.pickImage()
 		if err == nil && path != "" {
 			err = a.setAgentImage(row.Server, row.Instance, path)
@@ -64,6 +64,6 @@ func (a *App) iconChoice(c *ui.Context, row *agentRow) {
 		a.iconErr = err
 	})
 	if a.agentImage(row.Server, row.Instance) != nil {
-		textLink(c, "恢复默认", func() { a.clearAgentImage(row.Server, row.Instance); a.iconErr = nil })
+		textLink(c, T("avatar.reset"), func() { a.clearAgentImage(row.Server, row.Instance); a.iconErr = nil })
 	}
 }

@@ -44,18 +44,18 @@ func (a *App) agentRows(res service.AgentListResult) []agentRow {
 		r.Service, r.ServiceTone = serviceText(in.Service)
 		r.HasService, r.Profile = len(in.Service) > 0, in.ProfileID
 		if len(in.Entries) > 0 {
-			r.Entry = text.entryClosed
+			r.Entry = T("entry.closed")
 			for _, e := range in.Entries {
 				if e.Listening {
-					r.Entry = text.entryListening
+					r.Entry = T("entry.listening")
 				}
 			}
 		}
 		switch {
 		case it.MigratedTo != nil:
-			r.Note = fmt.Sprintf(text.migratedTo, it.MigratedTo.ConnectionID)
+			r.Note = T("agent.migrated_to", "server", it.MigratedTo.ConnectionID)
 		case in.Superseded != nil:
-			r.Note = text.superseded
+			r.Note = T("agent.superseded")
 		}
 		for id, p := range in.Roots {
 			r.Roots = append(r.Roots, id+"  "+p)
@@ -74,17 +74,17 @@ func (a *App) agentRows(res service.AgentListResult) []agentRow {
 
 func serviceText(units []enroll.ServiceState) (string, string) {
 	if len(units) == 0 {
-		return text.noService, "stop"
+		return T("service.none"), "stop"
 	}
 	switch units[0].Active {
 	case "active":
-		return text.running, "ok"
+		return T("service.running"), "ok"
 	case "inactive":
-		return text.stopped, "stop"
+		return T("service.stopped"), "stop"
 	case "failed":
-		return text.failed, "warn"
+		return T("service.failed"), "warn"
 	}
-	return text.unitUnknown, "warn"
+	return T("service.unknown"), "warn"
 }
 
 func initial(name string) string {
@@ -129,13 +129,13 @@ func pointsFor(page service.JourneyPage, server, instance string) []journey.Time
 func tierText(tier string) string {
 	switch tier {
 	case vault.TierSoul:
-		return "轻装备份（人格与记忆）"
+		return T("tier.soul")
 	case vault.TierSoulSecrets:
-		return "标准备份（含凭据）"
+		return T("tier.soul_secrets")
 	case vault.TierFull:
-		return "完整备份"
+		return T("tier.full")
 	case vault.TierRaw:
-		return "原样备份"
+		return T("tier.raw")
 	}
 	return tier
 }
@@ -144,13 +144,13 @@ func tierText(tier string) string {
 func tierShort(tier string) string {
 	switch tier {
 	case vault.TierSoul:
-		return "轻装"
+		return T("tier.short.soul")
 	case vault.TierSoulSecrets:
-		return "标准"
+		return T("tier.short.soul_secrets")
 	case vault.TierFull:
-		return "完整"
+		return T("tier.short.full")
 	case vault.TierRaw:
-		return "原样"
+		return T("tier.short.raw")
 	}
 	return tier
 }
@@ -162,13 +162,13 @@ func when(t, now time.Time) string {
 	y2, m2, d2 := now.Date()
 	switch {
 	case y1 == y2 && m1 == m2 && d1 == d2:
-		return "今天 " + t.Format("15:04")
+		return T("time.today", "hm", t.Format("15:04"))
 	case y1 == y2 && t.YearDay() == now.YearDay()-1:
-		return "昨天 " + t.Format("15:04")
+		return T("time.yesterday", "hm", t.Format("15:04"))
 	case y1 == y2:
-		return fmt.Sprintf("%d 月 %d 日 %s", m1, d1, t.Format("15:04"))
+		return T("time.month_day", "m", int(m1), "d", d1, "hm", t.Format("15:04"))
 	}
-	return fmt.Sprintf("%d 年 %d 月 %d 日", y1, m1, d1)
+	return T("time.date", "y", y1, "m", int(m1), "d", d1)
 }
 
 func size(n int64) string {
@@ -193,9 +193,9 @@ type serverRow struct {
 func serverRows(list []config.Server) []serverRow {
 	var out []serverRow
 	for _, s := range list {
-		r := serverRow{Name: s.Name, Kind: "用你自己的 SSH 设置"}
+		r := serverRow{Name: s.Name, Kind: T("server.kind.own_ssh")}
 		if s.Source == config.SourceValise {
-			r.Kind, r.Valise = "Valise 接入", true
+			r.Kind, r.Valise = T("server.kind.valise"), true
 			r.Address = s.HostName
 			if s.User != "" {
 				r.Address = s.User + "@" + r.Address

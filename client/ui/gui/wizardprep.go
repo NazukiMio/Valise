@@ -14,19 +14,19 @@ import (
 // records the server instead.
 func prepLabels(importing bool) [][2]string {
 	if importing {
-		return [][2]string{{service.SetupCheck, "环境检查"}, {service.SetupDeploy, "porter"},
-			{service.SetupRegister, "登记这台电脑"}, {service.SetupName, "服务器名"}, {service.SetupRecord, "记录到这台电脑"}}
+		return [][2]string{{service.SetupCheck, T("prepare.check")}, {service.SetupDeploy, T("prepare.porter")},
+			{service.SetupRegister, T("prepare.register")}, {service.SetupName, T("prepare.name")}, {service.SetupRecord, T("prepare.record")}}
 	}
-	return [][2]string{{service.SetupKeys, "办通行证"}, {service.SetupCheck, "环境检查"}, {service.SetupDeploy, "porter"},
-		{service.SetupRegister, "登记这台电脑"}, {service.SetupName, "服务器名"}, {service.SetupDaily, "用用户通行证连上 porter"}}
+	return [][2]string{{service.SetupKeys, T("prepare.keys")}, {service.SetupCheck, T("prepare.check")}, {service.SetupDeploy, T("prepare.porter")},
+		{service.SetupRegister, T("prepare.register")}, {service.SetupName, T("prepare.name")}, {service.SetupDaily, T("prepare.daily")}}
 }
 
 // stepDetail says a finished step's result in the interface's words.
 func stepDetail(s service.SetupStep) string {
 	if s.Step == service.SetupKeys {
-		out := "用户通行证（只能查看和备份）"
+		out := T("prepare.user_pass")
 		if strings.Contains(s.Detail, "admin") {
-			out += "、管理员通行证"
+			out += T("common.list_sep") + T("pass.admin")
 		}
 		return out
 	}
@@ -37,7 +37,7 @@ func stepDetail(s service.SetupStep) string {
 // not reached, said apart (docs/UI.md 7.5).
 func (a *App) prepareStep(c *ui.Context, w *wizard) {
 	card(ui.Column(c)).Gap(12).Padding(22).Children(func() {
-		ui.Text(c, "正在准备「"+w.host+"」").FontSize(20).Bold().Font(cur.Fonts.Display)
+		ui.Text(c, T("prepare.title", "host", w.host)).FontSize(20).Bold().Font(cur.Fonts.Display)
 		done := map[string]service.SetupStep{}
 		for _, s := range w.steps {
 			done[s.Step] = s
@@ -52,7 +52,7 @@ func (a *App) prepareStep(c *ui.Context, w *wizard) {
 			case next && w.busy:
 				mark, ink, detail, next = "▸", palette.Text, a.doingNow(w, c.Now()), false
 			case next && w.err != nil:
-				mark, ink, detail, next = "✗", palette.Warn, "没有完成，见下方原因；之后的步骤没有执行", false
+				mark, ink, detail, next = "✗", palette.Warn, T("prepare.failed_step"), false
 			}
 			ui.Row(c.Key(l[0])).Gap(12).Padding(8, 12).Radius(8).Background(palette.Board).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, mark).Bold().TextColor(ink).Width(16)
@@ -70,11 +70,11 @@ func (a *App) prepareStep(c *ui.Context, w *wizard) {
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			switch {
 			case w.busy:
-				muted(ui.Text(c, "可以随时停止；已经做完的步骤会保留。")).Grow(1)
-				ui.Button(c, "停止").OnClick(func() { a.stopPrepare(w) })
+				muted(ui.Text(c, T("prepare.can_stop"))).Grow(1)
+				ui.Button(c, T("common.stop")).OnClick(func() { a.stopPrepare(w) })
 			case w.err != nil:
-				ui.Button(c, "取消").OnClick(func() { a.closeWizard() })
-				ui.PrimaryButton(c, "重试").OnClick(func() {
+				ui.Button(c, T("common.cancel")).OnClick(func() { a.closeWizard() })
+				ui.PrimaryButton(c, T("common.retry")).OnClick(func() {
 					if w.importing {
 						a.runImport(w, w.host)
 					} else {
@@ -82,8 +82,8 @@ func (a *App) prepareStep(c *ui.Context, w *wizard) {
 					}
 				})
 			default:
-				ui.Button(c, "完成").OnClick(func() { a.closeWizard() })
-				ui.PrimaryButton(c, "看看上面有哪些 Agent").OnClick(func() { a.router.Push("/servers/" + w.host + "/agents") })
+				ui.Button(c, T("common.done")).OnClick(func() { a.closeWizard() })
+				ui.PrimaryButton(c, T("wizard.next.agents")).OnClick(func() { a.router.Push("/servers/" + w.host + "/agents") })
 			}
 		})
 	})
@@ -94,16 +94,14 @@ func (a *App) prepareStep(c *ui.Context, w *wizard) {
 func (a *App) doingNow(w *wizard, now time.Time) string {
 	for _, p := range a.asks {
 		if p.kind == askServer {
-			return "等你在弹框里回答 OpenSSH 的提问"
+			return T("prepare.ssh_asking")
 		}
 	}
-	text := orText(w.doing, "进行中")
+	text := orText(w.doing, T("prepare.running"))
 	if secs := int(now.Sub(w.doingAt).Seconds()); !w.doingAt.IsZero() && secs >= 3 {
-		text += "…（已等 " + itoa(secs) + " 秒）"
-	} else {
-		text += "…"
+		return T("prepare.waited", "what", text, "n", secs)
 	}
-	return text
+	return T("prepare.doing", "what", text)
 }
 
 // stopPrepare ends the running work and the questions it asked.

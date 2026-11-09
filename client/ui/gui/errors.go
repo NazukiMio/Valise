@@ -11,7 +11,7 @@ import (
 // errorBox shows an error as reason + suggestion, details folded away
 // (docs/UI.md 5). open keeps the fold's state between frames.
 func errorBox(c *ui.Context, err error, open *bool) {
-	reason, suggestion, detail := text.errUnexpected, "", err.Error()
+	reason, suggestion, detail := T("error.unexpected"), "", err.Error()
 	var ue *valise.UserError
 	if errors.As(err, &ue) {
 		reason, suggestion, detail = ue.Reason, ue.Suggestion, ue.Detail
@@ -28,7 +28,7 @@ func errorBox(c *ui.Context, err error, open *bool) {
 			ui.Text(c, suggestion).TextColor(palette.Text)
 		}
 		if detail != "" {
-			ui.Collapsible(c, text.techInfo, open, func() {
+			ui.Collapsible(c, T("error.tech_info"), open, func() {
 				muted(ui.Text(c, detail)).Font(cur.Fonts.Mono)
 			})
 		}

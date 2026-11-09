@@ -51,15 +51,27 @@ func (a *App) chooseTheme(sysDark bool) {
 		e, ok := a.themes[id]
 		switch {
 		case !ok:
-			a.themeErr = errors.New("找不到所选的主题，已改用跟随系统")
+			a.themeErr = errors.New(T("theme.err.missing"))
 			use(system)
 		case e.err != nil:
-			a.themeErr = errors.New("主题“" + id + "”不能使用：" + e.err.Error() + "。已改用跟随系统")
+			a.themeErr = errors.New(T("theme.err.unusable", "id", id, "reason", e.err.Error()))
 			use(system)
 		default:
 			use(e.theme)
 		}
 	}
+}
+
+// themeName is a theme's name; the built-ins are named in the current
+// language.
+func themeName(t *Theme) string {
+	switch t.ID {
+	case ThemeLight:
+		return T("theme.classic_light")
+	case ThemeDark:
+		return T("theme.classic_dark")
+	}
+	return t.Name
 }
 
 func (a *App) setTheme(id string) {
@@ -75,12 +87,12 @@ func (a *App) themeSlot(c *ui.Context, n *Node) {
 	if chosen == "" {
 		chosen = ThemeSystem
 	}
-	label := "主题 · " + cur.Name
+	label := T("theme.menu", "name", themeName(cur))
 	if chosen == ThemeSystem {
-		label = "主题 · 跟随系统"
+		label = T("theme.menu", "name", T("theme.system"))
 	}
 	if n.Style == "icon" {
-		label = "主题"
+		label = T("theme.short")
 	}
 	pad := float32(8)
 	if n.Style == "icon" {
@@ -88,7 +100,7 @@ func (a *App) themeSlot(c *ui.Context, n *Node) {
 	}
 	n.box(ui.Column(c).Gap(6).Padding(0, pad)).Children(func() {
 		b := ui.PopoverMenuButton(c, label, func(m *ui.Menu) {
-			for _, b := range []struct{ id, name string }{{ThemeSystem, "跟随系统"}, {ThemeLight, "经典浅色"}, {ThemeDark, "经典深色"}} {
+			for _, b := range []struct{ id, name string }{{ThemeSystem, T("theme.system")}, {ThemeLight, T("theme.classic_light")}, {ThemeDark, T("theme.classic_dark")}} {
 				if m.Item(b.name).Checked(chosen == b.id).Chosen() {
 					a.setTheme(b.id)
 				}
@@ -103,7 +115,7 @@ func (a *App) themeSlot(c *ui.Context, n *Node) {
 			}
 			for _, id := range ids {
 				e := a.themes[id]
-				name := id + "（不能使用）"
+				name := T("theme.unusable_item", "id", id)
 				if e.theme != nil {
 					name = e.theme.Name
 				}
@@ -113,13 +125,14 @@ func (a *App) themeSlot(c *ui.Context, n *Node) {
 			}
 			if a.pickFolder != nil {
 				m.Separator()
-				if m.Item("导入主题…").Chosen() {
+				if m.Item(T("theme.import")).Chosen() {
 					a.importChosen()
 				}
 			}
+			a.languageItems(m)
 		})
 		if n.Style == "icon" {
-			b.FontSize(12).Padding(6, 4).Label("主题 · " + cur.Name)
+			b.FontSize(12).Padding(6, 4).Label(T("theme.menu", "name", themeName(cur)))
 		}
 		if a.themeErr != nil {
 			ui.Text(c, a.themeErr.Error()).FontSize(11).TextColor(palette.Warn).Wrap()
@@ -127,6 +140,7 @@ func (a *App) themeSlot(c *ui.Context, n *Node) {
 		for i, note := range cur.Notes {
 			muted(ui.Text(c.Key(i), note)).FontSize(11).Wrap()
 		}
+		a.languageNotes(c)
 	})
 }
 
@@ -139,7 +153,7 @@ func (a *App) importChosen() {
 	}
 	id, err := a.importTheme(dir)
 	if err != nil {
-		a.themeErr = errors.New("没有导入：" + err.Error())
+		a.themeErr = errors.New(T("theme.err.not_imported", "reason", err.Error()))
 		return
 	}
 	a.loadThemes()

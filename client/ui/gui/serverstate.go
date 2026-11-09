@@ -10,6 +10,7 @@ import (
 // this time), 离线 (could not be reached), 需要处理 (reached, but logging in
 // or the porter failed), 未知 (not read yet).
 type serverState struct {
+	Key        string // online, offline, attention, unknown
 	Word, Tone string // tone: ok, warn, stop (gray)
 	Reason     string // one sentence for 离线 and 需要处理
 	Suggestion string
@@ -32,19 +33,19 @@ func (a *App) serverState(name string, now time.Time) serverState {
 	obs := a.observation(name)
 	switch {
 	case obs == nil:
-		return serverState{Word: "未知", Tone: "stop", Reason: "还没读取"}
+		return serverState{Key: "unknown", Word: T("server.state.unknown"), Tone: "stop", Reason: T("server.reason.not_read")}
 	case obs.Status == "fresh":
-		return serverState{Word: "在线", Tone: "ok"}
+		return serverState{Key: "online", Word: T("server.state.online"), Tone: "ok"}
 	}
-	st := serverState{Word: "离线", Tone: "stop", Reason: "没有回应", Suggestion: "检查服务器是否开机、网络是否通畅"}
+	st := serverState{Key: "offline", Word: T("server.state.offline"), Tone: "stop", Reason: T("server.reason.no_answer"), Suggestion: T("server.suggest.check_power")}
 	if e := obs.Error; e != nil {
 		st.Reason, st.Suggestion = e.Reason, e.Suggestion
 		if !offlineCodes[e.Code] {
-			st.Word, st.Tone = "需要处理", "warn"
+			st.Key, st.Word, st.Tone = "attention", T("server.state.attention"), "warn"
 		}
 	}
 	if obs.Status == "stale" && obs.ObservedAt != nil {
-		st.Old = "下面是 " + ago(*obs.ObservedAt, now) + "的情况"
+		st.Old = T("server.old", "ago", ago(*obs.ObservedAt, now))
 	}
 	return st
 }
@@ -54,13 +55,13 @@ func ago(t, now time.Time) string {
 	d := now.Sub(t)
 	switch {
 	case d < time.Minute:
-		return "刚才"
+		return T("time.just_now")
 	case d < time.Hour:
-		return itoa(int(d/time.Minute)) + " 分钟前"
+		return T("time.minutes_ago", "n", int(d/time.Minute))
 	case d < 48*time.Hour:
-		return itoa(int(d/time.Hour)) + " 小时前"
+		return T("time.hours_ago", "n", int(d/time.Hour))
 	}
-	return itoa(int(d/(24*time.Hour))) + " 天前"
+	return T("time.days_ago", "n", int(d/(24*time.Hour)))
 }
 
 func itoa(n int) string {

@@ -26,26 +26,26 @@ func (a *App) openImport(w *wizard) {
 // goes straight to preparing it, logging in with the user's own setup.
 func (a *App) importStep(c *ui.Context, w *wizard) {
 	card(ui.Column(c)).Gap(12).Padding(22).Children(func() {
-		ui.Text(c, "从已有 SSH 配置导入").FontSize(20).Bold().Font(cur.Fonts.Display)
-		muted(ui.Text(c, "这些是 ~/.ssh/config 里还没加入的主机。登录用你自己的 SSH 设置，Valise 不另办通行证。")).Wrap()
+		ui.Text(c, T("wizard.import.title")).FontSize(20).Bold().Font(cur.Fonts.Display)
+		muted(ui.Text(c, T("wizard.import.sub"))).Wrap()
 		switch {
 		case w.hostsErr != nil:
 			errorBox(c, w.hostsErr, a.fold("wiz-hosts"))
 		case w.hosts == nil:
 			ui.Spinner(c)
 		case len(w.hosts) == 0:
-			muted(ui.Text(c, "没有可以导入的主机。")).FontSize(13)
+			muted(ui.Text(c, T("wizard.import.none"))).FontSize(13)
 		}
 		for _, h := range w.hosts {
 			ui.Row(c.Key(h)).Gap(10).AlignItems(ui.Center).Padding(8, 0).Children(func() {
 				ui.Icon(c, icons.server).FontSize(16).TextColor(palette.TextSub)
 				mono(ui.Text(c, h)).Grow(1)
-				ui.Button(c, "导入并准备").OnClick(func() { a.runImport(w, h) })
+				ui.Button(c, T("wizard.import.go")).OnClick(func() { a.runImport(w, h) })
 			})
 		}
 		a.porterChoice(c, w)
 		ui.Row(c).Gap(8).Children(func() {
-			ui.Button(c, "‹ 改为手动填写").OnClick(func() { w.importing = false })
+			ui.Button(c, T("wizard.import.back")).OnClick(func() { w.importing = false })
 		})
 	})
 }
@@ -53,10 +53,10 @@ func (a *App) importStep(c *ui.Context, w *wizard) {
 func (a *App) identityStep(c *ui.Context, w *wizard) {
 	srv := w.server()
 	card(ui.Column(c)).Gap(14).Padding(22).Children(func() {
-		ui.Text(c, "这是你的服务器吗？").FontSize(20).Bold().Font(cur.Fonts.Display)
-		muted(ui.Text(c, "第一次连接，先核对它的指纹，防止连到别人冒充的机器。")).FontSize(13).Wrap()
+		ui.Text(c, T("wizard.identity.title")).FontSize(20).Bold().Font(cur.Fonts.Display)
+		muted(ui.Text(c, T("wizard.identity.sub"))).FontSize(13).Wrap()
 		ui.Column(c).Gap(6).Padding(12, 14).Radius(10).Background(palette.Board).Children(func() {
-			muted(ui.Text(c, knownHostsName(srv.HostName, srv.Port)+" 报出的指纹"))
+			muted(ui.Text(c, T("wizard.identity.offered", "addr", knownHostsName(srv.HostName, srv.Port))))
 			for _, k := range w.keys {
 				ui.Row(c.Key(k.Fingerprint)).Gap(12).Children(func() {
 					ui.Text(c, strings.ToUpper(strings.TrimPrefix(k.Type, "ssh-"))).FontSize(12).Bold().Width(90)
@@ -64,26 +64,25 @@ func (a *App) identityStep(c *ui.Context, w *wizard) {
 				})
 			}
 		})
-		ui.Text(c, "怎么核对？在服务器上（云服务商的网页控制台也可以）运行 ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub，看结果是否和上面一致。").
+		ui.Text(c, T("wizard.identity.how")).
 			FontSize(12).Wrap()
 		if w.mismatch {
-			errorBox(c, valise.New("host_key_rejected", "已停止，没有记下任何东西",
-				"可能是服务器重装过系统、地址填错，或有人冒充；查清后再重新添加"), a.fold("wiz-mm"))
+			errorBox(c, valise.New("host_key_rejected", T("wizard.identity.stopped"), T("wizard.identity.stopped_hint")), a.fold("wiz-mm"))
 		}
 		if w.err != nil {
 			errorBox(c, w.err, a.fold("wiz-err"))
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			ui.Button(c, "返回").OnClick(func() { w.step, w.err, w.mismatch = wzConnect, nil, false })
+			ui.Button(c, T("common.back")).OnClick(func() { w.step, w.err, w.mismatch = wzConnect, nil, false })
 			if w.mismatch {
 				return
 			}
-			ui.Button(c, "不一致，停止").OnClick(func() { w.mismatch = true })
+			ui.Button(c, T("wizard.identity.mismatch")).OnClick(func() { w.mismatch = true })
 			if w.busy {
 				ui.Spinner(c)
 				return
 			}
-			ui.PrimaryButton(c, "一致，继续").OnClick(func() { a.trustKeys(w) })
+			ui.PrimaryButton(c, T("wizard.identity.match")).OnClick(func() { a.trustKeys(w) })
 		})
 	})
 }
@@ -116,41 +115,41 @@ func (a *App) trustKeys(w *wizard) {
 func (a *App) loginStep(c *ui.Context, w *wizard) {
 	srv := w.server()
 	card(ui.Column(c)).Gap(14).Padding(22).Children(func() {
-		ui.Text(c, "登录 "+srv.HostName).FontSize(20).Bold().Font(cur.Fonts.Display)
-		how := "点“登录”后，OpenSSH 会问服务器密码。密码直接交给它，只登录这一次，Valise 不保存。"
+		ui.Text(c, T("wizard.login.title", "host", srv.HostName)).FontSize(20).Bold().Font(cur.Fonts.Display)
+		how := T("wizard.login.how_password")
 		if w.login != "password" {
-			how = "点“登录”后，OpenSSH 用你选的私钥登录；私钥有口令时会问你。Valise 不保存口令。"
+			how = T("wizard.login.how_key")
 		}
 		ui.Text(c, how).FontSize(13).Wrap()
-		passLine(c, "用户通行证", "一定会办。只能查看和备份，不用密码，所以定时备份不用你在场。")
+		passLine(c, T("pass.user"), T("wizard.login.user_pass"))
 		want := w.admin == "yes"
-		if ui.Checkbox(c, &want, "同时办一张管理员通行证").Changed() {
+		if ui.Checkbox(c, &want, T("wizard.login.admin_too")).Changed() {
 			w.admin = map[bool]string{true: "yes"}[want]
 		}
-		muted(ui.Text(c, "以后改动服务器（启动服务、安装、修复）时输管理口令就行，不用每次输服务器密码。不办的话，每次改动服务器时用服务器密码临时登录一次。")).Wrap()
+		muted(ui.Text(c, T("wizard.login.admin_why"))).Wrap()
 		if want {
-			labeled(c, "管理口令", func() {
-				ui.TextInput(c, &w.adminPass).Password().Label("管理口令").Placeholder("至少 12 个字符，和 Valise 口令不同")
+			labeled(c, T("pass.admin_passphrase"), func() {
+				ui.TextInput(c, &w.adminPass).Password().Label(T("pass.admin_passphrase")).Placeholder(T("pass.admin_rule"))
 			})
-			labeled(c, "再输一次", func() {
-				ui.TextInput(c, &w.adminPass2).Password().Label("再输一次").Placeholder("再输一次管理口令")
+			labeled(c, T("pass.again"), func() {
+				ui.TextInput(c, &w.adminPass2).Password().Label(T("pass.again")).Placeholder(T("pass.again_hint"))
 			})
-			muted(ui.Text(c, "忘了管理口令，可以在服务器详情里注销再重办，不影响备份。")).Wrap()
+			muted(ui.Text(c, T("wizard.login.forgot"))).Wrap()
 		}
 		a.porterChoice(c, w)
 		why := ""
 		switch {
 		case want && len([]rune(w.adminPass)) < 12:
-			why = "管理口令至少 12 个字符"
+			why = T("pass.err.short")
 		case want && w.adminPass != w.adminPass2:
-			why = "两次输入的管理口令不一样"
+			why = T("pass.err.differ")
 		}
 		if why != "" && w.adminPass != "" {
 			ui.Text(c, why).FontSize(12).TextColor(palette.Warn)
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			ui.Button(c, "取消").OnClick(func() { a.closeWizard() })
-			b := ui.PrimaryButton(c, "登录").OnClick(func() { a.runAdd(w) })
+			ui.Button(c, T("common.cancel")).OnClick(func() { a.closeWizard() })
+			b := ui.PrimaryButton(c, T("wizard.login.go")).OnClick(func() { a.runAdd(w) })
 			if why != "" {
 				b.Disabled(true)
 			}
@@ -185,22 +184,22 @@ func (a *App) deploySource(w *wizard) service.DeploySource {
 // release of this client's version, or under 更多选项 a local build.
 func (a *App) porterChoice(c *ui.Context, w *wizard) {
 	ui.Column(c).Gap(6).Children(func() {
-		muted(ui.Text(c, "porter 是 Valise 在服务器上的小帮手，用到时由 SSH 唤起，不常驻、不监听端口。")).Wrap()
+		muted(ui.Text(c, T("porter.what"))).Wrap()
 		switch tag := a.releaseTag(); {
 		case w.localPorter != "":
-			ui.Text(c, "服务器上没有 porter 时，上传本地构建：").FontSize(12)
+			ui.Text(c, T("porter.local_chosen")).FontSize(12)
 			mono(muted(ui.Text(c, w.localPorter))).Wrap()
 		case tag != "":
-			ui.Text(c, "服务器上没有 porter 时，从 GitHub Release 下载 "+tag+"（与这台电脑上的 Valise 同版本），核对签名与 SHA-256 后上传。").FontSize(12).Wrap()
+			ui.Text(c, T("porter.from_release", "tag", tag)).FontSize(12).Wrap()
 		default:
-			ui.Text(c, "这是开发版 Valise，没有对应的 Release；服务器上没有 porter 时，要在“更多选项”里选本地构建。").FontSize(12).Wrap()
+			ui.Text(c, T("porter.dev_build")).FontSize(12).Wrap()
 		}
-		ui.Collapsible(c, "更多选项", &w.more, func() {
+		ui.Collapsible(c, T("common.more"), &w.more, func() {
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				muted(ui.Text(c, "上传这台电脑上的本地构建（开发与演练用）")).Grow(1)
-				ui.Button(c, "选择文件…").OnClick(func() { a.pickPorter(w) })
+				muted(ui.Text(c, T("porter.local_what"))).Grow(1)
+				ui.Button(c, T("common.pick_file")).OnClick(func() { a.pickPorter(w) })
 				if w.localPorter != "" {
-					ui.Button(c, "改回 Release").OnClick(func() { w.localPorter = "" })
+					ui.Button(c, T("porter.back_release")).OnClick(func() { w.localPorter = "" })
 				}
 			})
 		})
@@ -212,7 +211,7 @@ func (a *App) pickPorter(w *wizard) {
 		return
 	}
 	a.run(func() {
-		p, err := a.pickFile("选择 porter 文件", "你自己构建的 valise-porter（Linux，与服务器同架构）。")
+		p, err := a.pickFile(T("porter.pick_title"), T("porter.pick_msg"))
 		a.update(func() {
 			if err == nil && p != "" {
 				w.localPorter = p
@@ -246,12 +245,12 @@ func (a *App) runImport(w *wizard, alias string) {
 func (a *App) prepare(w *wizard, host string, add func(context.Context, func(service.SetupStep)) error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	w.step, w.host, w.busy, w.err, w.steps, w.cancel = wzPrepare, host, true, nil, nil, cancel
-	w.doing, w.doingAt = "开始", time.Now()
+	w.doing, w.doingAt = T("prepare.started"), time.Now()
 	a.run(func() {
 		defer cancel()
 		err := add(ctx, func(s service.SetupStep) { a.update(func() { w.steps = append(w.steps, s) }) })
 		if ctx.Err() == context.Canceled {
-			err = valise.New("cancelled", "已停止，后面的步骤没有执行", "已经做完的步骤保留着；可以重试，或者取消")
+			err = valise.New("cancelled", T("prepare.stopped"), T("prepare.stopped_hint"))
 		}
 		a.update(func() {
 			w.busy, w.err, w.cancel, w.doing = false, err, nil, ""

@@ -2,7 +2,6 @@ package gui
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -60,33 +59,33 @@ func (a *App) serverPage(c *ui.Context, name string) {
 	}
 	ps := a.passOf(name)
 	st := a.serverState(name, c.Now())
-	ui.Link(c, "‹ "+text.navServers, "/servers")
+	ui.Link(c, "‹ "+T("nav.servers"), "/servers")
 	ui.Row(c).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Children(func() { pageHead(c, name, "") })
 		if a.agents.busy {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c); muted(ui.Text(c, "正在连接 "+name+"…")) })
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c); muted(ui.Text(c, T("server.connecting", "name", name))) })
 		} else {
-			ui.Button(c, "重新连接").OnClick(func() { a.refreshAgents(); a.readDoctor(name) })
+			ui.Button(c, T("server.reconnect")).OnClick(func() { a.refreshAgents(); a.readDoctor(name) })
 		}
 	})
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
 		stateTag(c, st)
 		if obs := a.observation(name); obs != nil && obs.ObservedAt != nil {
-			muted(ui.Text(c, when(*obs.ObservedAt, c.Now())+" 读取"))
+			muted(ui.Text(c, T("server.read_at", "when", when(*obs.ObservedAt, c.Now()))))
 		}
 		switch {
 		case ps.doc != nil && ps.doc.PorterVersion != "":
 			plainTag(c, "porter "+ps.doc.PorterVersion)
 		case ps.doc != nil && ps.doc.Problem != nil:
-			plainTag(c, "porter 不可用")
+			plainTag(c, T("server.porter_unusable"))
 		}
 		if row != nil && row.Valise {
-			plainTag(c, "Valise 接入")
+			plainTag(c, T("server.kind.valise"))
 		} else if row != nil {
-			plainTag(c, "来自 SSH 配置")
+			plainTag(c, T("server.kind.ssh"))
 		}
 	})
-	if st.Word == "离线" || st.Word == "需要处理" {
+	if st.Key == "offline" || st.Key == "attention" {
 		a.serverTrouble(c, name, st)
 	}
 	if row != nil {
@@ -106,18 +105,18 @@ func (a *App) serverTrouble(c *ui.Context, name string, st serverState) {
 	obs := a.observation(name)
 	card(ui.Column(c)).Gap(8).Background(palette.TroubleBg).Border(1, palette.TroubleBorder).Children(func() {
 		ui.Text(c, name+" "+st.Word).FontSize(15).Bold().TextColor(palette.Warn)
-		fact(c, "原因", st.Reason)
+		fact(c, T("fact.reason"), st.Reason)
 		if st.Suggestion != "" {
-			fact(c, "建议", st.Suggestion)
+			fact(c, T("fact.suggestion"), st.Suggestion)
 		}
 		if obs != nil && !obs.LastAttemptAt.IsZero() {
-			fact(c, "上次尝试", when(obs.LastAttemptAt, c.Now()))
+			fact(c, T("fact.last_try"), when(obs.LastAttemptAt, c.Now()))
 		}
 		if obs != nil && obs.ObservedAt != nil {
-			fact(c, "上次读到", when(*obs.ObservedAt, c.Now()))
+			fact(c, T("fact.last_read"), when(*obs.ObservedAt, c.Now()))
 		}
 		if obs != nil && obs.Error != nil && obs.Error.Detail != "" {
-			ui.Collapsible(c, text.techInfo, a.fold("srv-detail-"+name), func() {
+			ui.Collapsible(c, T("error.tech_info"), a.fold("srv-detail-"+name), func() {
 				mono(muted(ui.Text(c, obs.Error.Code+"\n"+obs.Error.Detail))).Wrap()
 			})
 		}
@@ -128,39 +127,39 @@ func (a *App) serverTrouble(c *ui.Context, name string, st serverState) {
 // ~/.ssh/config, that the user's own SSH setup logs in.
 func (a *App) passBlock(c *ui.Context, name string, tiered bool, ps *passState) {
 	card(ui.Column(c)).Gap(10).Children(func() {
-		ui.Text(c, "通行证").FontSize(16).Bold()
+		ui.Text(c, T("pass.title")).FontSize(16).Bold()
 		if !tiered {
-			muted(ui.Text(c, "用你自己的 SSH 设置登录。这台服务器没有用户通行证与管理员通行证之分。")).FontSize(13).Wrap()
+			muted(ui.Text(c, T("pass.own_ssh"))).FontSize(13).Wrap()
 			return
 		}
-		user := "能用"
+		user := T("pass.usable")
 		if !a.svc.HasDailyKey(name) {
-			user = "这台电脑上没有"
+			user = T("pass.not_here")
 		}
-		passLine(c, "用户通行证 · "+user, "Valise 用它自动查看和备份，只能做这些。")
+		passLine(c, T("pass.user_state", "state", user), T("pass.user_what"))
 		has := a.svc.HasAdminKey(name)
 		left, open := a.svc.AdminRemaining(name)
 		ui.Row(c).Gap(10).Padding(10, 12).Radius(10).Background(palette.Board).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
 				switch {
 				case !has:
-					ui.Text(c, "管理员通行证 · 没办").Bold()
-					muted(ui.Text(c, "改动服务器时用服务器密码临时登录。")).Wrap()
+					ui.Text(c, T("pass.admin_none")).Bold()
+					muted(ui.Text(c, T("pass.admin_none_how"))).Wrap()
 				case open:
-					ui.Text(c, fmt.Sprintf("管理员通行证 · 已解锁 · 剩余 %d 分钟", int(left.Minutes())+1)).Bold()
-					muted(ui.Text(c, "到时自动锁上。")).Wrap()
+					ui.Text(c, T("pass.admin_open", "n", int(left.Minutes())+1)).Bold()
+					muted(ui.Text(c, T("pass.admin_auto_lock"))).Wrap()
 				default:
-					ui.Text(c, "管理员通行证 · 已锁上").Bold()
-					muted(ui.Text(c, fmt.Sprintf("改动服务器时输管理口令解锁，%d 分钟后自动锁上。", int(a.svc.AdminWindow().Minutes())))).Wrap()
+					ui.Text(c, T("pass.admin_locked")).Bold()
+					muted(ui.Text(c, T("pass.admin_locked_how", "n", int(a.svc.AdminWindow().Minutes())))).Wrap()
 				}
 			})
 			switch {
 			case ps.busy:
 				ui.Spinner(c)
 			case !has && !ps.issuing:
-				ui.Button(c, "办一张管理员通行证").OnClick(func() { ps.issuing, ps.err = true, nil })
+				ui.Button(c, T("pass.issue")).OnClick(func() { ps.issuing, ps.err = true, nil })
 			case has:
-				ui.Button(c, "注销").OnClick(func() { ps.revoke, ps.err = true, nil })
+				ui.Button(c, T("pass.revoke")).OnClick(func() { ps.revoke, ps.err = true, nil })
 			}
 		})
 		if ps.issuing && !ps.busy {
@@ -177,26 +176,26 @@ func (a *App) passBlock(c *ui.Context, name string, tiered bool, ps *passState) 
 
 func (a *App) issueForm(c *ui.Context, name string, ps *passState) {
 	ui.Column(c).Gap(8).Children(func() {
-		labeled(c, "管理口令", func() {
-			ui.TextInput(c, &ps.pass).Password().Label("管理口令").Placeholder("至少 12 个字符，和 Valise 口令不同").AutoFocus()
+		labeled(c, T("pass.admin_passphrase"), func() {
+			ui.TextInput(c, &ps.pass).Password().Label(T("pass.admin_passphrase")).Placeholder(T("pass.admin_rule")).AutoFocus()
 		})
-		labeled(c, "再输一次", func() {
-			ui.TextInput(c, &ps.pass2).Password().Label("再输一次").Placeholder("再输一次管理口令")
+		labeled(c, T("pass.again"), func() {
+			ui.TextInput(c, &ps.pass2).Password().Label(T("pass.again")).Placeholder(T("pass.again_hint"))
 		})
-		muted(ui.Text(c, "办理要登录服务器一次：OpenSSH 会问服务器密码（或用你的私钥）。")).Wrap()
+		muted(ui.Text(c, T("pass.issue_login"))).Wrap()
 		why := ""
 		switch {
 		case len([]rune(ps.pass)) < 12:
-			why = "管理口令至少 12 个字符"
+			why = T("pass.err.short")
 		case ps.pass != ps.pass2:
-			why = "两次输入的管理口令不一样"
+			why = T("pass.err.differ")
 		}
 		if why != "" && ps.pass != "" {
 			ui.Text(c, why).FontSize(12).TextColor(palette.Warn)
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			ui.Button(c, "取消").OnClick(func() { ps.issuing, ps.pass, ps.pass2 = false, "", "" })
-			b := ui.PrimaryButton(c, "办理").OnClick(func() { a.issuePass(name, ps) })
+			ui.Button(c, T("common.cancel")).OnClick(func() { ps.issuing, ps.pass, ps.pass2 = false, "", "" })
+			b := ui.PrimaryButton(c, T("pass.issue_go")).OnClick(func() { a.issuePass(name, ps) })
 			if why != "" {
 				b.Disabled(true)
 			}
@@ -223,11 +222,11 @@ func (a *App) issuePass(name string, ps *passState) {
 func (a *App) revokeDialog(c *ui.Context, name string, ps *passState) {
 	if ui.Modal(c, &ps.revoke, func() {
 		ui.Column(c).Width(420).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, "注销 "+name+" 的管理员通行证？").FontSize(18).Bold()
-			muted(ui.Text(c, "会从服务器上移除它，并删掉这台电脑上的那一份。之后改动服务器要用服务器密码临时登录；备份不受影响。注销前要用它（或服务器密码）登录一次。")).FontSize(12).Wrap()
+			ui.Text(c, T("pass.revoke_title", "name", name)).FontSize(18).Bold()
+			muted(ui.Text(c, T("pass.revoke_why"))).FontSize(12).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				ui.Button(c, "取消").OnClick(func() { ps.revoke = false })
-				ui.PrimaryButton(c, "注销").OnClick(func() {
+				ui.Button(c, T("common.cancel")).OnClick(func() { ps.revoke = false })
+				ui.PrimaryButton(c, T("pass.revoke")).OnClick(func() {
 					ps.revoke, ps.busy, ps.err = false, true, nil
 					a.run(func() {
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -253,11 +252,11 @@ func (a *App) agentsHere(c *ui.Context, name string) {
 	}
 	card(ui.Column(c)).Gap(10).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, fmt.Sprintf("这台服务器上的 Agent · %d", len(here))).FontSize(16).Bold().Grow(1)
-			ui.Button(c, "查找、接入或安装").OnClick(func() { a.router.Push("/servers/" + name + "/agents") })
+			ui.Text(c, T("server.agents_here", "n", len(here))).FontSize(16).Bold().Grow(1)
+			ui.Button(c, T("server.find")).OnClick(func() { a.router.Push("/servers/" + name + "/agents") })
 		})
 		if len(here) == 0 {
-			muted(ui.Text(c, "还没有接入的 Agent。")).FontSize(13)
+			muted(ui.Text(c, T("server.no_agents"))).FontSize(13)
 		}
 		for _, r := range here {
 			line := ui.Row(c.Key(r.Instance)).Gap(10).Padding(6, 4).AlignItems(ui.Center).Cursor(ui.CursorPointer).

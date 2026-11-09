@@ -2,7 +2,6 @@ package gui
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"time"
 
@@ -44,10 +43,10 @@ func (a *App) hosts() []string {
 // and copies what a server has and a repository lacks, one at a time. No
 // key is needed (docs/UI.md 7.3).
 func (a *App) locationsPage(c *ui.Context) {
-	pageHead(c, "备份位置", "—— 服务器之外，这台电脑上的那一份。")
+	pageHead(c, T("nav.locations"), T("locations.sub"))
 	repos := a.svc.Repos()
 	if len(repos) == 0 {
-		muted(ui.Text(c, "还没有登记本机仓库。")).FontSize(14)
+		muted(ui.Text(c, T("locations.no_repos"))).FontSize(14)
 		return
 	}
 	hosts := a.hosts()
@@ -61,14 +60,14 @@ func (a *App) locationsPage(c *ui.Context) {
 				})
 			})
 			if len(hosts) == 0 {
-				muted(ui.Text(c, "还没有读到服务器。"))
+				muted(ui.Text(c, T("locations.no_servers")))
 			}
 			for _, h := range hosts {
 				a.repoLine(c.Key(h), r.Name, h)
 			}
 		})
 	}
-	muted(ui.Text(c, "补到本机：从服务器复制仓库里缺少的备份，并逐个周期校验；不需要钥匙。外接盘要先接上。")).FontSize(11).Wrap()
+	muted(ui.Text(c, T("locations.note"))).FontSize(11).Wrap()
 }
 
 func (a *App) repoLine(c *ui.Context, repo, host string) {
@@ -89,11 +88,11 @@ func (a *App) repoLine(c *ui.Context, repo, host string) {
 			})
 			switch {
 			case !st.Available:
-				ui.Text(c, "仓库现在不可用").FontSize(12).TextColor(palette.Warn)
+				ui.Text(c, T("locations.unavailable")).FontSize(12).TextColor(palette.Warn)
 			case sy != nil && sy.busy:
 				ui.Spinner(c)
 			default:
-				ui.Button(c, "现在补到本机").OnClick(func() { a.syncRepo(repo, host) })
+				ui.Button(c, T("locations.sync")).OnClick(func() { a.syncRepo(repo, host) })
 			}
 		})
 		if sy == nil || sy.busy {
@@ -104,7 +103,7 @@ func (a *App) repoLine(c *ui.Context, repo, host string) {
 			return
 		}
 		if r := sy.result; r != nil {
-			ui.Text(c, fmt.Sprintf("完成：%d 个备份，新复制 %s，校验通过", len(r.Snapshots), size(r.Bytes))).FontSize(12)
+			ui.Text(c, T("locations.synced", "n", len(r.Snapshots), "size", size(r.Bytes))).FontSize(12)
 			if t := service.CheckSummary(r.Checks); t != "" {
 				muted(ui.Text(c, t)).Wrap()
 			}
@@ -115,12 +114,12 @@ func (a *App) repoLine(c *ui.Context, repo, host string) {
 // repoStateLine is when this repository last received the server's
 // backups, and the last failure, each said apart.
 func repoStateLine(st service.RepoStatus, now time.Time) string {
-	line := "还没有从这台服务器补过"
+	line := T("locations.never")
 	if st.State.LastOK != nil {
-		line = "上次补齐：" + when(*st.State.LastOK, now)
+		line = T("locations.last_ok", "when", when(*st.State.LastOK, now))
 	}
 	if st.State.LastError != "" {
-		line += " · 上次失败：" + st.State.LastError
+		line += T("common.dot_sep") + T("locations.last_err", "err", st.State.LastError)
 	}
 	return line
 }

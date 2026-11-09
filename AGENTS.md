@@ -47,6 +47,7 @@ Valise 是一个开源的「自托管 Agent 安装与管理入口」，帮助缺
 
 ## 4. 前端与工具链
 
+- 桌面界面的文字一律用英文标准键 `T("key")` 从词表取（`client/ui/gui/i18n/zh-CN.json`，规则见 `docs/UI.md` 7.6），非测试代码里不写界面文字字面量；主题只管样子，不改文字。
 - 桌面界面用 **mygo 原生 UI**（`ui` 包，Go 写，GPU 绘制；2026-11-08 用户决定），代码在 `client/ui/gui/`，入口 `client/ui/cmd/valise-desktop/`，直接调用 service，没有 TS 前端与绑定生成。`client/ui/gui/` 下单个 `.go` 文件不得超过 400 行。约定见 `docs/UI.md` 第 2–7 节。
 - macOS 下先执行（详见 `docs/LAB.md`）：`export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`
 - 终端 UI 用 Bubble Tea，版本锁定见 `docs/UI.md` 第 8 节；`client/ui/tui/` 下单个 `.go` 文件不得超过 400 行。

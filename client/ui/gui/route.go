@@ -52,14 +52,14 @@ func route(items []service.AgentSummary, server, instance string) []station {
 			break
 		}
 		next := (*service.AgentSummary)(nil)
-		stop := station{Label: "来源未知", Note: "迁移时连不上原服务器", Unknown: true}
+		stop := station{Label: T("route.unknown"), Note: T("route.unknown_note"), Unknown: true}
 		if from.SourceAgent != nil {
 			if next = byRef(*from.SourceAgent); next != nil && !seen[next] {
-				stop = station{Label: next.ConnectionID, Note: "迁出"}
+				stop = station{Label: next.ConnectionID, Note: T("route.out")}
 				seen[next] = true
 			} else {
 				next = nil
-				stop = station{Label: "另一台服务器", Note: "这台电脑没有读到它", Unknown: true}
+				stop = station{Label: T("route.other"), Note: T("route.other_note"), Unknown: true}
 			}
 		}
 		stops = append([]station{stop}, stops...)
@@ -73,7 +73,7 @@ func route(items []service.AgentSummary, server, instance string) []station {
 				next = &items[i]
 			}
 		}
-		stops = append(stops, station{Label: at.MigratedTo.ConnectionID, Note: "迁入"})
+		stops = append(stops, station{Label: at.MigratedTo.ConnectionID, Note: T("route.in")})
 		if next == nil || seen[next] {
 			break
 		}
@@ -131,12 +131,12 @@ func routeView(c *ui.Context, stops []station) {
 					}
 					note := st.Note
 					if st.Current {
-						note = "现在在这里"
+						note = T("route.here")
 					}
 					muted(ui.Text(c, note)).FontSize(11).MaxLines(1)
 				})
 			}
 		})
 	})
-	muted(ui.Text(c, "只按记录下来的迁移关系连线；连不上原服务器时做的迁移，来源画成虚线的“来源未知”。"))
+	muted(ui.Text(c, T("route.note")))
 }

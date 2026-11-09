@@ -2,7 +2,6 @@ package gui
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -35,7 +34,7 @@ type adoption struct {
 type installable struct{ ID, Name, Takes, Needs string }
 
 // guideURL is the beginner guide to writing a profile (PROFILES.md 附录 A).
-const guideURL = "https://github.com/NazukiMio/Valise/blob/main/docs/PROFILES.md#附录-a为-harness-写一份资料入门2026-11-08"
+const guideURL = "https://github.com/NazukiMio/Valise/blob/main/docs/PROFILES.md#%E9%99%84%E5%BD%95-a%E4%B8%BA-harness-%E5%86%99%E4%B8%80%E4%BB%BD%E8%B5%84%E6%96%99%E5%85%A5%E9%97%A82026-11-08"
 
 func (a *App) scanServer(host string) {
 	sc := a.scans[host]
@@ -59,18 +58,18 @@ func (a *App) onServerPage(c *ui.Context, host string) {
 		sc = a.scans[host]
 	}
 	if a.wiz != nil && a.wiz.host == host {
-		stepper(c, len(wizardSteps)-1)
+		stepper(c, len(wizardSteps())-1)
 	} else {
 		ui.Link(c, "‹ "+host, "/servers/"+host)
 	}
 	ui.Row(c).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Children(func() {
-			pageHead(c, "这台服务器上的 Agent", "在「"+host+"」上按资料包认识的 harness 找了一遍。")
+			pageHead(c, T("wizard.step.agents"), T("onserver.sub", "host", host))
 		})
 		if sc.busy {
 			ui.Spinner(c)
 		} else {
-			ui.Button(c, "重新扫描").OnClick(func() { a.scanServer(host) })
+			ui.Button(c, T("onserver.rescan")).OnClick(func() { a.scanServer(host) })
 		}
 	})
 	if sc.err != nil {
@@ -81,18 +80,18 @@ func (a *App) onServerPage(c *ui.Context, host string) {
 		return
 	}
 	if len(sc.found) > 0 {
-		section(c, "找到了认识的 Agent")
+		section(c, T("onserver.found"))
 		for _, d := range sc.found {
 			a.foundCard(c.Key(d.ID+d.StateDir), host, sc, d)
 		}
 	}
-	section(c, "资料包不认识的 harness")
+	section(c, T("onserver.unknown_title"))
 	card(ui.Row(c)).Gap(14).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Gap(4).Children(func() {
-			ui.Text(c, "你的 Agent 不在上面？").Bold()
-			muted(ui.Text(c, "Valise 只认资料包里登记过的 harness。还没登记的，可以自己为它写一份资料，写好后回来重新扫描。")).FontSize(13).Wrap()
+			ui.Text(c, T("onserver.not_listed")).Bold()
+			muted(ui.Text(c, T("onserver.not_listed_why"))).FontSize(13).Wrap()
 		})
-		ui.Link(c, "怎么为它写一份资料 ›", guideURL)
+		ui.Link(c, T("onserver.guide"), guideURL)
 	})
 	if len(sc.found) == 0 {
 		a.installTiles(c, host)
@@ -124,12 +123,12 @@ func (a *App) foundCard(c *ui.Context, host string, sc *serverScan, d service.De
 			})
 			switch {
 			case d.Enrolled != "" || ad != nil && ad.written:
-				ui.Text(c, "已接入").FontSize(12).TextColor(palette.Ok)
-				ui.Button(c, "查看").OnClick(func() { a.router.Push("/agents/" + host + "/" + orText(d.Enrolled, d.ID)) })
+				ui.Text(c, T("adopt.done")).FontSize(12).TextColor(palette.Ok)
+				ui.Button(c, T("common.view")).OnClick(func() { a.router.Push("/agents/" + host + "/" + orText(d.Enrolled, d.ID)) })
 			case ad != nil && ad.busy:
 				ui.Spinner(c)
 			case ad == nil || ad.res == nil:
-				ui.PrimaryButton(c, "接入…").OnClick(func() { a.adopt(host, sc, d, false) })
+				ui.PrimaryButton(c, T("adopt.go")).OnClick(func() { a.adopt(host, sc, d, false) })
 			}
 		})
 		if ad == nil {
@@ -186,8 +185,8 @@ func assignRule(key, cat string) string {
 // categoryChoices are what an unrecognized file can be filed as; the first
 // is the default, keeping it with the secrets (ARCHITECTURE.md 5).
 var categoryChoices = []struct{ id, label string }{
-	{"", "按敏感内容保留"}, {"memory", "记忆"}, {"config", "配置"}, {"sessions", "会话"}, {"state", "状态"},
-	{"workspace", "工作区"}, {"cache", "缓存（不备份）"}, {"ignore", "忽略（不备份）"},
+	{"", "category.sensitive"}, {"memory", "category.memory"}, {"config", "category.config"}, {"sessions", "category.sessions"}, {"state", "category.state"},
+	{"workspace", "category.workspace"}, {"cache", "category.cache"}, {"ignore", "category.ignore"},
 }
 
 func (a *App) adoptReport(c *ui.Context, host string, sc *serverScan, d service.DetectedInstance, ad *adoption) {
@@ -197,31 +196,31 @@ func (a *App) adoptReport(c *ui.Context, host string, sc *serverScan, d service.
 		for _, t := range r.Categories {
 			found += t.Files
 		}
-		line := fmt.Sprintf("找到 %d 个文件，已按资料归类", found)
+		line := T("adopt.found", "n", found)
 		if r.Unclassified.Files > 0 {
-			line += fmt.Sprintf("；%d 个文件用途尚未识别，默认按敏感内容保留", r.Unclassified.Files)
+			line = T("adopt.found_unknown", "line", line, "n", r.Unclassified.Files)
 		}
 		ui.Text(c, line).FontSize(13).Wrap()
 		if len(r.Secrets) > 0 {
-			muted(ui.Text(c, fmt.Sprintf("其中 %d 个是凭据文件（只列路径，不读内容）", len(r.Secrets))))
+			muted(ui.Text(c, T("adopt.secrets", "n", len(r.Secrets))))
 		}
 		if ad.res.ProfileLocal {
-			ui.Text(c, "这份资料来自你自己的电脑，未经审核").FontSize(12).TextColor(palette.Warn)
+			ui.Text(c, T("profile.local")).FontSize(12).TextColor(palette.Warn)
 		}
 		if len(r.Pending) > 0 {
-			ui.Text(c, "此环境恢复尚未测试：资料里有未核实的条目").FontSize(12).TextColor(palette.Warn)
+			ui.Text(c, T("adopt.restore_untested")).FontSize(12).TextColor(palette.Warn)
 		}
 		if len(r.UnclassGroups) > 0 {
-			ui.Collapsible(c, "逐项改归类", a.fold("assign-"+host+d.ID), func() {
+			ui.Collapsible(c, T("adopt.assign"), a.fold("assign-"+host+d.ID), func() {
 				labels := make([]string, len(categoryChoices))
 				for i, ch := range categoryChoices {
-					labels[i] = ch.label
+					labels[i] = T(ch.label)
 				}
 				for _, g := range r.UnclassGroups {
 					key := g.Root + ":" + g.Prefix
 					ui.Row(c.Key(key)).Gap(10).AlignItems(ui.Center).Children(func() {
 						mono(ui.Text(c, g.Root+"/"+g.Prefix)).FontSize(12).Grow(1).MaxLines(1)
-						muted(ui.Text(c, fmt.Sprintf("%d 个 · %s", g.Files, size(g.Bytes))))
+						muted(ui.Text(c, T("adopt.group", "n", g.Files, "size", size(g.Bytes))))
 						choice := labelOf(ad.assign[key])
 						if ui.Select(c, &choice, labels).Width(160).Changed() {
 							if id := idOf(choice); id == "" {
@@ -234,10 +233,10 @@ func (a *App) adoptReport(c *ui.Context, host string, sc *serverScan, d service.
 				}
 			})
 		}
-		muted(ui.Text(c, "接入只读取和记录，不改动 Agent 的任何文件，也不往 harness 里安装任何东西。")).Wrap()
+		muted(ui.Text(c, T("adopt.readonly"))).Wrap()
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			ui.Button(c, "取消").OnClick(func() { delete(sc.adopts, d.ID) })
-			ui.PrimaryButton(c, "确认接入").OnClick(func() { a.adopt(host, sc, d, true) })
+			ui.Button(c, T("common.cancel")).OnClick(func() { delete(sc.adopts, d.ID) })
+			ui.PrimaryButton(c, T("adopt.confirm")).OnClick(func() { a.adopt(host, sc, d, true) })
 		})
 	})
 }
@@ -245,15 +244,15 @@ func (a *App) adoptReport(c *ui.Context, host string, sc *serverScan, d service.
 func labelOf(id string) string {
 	for _, ch := range categoryChoices {
 		if ch.id == id {
-			return ch.label
+			return T(ch.label)
 		}
 	}
-	return categoryChoices[0].label
+	return T(categoryChoices[0].label)
 }
 
 func idOf(label string) string {
 	for _, ch := range categoryChoices {
-		if ch.label == label {
+		if T(ch.label) == label {
 			return ch.id
 		}
 	}
@@ -262,15 +261,15 @@ func idOf(label string) string {
 
 // installTiles offer the harnesses with an official install plan.
 func (a *App) installTiles(c *ui.Context, host string) {
-	section(c, "这台服务器上还没有 Agent")
-	muted(ui.Text(c, "可以在这里装第一个，也可以先去服务器上自己装好再回来重新扫描。")).FontSize(13).Wrap()
+	section(c, T("onserver.none_title"))
+	muted(ui.Text(c, T("onserver.none_sub"))).FontSize(13).Wrap()
 	if len(a.installable) == 0 {
-		muted(ui.Text(c, "资料包里还没有带官方安装方案的 harness。"))
+		muted(ui.Text(c, T("onserver.no_plans")))
 		return
 	}
 	ui.Grid(c).Columns(3).Gap(12).Children(func() {
 		for _, h := range a.installable {
-			t := card(ui.Column(c.Key(h.ID))).Gap(8).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label("安装 " + h.Name)
+			t := card(ui.Column(c.Key(h.ID))).Gap(8).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(T("install.title", "name", h.Name))
 			if t.Hovered() {
 				t.Border(1, palette.Brand)
 			}
@@ -279,12 +278,12 @@ func (a *App) installTiles(c *ui.Context, host string) {
 					a.avatar(c, agentRow{Profile: h.ID, Name: h.Name}, 28)
 					ui.Text(c, h.Name).Bold()
 				})
-				line := "官方安装方案"
+				line := T("install.tile.plan")
 				if h.Takes != "" {
-					line += " · 约 " + h.Takes
+					line += T("common.dot_sep") + T("install.tile.takes", "takes", h.Takes)
 				}
 				if h.Needs != "" {
-					line += " · 需要 " + h.Needs
+					line += T("common.dot_sep") + T("install.tile.needs", "needs", h.Needs)
 				}
 				muted(ui.Text(c, line)).Wrap()
 			})

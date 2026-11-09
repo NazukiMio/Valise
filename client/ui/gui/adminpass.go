@@ -27,7 +27,7 @@ type passPrompt struct {
 }
 
 // errStopped answers a question whose work the user stopped.
-var errStopped = valise.New("cancelled", "已停止", "")
+var errStopped = valise.New("cancelled", T("service.short.stopped"), "")
 
 type passReply struct {
 	pass string
@@ -64,15 +64,15 @@ func (a *App) passDialog(c *ui.Context) {
 		p.value = ""
 		a.asks = a.asks[1:]
 	}
-	title, why, field := "输入 "+p.host+" 的管理口令", "用来解锁这台服务器的管理员通行证；解锁后一段时间内不再询问。口令不会被保存。", "管理口令"
-	cancelled := "已取消，没有解锁管理员通行证"
+	title, why, field := T("ask.admin.title", "host", p.host), T("ask.admin.why"), T("pass.admin_passphrase")
+	cancelled := T("ask.cancel.admin")
 	switch p.kind {
 	case askOwner:
-		title, why, field = "输入 Valise 口令", "这一步要确认是你本人（"+p.host+"）；确认后一段时间内不再询问。口令不会被保存。", "Valise 口令"
-		cancelled = "已取消，没有确认身份"
+		title, why, field = T("ask.owner.title"), T("ask.owner.why", "what", p.host), T("ask.owner.field")
+		cancelled = T("ask.cancel.owner")
 	case askServer:
-		title, why, field = serverPromptTitle(p.host), "这是 OpenSSH 在问："+p.host+"\n答案直接交给它，只用这一次，Valise 不保存。", "服务器密码"
-		cancelled = "已取消，没有登录"
+		title, why, field = serverPromptTitle(p.host), T("ask.server.why", "prompt", p.host), T("wizard.login.password")
+		cancelled = T("ask.cancel.server")
 	}
 	cancel := func() {
 		answer(passReply{err: valise.New("cancelled", cancelled, "")})
@@ -86,8 +86,8 @@ func (a *App) passDialog(c *ui.Context) {
 				answer(passReply{pass: p.value})
 			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				ui.Button(c, "取消").OnClick(cancel)
-				ui.PrimaryButton(c, "确定").OnClick(func() {
+				ui.Button(c, T("common.cancel")).OnClick(cancel)
+				ui.PrimaryButton(c, T("common.ok")).OnClick(func() {
 					if p.value != "" {
 						answer(passReply{pass: p.value})
 					}
@@ -102,10 +102,10 @@ func (a *App) passDialog(c *ui.Context) {
 // serverPromptTitle turns OpenSSH's “agent@host's password:” into a title.
 func serverPromptTitle(prompt string) string {
 	if who, ok := strings.CutSuffix(strings.TrimSpace(prompt), "'s password:"); ok {
-		return "输入 " + who + " 的服务器密码"
+		return T("ask.server.title", "who", who)
 	}
 	if strings.Contains(strings.ToLower(prompt), "passphrase") {
-		return "输入私钥的口令"
+		return T("ask.key_passphrase")
 	}
-	return "OpenSSH 需要你回答"
+	return T("ask.generic")
 }

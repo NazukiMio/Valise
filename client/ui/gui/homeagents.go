@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -39,19 +38,19 @@ func agentLabel(r agentRow) string { return r.Name + "，" + r.Harness + "，" +
 func (a *App) agentToolbar(c *ui.Context, n *Node, count, found int) {
 	c.OnShortcut(ui.Cmd, ui.KeyF, func() { a.focusSearch = true })
 	n.box(ui.Row(c).Gap(12).AlignItems(ui.Center).Margin(12, 0, 0, 0)).Children(func() {
-		title := fmt.Sprintf("在用的 Agent · %d", count)
+		title := T("home.in_use", "n", count)
 		if q := strings.TrimSpace(a.query); q != "" {
-			title = fmt.Sprintf("找到 %d 个 · 共 %d 个在用", found, count)
+			title = T("home.found", "found", found, "n", count)
 		}
 		muted(ui.Text(c, title)).FontSize(12).LetterSpacing(0.6).Grow(1)
-		f := ui.SearchField(c, &a.query).Width(260).Placeholder("搜索名字、harness 或服务器  ⌘F").Label("搜索 Agent")
+		f := ui.SearchField(c, &a.query).Width(260).Placeholder(T("home.search")).Label(T("home.search_label"))
 		if a.focusSearch {
 			f.Focus()
 			a.focusSearch = false
 		}
 		ui.Row(c).Gap(2).Padding(2).Radius(9).Background(palette.Board).Border(1, palette.CardBorder).Children(func() {
-			a.viewButton(c, "cards", icons.cards, "卡片视图")
-			a.viewButton(c, "list", icons.list, "列表视图")
+			a.viewButton(c, "cards", icons.cards, T("home.view_cards"))
+			a.viewButton(c, "list", icons.list, T("home.view_list"))
 		})
 	})
 }

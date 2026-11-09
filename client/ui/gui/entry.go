@@ -20,8 +20,8 @@ type entryState struct {
 	cancel  context.CancelFunc
 }
 
-var entrySteps = map[string]string{service.EntryTunnel: "隧道已建立", service.EntryRemote: "服务器端口在监听",
-	service.EntryHealth: "页面能打开", service.EntryAuth: "管理页令牌"}
+var entrySteps = map[string]string{service.EntryTunnel: "entry.step.tunnel", service.EntryRemote: "entry.step.remote",
+	service.EntryHealth: "entry.step.health", service.EntryAuth: "entry.step.auth"}
 
 // openEntry starts the tunnel off the main thread; it stays up until it is
 // closed, the window closes, or it has been idle for DefaultEntryIdle.
@@ -37,7 +37,7 @@ func (a *App) openEntry(server, instance string) {
 			Ready: func(open, display string) {
 				a.update(func() { st.busy, st.open, st.display = false, true, display })
 				if err := a.openURL(open); err != nil {
-					a.update(func() { st.err = errors.New("无法打开浏览器，请手动打开 " + display) })
+					a.update(func() { st.err = errors.New(T("entry.no_browser", "url", display)) })
 				}
 			}})
 		a.update(func() {
@@ -62,16 +62,16 @@ func (a *App) entryButton(c *ui.Context, row *agentRow) {
 	st := a.entries[key]
 	switch {
 	case st == nil:
-		ui.PrimaryButton(c, "打开管理页").OnClick(func() { a.openEntry(row.Server, row.Instance) })
+		ui.PrimaryButton(c, T("entry.open")).OnClick(func() { a.openEntry(row.Server, row.Instance) })
 	case st.busy:
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Spinner(c)
-			muted(ui.Text(c, "正在连接…"))
+			muted(ui.Text(c, T("entry.connecting")))
 		})
 	case st.open:
-		ui.Button(c, "关闭管理页").OnClick(func() { a.closeEntry(key) })
+		ui.Button(c, T("entry.close")).OnClick(func() { a.closeEntry(key) })
 	default:
-		ui.PrimaryButton(c, "重新打开管理页").OnClick(func() { a.closeEntry(key); a.openEntry(row.Server, row.Instance) })
+		ui.PrimaryButton(c, T("entry.reopen")).OnClick(func() { a.closeEntry(key); a.openEntry(row.Server, row.Instance) })
 	}
 }
 
@@ -84,7 +84,7 @@ func (a *App) entryReport(c *ui.Context, row *agentRow) {
 	}
 	ui.Column(c).Gap(4).Padding(12, 16).Radius(10).Background(palette.Board).Border(1, palette.CardBorder).Children(func() {
 		if st.open {
-			ui.Text(c, "管理页已在浏览器中打开："+st.display).FontSize(13).Bold()
+			ui.Text(c, T("entry.opened", "url", st.display)).FontSize(13).Bold()
 		}
 		for i, s := range st.steps {
 			if s.Step == service.EntryAuth && s.OK {
@@ -96,7 +96,7 @@ func (a *App) entryReport(c *ui.Context, row *agentRow) {
 			}
 			ui.Row(c.Key(i)).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Box(c).Size(6, 6).Radius(3).Background(toneColor(tone))
-				ui.Text(c, entrySteps[s.Step]).FontSize(12)
+				ui.Text(c, T(entrySteps[s.Step])).FontSize(12)
 				muted(ui.Text(c, s.Detail)).MaxLines(2)
 			})
 		}

@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -14,8 +13,8 @@ func (a *App) serversPage(c *ui.Context) {
 		a.refreshServers()
 	}
 	ui.Row(c).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).Children(func() { pageHead(c, text.serversTitle, text.serversSub) })
-		ui.PrimaryButton(c, "添加服务器").OnClick(func() { a.startWizard(false) })
+		ui.Column(c).Grow(1).Children(func() { pageHead(c, T("servers.title"), T("servers.sub")) })
+		ui.PrimaryButton(c, T("servers.add")).OnClick(func() { a.startWizard(false) })
 	})
 	if a.servers.err != nil {
 		errorBox(c, a.servers.err, a.fold("servers-err"))
@@ -25,7 +24,7 @@ func (a *App) serversPage(c *ui.Context) {
 		if a.servers.busy {
 			ui.Spinner(c)
 		} else if a.servers.err == nil {
-			muted(ui.Text(c, text.serversEmpty)).FontSize(14)
+			muted(ui.Text(c, T("servers.empty"))).FontSize(14)
 		}
 		return
 	}
@@ -66,20 +65,20 @@ func (a *App) serverLine(c *ui.Context, r serverRow) {
 				parts = append(parts, r.Address)
 			}
 			if n := a.agentsOn(r.Name); n > 0 {
-				parts = append(parts, fmt.Sprintf("%d 个 Agent", n))
-			} else if st.Word == "在线" {
-				parts = append(parts, "还没有 Agent")
+				parts = append(parts, T("servers.agents", "n", n))
+			} else if st.Key == "online" {
+				parts = append(parts, T("servers.no_agents"))
 			}
 			if r.Valise && a.svc.HasAdminKey(r.Name) {
-				parts = append(parts, "已办管理员通行证")
+				parts = append(parts, T("servers.has_admin"))
 			}
-			if st.Word != "在线" && st.Reason != "" {
+			if st.Key != "online" && st.Reason != "" {
 				parts = append(parts, st.Reason)
 			}
 			if st.Old != "" {
 				parts = append(parts, st.Old)
 			}
-			muted(ui.Text(c, strings.Join(parts, " · "))).MaxLines(2)
+			muted(ui.Text(c, strings.Join(parts, T("common.dot_sep")))).MaxLines(2)
 		})
 		stateTag(c, st)
 		ui.Text(c, "›").FontSize(18).TextColor(palette.Line)

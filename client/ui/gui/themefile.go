@@ -63,19 +63,19 @@ var (
 func readTheme(dir string) (*Theme, []string, error) {
 	b, err := readLimited(filepath.Join(dir, "theme.json"), MaxThemeJSON)
 	if err != nil {
-		return nil, nil, fmt.Errorf("读不到 theme.json：%w", err)
+		return nil, nil, errors.New(T("theme.err.read", "reason", err.Error()))
 	}
 	var f themeFile
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&f); err != nil {
-		return nil, nil, fmt.Errorf("theme.json 格式不对：%v", err)
+		return nil, nil, errors.New(T("theme.err.format_json", "reason", err.Error()))
 	}
 	if f.Format != ThemeFormat {
-		return nil, nil, fmt.Errorf("format 要写 %q", ThemeFormat)
+		return nil, nil, errors.New(T("theme.err.format", "format", ThemeFormat))
 	}
 	if strings.TrimSpace(f.Name) == "" || len([]rune(f.Name)) > 40 {
-		return nil, nil, errors.New("name 要写主题的名字（40 字以内）")
+		return nil, nil, errors.New(T("theme.err.name"))
 	}
 	var t *Theme
 	switch f.Base {
@@ -84,7 +84,7 @@ func readTheme(dir string) (*Theme, []string, error) {
 	case ThemeDark:
 		t = classicDark()
 	default:
-		return nil, nil, fmt.Errorf("base 只能是 %q 或 %q", ThemeLight, ThemeDark)
+		return nil, nil, errors.New(T("theme.err.base", "a", ThemeLight, "b", ThemeDark))
 	}
 	t.Name = f.Name
 	if f.Dark != nil {
@@ -94,17 +94,17 @@ func readTheme(dir string) (*Theme, []string, error) {
 	for k, v := range f.Colors {
 		dst := fields[k]
 		if dst == nil {
-			return nil, nil, fmt.Errorf("colors 里没有叫 %q 的颜色", k)
+			return nil, nil, errors.New(T("theme.err.color_name", "name", k))
 		}
 		if !colorRe.MatchString(v) {
-			return nil, nil, fmt.Errorf("颜色 %s 要写成 #rrggbb 或 #rrggbbaa，现在是 %q", k, v)
+			return nil, nil, errors.New(T("theme.err.color_value", "name", k, "value", v))
 		}
 		*dst = ui.Hex(v)
 	}
 	if f.Fonts != nil {
 		for _, s := range []*string{&f.Fonts.Text, &f.Fonts.Display, &f.Fonts.Mono} {
 			if !fontRe.MatchString(*s) {
-				return nil, nil, fmt.Errorf("字体名只能用文字、数字、空格和逗号：%q", *s)
+				return nil, nil, errors.New(T("theme.err.font", "value", *s))
 			}
 		}
 		merge(&t.Fonts.Text, f.Fonts.Text)
@@ -114,7 +114,7 @@ func readTheme(dir string) (*Theme, []string, error) {
 	if s := f.Sizes; s != nil {
 		for _, v := range []float32{s.Radius, s.CardRadius, s.Verdict, s.Title, s.Text} {
 			if v < 0 || v > 120 {
-				return nil, nil, errors.New("sizes 里的数要在 0 到 120 之间（0 表示沿用）")
+				return nil, nil, errors.New(T("theme.err.sizes"))
 			}
 		}
 		mergeNum(&t.Sizes.Radius, s.Radius)
@@ -128,7 +128,7 @@ func readTheme(dir string) (*Theme, []string, error) {
 	case TimelineStrands, TimelineGold, TimelinePlain:
 		t.Timeline = f.Variants.Timeline
 	default:
-		return nil, nil, fmt.Errorf("variants.timeline 只能是 %s、%s 或 %s", TimelineStrands, TimelineGold, TimelinePlain)
+		return nil, nil, errors.New(T("theme.err.timeline", "a", TimelineStrands, "b", TimelineGold, "c", TimelinePlain))
 	}
 	files, err := themeImages(dir, f.Images)
 	if err != nil {
@@ -139,7 +139,7 @@ func readTheme(dir string) (*Theme, []string, error) {
 	for name, b := range files {
 		img, err := ui.DecodeImage(b)
 		if err != nil {
-			return nil, nil, fmt.Errorf("图片 %s（%s）不是能显示的图片（支持 PNG、JPEG、WebP、SVG）", name, f.Images[name])
+			return nil, nil, errors.New(T("theme.err.image_decode", "name", name, "path", f.Images[name]))
 		}
 		t.Images[name], names[name] = img, true
 	}
@@ -166,22 +166,22 @@ func themeImages(dir string, images map[string]string) (map[string][]byte, error
 	total := int64(0)
 	for name, rel := range images {
 		if !nameRe.MatchString(name) {
-			return nil, fmt.Errorf("图片名 %q 只能用小写字母、数字和连字符", name)
+			return nil, errors.New(T("theme.err.image_name", "name", name))
 		}
 		clean := filepath.Clean(filepath.FromSlash(rel))
 		if rel == "" || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-			return nil, fmt.Errorf("图片 %s 要写主题文件夹里的相对路径，现在是 %q", name, rel)
+			return nil, errors.New(T("theme.err.image_path", "name", name, "path", rel))
 		}
 		p := filepath.Join(dir, clean)
 		st, err := os.Lstat(p)
 		if err != nil || !st.Mode().IsRegular() {
-			return nil, fmt.Errorf("主题文件夹里找不到图片文件 %s", rel)
+			return nil, errors.New(T("theme.err.image_missing", "path", rel))
 		}
 		if st.Size() > MaxThemeImage {
-			return nil, fmt.Errorf("图片 %s 超过 4 MiB", rel)
+			return nil, errors.New(T("theme.err.image_size", "path", rel))
 		}
 		if total += st.Size(); total > MaxThemeFolder {
-			return nil, errors.New("主题的图片加起来超过 16 MiB")
+			return nil, errors.New(T("theme.err.images_total"))
 		}
 		b, err := os.ReadFile(p)
 		if err != nil {
@@ -207,7 +207,7 @@ func readLimited(p string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if st.Size() > limit {
-		return nil, fmt.Errorf("文件超过 %d KiB", limit>>10)
+		return nil, errors.New(T("file.err.too_big", "n", limit>>10))
 	}
 	return os.ReadFile(p)
 }
@@ -262,11 +262,11 @@ func (a *App) importTheme(src string) (string, error) {
 			err = os.WriteFile(filepath.Join(tmp, rel), b, 0o600)
 		}
 		if err != nil {
-			return "", fmt.Errorf("复制主题失败：%w", err)
+			return "", errors.New(T("theme.err.copy", "reason", err.Error()))
 		}
 	}
 	if err := os.Rename(tmp, filepath.Join(a.themesDir(), id)); err != nil {
-		return "", fmt.Errorf("复制主题失败：%w", err)
+		return "", errors.New(T("theme.err.copy", "reason", err.Error()))
 	}
 	return id, nil
 }
