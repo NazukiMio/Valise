@@ -1,0 +1,380 @@
+<title>Valise 服务器设置草图</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&display=swap">
+<style>
+/* Layout: a long sheet of screens, each a desktop window mock with its notes beside it, in the order a person meets them. */
+:root{
+  --paper:#f7f6f3; --card:#ffffff; --line:#e3ddd2; --board:#fcfbf8; --side:#efece6;
+  --ink:#2b2825; --sub:#8c857b; --gold:#9a7b4f; --gold-soft:#f3e7d3; --accent:#70685d; --on-accent:#fff;
+  --ok:#5f7d5a; --warn:#a06a2c; --warn-bg:#fbf3e6; --note:#fffdf7; --note-line:#e9dcc3;
+  --display:"Noto Serif SC","Songti SC",serif; --body:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif; --mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#1f1d1a; --card:#2a2723; --line:#3d3832; --board:#24221f; --side:#191816;
+  --ink:#ece7df; --sub:#a39b8f; --gold:#c9a66f; --gold-soft:#3a3226; --accent:#d8cbb6; --on-accent:#1f1d1a;
+  --ok:#94b28b; --warn:#dba45f; --warn-bg:#382d20; --note:#26231f; --note-line:#4a4033; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#1f1d1a; --card:#2a2723; --line:#3d3832; --board:#24221f; --side:#191816;
+  --ink:#ece7df; --sub:#a39b8f; --gold:#c9a66f; --gold-soft:#3a3226; --accent:#d8cbb6; --on-accent:#1f1d1a;
+  --ok:#94b28b; --warn:#dba45f; --warn-bg:#382d20; --note:#26231f; --note-line:#4a4033; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.6;
+  padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+header.top h1{font-family:var(--display);font-size:34px;margin:0 0 6px;text-wrap:balance}
+header.top p{margin:0;color:var(--sub);max-width:70ch}
+.decisions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-size:12px;color:var(--sub);background:var(--card)}
+.chip b{color:var(--ink);font-weight:600}
+section.scene{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}
+@media (max-width:900px){section.scene{grid-template-columns:minmax(0,1fr)}}
+.scene h2{grid-column:1/-1;margin:0;font-family:var(--display);font-size:22px;display:flex;gap:12px;align-items:baseline}
+.scene h2 small{font-family:var(--body);font-size:12px;color:var(--sub);font-weight:400}
+.win{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--paper);box-shadow:0 10px 30px rgba(40,30,20,.08);min-width:0}
+.bar{height:30px;background:var(--card);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;padding:0 12px}
+.bar i{width:10px;height:10px;border-radius:50%;background:var(--line)}
+.app{display:grid;grid-template-columns:150px minmax(0,1fr);min-height:420px}
+@media (max-width:600px){.app{grid-template-columns:minmax(0,1fr)}.side{display:none}}
+.side{background:var(--side);padding:18px 10px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--sub)}
+.brand{display:flex;gap:8px;align-items:center;font-family:var(--display);font-size:17px;color:var(--ink);padding:0 6px 12px}
+.brand svg{color:var(--gold)}
+.nav{display:flex;gap:8px;align-items:center;padding:5px 8px;border-radius:7px}
+.nav.on{background:var(--card);color:var(--ink)}
+.page{padding:26px 30px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.crumb{font-size:12px;color:var(--sub)}
+.h{font-family:var(--display);font-size:26px;margin:0;line-height:1.25}
+.lede{color:var(--sub);margin:-8px 0 0;font-size:13px}
+.steps{display:flex;gap:6px;flex-wrap:wrap;font-size:12px}
+.steps span{padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--sub)}
+.steps .now{border-color:var(--gold);color:var(--ink);background:var(--gold-soft)}
+.steps .done{color:var(--ok)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub);min-width:0}
+.input{border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:var(--card);color:var(--ink);font-size:13px;min-height:34px}
+.split{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:10px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 14px;font-size:13px;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--gold);padding-inline:0}
+.foot{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.mono{font-family:var(--mono);font-size:12px;word-break:break-all}
+.muted{color:var(--sub);font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.run{background:var(--gold);box-shadow:0 0 0 4px var(--gold-soft)}
+.stepline{display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line)}
+.stepline:first-child{border-top:0}
+.stepline .dot{margin-top:7px}
+.warnbox{background:var(--warn-bg);border:1px solid var(--note-line);border-radius:12px;padding:12px 14px;font-size:13px}
+.warnbox b{color:var(--warn)}
+.tag{font-size:11px;border-radius:999px;padding:1px 9px;border:1px solid var(--line);color:var(--sub);white-space:nowrap}
+.tag.ok{color:var(--ok);border-color:currentColor} .tag.warn{color:var(--warn);border-color:currentColor}
+.avatar{width:42px;height:42px;border-radius:11px;background:var(--gold-soft);display:grid;place-items:center;color:var(--gold);flex:none}
+.modal{position:relative;margin:4px auto;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:10px}
+.dim{background:repeating-linear-gradient(135deg,transparent 0 10px,rgba(0,0,0,.025) 10px 20px);padding:30px 16px;border-radius:10px}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:13px}
+.check i{width:16px;height:16px;border:1.5px solid var(--sub);border-radius:4px;flex:none;margin-top:3px}
+.check i.on{background:var(--accent);border-color:var(--accent)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+td{padding:6px 4px;border-top:1px solid var(--line);vertical-align:top}
+.tablebox{overflow-x:auto}
+aside.notes{background:var(--note);border:1px solid var(--note-line);border-radius:12px;padding:14px 16px;font-size:13px;display:flex;flex-direction:column;gap:8px}
+aside.notes h3{margin:0;font-size:12px;letter-spacing:.08em;color:var(--gold)}
+aside.notes ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+aside.notes .from{color:var(--sub);font-size:12px}
+.out{border:1px dashed var(--line);border-radius:12px;padding:14px 16px;color:var(--sub);font-size:13px}
+.out b{color:var(--ink)}
+.namecard{background:linear-gradient(160deg,var(--card),var(--board));border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:14px;box-shadow:0 14px 34px rgba(40,30,20,.10)}
+.namecard .big{font-family:var(--display);font-size:22px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--card);display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub)}
+.tile b{color:var(--ink);font-size:13px}
+.tile.on{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+.addr{font-size:17px;padding:10px 12px;font-family:var(--mono)}
+.two{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:760px){.two{grid-template-columns:minmax(0,1fr)}}
+.next{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--sub)}
+.next div{display:flex;gap:8px;align-items:center}
+.next em{font-style:normal;width:18px;height:18px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font-size:10px;flex:none}
+.pass{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--board)}
+.pass .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold);flex:none}
+.term{background:#1b1916;color:#e8e2d6;border-radius:10px;padding:12px 14px;font-family:var(--mono);font-size:12px;line-height:1.55;overflow-x:auto;white-space:pre}
+.state{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:760px){.state{grid-template-columns:minmax(0,1fr)}}
+.tag.bad{color:var(--warn);border-color:currentColor;background:var(--warn-bg)}
+
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.tabs span{padding:6px 14px;font-size:13px;color:var(--sub);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs .on{color:var(--ink);border-color:var(--gold)}
+.setrow{display:flex;gap:12px;align-items:center;padding:11px 2px;border-top:1px solid var(--line);flex-wrap:wrap}
+.setrow:first-child{border-top:0}
+.need{font-size:11px;color:var(--gold);border:1px dashed var(--note-line);border-radius:999px;padding:1px 9px;white-space:nowrap}
+.danger{border-color:var(--note-line)}
+.btn.warnbtn{color:var(--warn);border-color:currentColor}
+.btn.warnbtn.solid{background:var(--warn);border-color:var(--warn);color:var(--on-accent)}
+.modal.wide{max-width:560px;display:flex;flex-direction:column;gap:12px}
+.choice{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--card)}
+.choice.on{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+.radio{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--sub);flex:none;margin-top:4px}
+.radio.on{border:4px solid var(--gold)}
+.box{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--sub);flex:none;display:inline-block;vertical-align:-2px;margin-right:8px}
+.box.on{background:var(--gold);border-color:var(--gold)}
+.checks{display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:13px}
+.agentskills{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:4px}
+.agentskills .tag{margin-left:8px}
+.keepbox{background:var(--board);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:13px}
+.fold{background:var(--board)}
+</style>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="case" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="14" rx="3"/><path d="M9 7V4h6v3M9 11v6m6-6v6"/></symbol>
+  <symbol id="bot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="6" width="14" height="13" rx="4"/><path d="M12 3v3M8 12h.01M16 12h.01M9 16h6"/></symbol>
+  <symbol id="srv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/><path d="M8 7h.01M8 17h.01M13 7h3m-3 10h3"/></symbol>
+  <symbol id="fold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8m-3 3 2 2m-4 0 2 2"/></symbol>
+</svg>
+<div class="wrap">
+<header class="top">
+  <h1>服务器设置与删除</h1>
+  <p>N4 第二段：照看一台已经接入的服务器——改名、改用 Valise 通行证、更新 porter、换电脑后重装用户通行证——以及删除服务器。每一屏右边写着它来自哪里、需要什么登录、不做什么。确认后再写代码。</p>
+  <div class="decisions">
+    <span class="chip"><b>删除</b>：只从这台电脑移除 / 移除并清理服务器</span>
+    <span class="chip"><b>清理</b>：逐项勾选</span>
+    <span class="chip"><b>Agent 保护技能</b>：默认不勾，写明不建议</span>
+    <span class="chip"><b>备份库</b>：一律保留，标“已删除的服务器”</span>
+    <span class="chip"><b>连不上时</b>：只能从这台电脑移除</span>
+  </div>
+</header>
+
+<!-- 1 -->
+<section class="scene">
+  <h2>1 · 服务器详情多一个“设置”页签 <small>概览不变，设置单独放</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="app">
+    <div class="side"><div class="brand"><svg width="20" height="20"><use href="#case"/></svg>Valise</div>
+      <div class="nav">我的 Agent</div><div class="nav on">服务器</div><div class="nav">备份位置</div></div>
+    <div class="page">
+      <div class="crumb">‹ 服务器</div>
+      <div class="row"><h3 class="h grow">home-vps</h3><span class="btn">重新连接</span></div>
+      <div class="row"><span class="tag ok">在线 · 22:18 读取</span><span class="tag">porter 0.9.0</span><span class="tag">Valise 接入</span></div>
+      <div class="tabs"><span>概览</span><span class="on">设置</span></div>
+      <div class="card" style="gap:0">
+        <div class="setrow"><div class="grow"><b>服务器名</b><div class="muted">home-vps · 也是备份位置里的文件夹名</div></div><span class="need">Valise 口令</span><span class="btn">改名…</span></div>
+        <div class="setrow"><div class="grow"><b>登录方式</b><div class="muted">Valise 通行证（用户通行证 + 管理员通行证）</div></div></div>
+        <div class="setrow"><div class="grow"><b>porter</b><div class="muted">0.9.0 · 比这台电脑上的 Valise（0.9.2）旧</div></div><span class="need">管理登录</span><span class="btn">更新到 0.9.2…</span></div>
+        <div class="setrow"><div class="grow"><b>这台电脑的用户通行证</b><div class="muted">能用</div></div></div>
+        <div class="setrow"><div class="grow"><b>加密钥匙</b><div class="muted">已登记到这台服务器（服务器只拿到“只能上锁”的那一半）</div></div></div>
+      </div>
+      <div class="card danger">
+        <div class="row"><div class="grow"><b>删除服务器</b><div class="muted">从这台电脑移除；也可以同时清理服务器上的 Valise 东西。备份库会保留。</div></div><span class="btn warnbtn">删除服务器…</span></div>
+      </div>
+    </div></div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>概览页签就是现在的详情（状态、通行证、这台服务器上的 Agent、原因）；设置页签放会改动东西的项目。</li>
+    <li>每一行写现在的情况，需要动手时右边给一个按钮，并用小标签写明要什么登录：<b>Valise 口令</b>（主人操作）、<b>管理登录</b>（管理员通行证或服务器密码）。</li>
+    <li>没有要做的行只写情况，不画按钮；porter 与本机同版本时写“与这台电脑一致”。</li>
+    <li>删除放在最下面单独一块，与其他设置分开。</li>
+  </ul><p class="from">来自：UI.md 9.4 服务器设置；ARCHITECTURE.md 2.2 操作分级。</p></aside>
+</section>
+
+<!-- 1b -->
+<section class="scene">
+  <h2>1b · 其他情况下的设置行 <small>只列与上一屏不同的</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="card" style="gap:0">
+      <div class="setrow"><div class="grow"><b>登录方式</b><div class="muted">用你自己的 SSH 设置（~/.ssh/config 里的 nas）· Valise 在服务器上没法设限</div></div><span class="need">用你的 SSH 登录一次</span><span class="btn">改用 Valise 通行证…</span></div>
+      <div class="setrow"><div class="grow"><b>这台电脑的用户通行证</b><div class="muted">这台电脑上没有（换了电脑或导入了配置）· 现在读不到这台服务器</div></div><span class="need">服务器密码</span><span class="btn">重新装…</span></div>
+      <div class="setrow"><div class="grow"><b>服务器名</b><div class="muted">还没有名字 · 第一次备份或同步前要起好</div></div><span class="btn">起名…</span></div>
+      <div class="setrow"><div class="grow"><b>加密钥匙</b><div class="muted">还没登记 · 第一次建立备份前会自动登记</div></div></div>
+    </div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>来自 SSH 配置的服务器：可以改用 Valise 通行证；经跳板机（ProxyJump）的暂时不能，那一行写原因，不画按钮。</li>
+    <li>“重新装”用于换电脑、导入配置后：用服务器密码登录一次，给这台电脑装一张新的用户通行证。</li>
+    <li>第一次起名是日常操作，不要口令；起好以后再改才走“改名”（Valise 口令）。</li>
+  </ul><p class="from">来自：UI.md 9.4；ARCHITECTURE.md 2.1、3.1。</p></aside>
+</section>
+
+<!-- 2 -->
+<section class="scene">
+  <h2>2 · 改名 <small>先列出会改动的每一处，再确认</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="crumb">‹ home-vps · 设置</div>
+    <h3 class="h">给 home-vps 改名</h3>
+    <div class="card">
+      <div class="field">新名字<div class="input">home-lab</div></div>
+      <div class="muted">只能用小写字母、数字和连字符。它是备份位置里的文件夹名。</div>
+    </div>
+    <div class="card"><b>会改动这些地方</b>
+      <div class="tablebox"><table>
+        <tr><td>服务器上的备份库</td><td class="mono">home-vps → home-lab</td><td class="muted">记下旧名，以前的备份照常能找到</td></tr>
+        <tr><td>本机仓库 usb</td><td class="mono">valise-vault/home-vps → valise-vault/home-lab</td><td class="muted">外接盘要先接上</td></tr>
+        <tr><td>云盘 gdrive</td><td class="mono">valise-vault/home-vps → …/home-lab</td><td class="muted">由服务器改；失败的记为“待改名”，下次同步时补上</td></tr>
+        <tr><td>本机仓库 nas</td><td class="mono">还没有复制过</td><td class="muted">以后直接用新名字</td></tr>
+      </table></div>
+    </div>
+    <div class="foot"><span class="btn">取消</span><span class="btn primary">改名</span></div>
+    <div class="card"><b>改好以后</b>
+      <div class="stepline"><span class="dot ok"></span><div class="grow">服务器上的备份库 · 已改名</div></div>
+      <div class="stepline"><span class="dot ok"></span><div class="grow">本机仓库 usb · 已改名</div></div>
+      <div class="stepline"><span class="dot warn"></span><div class="grow">云盘 gdrive · 待改名<div class="muted">云盘没有回应。下次同步时自动补上，在那之前新备份仍写进旧文件夹。</div></div></div>
+    </div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li><span class="mono">PlanRename</span> 只列出、不改动；点“改名”后弹 Valise 口令框（主人操作），再 <span class="mono">RenameServer</span>。</li>
+    <li>每一处的结果单独写：已改名、还没复制过、待改名（附原因）。</li>
+    <li>这台电脑上的连接名不变，只改服务器名（文件夹名）。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 第 3 节改名；VAULT_FORMAT.md 第 10 节 renamed_from。</p></aside>
+</section>
+
+<!-- 3 -->
+<section class="scene">
+  <h2>3 · 改用 Valise 通行证 <small>来自 SSH 配置的服务器</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="crumb">‹ nas · 设置</div>
+    <h3 class="h">让 nas 改用 Valise 通行证</h3>
+    <div class="card"><b>会做这些事</b>
+      <div class="stepline"><span class="dot"></span><div class="grow">用你自己的 SSH 设置登录 nas 一次</div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow">装上用户通行证：只能查看和备份，拿不到 shell</div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow">核对它确实被限住（被执行了普通命令就立即撤掉，保持原样）</div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow">把你 known_hosts 里 nas 的指纹复制给 Valise</div></div>
+    </div>
+    <div class="card"><label class="row"><span class="box"></span><b>同时办一张管理员通行证</b></label>
+      <div class="muted">勾上才出现两栏管理口令（与添加服务器时相同）。</div></div>
+    <div class="warnbox">之后 Valise 不再用你的 SSH 钥匙连 nas。你自己的 <span class="mono">ssh nas</span> 照常能用，Valise 不改 ~/.ssh/config。</div>
+    <div class="foot"><span class="btn">取消</span><span class="btn primary">开始</span></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li><span class="mono">MigrateServer</span>。每一步一行，进行中写当前子步骤与已等时间，可以停止（与添加服务器的“准备服务器”同一套）。</li>
+    <li>服务器上还没有 porter 时，接着走 porter 部署（默认 Release，本地构建在“更多选项”）。</li>
+    <li>经跳板机的服务器不画这一屏。</li>
+  </ul><p class="from">来自：UI.md 9.4；ARCHITECTURE.md 2.1“限制必须真正生效才用”。</p></aside>
+</section>
+
+<!-- 4 -->
+<section class="scene">
+  <h2>4 · 更新 porter <small>开发者模式</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="crumb">‹ home-vps · 设置</div>
+    <h3 class="h">更新 home-vps 上的 porter</h3>
+    <div class="state">
+      <div class="card"><span class="muted">服务器上</span><b>0.9.0</b></div>
+      <div class="card"><span class="muted">这台电脑上的 Valise</span><b>0.9.2</b></div>
+      <div class="card"><span class="muted">架构</span><b>linux/arm64</b></div>
+    </div>
+    <div class="card"><b>从 GitHub Release 下载 v0.9.2</b><div class="muted">核对签名与 SHA-256 后上传，原子替换；记下这个文件的 SHA-256（找回 Valise 口令时用来核对 porter）。</div>
+      <div class="muted">› 更多选项：上传这台电脑上的本地构建</div></div>
+    <div class="muted">porter 只在连接时运行，不常驻；正在进行的备份不受影响，下次连接起用新版本。</div>
+    <div class="foot"><span class="btn">取消</span><span class="btn primary">更新</span></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li><span class="mono">DeployPorter</span>；需要管理登录（管理员通行证的口令框，或服务器密码弹框）。</li>
+    <li>服务器上比本机新时只写情况，不提供降级。开发版客户端没有 Release，只能选本地构建。</li>
+    <li>结果写“已更新到 0.9.2”，并用用户通行证真的连一次 porter 核对版本。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 第 2 节 porter 部署、3.2 记下 SHA-256。</p></aside>
+</section>
+
+<!-- 5 -->
+<section class="scene">
+  <h2>5 · 删除服务器 <small>两层，清理逐项勾选</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="modal wide">
+      <h3 class="h" style="font-size:20px">删除 debian-vm</h3>
+      <label class="choice"><span class="radio"></span><div class="grow"><b>只从这台电脑移除</b><div class="muted">删掉这台电脑上的入口：服务器记录、两张通行证在本机的文件、记下的指纹。服务器上什么都不动，以后可以重新添加。</div></div></label>
+      <label class="choice on"><span class="radio on"></span><div class="grow"><b>移除并清理服务器上的 Valise 东西</b><div class="muted">需要一次管理登录。逐项选：</div>
+        <div class="checks">
+          <div><span class="box on"></span>定时备份任务<span class="muted">（停掉以后不再自动备份）</span></div>
+          <div><span class="box on"></span>工具箱装的工具：rclone</div>
+          <div><span class="box on"></span>云盘授权<span class="muted">（服务器上 Valise 的 rclone 配置：gdrive）</span></div>
+          <div><span class="box on"></span>porter</div>
+          <div><span class="box on"></span>用户通行证、管理员通行证<span class="muted">（服务器 authorized_keys 里的两行）</span></div>
+        </div>
+        <div class="agentskills"><b>Agent 的保护技能</b><span class="tag warn">不建议删</span>
+          <div class="muted">这些 Agent 还在服务器上运行，可能还在用这些技能。留着不影响什么；以后不打算用，也可以在 Agent 页里单独卸载。</div>
+          <div class="checks">
+            <div><span class="box"></span>drill-synthetic：保护技能与 MCP 配置片段</div>
+            <div><span class="box"></span>openclaw：保护技能</div>
+          </div>
+        </div>
+      </div></label>
+      <div class="keepbox"><b>备份库会保留</b><div class="muted">服务器上的备份库标为“已删除的服务器”，各备份位置里的副本也一样。以后要删，只能在备份页逐个周期删除。Agent 本身和它的文件不动。</div></div>
+      <div class="foot"><span class="btn">取消</span><span class="btn warnbtn solid">删除并清理</span></div>
+    </div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>默认选第一层；选第二层时清理项默认全勾，保护技能默认不勾。</li>
+    <li>按钮文字随选择变：“从这台电脑移除” / “删除并清理”。</li>
+    <li>没有任何东西可清的项不出现（例如没装工具、没有云盘授权）。</li>
+    <li>Agent 一律不动；只有保护技能可以选择删，删除规则同 AGENT_KIT.md 卸载（被改过的 SKILL.md 保留并列出）。</li>
+  </ul><p class="from">来自：你的决定（2026-11-09）；ARCHITECTURE.md 2.3。</p></aside>
+</section>
+
+<!-- 5b -->
+<section class="scene">
+  <h2>5b · 服务器连不上时 <small>只能从这台电脑移除</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <div class="modal wide">
+      <h3 class="h" style="font-size:20px">删除 nas</h3>
+      <div class="warnbox"><b>nas 现在连不上</b>（没有回应）。只能从这台电脑移除；服务器上的东西要等连上后再清，或你自己去清。</div>
+      <label class="choice on"><span class="radio on"></span><div class="grow"><b>只从这台电脑移除</b></div></label>
+      <div class="card"><b>服务器上还留着这些</b><span class="muted">按 3 小时前最后一次读到的情况</span>
+        <div class="muted">porter（~/.local/bin/valise-porter）· authorized_keys 里的用户通行证一行 · 定时备份任务 valise-seal@*.timer · 备份库（~/.local/share/valise/vaults，保留）</div></div>
+      <div class="foot"><span class="btn">取消</span><span class="btn warnbtn solid">从这台电脑移除</span></div>
+    </div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>列出的是最后一次读到的情况，写明时间；从没读到过时写“不知道服务器上留着什么”。</li>
+    <li>列表里每项给出位置，方便你自己去清；不给出删除命令。</li>
+  </ul><p class="from">来自：你的决定第 4 条；ARCHITECTURE.md 2.3。</p></aside>
+</section>
+
+<!-- 6 -->
+<section class="scene">
+  <h2>6 · 清理进行中与结果 <small>每项单独写，失败就停</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="page">
+    <h3 class="h">正在清理 debian-vm</h3>
+    <div class="card" style="gap:0">
+      <div class="stepline"><span class="dot ok"></span><div class="grow">定时备份任务 · 已停掉并删除</div></div>
+      <div class="stepline"><span class="dot ok"></span><div class="grow">工具箱：rclone · 已删除</div></div>
+      <div class="stepline"><span class="dot warn"></span><div class="grow">云盘授权 gdrive · 没有删掉<div class="muted">配置文件被改过，没有动它。位置：~/.config/valise/rclone/rclone.conf。之后的步骤没有执行。</div></div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow muted">porter · 没有执行</div></div>
+      <div class="stepline"><span class="dot"></span><div class="grow muted">用户通行证、管理员通行证 · 没有执行</div></div>
+    </div>
+    <div class="warnbox"><b>debian-vm 还在列表里</b>。服务器上还留着：云盘授权、porter、两张通行证。可以重试，或改为只从这台电脑移除。</div>
+    <div class="foot"><span class="btn">只从这台电脑移除</span><span class="btn primary">重试</span></div>
+  </div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>顺序：先停任务，再删工具、云盘授权与技能，最后撤通行证与 porter（撤完就连不上了，所以放最后）。</li>
+    <li>全部完成后才从列表移除，并写“已删除 debian-vm；备份库保留，标为已删除的服务器”。</li>
+    <li>进行中写当前子步骤与已等时间，可以停止（与添加服务器同一套）。</li>
+  </ul><p class="from">来自：ARCHITECTURE.md 2.3。</p></aside>
+</section>
+
+<!-- 7 -->
+<section class="scene">
+  <h2>7 · 删除以后 <small>备份还在，标“已删除的服务器”</small></h2>
+  <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="app">
+    <div class="side"><div class="brand"><svg width="20" height="20"><use href="#case"/></svg>Valise</div>
+      <div class="nav">我的 Agent</div><div class="nav on">服务器</div><div class="nav">备份位置</div></div>
+    <div class="page">
+      <div class="row"><h3 class="h grow">服务器</h3><span class="btn primary">添加服务器</span></div>
+      <div class="card" style="gap:0">
+        <div class="setrow"><span class="dot ok"></span><div class="grow"><b>home-vps</b><div class="muted">Valise 接入 · 3 个 Agent</div></div><span class="tag ok">在线</span></div>
+      </div>
+      <div class="card fold"><div class="row"><b class="grow">已删除的服务器 · 1</b><span class="muted">收起 ▴</span></div>
+        <div class="setrow"><span class="dot"></span><div class="grow"><b>debian-vm</b><div class="muted">11 月 9 日删除 · 已清理 · 备份库保留：2 个 Agent、48 个备份（服务器上，以及本机仓库 usb）</div></div><span class="btn">重新添加…</span></div>
+      </div>
+      <div class="card"><b>备份位置 · 本机仓库 usb</b>
+        <div class="setrow"><div class="grow">debian-vm <span class="tag">已删除的服务器</span><div class="muted">48 个备份 · 上次补齐 11 月 8 日 · 不再补到本机</div></div></div>
+      </div>
+    </div></div></div>
+  <aside class="notes"><h3>说明</h3><ul>
+    <li>服务器页底部有默认收起的“已删除的服务器”；“重新添加”打开添加向导并填好地址，接回后清除标记。</li>
+    <li>备份位置、Agent 的旅程与备份列表照常显示这些备份，带“已删除的服务器”标签；只从这台电脑移除的写“已从这台电脑移除”。</li>
+    <li>首页的“我的 Agent”不再列这台服务器上的 Agent，也不为它们提醒。</li>
+    <li>删除这些备份走备份页的“删除周期”（之后的段），这里不画删除按钮。</li>
+  </ul><p class="from">来自：你的决定第 2 条；ARCHITECTURE.md 2.3。</p></aside>
+</section>
+
+<div class="out"><b>这一段不含</b>：工具箱（装卸工具，“原生界面与安装”段）；找回 Valise 口令与重办管理员通行证（“钥匙与备份”段）；删除备份周期（“备份位置与同步”段）。这些都不画按钮。</div>
+</div>
