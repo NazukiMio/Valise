@@ -63,10 +63,7 @@ func (a *App) keySettings(c *ui.Context) {
 		settingRow(c, T("key.row.backup"), T("key.row.backup_now"), "", func() {
 			ui.Button(c, T("key.export_open")).OnClick(func() { a.keyFlow = &keyFlow{step: kfGate, choice: "export"} })
 		})
-		settingRow(c, T("key.row.passphrase"), T("key.row.passphrase_now"), "", func() {
-			ui.Button(c, T("key.change_open")).OnClick(func() { a.keyFlow = &keyFlow{step: kfChange} })
-		})
-		a.lockRow(c)
+		a.passphraseRow(c)
 		a.adminRow(c)
 	})
 	if a.lockOff {
@@ -74,22 +71,27 @@ func (a *App) keySettings(c *ui.Context) {
 	}
 }
 
-// lockRow is the backup lock: on with how many servers can be used, or
-// off. The cost is one line; the rest is on the recovery page.
-func (a *App) lockRow(c *ui.Context) {
-	if !a.svc.RecoveryEnabled() {
-		settingRow(c, T("lock.title"), T("lock.off"), "", func() {
-			ui.Button(c, T("lock.on_open")).OnClick(func() { a.keyFlow = &keyFlow{step: kfLockOn} })
-		})
-		return
-	}
-	n := 0
-	for _, l := range a.svc.ServerLocks() {
-		if l.State == service.LockDone {
-			n++
+// passphraseRow is the Valise passphrase with its backup lock: what
+// finding a forgotten passphrase needs, so the lock is a button of this
+// row, and 忘了口令 is there only while the lock is on.
+func (a *App) passphraseRow(c *ui.Context) {
+	on := a.svc.RecoveryEnabled()
+	now := T("lock.off_now")
+	if on {
+		n := 0
+		for _, l := range a.svc.ServerLocks() {
+			if l.State == service.LockDone {
+				n++
+			}
 		}
+		now = T("lock.on", "n", n)
 	}
-	settingRow(c, T("lock.title"), T("lock.on", "n", n), T("lock.cost"), func() {
+	settingRow(c, T("key.row.passphrase"), now, "", func() {
+		ui.Button(c, T("key.change_open")).OnClick(func() { a.keyFlow = &keyFlow{step: kfChange} })
+		if !on {
+			ui.Button(c, T("lock.on_open")).OnClick(func() { a.keyFlow = &keyFlow{step: kfLockOn} })
+			return
+		}
 		ui.Button(c, T("lock.recover")).OnClick(func() { a.router.Push("/settings/recover") })
 		ui.Button(c, T("lock.off_open")).OnClick(func() { a.lockOff = true })
 	})

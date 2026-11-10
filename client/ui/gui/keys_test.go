@@ -38,10 +38,16 @@ func TestKeySettings(t *testing.T) {
 		t.Fatalf("export: %+v", a.keyFlow)
 	}
 	tt.Advance(time.Second)
-	hasAll(t, tt.Texts(), "加密钥匙由 Valise 口令保护", "已备份钥匙", "备份钥匙", "Valise 口令", "备用锁", "开着 · 0 台服务器可用来找回",
-		"一台服务器的 root 加上这台电脑，可以打开全部备份。", "管理口令", "还没有服务器办管理员通行证")
+	hasAll(t, tt.Texts(), "加密钥匙由 Valise 口令保护", "已备份钥匙", "备份钥匙", "Valise 口令", "备用锁开着 · 0 台服务器可用来找回",
+		"忘了口令…", "关闭备用锁…", "管理口令", "还没有服务器办管理员通行证")
 	if tt.HasText("救不了的情况") {
 		t.Error("details shown unfolded")
+	}
+	a.svc.DisableRecovery()
+	tt.Frame()
+	hasAll(t, tt.Texts(), "备用锁关着 · 忘了就找不回", "开启备用锁…")
+	if tt.HasText("忘了口令…") {
+		t.Error("recovery offered with the lock off")
 	}
 	click(t, tt, "备份")
 	hasAll(t, tt.Texts(), "分离模式", "关掉 Valise 后，正在进行的备份在服务器上继续")
