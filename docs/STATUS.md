@@ -2,12 +2,46 @@
 
 > 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-10。新会话读完 `AGENTS.md` 后先读本文件，再按 `AGENTS.md` 第 1 节读规范。
 
+## 0. 交接（2026-11-10，下一个会话先读这一节）
+
+**进度**：N4 桌面界面已做完四段（服务器与接入、服务器设置与删除、钥匙与备份、备份位置与同步），云盘登录改成表单。最后一次全仓自检在 `1d7dd60` 通过；之后 `a13f747` 只改了文档。分支 `n2-agent-protection-journey`，未推送。
+
+**用户实机结论**：
+- 钥匙与备份段、旧世代计划、重新接入：测试通过。
+- 备份位置与云盘表单登录：基本跑通。
+
+**开发版怎么测**：
+- 用演练钥匙签名的资料包，才能读到云盘清单，见 LAB.md“开发版读取资料包”。
+- 本机已装好 2026.11.10 的演练资料包；`/tmp/valise-desktop` 与 `/tmp/valise` 是带同一把钥匙编译的。重编译必须带同一 `-ldflags`，否则资料包报“签名不对”。
+- 测试用 porter 在 `~/Downloads/valise-porter-test/`，版本 `0.0.0-dev+1d7dd60`。要在桌面版的“服务器 → 设置 → porter → 更新…”里选文件更新，这样才会记下 SHA-256。
+
+**待修（用户 2026-11-10 反馈，下一步先做）**：“现在备份”没有进度，读秒常卡住，离开再回来不知道跑了多久。
+- **实测记录**（`backup-tasks/c6ba8b89…json`，ubuntu-vm 的 `hermes-valisetest`，19:19:44 开始，状态 partial）：
+  - 服务器备份 4 秒完成；
+  - 复制到 gdrive 约 3 分钟成功；
+  - 复制到 nas 约 2 分 14 秒后失败，原因 `connect_timeout`；
+  - 总共约 5.5 分钟。
+- **原因（代码已核对）**：`gui/backupnow.go` 的 `backupProgress` 拿到 run 以后就不再画 `jobLine`（带读秒那行），只画各部分的状态词，没有开始时间、已用时间，也没有正在复制哪一处、复制了多少。run 出现之前，读秒只在界面重绘时更新，窗口不动就停住。这一点是推测，要在真实窗口里确认。
+- **建议改法**：
+  - 顶部写“开始于 HH:MM · 已用 N 分”；
+  - 每一部分写自己的耗时（`accepted_at` / `completed_at` 已有）；
+  - 进行中的那一处用 spinner 并写它的名字；
+  - 忙时按秒请求重绘；
+  - 结束后保留“用了多久”；
+  - 部分失败时用一句话写清哪一处失败、原因与下一步（这里是 nas 连不上：查 ubuntu-vm 到 nas-test 的网络或证书）。
+  - porter 若能报复制的字节数，可加进度；没有就不画进度条。
+- **另一条**：同一台服务器上 `hermes` 实例有一个备份任务（`36c7053b…`）停在 `reconciling` / `result_unknown`，“备份结果尚未核实，不能自动重发”。桌面版还没有“核实”入口，需要补上，或确认 CLI 能处理。
+
+**之后**：
+- 备份位置段剩余实机项（acceptance/N4.md 5.3、5.4）；
+- N4 下一段按 DEV_PLAN.md：从备份位置恢复、迁移、创建副本。开工前先出草图。
+
 ## 1. 代码与分支
 
 - 工作分支 `n2-agent-protection-journey`，**未推送**。N2 实现从 `305e14e` 开始，之后的提交都在这个分支上；`references/`（用户的参考 HTML）有意不纳入版本控制。
-- 全仓自检 `testbed/selfcheck.sh` 在 `add44a4`（用语统一）上通过（SELFCHECK_PASS）。
+- 全仓自检 `testbed/selfcheck.sh` 最近一次在 `1d7dd60` 上通过（SELFCHECK_PASS）。
 - **提交署名缺口**：`c04b266`、`cfcb916`、`de37ced`、`e30a84e`、`021121c` 少了 `AGENTS.md` 第 8 节要求的两行 Co-authored-by（只有 Claude 的署名）。分支未推送，可以用非交互的 `git rebase --exec` 补上；是否改写等用户决定。更早的 `b990c75`、`6364c15`、`6c7e3c5`、`b45a883` 也没有这两行，不是本轮提交。
-- 三台靶机（`ubuntu-vm`、`ubuntu-vm-x86`、`debian-vm`）已部署 `a1c5ba1` 构建的本地 porter（2026-11-08；在原有能力之外声明 copy-verify/1、cloud/1、identity-lost-source/1、revive-body-dirs/1）。`nazukiki-cloud` 未部署本轮 porter。
+- 用户 2026-11-10 在桌面版里给测试用的服务器更新过本轮 porter（`0.0.0-dev+d13ae9c` 或之后的 `1d7dd60`，以服务器设置页显示为准）。更早：三台靶机（`ubuntu-vm`、`ubuntu-vm-x86`、`debian-vm`）已部署 `a1c5ba1` 构建的本地 porter（2026-11-08；在原有能力之外声明 copy-verify/1、cloud/1、identity-lost-source/1、revive-body-dirs/1）。`nazukiki-cloud` 未部署本轮 porter。
 
 ## 2. N2 进度（2026-11-07 验收为 Done）
 
@@ -104,5 +138,5 @@
 12. 钥匙与备份（UI.md 7.7、7.8，草图 `docs/sketches/valise-keys-backup-gui-2026-11-09.html`，用户确认后按“每处一句话、详情折叠”实现，映射见 [acceptance/N4.md](acceptance/N4.md) 第 4 节）：侧栏第四项“设置”（钥匙与口令、备份）；第一次需要时设 Valise 口令（默认同时开备用锁），第一次备份前必须导出恢复套件或选“稍后”；导入、修改口令；Agent 页第四个页签“管理与设置”（保护计划、定时备份修改、现在备份、错过的定时备份“标记已读”）；服务器设置可登记钥匙；找回 Valise 口令（备用锁、找回模式、porter 提前扫描、用户自己跑 sudo 命令、验证码错 3 次作废）；忘了管理口令时逐台重办。porter 新增 `recovery-code` 子命令与三个日常级方法，靶机要重新部署本轮 porter 才能实测找回。只在 fake-ssh、视图测试与渲染中核对；`recovery-code` 的 sudo 与降权只能在真实 Linux 上验证。用户实机测试本段尚未回报。“备份位置与同步”段草图已出（`docs/sketches/valise-locations-gui-2026-11-10.html`），等用户确认。
 13. 实机测试第一轮修正（2026-11-10）：porter 更新页选好的本地文件丢失（每帧新建选择器）已修；以前接入、没有身份记录的 Agent（legacy_unbound）在“管理与设置”和服务器的 Agent 列表上有“重新接入…”，重新接受接入时建立身份；旧世代的保护计划按用户决定（SERVICE_CONTRACTS.md 4.2）显示为“已失效”，可“按原设置重新生效”，版本号接着旧计划递增。porter 的 `protection_get` / 准备计划随之改动，靶机要重新部署本轮 porter。用户实机测试通过。备用锁并入“Valise 口令”一行（UI.md 7.8）。
 14. 备份位置与同步（UI.md 7.9，草图 `docs/sketches/valise-locations-gui-2026-11-10.html`，用户确认，映射见 [acceptance/N4.md](acceptance/N4.md) 第 5 节）：位置页按位置列出本机文件夹、另一台机器、云盘与服务器的 SSH 主机；位置详情按服务器、Agent、周期对照；添加、同步、核对副本、删除周期、移除；Agent 的“备份后复制到”。只在视图测试与渲染中核对，真实窗口待用户在场。
-15. 云盘表单登录（2026-11-10 用户决定：rclone 保持独立程序；登录改表单，自己的应用在表单里填、不保存；无浏览器授权仍用终端）：porter 新增 `cloud_config_step`，靶机要重新部署本轮 porter 才能用表单（旧 porter 自动退回终端）。
+15. 云盘表单登录（用户实机基本跑通；2026-11-10 用户决定：rclone 保持独立程序；登录改表单，自己的应用在表单里填、不保存；无浏览器授权仍用终端）：porter 新增 `cloud_config_step`，靶机要重新部署本轮 porter 才能用表单（旧 porter 自动退回终端）。
 4. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。
