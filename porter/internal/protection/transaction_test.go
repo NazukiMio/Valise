@@ -416,3 +416,39 @@ func TestReferencedTargetWriteRefused(t *testing.T) {
 		t.Fatal("unreferenced target refused:", err)
 	}
 }
+
+// After a re-enrollment made a new generation, the old plan is shown as
+// superseded and does not run; setting it again goes on from its revision.
+func TestSupersededPlanSetAgain(t *testing.T) {
+	s, a, d := world(t)
+	ctx := context.Background()
+	if r := apply(t, s, prepare(t, s, a, d, 0)); !r.Committed {
+		t.Fatal(r)
+	}
+	now := a
+	now.Generation = "next"
+	s.ValidateAgent = func(_ context.Context, ref identity.AgentRef) error {
+		if ref != now {
+			return fail("identity_conflict", "测试世代不匹配")
+		}
+		return nil
+	}
+	v, err := s.Get(ctx, cp.GetParams{AgentRef: now})
+	if err != nil || v.Mode != "superseded" || v.ServerPlan != nil || v.SupersededPlan == nil || v.SupersededPlan.AgentRef != a || v.SupersededPlan.Revision != 1 {
+		t.Fatal(v, err)
+	}
+	if _, err := s.Accepted(ctx, now); err == nil {
+		t.Fatal("superseded plan accepted for the new generation")
+	}
+	if _, err := s.Prepare(ctx, cp.PrepareParams{AgentRef: now, ExpectedRevision: 0, Desired: d}); err == nil {
+		t.Fatal("revision restarted from 0")
+	}
+	r := apply(t, s, prepare(t, s, now, d, 1))
+	if !r.Committed || r.NewRevision != 2 {
+		t.Fatal(r)
+	}
+	v, err = s.Get(ctx, cp.GetParams{AgentRef: now})
+	if err != nil || v.Mode != "accepted" || v.ServerPlan.AgentRef != now || v.SupersededPlan != nil {
+		t.Fatal(v, err)
+	}
+}

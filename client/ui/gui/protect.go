@@ -83,6 +83,19 @@ func (ps *protState) desired() protection.Desired {
 	if ps.view != nil && ps.view.ServerPlan != nil {
 		return ps.view.ServerPlan.Desired
 	}
+	if ps.view != nil && ps.view.SupersededPlan != nil && ps.ref != nil {
+		// The earlier generation's plan is the starting point; copies to
+		// another server's targets are left for the person to add again.
+		d := ps.view.SupersededPlan.Desired
+		var keep []protection.ServerCopy
+		for _, cp := range d.ServerCopies {
+			if cp.TargetRef.AuthorityID == ps.ref.ServerUID {
+				keep = append(keep, cp)
+			}
+		}
+		d.ServerCopies = keep
+		return d
+	}
 	d := protection.NewDefault()
 	d.Period = protection.Period{Unit: "month", Timezone: localZone()}
 	return d
@@ -111,12 +124,20 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 		a.backupProgress(c, row, ps)
 	}
 	a.missedCard(c, row, ps)
+	if ps.view.SupersededPlan != nil {
+		card(ui.Row(c)).Gap(14).AlignItems(ui.Center).Border(1, palette.TroubleBorder).Children(func() {
+			ui.Text(c, T("protect.superseded_what")).Grow(1).Wrap()
+			if !ps.changeJ.busy {
+				ui.PrimaryButton(c, T("protect.superseded_go")).OnClick(func() { a.applyDesired(row, ps, ps.desired()) })
+			}
+		})
+	}
 	d := ps.desired()
 	card(ui.Column(c)).Gap(8).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, T("protect.title")).FontSize(16).Bold().Grow(1)
 			a.planTag(c, ps)
-			if ps.backup == nil || !ps.backup.j.busy {
+			if ps.view.ServerPlan != nil && (ps.backup == nil || !ps.backup.j.busy) {
 				ui.PrimaryButton(c, T("backup.now")).OnClick(func() { a.startBackupNow(row, ps) })
 			}
 		})
@@ -146,6 +167,8 @@ func (a *App) planTag(c *ui.Context, ps *protState) {
 		ui.Text(c, T("protect.pending")).FontSize(12).TextColor(palette.Warn)
 	case ps.view.ServerPlan != nil:
 		plainTag(c, T("protect.in_force", "n", ps.view.ServerPlan.Revision))
+	case ps.view.SupersededPlan != nil:
+		ui.Text(c, T("protect.superseded")).FontSize(12).TextColor(palette.Warn)
 	default:
 		plainTag(c, T("protect.none"))
 	}
@@ -213,8 +236,7 @@ func (a *App) scheduleDialog(c *ui.Context, row *agentRow, ps *protState) {
 	}
 }
 
-// saveSchedule prepares the change, confirms it (the click above is the
-// person's confirmation) and follows it until the server checked it.
+// saveSchedule applies the schedule dialog's choices.
 func (a *App) saveSchedule(row *agentRow, ps *protState) {
 	e := ps.sched
 	d := ps.desired()
@@ -228,11 +250,21 @@ func (a *App) saveSchedule(row *agentRow, ps *protState) {
 	if d.Period.Timezone == "" {
 		d.Period.Timezone = orText(d.Schedule.Timezone, localZone())
 	}
-	var rev protection.Revision
-	if ps.view.ServerPlan != nil {
-		rev = ps.view.ServerPlan.Revision
-	}
 	ps.sched = nil
+	a.applyDesired(row, ps, d)
+}
+
+// applyDesired prepares the change, confirms it (the person's click is the
+// confirmation) and follows it until the server checked it. A plan set
+// again after a re-enrollment goes on from the old plan's revision.
+func (a *App) applyDesired(row *agentRow, ps *protState, d protection.Desired) {
+	var rev protection.Revision
+	switch {
+	case ps.view.ServerPlan != nil:
+		rev = ps.view.ServerPlan.Revision
+	case ps.view.SupersededPlan != nil:
+		rev = ps.view.SupersededPlan.Revision
+	}
 	host, ref := row.Server, *ps.ref
 	a.start(&ps.changeJ, 5*time.Minute, func(ctx context.Context) error {
 		a.says(&ps.changeJ)(T("protect.preparing"))

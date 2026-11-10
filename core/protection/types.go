@@ -187,9 +187,13 @@ type BeforeSettings struct {
 }
 
 type View struct {
-	LegacySettings *LegacySettings  `json:"legacy_settings,omitempty"`
-	Mode           string           `json:"mode"`
-	ServerPlan     *ServerPlan      `json:"server_plan,omitempty"`
+	LegacySettings *LegacySettings `json:"legacy_settings,omitempty"`
+	Mode           string          `json:"mode"`
+	ServerPlan     *ServerPlan     `json:"server_plan,omitempty"`
+	// SupersededPlan (mode "superseded") is an earlier generation's plan,
+	// no longer in force; setting a plan again starts from its revision
+	// (SERVICE_CONTRACTS.md 4.2).
+	SupersededPlan *ServerPlan      `json:"superseded_plan,omitempty"`
 	Timer          TimerObservation `json:"timer"`
 	Warnings       []string         `json:"warnings"`
 	// MissedRuns (protection-plan/2) is computed read-only from the accepted

@@ -184,3 +184,25 @@ func TestKeyShots(t *testing.T) {
 	step("/settings/recover", "recover-list")
 	step("/settings/admin-rebuild", "rebuild")
 }
+
+// An earlier generation's plan is shown as no longer in force, with one
+// button to set it again; backing up waits for a plan in force.
+func TestManageTabSuperseded(t *testing.T) {
+	a, tt := world(t)
+	on := true
+	ref := identity.AgentRef{ServerUID: "u", InstallID: "openclaw", InstanceID: "xiaoman", Generation: "new"}
+	old := ref
+	old.Generation = "old"
+	a.agents.value.Items[0].IdentityState, a.agents.value.Items[0].AgentRef = identity.Bound, &ref
+	a.prots["home/xiaoman"] = &protState{ref: &ref, view: &protection.View{Mode: "superseded", SupersededPlan: &protection.ServerPlan{AgentRef: old, Revision: 3,
+		Desired: protection.Desired{Schedule: protection.Schedule{Enabled: &on, DailyAt: "04:40", Timezone: "Asia/Shanghai"}, Period: protection.Period{Unit: "month"},
+			ServerCopies: []protection.ServerCopy{{TargetRef: protection.LocationRef{ID: "gdrive", AuthorityID: "u"}}, {TargetRef: protection.LocationRef{ID: "elsewhere", AuthorityID: "other"}}}}}}}
+	a.agentTab = tabManage
+	a.router.Push("/agents/home/xiaoman")
+	tt.Frame()
+	tt.Advance(time.Second)
+	hasAll(t, tt.Texts(), "已失效", "这个 Agent 重新接入过，原来的计划已失效，定时备份不会再运行。", "按原设置重新生效", "每天 04:40（Asia/Shanghai）", "gdrive")
+	if tt.HasText("现在备份") || tt.HasText("elsewhere") {
+		t.Errorf("backup offered or another server's copy kept: %q", tt.Texts())
+	}
+}

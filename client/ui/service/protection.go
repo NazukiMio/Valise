@@ -103,7 +103,7 @@ func (c *ProtectionController) GetProtection(ctx context.Context, host string, r
 	if err := c.config.RPC(ctx, host, protection.MethodGet, req, &view); err != nil {
 		return protection.View{}, err
 	}
-	if view.Mode != "legacy" && view.Mode != "accepted" {
+	if view.Mode != "legacy" && view.Mode != "accepted" && view.Mode != "superseded" {
 		return protection.View{}, protectionError("unsupported_schema", "保护计划读取模式不受支持")
 	}
 	if view.Mode == "accepted" {
@@ -118,6 +118,16 @@ func (c *ProtectionController) GetProtection(ctx context.Context, host string, r
 		}
 	} else if view.ServerPlan != nil {
 		return protection.View{}, protectionError("record_corrupt", "旧保护设置与已接受计划状态矛盾")
+	}
+	if view.Mode == "superseded" {
+		// An earlier generation's plan of this very instance, shown so the
+		// person can set it again (SERVICE_CONTRACTS.md 4.2).
+		old := view.SupersededPlan
+		if old == nil || old.Validate() != nil || old.AgentRef.InstanceID != req.AgentRef.InstanceID || old.AgentRef == req.AgentRef {
+			return protection.View{}, protectionError("record_corrupt", "已失效的旧计划记录不完整")
+		}
+	} else if view.SupersededPlan != nil {
+		return protection.View{}, protectionError("record_corrupt", "保护计划读取结果自相矛盾")
 	}
 	return view, nil
 }

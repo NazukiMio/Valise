@@ -224,10 +224,12 @@ func (s Store) Get(ctx context.Context, p cp.GetParams) (*cp.View, error) {
 			return nil, err
 		}
 	}
-	if plan != nil {
-		if plan.AgentRef != p.AgentRef {
-			return nil, fail("identity_conflict", "计划不属于当前实例世代")
-		}
+	if plan != nil && plan.AgentRef != p.AgentRef {
+		// p.AgentRef was checked as the current generation above, so the
+		// plan is an earlier generation's: shown, not in force.
+		v.Mode, v.SupersededPlan = "superseded", plan
+		plan = nil
+	} else if plan != nil {
 		v.Mode = "accepted"
 		v.ServerPlan = plan
 	}

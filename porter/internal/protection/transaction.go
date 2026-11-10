@@ -89,9 +89,8 @@ func (s Store) preconditions(ctx context.Context, p cp.PrepareParams) (string, e
 	}
 	revision := cp.Revision(0)
 	if current != nil {
-		if current.AgentRef != p.AgentRef {
-			return "", fail("identity_conflict", "保护计划的实例世代已改变")
-		}
+		// An earlier generation's plan is no longer in force (p.AgentRef is
+		// the current one): the new plan replaces it from its revision on.
 		revision = current.Revision
 	}
 	if revision != p.ExpectedRevision {

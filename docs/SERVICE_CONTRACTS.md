@@ -82,6 +82,7 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 ### 4.2 读取与更改
 
 - `GetProtection(AgentRef)`：只读；无新计划时返回 `mode: legacy`，明确现有 tier / timer / 复制规则，不能补写 full。
+- 旧世代的计划（2026-11-10 用户决定）：实例重新接入成了新 generation 后，服务器上留下的旧 generation 计划已失效（3.2），它的 timer 拒绝运行。`GetProtection` 对当前 generation 返回 `mode: superseded` 与只读的 `superseded_plan`（旧计划原文），不再报 identity_conflict，也不统计错过与复制状态。重新设置由用户明确发起：以旧计划为初值，`expected_server_revision` 取旧计划的版本，经同一事务写入绑定当前 generation 的下一版并替换 timer；版本号继续递增，不归零。旧计划不自动迁移，引用其他 server_uid 的复制目标由用户在新设置里取舍；备份库不受影响。
 - `PrepareProtectionChange(agent, expected_server_revision, expected_client_revision?, desired)`：计算服务/停机影响、读取成本、内容增减、复制条件及旧设置差异，返回 FrozenPlan；不修改 timer 或配置。
 - `StartProtectionChange(plan_id, submission_key)`：登记任务，确认/授权缺失时返回 waiting，齐备后经第 8 节核实才执行。首次新建用 expected revision = 0；所有更新均比较 generation 与精确版本，冲突返回 revision_conflict，不做 last-writer-wins。
 - 客户端部分更新成功但服务器部分失败，或相反：返回分项结果及需要重读的版本；不伪造整体回滚。组合执行先提交服务器，成功后提交本客户端绑定；本地提交失败保留服务器结果，补写须重新比较本地版本。

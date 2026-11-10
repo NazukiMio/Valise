@@ -326,3 +326,31 @@ func TestProtectionServerClockSkew(t *testing.T) {
 		}
 	}
 }
+
+// A superseded plan is accepted only as this instance's earlier generation.
+func TestGetProtectionSuperseded(t *testing.T) {
+	now := identity.AgentRef{ServerUID: "server", InstallID: "sample", InstanceID: "sample", Generation: "next"}
+	old := now
+	old.Generation = "generation"
+	plan := func(a identity.AgentRef) *protection.ServerPlan {
+		return &protection.ServerPlan{SchemaVersion: protection.Schema, AgentRef: a, Revision: 2, Desired: protectionRequest().Desired, AcceptedAt: time.Now()}
+	}
+	for _, tc := range []struct {
+		name string
+		old  *protection.ServerPlan
+		ok   bool
+	}{{"earlier generation", plan(old), true}, {"same generation", plan(now), false}, {"missing", nil, false}} {
+		view := protection.View{Mode: "superseded", SupersededPlan: tc.old}
+		c, err := NewProtectionController(ProtectionControllerConfig{StateDir: t.TempDir(), RPC: func(_ context.Context, _, _ string, _, out any) error {
+			b, _ := json.Marshal(view)
+			return json.Unmarshal(b, out)
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = c.GetProtection(context.Background(), "box", protection.GetParams{AgentRef: now})
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: %v", tc.name, err)
+		}
+	}
+}
