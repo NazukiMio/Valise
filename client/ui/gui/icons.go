@@ -6,7 +6,7 @@ import "github.com/egoist/mygo/ui"
 // 7.3): the small suitcase, the robot and their companions, 24×24, stroke
 // only, in the color of the text around them.
 var icons = struct {
-	valise, agent, server, folder, settings, plus, back, clock, open, search, cards, list, check, image, key *ui.SVG
+	valise, agent, server, folder, settings, plus, back, clock, open, search, cards, list, check, image, key, cloud *ui.SVG
 }{
 	valise:   svg(`<rect x="4" y="7" width="16" height="14" rx="3"/><path d="M9 7V4h6v3M9 11v6m6-6v6"/>`),
 	agent:    svg(`<rect x="5" y="6" width="14" height="13" rx="4"/><path d="M12 3v3M8 12h.01M16 12h.01M9 16h6"/>`),
@@ -21,6 +21,7 @@ var icons = struct {
 	cards:    svg(`<rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/>`),
 	list:     svg(`<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>`),
 	check:    svg(`<path d="m5 12 4 4L19 6"/>`),
+	cloud:    svg(`<path d="M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9Z"/>`),
 	key:      svg(`<circle cx="8" cy="15" r="4"/><path d="m11 12 8-8m-3 3 2 2m-4 0 2 2"/>`),
 	image:    svg(`<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-8 8"/>`),
 }

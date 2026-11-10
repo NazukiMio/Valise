@@ -167,6 +167,14 @@ func (a *App) pageSlot(c *ui.Context, n *Node) {
 				case r.Match("/locations"):
 					r.Title(T("nav.locations"))
 					a.locationsPage(c)
+				case r.Match("/locations/add"):
+					r.Title(T("loc.add_title"))
+					a.locAddPage(c)
+				case r.Match("/locations/add/cloud"):
+					r.Title(T("loc.cloud_title"))
+					a.cloudAddPage(c)
+				case r.Match("/locations/{name}"):
+					a.locationPage(c, r.Param("name"))
 				default:
 					ui.Text(c, T("page.not_found"))
 				}

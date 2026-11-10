@@ -54,7 +54,9 @@ type App struct {
 	focusSearch bool                    // ⌘F was pressed
 	iconErr     error                   // choosing an agent's picture failed
 	health      map[string]*healthState // by server/instance
-	syncs       map[string]*syncState   // by repo/server
+	loc         *locState               // the backup locations pages
+	locAdding   *locAdd                 // adding a location
+	cloudAdding *cloudAdd               // adding a cloud drive
 	asks        []*passPrompt           // secrets being asked for, first shown
 
 	pickFolder func() (string, error) // the system's folder dialog; "" when cancelled
@@ -107,7 +109,7 @@ func New(svc *service.Service) *App {
 		run: func(f func()) { go f() }, update: func(f func()) { f() },
 		entries: map[string]*entryState{}, entryOpener: svc.OpenEntry, openURL: service.OpenURL,
 		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{},
-		health: map[string]*healthState{}, syncs: map[string]*syncState{}, vaultNames: map[string]string{},
+		health: map[string]*healthState{}, vaultNames: map[string]string{},
 		scans: map[string]*serverScan{}, installs: map[string]*installRun{}, passes: map[string]*passState{},
 		settings: map[string]*settingsState{}, prots: map[string]*protState{},
 		prefs: prefs{View: "cards", Dismissed: map[string]string{}}}

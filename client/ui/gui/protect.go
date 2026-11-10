@@ -25,6 +25,7 @@ type protState struct {
 	read job
 
 	sched   *schedEdit
+	copyTo  *copyEdit
 	changeJ job
 	task    *service.ProtectionTask
 
@@ -146,7 +147,9 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 			ui.Button(c, T("protect.change")).OnClick(func() { ps.sched = newSchedEdit(d) })
 		})
 		settingRow(c, T("protect.period"), T("protect.period."+orText(d.Period.Unit, "month")), "", nil)
-		settingRow(c, T("protect.copies"), a.copiesText(ps), "", nil)
+		settingRow(c, T("protect.copies"), a.copiesText(ps), "", func() {
+			ui.Button(c, T("protect.change")).OnClick(func() { a.openCopyTo(row, ps) })
+		})
 		if ps.changeJ.busy {
 			a.jobLine(c, &ps.changeJ)
 		}
@@ -156,6 +159,9 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 	})
 	if ps.sched != nil {
 		a.scheduleDialog(c, row, ps)
+	}
+	if ps.copyTo != nil {
+		a.copyToDialog(c, row, ps)
 	}
 }
 
