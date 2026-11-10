@@ -3,6 +3,7 @@ package gui
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -196,4 +197,22 @@ func TestSettingsShots(t *testing.T) {
 	ss.leave = nil
 	a.removed = []service.RemovedServer{{Name: "debian-vm", Cleaned: true, RemovedAt: time.Now().Add(-time.Hour)}}
 	step("/servers", "removed-list")
+}
+
+// A local build chosen on the update page stays chosen and enables 更新.
+func TestPorterPagePickKeeps(t *testing.T) {
+	a, tt := settingsWorld(t)
+	src := filepath.Join(t.TempDir(), "valise-porter_linux_arm64")
+	os.WriteFile(src, []byte("x"), 0o600)
+	a.pickFile = func(string, string) (string, error) { return src, nil }
+	a.router.Push("/servers/nas/porter")
+	tt.Advance(time.Second)
+	click(t, tt, "更多选项")
+	click(t, tt, "选择文件…")
+	tt.Frame()
+	tt.Frame()
+	hasAll(t, tt.Texts(), "已选择本地构建，将上传：", src)
+	if w := a.settingsOf("nas").porterW; w == nil || w.localPorter != src {
+		t.Fatalf("pick lost: %+v", w)
+	}
 }

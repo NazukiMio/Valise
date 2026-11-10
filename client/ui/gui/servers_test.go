@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"valise/core/enroll"
+	"valise/core/identity"
 	"valise/core/install"
 	"valise/core/profile"
 	"valise/core/valise"
@@ -213,5 +214,28 @@ func TestPrepareSaysWhatItDoes(t *testing.T) {
 	click(t, tt, "停止")
 	if !stopped {
 		t.Fatal("停止 did not stop")
+	}
+}
+
+// An agent enrolled the old way has no identity: the scan offers to accept
+// it again, and once the list has its identity the plan is read with it.
+func TestReenrollUnbound(t *testing.T) {
+	a, tt := world(t)
+	a.agents.value.Items[0].IdentityState = identity.LegacyUnbound
+	d := service.DetectedInstance{Candidate: enroll.Candidate{ProfileID: "openclaw", StateDir: "/home/me/.openclaw"}, ID: "openclaw", Enrolled: "xiaoman"}
+	a.scans["home"] = &serverScan{found: []service.DetectedInstance{d}, adopts: map[string]*adoption{}}
+	a.router.Push("/servers/home/agents")
+	tt.Frame()
+	hasAll(t, tt.Texts(), "缺身份记录", "重新接入…")
+	row := &agentRow{Server: "home", Instance: "xiaoman"}
+	if a.protOf(row).ref != nil {
+		t.Fatal("ref without identity")
+	}
+	ref := identity.AgentRef{ServerUID: "u", InstallID: "openclaw", InstanceID: "xiaoman", Generation: "g"}
+	a.agents.value.Items[0].IdentityState, a.agents.value.Items[0].AgentRef = identity.Bound, &ref
+	tt.Frame()
+	hasAll(t, tt.Texts(), "已接入")
+	if p := a.protOf(row).ref; p == nil || *p != ref {
+		t.Fatalf("kept the old reading: %+v", p)
 	}
 }

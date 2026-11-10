@@ -40,8 +40,7 @@ type settingsState struct {
 	migrated          bool
 	porterMissing     bool
 
-	local    string // porter update
-	more     bool
+	porterW  *wizard // porter update: where it comes from; kept across frames
 	deployJ  job
 	deployed *service.DeployReport
 
@@ -222,7 +221,7 @@ func (a *App) porterRow(c *ui.Context, name string, ps *passState) {
 	mine := strings.TrimPrefix(a.svc.Version, "v")
 	open := func() {
 		ss := a.settingsOf(name)
-		ss.deployed, ss.deployJ.err = nil, nil
+		ss.deployed, ss.deployJ.err, ss.porterW = nil, nil, nil
 		a.router.Push("/servers/" + name + "/porter")
 	}
 	switch {

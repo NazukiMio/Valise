@@ -40,18 +40,25 @@ type schedEdit struct {
 
 func (a *App) protOf(row *agentRow) *protState {
 	key := row.Server + "/" + row.Instance
-	if a.prots[key] == nil {
-		ps := &protState{}
-		for _, it := range a.agents.value.Items {
-			if it.ConnectionID == row.Server && it.Instance.InstanceID == row.Instance && it.AgentRef != nil {
-				ref := *it.AgentRef
-				ps.ref = &ref
-			}
+	var ref *identity.AgentRef
+	for _, it := range a.agents.value.Items {
+		if it.ConnectionID == row.Server && it.Instance.InstanceID == row.Instance && it.AgentRef != nil {
+			r := *it.AgentRef
+			ref = &r
 		}
+	}
+	// The agent list is read again after a re-enrollment; a new identity
+	// starts over rather than keep reading with the old one.
+	if ps := a.prots[key]; ps == nil || !sameRef(ps.ref, ref) {
+		ps = &protState{ref: ref}
 		a.prots[key] = ps
 		a.readProt(row.Server, ps)
 	}
 	return a.prots[key]
+}
+
+func sameRef(x, y *identity.AgentRef) bool {
+	return x == nil && y == nil || x != nil && y != nil && *x == *y
 }
 
 func (a *App) readProt(host string, ps *protState) {
@@ -84,7 +91,10 @@ func (ps *protState) desired() protection.Desired {
 func (a *App) manageTab(c *ui.Context, row *agentRow) {
 	ps := a.protOf(row)
 	if ps.ref == nil {
-		muted(ui.Text(c, T("protect.no_ref"))).FontSize(13).Wrap()
+		card(ui.Row(c)).Gap(14).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, T("protect.no_ref")).Grow(1).Wrap()
+			ui.PrimaryButton(c, T("protect.reenroll")).OnClick(func() { a.router.Push("/servers/" + row.Server + "/agents") })
+		})
 		return
 	}
 	if ps.read.busy && ps.view == nil {

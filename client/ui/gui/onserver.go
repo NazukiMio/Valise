@@ -6,6 +6,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"valise/core/identity"
 	"valise/ui/service"
 )
 
@@ -122,7 +123,10 @@ func (a *App) foundCard(c *ui.Context, host string, sc *serverScan, d service.De
 				mono(muted(ui.Text(c, line))).MaxLines(1)
 			})
 			switch {
-			case d.Enrolled != "" || ad != nil && ad.written:
+			case d.Enrolled != "" && a.unbound(host, d.Enrolled) && (ad == nil || ad.res == nil && !ad.busy):
+				ui.Text(c, T("adopt.no_identity")).FontSize(12).TextColor(palette.Warn)
+				ui.PrimaryButton(c, T("adopt.again")).OnClick(func() { a.adopt(host, sc, d, false) })
+			case d.Enrolled != "" && (ad == nil || !ad.busy && ad.res == nil) || ad != nil && ad.written:
 				ui.Text(c, T("adopt.done")).FontSize(12).TextColor(palette.Ok)
 				ui.Button(c, T("common.view")).OnClick(func() { a.router.Push("/agents/" + host + "/" + orText(d.Enrolled, d.ID)) })
 			case ad != nil && ad.busy:
@@ -150,7 +154,7 @@ func (a *App) adopt(host string, sc *serverScan, d service.DetectedInstance, acc
 		sc.adopts[d.ID] = ad
 	}
 	ad.busy, ad.err = true, nil
-	opts := service.EnrollOptions{ProfileID: d.ProfileID, Name: d.Name, InstanceID: d.ID, Accept: accept}
+	opts := service.EnrollOptions{ProfileID: d.ProfileID, Name: d.Name, InstanceID: orText(d.Enrolled, d.ID), Accept: accept}
 	for k, cat := range ad.assign {
 		opts.Assign = append(opts.Assign, assignRule(k, cat))
 	}
@@ -170,6 +174,17 @@ func (a *App) adopt(host string, sc *serverScan, d service.DetectedInstance, acc
 			}
 		})
 	})
+}
+
+// unbound says an enrolled instance has no identity yet (enrolled the old
+// way); accepting it again gives it one (SERVICE_CONTRACTS.md 3.1).
+func (a *App) unbound(host, id string) bool {
+	for _, it := range a.agents.value.Items {
+		if it.ConnectionID == host && it.Instance.InstanceID == id {
+			return it.IdentityState == identity.LegacyUnbound
+		}
+	}
+	return false
 }
 
 // assignRule is one decision as Enroll takes it: a folder group covers

@@ -226,9 +226,11 @@ func (a *App) porterPage(c *ui.Context, name string) {
 			})
 			return
 		}
-		w := &wizard{localPorter: ss.local, more: ss.more}
+		if ss.porterW == nil {
+			ss.porterW = &wizard{}
+		}
+		w := ss.porterW
 		a.porterChoice(c, w)
-		ss.local, ss.more = w.localPorter, w.more
 		muted(ui.Text(c, T("porter.records_sha"))).Wrap()
 		muted(ui.Text(c, T("porter.not_resident"))).Wrap()
 		if ss.deployJ.busy {

@@ -77,6 +77,7 @@ func TestManageTab(t *testing.T) {
 	a, tt := world(t)
 	on, catch := true, true
 	ref := identity.AgentRef{InstallID: "openclaw", InstanceID: "xiaoman"}
+	a.agents.value.Items[0].IdentityState, a.agents.value.Items[0].AgentRef = identity.Bound, &ref
 	now := time.Now()
 	ps := &protState{ref: &ref, view: &protection.View{ServerPlan: &protection.ServerPlan{Revision: 4, Desired: protection.Desired{
 		Schedule: protection.Schedule{Enabled: &on, DailyAt: "04:40", Timezone: "Asia/Shanghai", CatchUp: &catch},
