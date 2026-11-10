@@ -126,3 +126,30 @@ func TestLocationShots(t *testing.T) {
 		{ID: "jianguoyun", Name: "坚果云", Access: kittools.AccessAccount, AccessNote: "整个网盘", Verify: "pending"}}}
 	step("/locations/add/cloud", "loc-cloud")
 }
+
+// A folder name that breaks the rule says so; picking a folder suggests one.
+func TestRepoAddName(t *testing.T) {
+	a, tt := locWorld(t)
+	dir := filepath.Join(t.TempDir(), "My Disk")
+	a.pickFolder = func() (string, error) { return dir, nil }
+	a.openLocAdd()
+	tt.Advance(time.Second)
+	click(t, tt, "选择…")
+	tt.Frame()
+	if a.locAdding.name != "my-disk" {
+		t.Fatalf("suggested %q", a.locAdding.name)
+	}
+	a.locAdding.name = "U盘"
+	tt.Frame()
+	hasAll(t, tt.Texts(), T("set.name_rule"))
+	click(t, tt, "添加")
+	if a.locAdding.done != "" {
+		t.Fatal("added with a bad name")
+	}
+	a.locAdding.name = "my-disk"
+	tt.Frame()
+	click(t, tt, "添加")
+	if a.locAdding.done != "my-disk" {
+		t.Fatalf("not added: %v", a.locAdding.j.err)
+	}
+}

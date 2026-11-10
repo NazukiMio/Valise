@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -99,10 +100,35 @@ func (a *App) kindChoice(c *ui.Context, f *locAdd, kind string) {
 	})
 }
 
+// nameField says the rule under the field, in the warning color once
+// what is typed breaks it, so a disabled 添加 is never unexplained.
 func (a *App) nameField(c *ui.Context, f *locAdd, placeholder string) {
 	labeled(c, T("loc.name"), func() {
 		ui.TextInput(c, &f.name).Label(T("loc.name")).Placeholder(placeholder)
 	})
+	rule := muted(ui.Text(c, T("set.name_rule")))
+	if f.name != "" && !validName(f.name) {
+		rule.TextColor(palette.Warn)
+	}
+}
+
+// nameFrom suggests a name from a folder: its last part, in lowercase,
+// other characters as hyphens.
+func nameFrom(path string) string {
+	base := strings.ToLower(filepath.Base(path))
+	var b strings.Builder
+	for _, r := range base {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		} else if b.Len() > 0 && !strings.HasSuffix(b.String(), "-") {
+			b.WriteByte('-')
+		}
+	}
+	n := strings.TrimRight(b.String(), "-")
+	if len(n) > 32 {
+		n = strings.TrimRight(n[:32], "-")
+	}
+	return n
 }
 
 func (a *App) addButtons(c *ui.Context, f *locAdd, label string, ready bool, run func()) {
@@ -130,7 +156,7 @@ func (a *App) repoForm(c *ui.Context, f *locAdd) {
 			ui.Button(c, T("loc.folder_pick")).OnClick(func() { a.pickLocFolder(f) })
 		})
 	})
-	a.addButtons(c, f, T("loc.add_go"), validName(f.name) && f.path != "", func() {
+	a.addButtons(c, f, T("loc.add_go"), validName(f.name) && len(f.name) <= 32 && f.path != "", func() {
 		r, err := a.svc.RepoAdd(f.name, f.path)
 		if err != nil {
 			f.j.err = err
@@ -151,6 +177,9 @@ func (a *App) pickLocFolder(f *locAdd) {
 		a.update(func() {
 			if err == nil && p != "" {
 				f.path = p
+				if f.name == "" {
+					f.name = nameFrom(p)
+				}
 			}
 		})
 	})
