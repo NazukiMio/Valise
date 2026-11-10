@@ -414,7 +414,23 @@ const (
 	CloudCapability    = "cloud/1"
 	MethodCloudPrepare = "cloud_login_prepare"
 	MethodCloudForget  = "cloud_forget"
+	// CloudFormCapability marks a porter with the form login (2026-11-10):
+	// MethodCloudStep, and CloudPrepareParams.State for the browser step.
+	CloudFormCapability = "cloud-form/1"
+	MethodCloudStep     = "cloud_config_step"
 )
+
+// CloudStepParams runs one step of the form login: State "" starts it
+// (with the user's own app, when the entry allows one), else Result
+// answers the question State came with. The answer is never the browser
+// step: that runs through the login relay (CloudPrepareParams.State).
+type CloudStepParams struct {
+	Name   string         `json:"name"`
+	Cloud  kittools.Cloud `json:"cloud"`
+	App    kittools.App   `json:"app,omitzero"`
+	State  string         `json:"state,omitempty"`
+	Result string         `json:"result,omitempty"`
+}
 
 // CloudPrepareParams asks porter to set up the server login of a cloud
 // drive: Cloud is the signed list's entry; Fallback uses rclone's own
@@ -423,6 +439,9 @@ type CloudPrepareParams struct {
 	Name     string         `json:"name"`
 	Cloud    kittools.Cloud `json:"cloud"`
 	Fallback bool           `json:"fallback,omitempty"`
+	// State continues a form login at its browser step (answering it with
+	// "true"); the remote was created by MethodCloudStep.
+	State string `json:"state,omitempty"`
 }
 
 // CloudForgetParams removes a cloud drive's login from the server's

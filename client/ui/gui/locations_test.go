@@ -153,3 +153,24 @@ func TestRepoAddName(t *testing.T) {
 		t.Fatalf("not added: %v", a.locAdding.j.err)
 	}
 }
+
+// The cloud form: the own app is optional and said to go to rclone only;
+// rclone's question is shown with its choices and answered with 下一步.
+func TestCloudForm(t *testing.T) {
+	a, tt := locWorld(t)
+	a.cloudAdding = &cloudAdd{read: true, localOK: true, name: "gdrive", id: "google-drive", clouds: []kittools.Cloud{
+		{ID: "google-drive", Name: "Google Drive", Access: kittools.AccessFolder, AccessNote: "只能访问 Valise 自己建的文件", AskApp: true}}}
+	a.router.Push("/locations/add/cloud")
+	tt.Advance(time.Second)
+	hasAll(t, tt.Texts(), "用你自己的应用（可选）", "client_id", "client_secret", T("loc.app_shared"))
+	fq := &formQuestion{q: kittools.Question{State: "d", Name: "config_change_team_drive", Help: "Configure this as a Shared Drive?\nMore words.",
+		Default: "false", Only: true, Choices: []kittools.Choice{{Value: "true", Help: "Yes"}, {Value: "false", Help: "No"}}}, answer: "false", reply: make(chan string, 1)}
+	a.cloudAdding.login = &cloudLogin{where: "home", form: true, q: fq, j: job{busy: true}}
+	tt.Frame()
+	hasAll(t, tt.Texts(), "正在 home 上登录", "Configure this as a Shared Drive?", "More words.", "true · Yes", "false · No")
+	shot(t, tt, "loc-cloud-form")
+	click(t, tt, "下一步")
+	if got := <-fq.reply; got != "false" {
+		t.Fatalf("answer %q", got)
+	}
+}

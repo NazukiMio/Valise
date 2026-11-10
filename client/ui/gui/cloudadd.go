@@ -2,8 +2,6 @@ package gui
 
 import (
 	"context"
-	"io"
-	"strings"
 	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
@@ -32,6 +30,8 @@ type cloudAdd struct {
 	dlJ     job
 	login   *cloudLogin
 	saved   []string // where it is logged in now: hosts, or “here”
+	appID   string   // the user's own app, passed to rclone once
+	appKey  string
 }
 
 // cloudLogin is one login running in the terminal.
@@ -42,6 +42,8 @@ type cloudLogin struct {
 	text   string
 	status string
 	ask    *cloudAsk
+	form   bool          // rclone's questions come as a form
+	q      *formQuestion // the question waiting for an answer
 	j      job
 }
 
@@ -94,12 +96,7 @@ func (a *App) cloudAddPage(c *ui.Context) {
 	card(ui.Column(c)).Gap(12).Children(func() {
 		labeled(c, T("loc.name"), func() { ui.TextInput(c, &ca.name).Label(T("loc.name")).Placeholder("gdrive") })
 		if cl.AskApp {
-			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				muted(ui.Text(c, T("loc.cloud_own_app"))).Wrap().Grow(1)
-				if cl.AppHelp != "" {
-					ui.Link(c, T("loc.cloud_app_help"), cl.AppHelp)
-				}
-			})
+			a.ownApp(c, ca, cl)
 		}
 		a.serverLoginRow(c, ca, cl)
 		a.hereLoginRow(c, ca, cl)
@@ -239,123 +236,5 @@ func (a *App) installRclone(ca *cloudAdd) {
 		if err == nil {
 			ca.local = local
 		}
-	})
-}
-
-// startCloudLogin runs rclone's login in the terminal: on a server, or on
-// this computer when where is "".
-func (a *App) startCloudLogin(ca *cloudAdd, cl *kittools.Cloud, where string) {
-	lg := &cloudLogin{where: where, conn: newInstallConn()}
-	ca.login = lg
-	if a.newTerminal != nil {
-		if t, err := a.newTerminal(lg.conn); err == nil {
-			lg.term = t
-		}
-	}
-	if lg.term == nil {
-		a.run(func() { a.pipeText(lg.conn.out, func(s string) { lg.text += s }) })
-	}
-	name, id, opts := strings.TrimSpace(ca.name), cl.ID, service.CloudOptions{}
-	a.start(&lg.j, 15*time.Minute, func(ctx context.Context) error {
-		ask := func(text, yes string) bool {
-			q := &cloudAsk{text: text, yes: yes, answer: make(chan bool, 1)}
-			a.update(func() { lg.ask = q })
-			defer a.update(func() { lg.ask = nil })
-			select {
-			case ok := <-q.answer:
-				return ok
-			case <-ctx.Done():
-				return false
-			}
-		}
-		defer lg.conn.outW.Close()
-		if where == "" {
-			return a.svc.CloudLoginHere(ctx, name, id, opts, lg.conn.in, lg.conn.outW)
-		}
-		_, err := a.svc.CloudLoginServer(ctx, where, name, id, opts, service.CloudLoginIO{
-			LoginIO: service.LoginIO{Stdin: lg.conn.in, Stdout: lg.conn.outW, Cols: 100, Rows: 30,
-				Status:      func(s service.LoginStatus) { a.update(func() { lg.status = loginStatusText(s) }) },
-				ConfirmOpen: func(link, domain string) bool { return ask(T("loc.open_ask", "domain", domain), T("loc.open_go")) },
-				OpenBrowser: a.openURL},
-			ConfirmAuthorize: func(line string) bool { return ask(T("loc.authorize_ask", "line", line), T("loc.authorize_go")) },
-		})
-		return err
-	}, func(err error) {
-		if err == nil {
-			ca.saved = append(ca.saved, orText(where, T("loc.here")))
-			a.locs().read = false
-		}
-	})
-}
-
-func (a *App) pipeText(r io.Reader, add func(string)) {
-	buf := make([]byte, 4096)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			s := string(buf[:n])
-			a.update(func() { add(s) })
-		}
-		if err != nil {
-			return
-		}
-	}
-}
-
-// loginStatusText says each step of the relay apart.
-func loginStatusText(s service.LoginStatus) string {
-	switch s.State {
-	case service.LoginRelayReady:
-		return T("loc.relay_ready", "port", s.Port)
-	case service.LoginBrowserOpened:
-		return T("loc.browser_opened")
-	case service.LoginCallbackReceived:
-		return T("loc.callback")
-	case service.LoginExited:
-		return T("loc.exited", "code", s.ExitCode)
-	}
-	return ""
-}
-
-func (a *App) cloudLoginView(c *ui.Context, ca *cloudAdd) {
-	lg := ca.login
-	card(ui.Column(c)).Gap(10).Children(func() {
-		where := orText(lg.where, T("loc.here"))
-		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, T("loc.cloud_logging", "where", where)).Bold().Grow(1)
-			if lg.j.busy {
-				ui.Spinner(c)
-			}
-		})
-		if lg.status != "" {
-			muted(ui.Text(c, lg.status))
-		}
-		muted(ui.Text(c, T("loc.cloud_terminal")))
-		if lg.term != nil {
-			terminal.View(c, lg.term).Height(320).AutoFocus()
-		} else {
-			mono(ui.Text(c, orText(lg.text, T("install.no_output")))).FontSize(12).Wrap().Padding(10).Radius(8).Background(palette.Board)
-		}
-		if q := lg.ask; q != nil {
-			ui.Row(c).Gap(10).Padding(10, 14).Radius(10).Background(palette.Board).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, q.text).Wrap().Grow(1)
-				ui.Button(c, T("loc.skip")).OnClick(func() { q.reply(false) })
-				ui.PrimaryButton(c, q.yes).OnClick(func() { q.reply(true) })
-			})
-		}
-		if lg.j.busy {
-			ui.Row(c).Justify(ui.End).Children(func() {
-				ui.Button(c, T("common.stop")).OnClick(func() { a.stopJob(&lg.j) })
-			})
-			return
-		}
-		if lg.j.err != nil {
-			errorBox(c, lg.j.err, a.fold("cloudlogin-err"))
-		} else {
-			ui.Text(c, T("loc.cloud_saved", "where", where, "name", ca.name)).TextColor(palette.Ok).Bold()
-		}
-		ui.Row(c).Justify(ui.End).Children(func() {
-			ui.PrimaryButton(c, T("common.back")).OnClick(func() { ca.login = nil })
-		})
 	})
 }

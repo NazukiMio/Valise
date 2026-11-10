@@ -127,3 +127,37 @@ func TestCloudPrepareAndForget(t *testing.T) {
 		t.Fatal("login still in the config")
 	}
 }
+
+// The form login: each step returns only rclone's question; the browser
+// step is prepared for the login relay, continuing the same login.
+func TestCloudStep(t *testing.T) {
+	w := newWorld(t)
+	rcloneWorld(t, w)
+	ctx := context.Background()
+	gd := kittools.Cloud{ID: "gdrive", Name: "Google Drive", RcloneType: "drive", Params: map[string]string{"scope": "drive.file"},
+		Access: kittools.AccessFolder, AccessNote: "n", AskApp: true}
+	q, err := CloudStep(ctx, w.env, w.p, vaultrpc.CloudStepParams{Name: "drive3", Cloud: gd})
+	if err != nil || q.Name != kittools.QuestionSharedApp || q.State == "" {
+		t.Fatalf("%+v %v", q, err)
+	}
+	q, err = CloudStep(ctx, w.env, w.p, vaultrpc.CloudStepParams{Name: "drive3", Cloud: gd, State: q.State, Result: "true"})
+	if err != nil || q.Name != kittools.QuestionIsLocal {
+		t.Fatalf("%+v %v", q, err)
+	}
+	res, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "drive3", Cloud: gd, State: q.State})
+	if err != nil || !slices.Contains(res.Argv, "--continue") || !slices.Contains(res.Argv, q.State) {
+		t.Fatalf("%v %v", res, err)
+	}
+	// With the user's own app rclone goes straight to the browser step.
+	q, err = CloudStep(ctx, w.env, w.p, vaultrpc.CloudStepParams{Name: "drive4", Cloud: gd, App: kittools.App{ClientID: "id.apps", ClientSecret: "sec"}})
+	if err != nil || q.Name != kittools.QuestionIsLocal {
+		t.Fatalf("%+v %v", q, err)
+	}
+	// A login that was never started cannot be continued.
+	if _, err := CloudStep(ctx, w.env, w.p, vaultrpc.CloudStepParams{Name: "nope", Cloud: gd, State: "s", Result: "x"}); err == nil {
+		t.Fatal("continued a login that does not exist")
+	}
+	if _, err := CloudStep(ctx, w.env, w.p, vaultrpc.CloudStepParams{Name: "gd", Cloud: gd, App: kittools.App{ClientSecret: "x"}}); err == nil {
+		t.Fatal("secret without id accepted")
+	}
+}

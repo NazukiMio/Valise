@@ -137,6 +137,7 @@ var ownerMethods = map[string]bool{
 	"kit_tool_begin":       true,
 	"kit_tool_remove":      true,
 	"cloud_login_prepare":  true,
+	"cloud_config_step":    true,
 	"cloud_forget":         true,
 }
 

@@ -289,6 +289,13 @@ func init() {
 		res.Grant, err = forced.Mint(s.cfg.Home, "login-run", res.Session)
 		return res, err
 	}
+	methods[vaultrpc.MethodCloudStep] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.CloudStepParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.CloudStep(ctx, s.loginEnv(ctx), paths(s), p)
+	}
 	methods[vaultrpc.MethodCloudForget] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.CloudForgetParams
 		if err := json.Unmarshal(raw, &p); err != nil {
