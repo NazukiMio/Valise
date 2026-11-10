@@ -81,6 +81,16 @@ fake-ssh 只能验证本地协议连通性。凡是涉及真实 Linux 用户态�
 
 使用 Valise 日常钥匙的服务器，porter 固定在 `~/.local/bin/valise-porter`（日常钥匙的强制命令指向它，ARCHITECTURE.md 第 2.1 节）；探测链只用于自带钥匙的服务器。
 
+## 开发版读取资料包（2026-11-10）
+
+开发版没有发布签名公钥，装不上正式资料包，也就读不到 Kit 工具与云盘清单（本地资料不会增加工具）。真实窗口测试时，用 `client/ui/cmd/drillpack`（不入库）生成一份演练钥匙签名的资料包，再用同一把钥匙编译桌面版与命令行，装进本机数据目录：
+
+```bash
+cd client/ui && OUT=$HOME/.cache/valise-drill/devpack && go run ./cmd/drillpack $OUT && LD="-X valise/client/porter.ReleasePublicKey=$(cat $OUT/key.pub)" && go build -ldflags "$LD" -o /tmp/valise-desktop ./cmd/valise-desktop && go build -ldflags "$LD" -o /tmp/valise ./cmd/valise && /tmp/valise profiles install --file $OUT/valise-profiles.tar.gz --yes
+```
+
+钥匙每次随机生成：重新生成资料包后，桌面版和命令行都要用新钥匙重新编译。不带这个 `-ldflags` 编译的开发版会把已装的资料包报为“签名不对”，此时只能用本地资料。
+
 ## fake-ssh 测试替身规范
 
 ### 它是什么
