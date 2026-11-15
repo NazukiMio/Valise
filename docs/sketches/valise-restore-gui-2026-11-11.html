@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Valise · 恢复流程草图</title>
+<style>
+:root{--paper:#f7f6f2;--side:#efede6;--card:#fff;--board:#f8f7f3;--ink:#302d29;--sub:#70695f;--line:#e2ded5;--gold:#84683e;--gold-soft:#f2e9da;--accent:#796b57;--on:#fff;--ok:#52765d;--warn:#8d571c;--warn-bg:#fcf3e4;--bad:#9d4540;--bad-bg:#fcf0ee;--shadow:0 3px 12px #372f2207;--focus:#886b3b}
+:root[data-theme=dark]{--paper:#20201e;--side:#262622;--card:#2c2c28;--board:#252521;--ink:#eee9df;--sub:#bbb4a7;--line:#44433c;--gold:#d0b37c;--gold-soft:#3c3529;--accent:#bcaa8a;--on:#24231f;--ok:#a2c7aa;--warn:#e9bc7b;--warn-bg:#3a3024;--bad:#e5a5a0;--bad-bg:#3e2928;--focus:#dfbf84}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+button,input,select{font:inherit;color:inherit}
+button,a,select,input{outline-offset:4px}
+:focus-visible{outline:2px solid var(--focus)}
+button{cursor:pointer;border:1px solid var(--line);background:var(--card);border-radius:8px;min-height:44px;padding:8px 15px;font-size:13px;line-height:1.4}
+button:hover{border-color:var(--gold);background:var(--gold-soft)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--on);font-weight:600}
+button.quiet{background:transparent;border-color:transparent;color:var(--gold);padding-inline:3px}
+button.danger{color:var(--bad);border-color:var(--bad)}
+button.selected{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-soft)}
+button:disabled{cursor:default;opacity:.6}
+h1,h2,h3,p{margin:0}
+h1{font-size:28px;line-height:1.3;letter-spacing:-.03em;font-weight:650}
+h2{font-size:16px;font-weight:650}
+h3{font-size:14px}
+small,.muted{color:var(--sub);font-size:12px}
+.review{padding:12px 22px;background:var(--card);border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.review strong{font-size:13px;color:var(--gold)}
+.review .hint{font-size:12px;color:var(--sub)}
+.review label{display:flex;gap:6px;align-items:center;font-size:12px}
+.review select{max-width:230px;border:1px solid var(--line);background:var(--paper);border-radius:7px;min-height:36px;padding:4px 8px}
+.review button{min-height:36px}
+.space{flex:1}
+.app{display:grid;grid-template-columns:204px minmax(0,1fr);min-height:calc(100vh - 98px)}
+.sidebar{background:var(--side);padding:24px 14px;display:flex;flex-direction:column;gap:26px;border-right:1px solid var(--line)}
+.brand{font:600 23px/1.3 Georgia,"Songti SC",serif;padding:2px 10px;display:flex;gap:10px;align-items:center}
+.brand span{color:var(--gold);font-size:25px}
+.nav{display:flex;flex-direction:column;gap:5px}
+.nav div{padding:10px 13px;color:var(--sub);border-radius:8px;display:flex;gap:10px}
+.nav .current{color:var(--ink);background:var(--card);font-weight:600}
+.tagline{margin-top:auto;color:var(--sub);font-size:11px;padding:6px 10px}
+main{min-width:0;padding:30px clamp(20px,3.5vw,54px);max-width:1400px;width:100%;margin:auto}
+.crumb{color:var(--sub);font-size:12px;display:flex;gap:8px;align-items:center;margin-bottom:22px;flex-wrap:wrap}
+.crumb button{min-height:28px;font-size:12px;padding:1px 0}
+.title{display:flex;gap:16px;align-items:flex-start;margin-bottom:22px}
+.avatar{border:1px solid var(--line);background:var(--gold-soft);color:var(--gold);border-radius:16px;width:58px;height:58px;display:grid;place-items:center;font-size:24px;flex:none}
+.title .muted{margin-top:5px;font-size:13px}
+.topline{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:24px}
+.tabs{display:flex;gap:24px;font-size:13px;border-bottom:1px solid var(--line);padding-bottom:9px;margin-bottom:24px;color:var(--sub)}
+.tabs b{border-bottom:2px solid var(--gold);color:var(--ink);padding-bottom:9px;margin-bottom:-10px}
+.ticket{display:flex;align-items:center;gap:18px;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;padding:14px 18px;background:var(--card);margin-bottom:24px;flex-wrap:wrap}
+.ticket .date{font-size:18px;font-weight:650;letter-spacing:-.02em}
+.ticket .sep{height:28px;width:1px;background:var(--line)}
+.tag{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;font-size:11px;padding:2px 9px;color:var(--sub);width:max-content;max-width:100%}
+.tag.ok{color:var(--ok);border-color:currentColor}
+.tag.warn{color:var(--warn);border-color:currentColor}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 252px;gap:24px;align-items:start}
+.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:20px;box-shadow:var(--shadow);min-width:0}
+.card>h2{margin-bottom:12px}
+.card>p+p{margin-top:9px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.between{justify-content:space-between}
+.source{display:flex;gap:12px;border-top:1px solid var(--line);padding:12px 0;align-items:center}
+.source:first-child{border:0;padding-top:0}
+.source:last-child{padding-bottom:0}
+.source .icon{font-size:19px;color:var(--gold);width:25px;text-align:center;flex:none}
+.source strong{font-size:13px}
+.grow{flex:1;min-width:0}
+.modegrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.mode{display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:15px;min-height:128px;text-align:left;line-height:1.5}
+.mode strong{font-size:14px}
+.mode small{font-size:12px}
+.ring{border:1.5px solid var(--sub);width:15px;height:15px;border-radius:50%}
+.selected .ring{border:4px solid var(--gold)}
+.field{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.field label{font-size:13px;font-weight:600}
+.field input,.field select{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--card);padding:10px 12px;min-height:44px}
+.field input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+.choice{width:100%;display:flex;gap:12px;align-items:center;text-align:left;margin-top:8px;padding:12px}
+.choice strong{font-size:13px}
+.kv{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 14px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}
+.kv:first-child{border-top:0;padding-top:0}
+.kv .key{color:var(--sub)}
+.note{padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--board);font-size:13px;line-height:1.7}
+.note.warn{background:var(--warn-bg);border-color:color-mix(in srgb,var(--warn) 35%,var(--line))}
+.note.warn strong{color:var(--warn)}
+.note.bad{background:var(--bad-bg);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.note.bad strong{color:var(--bad)}
+.note p+p{margin-top:6px}
+.actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;justify-content:flex-end;border-top:1px solid var(--line);padding-top:18px;margin-top:8px}
+.actions .left{margin-right:auto}
+.rail{position:sticky;top:20px;padding:3px 0 0}
+.rail h3{font-size:12px;color:var(--sub);font-weight:500;margin-bottom:14px}
+.step{display:flex;gap:12px;position:relative;padding-bottom:22px;font-size:12px;color:var(--sub)}
+.step:before{content:'';width:1px;position:absolute;left:11px;top:25px;bottom:1px;background:var(--line)}
+.step:last-of-type:before{display:none}
+.step i{width:24px;height:24px;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center;flex:none;font-style:normal;background:var(--paper)}
+.step.now{color:var(--ink);font-weight:650}
+.step.now i{border-color:var(--gold);color:var(--gold);background:var(--gold-soft)}
+.step.done i{border-color:var(--ok);color:var(--ok)}
+.rail .note{font-size:12px;margin-top:8px}
+details{padding-top:10px;color:var(--sub);font-size:12px}
+details summary{cursor:pointer;min-height:36px;display:list-item;align-content:center}
+details .inside{padding:10px 0;font-size:12px}
+.mono{font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+.check{display:flex;gap:9px;align-items:flex-start;font-size:13px;padding:10px 0}
+.check input{margin:4px 0 0;width:16px;height:16px;accent-color:var(--gold);flex:none}
+.pick{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;padding:12px;margin-top:9px;font-size:13px}
+.pick input{margin-top:5px;accent-color:var(--gold)}
+.phase{display:flex;gap:12px;border-top:1px solid var(--line);padding:14px 0;align-items:flex-start}
+.phase:first-child{border-top:0;padding-top:0}
+.dot{width:20px;height:20px;flex:none;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center;color:var(--sub);font-size:11px;margin-top:2px}
+.dot.ok{border-color:var(--ok);color:var(--ok)}
+.dot.run{border-color:var(--gold);color:var(--gold);background:var(--gold-soft)}
+.progress{height:5px;background:var(--line);border-radius:9px;margin-top:12px;overflow:hidden}
+.progress span{display:block;background:var(--gold);height:100%;width:50%}
+.summary{border-left:3px solid var(--gold);padding:2px 0 2px 17px;margin:18px 0 24px}
+.summary h2{font-size:20px;font-weight:600;margin-bottom:4px}
+.summary p{color:var(--sub);font-size:13px}
+.resultrow{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;padding:12px 0;border-top:1px solid var(--line);align-items:start;font-size:13px}
+.resultrow:first-child{border:0;padding-top:0}
+.oktext{color:var(--ok)}
+.warntext{color:var(--warn)}
+.badtext{color:var(--bad)}
+.globaltask{padding:11px 15px;margin-bottom:18px;border:1px solid var(--gold);border-radius:9px;background:var(--gold-soft);display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px}
+.globaltask button{min-height:32px;padding:4px 9px;background:transparent}
+.error{color:var(--bad);font-size:13px;line-height:1.6}
+.reviewnext{margin:14px 0 0;border:1px dashed var(--gold);color:var(--gold);padding:12px 16px;border-radius:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px}
+.reviewnext button{min-height:36px;color:var(--gold)}
+dialog{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:24px;max-width:min(480px,calc(100vw - 32px));box-shadow:0 24px 70px #0002}
+dialog::backdrop{background:#2227}
+dialog p{font-size:13px;color:var(--sub);margin:12px 0 20px}
+.dialogactions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.footer-note{font-size:11px;color:var(--sub);padding-top:24px;line-height:1.7}
+@media(prefers-reduced-motion:no-preference){button{transition:background .12s,border-color .12s,box-shadow .12s}}
+@media(max-width:1150px){.grid{grid-template-columns:minmax(0,1fr) 215px;gap:18px}.modegrid{grid-template-columns:1fr}.mode{min-height:0;display:grid;grid-template-columns:15px 1fr;column-gap:11px}.mode small{grid-column:2}.mode .ring{grid-row:1/3;margin-top:3px}}
+@media(max-width:850px){.app{grid-template-columns:160px minmax(0,1fr)}.sidebar{padding-inline:8px}.grid{grid-template-columns:1fr}.rail{position:static;border-top:1px solid var(--line);padding-top:18px}.rail .steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.step:before{display:none}.step{padding-bottom:7px;gap:7px}.review .space{display:none}h1{font-size:25px}.ticket .sep{display:none}}
+@media(max-width:570px){.app{display:block}.sidebar{padding:12px 16px;gap:10px;border-right:0;border-bottom:1px solid var(--line)}.brand{font-size:20px;padding:0}.nav{flex-direction:row;gap:2px;flex-wrap:wrap}.nav div{font-size:12px;padding:6px 9px}.tagline{display:none}main{padding:22px 16px}.review{padding:12px 16px;gap:9px}.review .hint{width:100%}.review label{width:100%;justify-content:space-between}.review select{max-width:65%;width:65%}.card{padding:16px}.ticket{padding:12px 14px;gap:8px 14px}.title{gap:12px}.avatar{width:46px;height:46px;border-radius:13px}h1{font-size:23px}.ticket .date{font-size:16px}.kv{grid-template-columns:82px minmax(0,1fr)}.resultrow{grid-template-columns:20px minmax(0,1fr)}.resultrow .state{grid-column:2}.actions button.primary{width:100%}.actions .left{width:100%;text-align:left}.source{flex-wrap:wrap}.source .tag{margin-left:37px}.reviewnext{align-items:stretch}.reviewnext button{width:100%}}
+</style>
+</head>
+<body>
+<header class="review" aria-label="草图评审工具">
+<strong>Valise / 恢复流程 · 待确认</strong><span class="hint">示例数据 · 不连接服务器 · 不收集口令</span><span class="space"></span>
+<label>查看页面<select id="review-page">
+<option value="point">① 时间点详情</option><option value="setup">② 用法与去处</option><option value="plan">③ 第一次确认</option><option value="stage">④ 准备与校验</option><option value="confirm">⑤ 第二次确认</option><option value="running">⑥ 交换与复核</option><option value="result">⑦ 操作结果</option><option value="reconcile">⑧ 断线后核实</option>
+</select></label>
+<label>示例情况<select id="review-case">
+<option value="normal">正常</option><option value="unbound">来源身份不明</option><option value="untested">恢复未测试 / 快照资料</option><option value="conflict">副本记录冲突</option><option value="missing">缺少恢复材料</option><option value="named">命名实例</option><option value="expired">交换确认已过期</option><option value="lost">源失联（后续边界）</option>
+</select></label>
+<label>示例时间点<select id="review-tier"><option value="full">完整备份</option><option value="soul">轻装备份</option></select></label>
+<button id="theme-toggle" aria-label="切换草图深浅色">深色</button>
+</header>
+<div class="app">
+<aside class="sidebar" aria-label="示例导航">
+<div class="brand"><span>♧</span>Valise</div>
+<div class="nav"><div class="current">◇ 我的 Agent</div><div>▤ 服务器</div><div>▱ 备份位置</div><div>⚙ 设置</div></div>
+<div class="tagline">带着你的 Agent 去旅行。</div>
+</aside>
+<main id="main"><div id="taskbar"></div><div id="screen"></div></main>
+</div>
+<dialog id="dialog"><h2 id="dialog-title"></h2><p id="dialog-text"></p><div class="dialogactions"><button data-dialog-close>再看看</button><button id="dialog-confirm" class="primary">确认</button></div></dialog>
+<script>
+(function(){
+'use strict';
+const s={page:'point',mode:'rollback',source:'local',scenario:'normal',tier:'full',target:'ubuntu-vm-x86',instance:'openclaw-copy',root:'',sourceChoice:'',credential:false,profile:false,snapshotProfile:false,swap:false,active:false,result:'success',checkpoint:false,error:''};
+const modes={
+rollback:{title:'恢复当前实例',verb:'恢复',line:'用过去的状态恢复当前的“小满”，身份与旅程保留。',target:'ubuntu-vm · 小满',final:'确认替换并恢复'},
+migrate:{title:'迁移到另一台服务器',verb:'迁移',line:'把这段旅程接到另一台服务器，原实例要先核实停用。',target:'另一台服务器',final:'确认停用原实例并迁移'},
+clone:{title:'创建副本',verb:'创建副本',line:'建立一个独立的 Agent，原实例继续使用。',target:'另一台服务器 · 新实例',final:'确认创建副本'}
+};
+const sourceNames={server:'在服务器中 · ubuntu-vm',local:'本机 · 移动硬盘',cloud:'云盘 · 已配置云盘'};
+function esc(x){return String(x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function button(text,action,kind){return '<button data-do="'+action+'" class="'+(kind||'')+'">'+text+'</button>';}
+function go(text,page,kind){return '<button data-go="'+page+'" class="'+(kind||'')+'">'+text+'</button>';}
+function tag(text,tone){return '<span class="tag '+(tone||'')+'">'+text+'</span>';}
+function box(title,text,tone){return '<div class="note '+(tone||'')+'"><strong>'+title+'</strong><p>'+text+'</p></div>';}
+function kv(key,value){return '<div class="kv"><span class="key">'+key+'</span><span>'+value+'</span></div>';}
+function card(title,body){return '<section class="card"><h2>'+title+'</h2>'+body+'</section>';}
+function checked(v){return v?' checked':'';}
+function check(field,text){return '<label class="check"><input type="checkbox" data-field="'+field+'"'+checked(s[field])+'><span>'+text+'</span></label>';}
+function details(title,body){return '<details><summary>'+title+'</summary><div class="inside">'+body+'</div></details>';}
+function crumb(){return '<div class="crumb">'+go('‹ 时间点详情','point','quiet')+'<span>/</span><span>小满 · 旅程</span></div>';}
+function heading(title,sub){return crumb()+'<div class="title"><div class="avatar" aria-hidden="true">◇</div><div><h1>'+title+'</h1><p class="muted">'+sub+'</p></div></div>';}
+function ticket(){return '<div class="ticket"><div><div class="date">2026 年 11 月 10 日 · 19:19</div><div class="muted">小满 · 原服务器 ubuntu-vm</div></div><span class="sep"></span>'+tag(s.tier==='full'?'完整备份':'轻装备份')+'<span class="muted">只使用这个时间点实际保存的内容</span></div>';}
+function target(){return s.mode==='rollback'?'ubuntu-vm · 小满':esc(s.target)+(s.mode==='clone'?' · '+esc(s.instance):' · 小满');}
+function rail(now){
+const names=['选择去处','确认计划','准备并校验','确认替换','交换与复核','查看结果'];
+return '<aside class="rail"><h3>这次操作</h3><div class="steps">'+names.map(function(n,i){return '<div class="step '+(i===now?'now':i<now?'done':'')+'"'+(i===now?' aria-current="step"':'')+'><i>'+(i<now?'✓':i+1)+'</i><span>'+n+'</span></div>';}).join('')+'</div>'+box(modes[s.mode].title,'从这个时间点恢复到<br><b>'+target()+'</b>')+'<p class="footer-note">来源位置与原服务器分开。<br>材料、暂存、服务和健康分别核实。</p></aside>';
+}
+function layout(body,step){return '<div class="grid"><div class="stack">'+body+'</div>'+rail(step)+'</div>';}
+function actions(body){return '<div class="actions">'+body+'</div>';}
+function hardBlock(){return ['conflict','missing','lost'].includes(s.scenario);}
+function sourceNotice(){
+if(s.scenario!=='unbound')return '';
+const available=s.mode!=='clone';
+return box('这个时间点的来源身份无法核实','备份里记着“小满”、ubuntu-vm、资料版本与保存时间，但这些信息不能证明它属于当前实例。请明确选择如何继续。','warn')+
+(available?'<label class="pick"><input type="radio" name="source-choice" value="backup_first"'+checked(s.sourceChoice==='backup_first')+'><span><b>先备份当前状态再恢复</b><br><small>先给目标上的当前实例建立一次完整备份，失败就停下。</small></span></label>':'')+
+'<label class="pick"><input type="radio" name="source-choice" value="proceed"'+checked(s.sourceChoice==='proceed')+'><span><b>我清楚，继续</b><br><small>确认使用这个时间点；不会因此补造身份关系。</small></span></label>';
+}
+function profileNotice(){
+if(s.scenario!=='untested')return '';
+return box('恢复尚未在此版本测试','这份资料缺少当前环境的恢复演练证据；可能无法重建程序、通过服务检查。它来自快照，未经当前客户端审核。两项允许须分别确认，不能绕过来源哈希或身份冲突。','warn')+
+check('profile','我了解具体影响，仍使用恢复未测试的资料。')+
+check('snapshotProfile','我已查看下方命令，同意使用快照中保存的这份资料。');
+}
+function credentialNotice(){
+if(s.tier==='soul'){
+return box('这个时间点没有凭据与工作区',s.mode==='rollback'?'当前实例中范围外的凭据、工作区等按回滚规则带入；不会把它们当作过去的状态。':'目标已有目录会按计划替换，原有凭据不会自动沿用。需要在原生界面重新完成登录。','warn');
+}
+const tail=s.mode==='clone'?'资料声明的独占凭据会被排除，原 Agent 的独占渠道不会自动转给副本。':'这会恢复备份里保存的凭据与配置。它们的内容不在这里展示。';
+return box('这个时间点包含凭据',tail,'warn')+check('credential','我了解本次恢复包含凭据，并已确认下面列出的影响。');
+}
+function point(){
+const rows=[['▤','在服务器中 · ubuntu-vm','已发现这个时间点'],['▱','本机 · 移动硬盘','上次核对通过；本次仍需重新检查'],['◇','云盘 · 已配置云盘','已发现记录，材料尚未核实']];
+return heading('这个时间点，带上了什么','备份详情 · 同一个时间点只显示一次')+
+'<div class="tabs"><span>概览</span><b>旅程</b><span>健康</span><span>管理与设置</span></div>'+ticket()+
+layout(card('保存的内容',kv('范围',s.tier==='full'?'完整：记忆、设置、技能、会话、状态、凭据与工作区':'轻装：已声明的人格、记忆、技能、配置、会话与状态')+kv('当时的程序','依据备份里记录的来源与版本处理，不把备份当成整机镜像。'))+
+card('这个时间点的位置',rows.map(function(r){return '<div class="source"><span class="icon">'+r[0]+'</span><div class="grow"><strong>'+r[1]+'</strong><div class="muted">'+r[2]+'</div></div>'+tag('单独核实')+'</div>';}).join(''))+
+box('看到记录，不等于已经能恢复','继续后会读取这一个时间点所需的材料，检查来源、目标与具体影响。不会因为副本多，就跳过校验。')+
+actions(go('使用这个时间点…','setup','primary')),0);
+}
+function setup(){
+let sourceBody=['local','server','cloud'].map(function(id){return '<button class="choice '+(s.source===id?'selected':'')+'" data-source="'+id+'" aria-pressed="'+(s.source===id)+'"><i class="ring"></i><div class="grow"><strong>'+sourceNames[id]+'</strong><div class="muted">'+(id==='local'?'从本机读取，仍重新核对这个时间点的材料。':id==='cloud'?'从已配置位置读取；读取失败会停下，不静默换来源。':'读取备份库；这不是对原实例已停用的证明。')+'</div></div></button>';}).join('');
+let destination=s.mode==='rollback'?box('当前实例 · ubuntu-vm / 小满','保留当前实例的身份。恢复范围内的内容将回到选定时间点；范围外内容按既有回滚规则带入。'):
+'<div class="field"><label for="target">目标服务器</label><select id="target" data-field="target"><option'+(s.target==='ubuntu-vm-x86'?' selected':'')+'>ubuntu-vm-x86</option><option'+(s.target==='debian-vm'?' selected':'')+'>debian-vm</option></select><small>只列已添加、适用于本次操作的另一台服务器。</small></div>';
+if(s.mode==='clone')destination+='<div class="field"><label for="instance">副本标识</label><input id="instance" data-field="instance" value="'+esc(s.instance)+'" spellcheck="false"><small>用小写字母、数字和连字符；副本会拥有独立旅程。</small></div>';
+if(s.scenario==='named')destination+='<div class="field"><label for="root">命名实例的目标目录</label><input id="root" data-field="root" value="'+esc(s.root)+'" placeholder="填写目标上的绝对目录" spellcheck="false"><small>默认实例的目录属于另一个 Agent，不替你猜位置。</small></div>';
+const body=card('怎么使用', '<div class="modegrid">'+Object.keys(modes).map(function(m){return '<button class="mode '+(s.mode===m?'selected':'')+'" data-mode="'+m+'" aria-pressed="'+(s.mode===m)+'"><i class="ring"></i><strong>'+modes[m].title+'</strong><small>'+modes[m].line+'</small></button>';}).join('')+'</div>')+
+card('从哪里读取备份',sourceBody)+card('放在哪里',destination)+
+details('范围与权限','<p>范围由选定时间点决定。查看计划会读取材料并解锁加密钥匙；暂存与目录替换各需一次确认。确实需要重建程序时，另行展示命令并请求管理登录。</p>')+
+(s.error?'<p class="error" role="alert">'+s.error+'</p>':'')+
+actions('<span class="left muted">查看计划会读取与缓存材料；不改目标的活动目录。</span>'+button('查看计划','plan','primary'));
+return heading('把这个时间点用在哪里','先选择用法、读取位置与目标，再看清本次计划。')+ticket()+layout(body,0);
+}
+function plan(){
+let impact= s.mode==='rollback'?'小满的备份范围内数据被替换，当前实例的身份不变。':s.mode==='migrate'?'原实例在切换前核实停用；目标会接续这段旅程。目标上已有的小满将被取代，具体目录见下方。':'原实例保持运行；另一台服务器上建立新的标识与独立旅程。目标目录与共享服务的影响会逐项列出，确认后才会改变。';
+let notice='';
+if(s.scenario==='conflict')notice=box('同一时间点在不同位置的记录不一致','不能把它们混合使用，也不能靠风险勾选继续。请核对备份位置后重新选择材料。','bad');
+if(s.scenario==='missing')notice=box('缺少这个时间点需要的数据包','当前来源材料不齐，恢复尚未开始。请重新连接已配置位置或选择能提供完整材料的来源，再核对。','bad');
+if(s.scenario==='lost')notice=box('无法核实原实例是否已停止','这是后续“源失联恢复与导出”段的边界示意。本段不提供执行入口；后续也不会仅凭“我确认已关机”就携带独占身份启动。','warn');
+const info=kv('原服务器','ubuntu-vm（与读取位置分开）')+kv('读取位置',sourceNames[s.source])+kv('目标',target())+
+kv('目标已有实例',s.mode==='rollback'?'小满 · 本次恢复的当前实例':s.mode==='migrate'?'小满（目标旧实例）· 将被取代':'示例：未发现目录占用；执行前重新核实')+kv('数据怎么变',impact)+kv('凭据',s.mode==='clone'?'按资料排除独占凭据；被排除的文件与影响单独列出。':s.tier==='full'?'恢复备份中保存的凭据，不展示其内容。':'回滚带入范围外的当前内容；迁移不沿用目标目录里的凭据。')+
+kv('服务影响',s.mode==='migrate'?'第二次确认后停止原实例并核实，再切换目标；共享服务影响须列明所有 Agent。':'第二次确认后，按本次计划停止受影响服务；没有服务的实例不显示停服说法。')+
+kv('程序与空间','示例：当前已登记来源可复用；暂存需约 0.8 GiB，目标可用 28 GiB。')+
+kv('本次需要','Valise 口令。确实需要重建程序时，会另请你解锁管理权限，并展示命令。');
+const tech=details('查看目标目录、命令与排除项','<p>以下均为示例计划，实际执行时以目标核实结果为准。</p><div class="mono">状态目录：'+esc(s.root||'/home/agent/.openclaw')+'<br>本次操作：restore_sample_01<br>快照身份：sample_vault / sample_snapshot<br>停止服务：systemctl --user stop openclaw-gateway.service<br>启动服务：systemctl --user start openclaw-gateway.service<br>程序：复用已核实的现有程序，无安装命令<br>独占凭据排除：'+(s.mode==='clone'?'state: credentials/**':'无副本排除项')+'</div><p>'+(s.mode==='clone'?'仅排除资料声明的文件，不能保证未声明的内嵌令牌也被排除；需要按资料列出的影响重新登录。':'共享服务如影响其他 Agent，需在计划里逐个列明。')+'现场有变化时重新核对计划与确认。</p>');
+return heading('先看清，这次会改变什么','第一次确认只允许准备材料与暂存，不是交换许可。')+ticket()+layout(
+notice+card('本次计划',info)+(!hardBlock()?credentialNotice()+sourceNotice()+profileNotice():'')+tech+
+(s.error?'<p class="error" role="alert">'+s.error+'</p>':'')+
+actions(go('返回修改','setup','quiet')+(hardBlock()?go('重新选择来源或时间点','setup','primary'):button('确认计划，准备材料','prepare','primary'))),1);
+}
+function stage(){
+return heading('正在准备，当前实例尚未改动','先准备到目标的暂存目录，校验通过后才请你决定是否替换。')+ticket()+layout(
+card('准备进度','<div class="phase"><span class="dot ok">✓</span><div class="grow"><b>核对所选材料</b><p class="muted">示例：所需加密头、索引、密钥材料与数据包已核对。</p></div>'+tag('材料齐全','ok')+'</div><div class="phase"><span class="dot ok">✓</span><div class="grow"><b>解密并核对文件</b><p class="muted">示例：文件内容已按清单核对，未输出任何内容。</p></div>'+tag('文件校验通过','ok')+'</div><div class="phase"><span class="dot run">↗</span><div class="grow"><b>写入目标暂存目录</b><p class="muted">示例：192 MiB / 384 MiB · 已用 42 秒</p><div class="progress" role="progressbar" aria-label="示例上传进度" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100"><span></span></div></div></div><div class="phase"><span class="dot">4</span><div><b>在目标复核文件与数据库</b><p class="muted">还没有开始；校验通过不代表服务已经启动。</p></div></div>')+
+box('可以停止准备','会先核实停止结果，并说明已保留的材料。还没有进入活动目录交换，不把已发出的停止请求当作已经取消。')+
+actions(button('停止准备','stop-stage'))+
+'<div class="reviewnext"><b>草图演示，不是产品按钮</b><span class="grow">查看暂存校验通过后的页面。</span>'+button('显示第二次确认','stage-ready')+'</div>',2);
+}
+function confirm(){
+const expired=s.scenario==='expired';
+return heading('暂存已通过，是否进行替换','这是第二次确认。原来的计划与本次暂存必须仍然匹配。')+ticket()+layout(
+box('材料、文件与暂存已分别核实','示例：材料齐全；解密文件校验通过；目标暂存文件与数据库校验通过。服务尚未停止，活动目录尚未替换。')+
+card('从这一步开始',kv('目标',target())+kv('本次动作',s.mode==='rollback'?'停用目标服务，替换备份范围内的数据，再按原状态恢复服务。':s.mode==='migrate'?'停止并核实原实例，再切换目标目录和服务；无法核实停用则停止。':'切换目标暂存目录，建立独立副本；原实例不停止。')+kv('保留什么','恢复前的旧目录保留，备份库不删除，不自动清理。')+
+kv('取消边界','目录交换一旦开始不能取消；切页不等于取消，退出应用需等待完成、回退或进入可核实状态。'))+
+(expired?box('这次交换确认已过期','暂存仍保留，不能沿用旧确认。需要重新核实目标和暂存，再给出新的确认。','warn'):check('swap','我已核对目标与影响，确认按上面的计划进行替换。'))+
+(s.error?'<p class="error" role="alert">'+s.error+'</p>':'')+
+actions(button('暂不替换','hold')+(expired?button('重新核实目标','revalidate','primary'):button(modes[s.mode].final,'swap','primary'))),3);
+}
+function running(){
+return heading('正在交换与复核','交换已开始，请等待本次操作完成或退回。')+ticket()+layout(
+card('当前阶段','<div class="phase"><span class="dot ok">✓</span><div class="grow"><b>核实所需的停服条件</b><p class="muted">'+(s.mode==='migrate'?'示例：原实例停用已核实。':'示例：目标原有服务状态已记录。')+'</p></div></div><div class="phase"><span class="dot run">↔</span><div><b>交换目标目录</b><p class="muted">带交换记录执行；这一阶段不能取消。</p></div></div><div class="phase"><span class="dot">3</span><div><b>恢复服务并检查健康</b><p class="muted">启动退出码、服务运行与健康结果单独报告。</p></div></div><div class="phase"><span class="dot">4</span><div><b>记录结果与身份关系</b><p class="muted">只有符合条件的真实成功结果才记为迁移成功。</p></div></div>')+
+box('可以离开页面，不能强行中止交换','正常退出会先协调到安全边界。断线或进程意外结束后，重新打开必须先核实原操作，不会自动再做一次。')+
+actions(go('回到时间点','point','quiet'))+
+'<div class="reviewnext"><b>草图演示</b><label>结果 <select id="outcome"><option value="success"'+(s.result==='success'?' selected':'')+'>完成并健康</option><option value="rolledback"'+(s.result==='rolledback'?' selected':'')+'>失败后已退回</option><option value="files"'+(s.result==='files'?' selected':'')+'>数据已恢复，服务未启动</option></select></label>'+button('查看这份结果','finish','primary')+button('演示连接中断','disconnect')+'</div>',4);
+}
+function result(){
+const r=s.result;
+let title=r==='success'?modes[s.mode].title+'已完成':r==='rolledback'?'这次没有完成，已退回原状态':r==='stopped'?'准备已停止，活动目录未改动':r==='held'?'暂存已保留，尚未替换':'数据已恢复，服务尚未启动';
+let sub=r==='success'?(s.mode==='migrate'?'旅程在新的服务器接续。':s.mode==='clone'?'一个独立的新 Agent，原实例继续使用。':'当前实例已按选定时间点恢复。'):r==='rolledback'?'保留失败原因，并分别核实回退后的目录和服务。':'每一项只说明已经核实的事实。';
+function rr(mark,label,value,tone){return '<div class="resultrow"><span class="'+(tone||'')+'">'+mark+'</span><b>'+label+'</b><span class="state '+(tone||'')+'">'+value+'</span></div>';}
+let rows='';
+if(r==='success')rows=rr('✓','文件与暂存','校验通过','oktext')+rr('✓','目录交换','已完成','oktext')+rr('✓','服务启动命令','退出码 0','oktext')+rr('✓','服务实际状态','正在运行','oktext')+rr('✓','健康检查','本次检查通过','oktext')+rr('✓','身份与旅程',s.mode==='migrate'?'迁移接续已记录':s.mode==='clone'?'独立副本已记录':'当前实例世代保持','oktext');
+else if(r==='rolledback')rows=rr('!','本次恢复','目标健康检查未通过','warntext')+rr('✓','退回恢复前目录','已核实','oktext')+rr('✓','原服务状态','已恢复到操作前状态','oktext')+rr('?','退回后的健康','尚未重新检查','warntext')+rr('—','成功迁移关系','没有生成');
+else if(r==='files')rows=rr('✓','文件校验与目录交换','已完成','oktext')+rr('!','目标服务','尚未启动','warntext')+rr('?','健康检查','尚未通过','warntext')+rr('—','迁移关系','未宣称完整迁移成功');
+else rows=rr('✓','停止 / 暂停结果','已核实','oktext')+rr('—','活动目录交换','没有执行')+rr('·','已产生的材料','保留，未自动清理')+rr('—','成功迁移关系','没有生成');
+let next=r==='success'?'旧目录仍保留，不会随成功提示自动删除。':r==='rolledback'?'失败原因：目标健康检查未通过。下一步：先检查目标运行条件，再从保留的记录核实；不要把回退成功当作本次恢复成功。':r==='files'?'下一步：在目标的原生设置流程补齐所需配置，再检查服务与健康。文件恢复完成不等于 Agent 已经能够运行。':'下一步：以后继续时先核实原操作与现场；不凭磁盘上的旧确认自动交换。';
+return heading(title,sub)+ticket()+layout(card('分别核实的结果',rows)+box('接下来',next,r==='success'?'':r==='rolledback'?'warn':'')+
+(s.mode==='clone'&&r==='success'?box('副本的独占渠道未自动接入','资料声明的独占凭据已排除。需要时在副本的原生界面重新登录，不把原实例的同一独占身份同时启动。'):'')+
+actions(go('返回旅程','point','primary')+button('查看技术详情','technical','quiet')),5);
+}
+function reconcile(){
+const ready=s.checkpoint;
+return heading(ready?'已核实到待处理的原操作':'执行结果尚未核实','连接中断不等于已经取消，也不等于恢复失败。')+ticket()+layout(
+box('先核实原操作，不重新发起','示例操作编号 restore_sample_01。查询原服务器记录与目标现场；没有足够证据时继续标为未知。','warn')+
+card('目前知道的事',kv('本次目标',target())+kv('最后记录的阶段',ready?'示例：暂存已校验，尚待完成目录交换。':'示例：请求已发出，最后回执尚不足以判断交换结果。')+kv('现在能做什么',ready?'按这次核实到的阶段选择继续，或按允许的分支退回；两个操作都再次确认。':'只核实这次操作；不显示“一键重试恢复”。'))+
+(ready?box('可用分支由当前现场决定','下面只是有相应记录时的示例，不是所有中断阶段都提供这两个动作。'):'')+
+actions(ready?button('退回本次操作','recover-back')+button('继续本次操作','recover-continue','primary'):button('核实原操作','query','primary')),4);
+}
+const views={point:point,setup:setup,plan:plan,stage:stage,confirm:confirm,running:running,result:result,reconcile:reconcile};
+function render(){
+document.getElementById('screen').innerHTML=views[s.page]();
+document.getElementById('review-page').value=s.page;
+document.getElementById('review-case').value=s.scenario;
+document.getElementById('review-tier').value=s.tier;
+document.getElementById('taskbar').innerHTML=s.active&&s.page!=='running'?'<div class="globaltask"><span>这次'+modes[s.mode].verb+'正在交换与复核；切页没有取消它。</span>'+go('查看进度','running')+'</div>':'';
+document.title='Valise · '+modes[s.mode].title+'草图';
+history.replaceState(null,'','#'+s.page);
+}
+function route(page){s.page=page;s.error='';render();window.scrollTo({top:0,behavior:'instant'});}
+function modal(title,text,fn){const d=document.getElementById('dialog');document.getElementById('dialog-title').textContent=title;document.getElementById('dialog-text').textContent=text;document.getElementById('dialog-confirm').onclick=function(){d.close();fn();};d.showModal();}
+function action(a){
+if(a==='plan'){
+if(s.mode==='clone'&&!/^[a-z0-9][a-z0-9-]{0,62}$/.test(s.instance)){s.error='副本标识请使用小写字母、数字和连字符。';render();return;}
+if(s.scenario==='named'&&!s.root.startsWith('/')){s.error='请为命名实例明确填写目标上的绝对目录。';render();return;}
+s.credential=false;s.profile=false;s.snapshotProfile=false;s.sourceChoice='';route('plan');return;
+}
+if(a==='prepare'){
+if(hardBlock())return;
+if(s.tier==='full'&&!s.credential){s.error='请先确认这次恢复包含凭据。';render();return;}
+if(s.scenario==='unbound'&&!s.sourceChoice){s.error='来源身份无法核实，请明确选择如何处理。';render();return;}
+if(s.scenario==='untested'&&(!s.profile||!s.snapshotProfile)){s.error='请分别确认恢复未测试与使用快照资料这两项。';render();return;}
+route('stage');return;
+}
+if(a==='stage-ready'){s.swap=false;route('confirm');return;}
+if(a==='stop-stage'){modal('停止准备？','会先核实停止结果。当前实例尚未改动，已经取回的缓存或暂存材料另行保留与说明。',function(){s.result='stopped';s.active=false;route('result');});return;}
+if(a==='hold'){modal('暂不进行替换？','本次还没有交换活动目录。暂存材料保留，以后继续时重新核实；不会自动删除。',function(){s.result='held';s.active=false;route('result');});return;}
+if(a==='revalidate'){s.scenario='normal';s.swap=false;route('confirm');return;}
+if(a==='swap'){if(!s.swap){s.error='请先核对目标与影响，确认这次替换。';render();return;}s.active=true;route('running');return;}
+if(a==='finish'){s.active=false;route('result');return;}
+if(a==='disconnect'){s.active=false;s.checkpoint=false;route('reconcile');return;}
+if(a==='query'){s.checkpoint=true;route('reconcile');return;}
+if(a==='recover-back'){modal('按原操作记录退回？','仅执行当前记录允许的退回分支，核实目录与服务的实际结果，不重新建立一次恢复任务。',function(){s.result='rolledback';route('result');});return;}
+if(a==='recover-continue'){modal('继续原来的操作？','重新核对这个操作、目标与允许的步骤后继续；不沿用过期确认，不重发已完成的步骤。',function(){s.active=true;route('running');});return;}
+if(a==='technical'){modal('示例技术信息','正式产品在此展开实际操作编号、来源、路径、退出码及脱敏技术细节。本草图不连接服务器，不展示文件内容或秘密。',function(){});}
+}
+document.addEventListener('click',function(e){
+if(e.target.closest('[data-dialog-close]')){document.getElementById('dialog').close();return;}
+const mode=e.target.closest('[data-mode]');if(mode){s.mode=mode.dataset.mode;s.swap=false;s.error='';render();return;}
+const source=e.target.closest('[data-source]');if(source){s.source=source.dataset.source;render();return;}
+const b=e.target.closest('[data-go]');if(b){route(b.dataset.go);return;}
+const a=e.target.closest('[data-do]');if(a)action(a.dataset.do);
+});
+document.addEventListener('input',function(e){
+const f=e.target.dataset.field;if(!f)return;
+s[f]=e.target.type==='checkbox'?e.target.checked:e.target.value;
+
+});
+document.addEventListener('change',function(e){
+if(e.target.name==='source-choice')s.sourceChoice=e.target.value;
+if(e.target.id==='review-tier'){s.tier=e.target.value;s.credential=false;render();}
+if(e.target.id==='outcome')s.result=e.target.value;
+if(e.target.id==='review-page'){if(e.target.value==='result')s.active=false;route(e.target.value);}
+if(e.target.id==='review-case'){s.scenario=e.target.value;s.error='';s.credential=false;s.profile=false;s.snapshotProfile=false;s.swap=false;if(s.scenario==='expired')s.page='confirm';else if(s.scenario!=='normal'&&s.scenario!=='named')s.page='plan';else if(s.scenario==='named')s.page='setup';render();}
+});
+document.getElementById('theme-toggle').onclick=function(){const d=document.documentElement;d.dataset.theme=d.dataset.theme==='dark'?'light':'dark';this.textContent=d.dataset.theme==='dark'?'浅色':'深色';};
+const initial=location.hash.slice(1);if(views[initial])s.page=initial;
+render();
+})();
+</script>
+</body>
+</html>

@@ -68,3 +68,22 @@ https://github.com/yetone/magpie （MIT，阅读时的提交 `4d55a0a`，2026-11
 - Letta（原 MemGPT）：分层记忆，以及让 agent 显式编辑自己的记忆。https://github.com/letta-ai/letta
 - Mem0：长期记忆的提取与去重。https://github.com/mem0ai/mem0
 - Graphiti：事实随时间失效、被新结论替代的思路。https://github.com/getzep/graphiti
+
+
+## 2026-11-12 并行环境底座参考
+
+- [bubblewrap 官方项目与安全边界](https://github.com/containers/bubblewrap)：它提供低层命名空间/挂载机制，隔离保障取决于调用方构造的完整策略，不以工具名字作背书。
+- [bubblewrap 官方私有 HOME 示例](https://github.com/containers/bubblewrap/blob/main/demos/bubblewrap-shell.sh)：OS 目录只读、其余可见目录独立；Valise 的测试策略不启用 share-net。
+- [systemd.exec 官方文档](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)：文件系统只读与 Unix socket 可达性是不同边界；用户单元的命名空间选项受系统能力约束。不更改 LAB.md 禁止用户单元写 CapabilityBoundingSet/AmbientCapabilities 的规则。
+
+ubuntu-vm 只读探针：已存在 bwrap 0.11.1；普通 unshare -Urnm 被拒，bwrap 的独立命名空间 true 探针可运行。未安装工具或改 sysctl/AppArmor，未改 Agent；此探针不代表私有运行环境或 harness 恢复已通过。
+
+- [Linux PR_SET_DUMPABLE 手册](https://man7.org/linux/man-pages/man2/PR_SET_DUMPABLE.2const.html)：第二模块的隔离探针关闭自身 dumpable，避免受测进程读取/改写探针的 /proc fd 或内存；仅进程属性，不修改宿主策略。[PR_SET_NO_NEW_PRIVS](https://man7.org/linux/man-pages/man2/PR_SET_NO_NEW_PRIVS.2const.html) 说明该属性按线程继承；Go 多线程执行不能把单线程 prctl 误称为整个进程已统一设置。
+
+
+2026-11-12 实机固定提交补核：[Hermes credential-free discovery](https://github.com/NousResearch/hermes-agent/blob/bf0203a794a07aac3ff764972ab9087baa4e4f4e/hermes_cli/gateway_runtime_discovery.py)、[runtime endpoint validation](https://github.com/NousResearch/hermes-agent/blob/bf0203a794a07aac3ff764972ab9087baa4e4f4e/hermes_cli/gateway_runtime.py)、[bounded readiness](https://github.com/NousResearch/hermes-agent/blob/bf0203a794a07aac3ff764972ab9087baa4e4f4e/gateway/readiness.py)。通过已安装 checkout 的 `git show HEAD:<path>` 阅读，并对当前默认 owner 作只读 identify；这是离线规则的来源证据，不是命名实例/隔离重建能力验收。
+
+
+## 并行准备的隔离生命周期（2026-11-14 核实）
+
+[bubblewrap v0.11.1 源码](https://github.com/containers/bubblewrap/blob/v0.11.1/bubblewrap.c) 的 `--sync-fd` 由 namespace init 持有，并在执行应用前关闭应用侧副本。已与 ubuntu-vm 安装版本的 `--help` 和真实进程中断验收交叉核实；该事实用于生命周期文件锁，不提供任意 FD/命令 RPC。见 SERVICE_CONTRACTS.md 19.19 与 LAB.md。
