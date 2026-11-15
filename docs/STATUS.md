@@ -4,13 +4,13 @@
 
 ## 0. 当前工作与交接（2026-11-15）
 
-**用户已取消长时自动 Goal，改为短周期交付并亲自参与测试。当前仅执行已授权的收尾、提交和推送：受管 Agent 的旧槽正常复用、取消后重新准备、切回后再次恢复、历史记录只读显示。** SERVICE_CONTRACTS.md 19.7 保留完整产品范围，不再作为自动继续执行的指令；不要自行扩展到其他来源、受管直通、分身或迁移。
+**用户已取消长时自动 Goal，改为短周期交付并亲自参与测试。本轮授权的收尾、提交与推送已经完成：受管 Agent 的旧槽正常复用、取消后重新准备、切回后再次恢复、历史记录只读显示。接手后先等待用户指定下一轮具体任务，不自动继续开发。** SERVICE_CONTRACTS.md 19.7 保留完整产品范围，不再作为自动继续执行的指令；不要自行扩展到其他来源、受管直通、分身或迁移。
 
 ### 用户构建与代码边界
 
 - 用户手上的最新阶段版仍是 `0.0.0-dev+stage-test-20261114`，路径 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261114/Valise Test.app`。本轮只收尾并推送源码，没有更新用户应用、实际 porter 或资料包；不能告诉用户完整 A/B 已可在此旧包里测试。
 - 旧包可测旅程按位置增量/独立范围/多位置合并、精确时间点和副本的文件测试、一次性备份/进度、个性化、文件窗口提示、Agent 三模式设置及已适配来源的只读恢复预览。默认并行不降级为旧直接恢复。
-- 工作树已经包含首次准备的管理传输和 GUI，正式切换/切回审阅、人工对话确认、独立清理、当前备份/原生界面/审批绑定及健康读取。已通过的组件和合成 Linux 证据见 acceptance/N4.md 6.24–6.38；这不代替真实备份的前端端到端验收。
+- 已推送源码包含首次准备的管理传输和 GUI，正式切换/切回审阅、人工对话确认、独立清理、当前备份/原生界面/审批绑定及健康读取。已通过的组件和合成 Linux 证据见 acceptance/N4.md 6.24–6.38；这不代替真实备份的前端端到端验收。
 - 正式切换能力 `environment-restore-switch/1` 仍不广告。首适配限同机默认实例、来源精确匹配的私有 npm 和普通正式数据文件；完整产品流程及其他来源尚未交付。
 
 ### 本次收尾节点（acceptance/N4.md 6.39）
@@ -34,12 +34,20 @@
 - 默认资料包仍为 2026.11.10（OpenClaw 22、Hermes 11），未替换实际登记。默认配置公钥为 `~/.cache/valise-drill/devpack/key.pub`，演练配置对应另一把 `drillpack/key.pub`；不得混用、重生成或覆盖。仓库 OpenClaw 23 的环境能力仍 untested。
 - ubuntu-vm 有 bwrap 0.11.1。原私有 prefix 中 Node 自 2026-11-07 为 0600，不得改权限或用 PATH Node 代替；实际服务使用 `/home/parallels/.local/opt/node-v24.22.2-linux-arm64/bin/node`。真实来源 48,102 项、842,130,982 字节，尚无真实备份的完整恢复/对话验收。
 - 本轮仅使用 `/home/parallels/.cache/valise-old-cleanup.SbPDHmH5/` 的合成数据和本测试创建的随机用户单元；不能启停实际 Agent。mygo 固定 v0.7.3，不读取模型凭据、不代用户发对话。
-- 推送目标为 `origin/n2-agent-protection-journey`；代码按共享核心/公开格式、porter、客户端、交接文档分组提交。用户的图标移动、`.DS_Store` 和 `references/` 参考素材保留在工作树，不混入本轮提交。旧提交署名缺口不在本轮改写历史。
+- 四组提交已推送至 `origin/n2-agent-protection-journey`，本地与远端已核对一致，代码收尾基线为 `4d890c275f077e1e001f031e7ff9597a593deda6`。用户的图标移动、`.DS_Store` 和 `references/` 参考素材保留在工作树，不混入本轮提交。旧提交署名缺口不在本轮改写历史。
+
+### 接手定位与下一轮建议
+
+- 按 AGENTS.md 阅读现行规范；实现入口依次看 `core/environment/`（状态机/公开投影）、`porter/internal/revive/environment_reuse*.go`（固定复用范围/执行/清理）、`environment_preparation*.go`（准备与取消）、`activation*.go`（父事务/审阅/历史）、`client/ui/service/environment_*.go` 和 `client/ui/gui/restoreparallel*.go`（人类适配/界面）。正式能力广告在 `porter/internal/server/server.go`，不能为了出现按钮而提前加入 SwitchCapability。
+- 本轮自检与 Linux 回归均已结束，没有本轮待轮询的验证进程。完整输出仍在上述 `/tmp/valise-closeout-*` 文件中；这些是本机临时证据，持久结论已写入 acceptance/N4.md 6.39。
+- 下一轮建议先交付“准备新环境 → 取消 → 再次准备”的专用测试包、简短测试步骤和已知限制，由用户测试后再修反馈；这是待用户选择的建议，本交接不自动开始打包或部署。
+- 出包前核实目标 Agent 的实际来源和已接受 profile。当前首适配不能直接覆盖用户曾测试的 `hermes-valisetest` 命名实例；默认资料包也未更新。不得靠更改真实安装、放松来源校验或冒充已核实能力让流程可用。
+- 构建环境仍为 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`，可使用既有 `GOCACHE=/tmp/valise-go-build`。新 porter 交付目录遵照用户指定 `/Users/nazukimio/Downloads/valise-porter-test/`；源码推送不等于此处产物或服务器已更新。
 
 ## 1. 代码与分支
 
-- 工作分支 `n2-agent-protection-journey`，本轮已获用户授权推送；推送结果以提交记录和远端分支核对为准。N2 实现从 `305e14e` 开始，之后的提交都在这个分支上；`references/`（用户的参考 HTML）有意不纳入版本控制。
-- 本次提交前基线为 `ffcde4f`；最新自检与节点验收见第 0 节和 acceptance/N4.md 6.39。
+- 工作分支 `n2-agent-protection-journey`，已推送并设置跟踪 `origin/n2-agent-protection-journey`。N2 实现从 `305e14e` 开始，之后的提交都在这个分支上；`references/`（用户的参考 HTML）有意不纳入版本控制。
+- 收尾前基线为 `ffcde4f`，本轮四组提交为：`07d7952`（共享核心/格式）、`4bdd0fb`（porter）、`3e9f124`（客户端）、`4d890c2`（规范/验收）。新提交均带两行规定署名。最新自检与节点验收见第 0 节和 acceptance/N4.md 6.39；本次交接只更新 STATUS，不改运行代码。
 - **提交署名缺口**：`c04b266`、`cfcb916`、`de37ced`、`e30a84e`、`021121c` 少了 `AGENTS.md` 第 8 节要求的两行 Co-authored-by（只有 Claude 的署名）。本轮仅为新提交附上两行署名，不改写上述历史；如需修正，另由用户决定。更早的 `b990c75`、`6364c15`、`6c7e3c5`、`b45a883` 也没有这两行，不是本轮提交。
 - 用户 2026-11-10 在桌面版里给测试用的服务器更新过本轮 porter（`0.0.0-dev+d13ae9c` 或之后的 `1d7dd60`，以服务器设置页显示为准）。更早：三台靶机（`ubuntu-vm`、`ubuntu-vm-x86`、`debian-vm`）已部署 `a1c5ba1` 构建的本地 porter（2026-11-08；在原有能力之外声明 copy-verify/1、cloud/1、identity-lost-source/1、revive-body-dirs/1）。`nazukiki-cloud` 未部署本轮 porter。
 
