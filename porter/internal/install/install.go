@@ -14,6 +14,7 @@ import (
 
 	"valise/core/install"
 	porterenroll "valise/porter/internal/enroll"
+	"valise/porter/internal/runtimeguard"
 )
 
 // Check reports each requirement as found on the login PATH.
@@ -81,6 +82,9 @@ func OSRelease(path string) (id, version string) {
 // install steps and port changes, over an admin connection only (the daily
 // key's forced command never allows it). It returns only on failure.
 func Exec(ctx context.Context, e *porterenroll.Env, argv []string) error {
+	if err := runtimeguard.Check(ctx, e.Home, runtimeguard.Scope{All: true}); err != nil {
+		return err
+	}
 	bin, out, err := resolve(e, argv)
 	if err != nil {
 		return err

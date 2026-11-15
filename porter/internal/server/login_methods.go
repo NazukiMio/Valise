@@ -7,13 +7,22 @@ import (
 	"time"
 	"valise/porter/internal/forced"
 
+	"valise/core/install"
 	"valise/core/login"
 	"valise/core/vaultrpc"
+	"valise/porter/internal/activeexec"
 	porterlogin "valise/porter/internal/login"
 	"valise/porter/internal/seal"
 )
 
 func init() {
+	methods[install.MethodNativeInfo] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[install.NativeInfoParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		return activeexec.Info(s.cfg.Home, p.InstanceID)
+	}
 	methods[login.MethodPrepare] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[login.PrepareParams](raw)
 		if err != nil {
@@ -32,7 +41,12 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		return porterlogin.EntryAuth(ctx, s.loginEnv(ctx), s.cfg.Home, p)
+		lock, unlock, err := (seal.Paths{Home: s.cfg.Home}).ActionLock("")
+		if err != nil {
+			return nil, err
+		}
+		defer unlock()
+		return porterlogin.EntryAuthWithLock(ctx, s.loginEnv(ctx), s.cfg.Home, p, lock)
 	}
 	methods[login.MethodURLs] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[login.SessionParams](raw)

@@ -153,6 +153,7 @@ func TestRollbackKeepsGenerationAndLegacyStaysUnbound(t *testing.T) {
 	p := w.plan()
 	p.SnapshotID = "s_fixture"
 	p.Identity = &identity.RecoveryContext{Mode: revive.ModeRollback, SourceSnapshot: identity.SnapshotRef{VaultID: "v_fixture", SnapshotID: "s_fixture"}}
+	allowDirectRecord(t, w, rec, w.p)
 	w.swapWith(t, p, snapshot, "")
 	b, _ := identitystore.Read(w.home, "demo")
 	if b.Agent == nil || b.Agent.Ref != accepted.Ref {
@@ -166,7 +167,26 @@ func TestRollbackKeepsGenerationAndLegacyStaysUnbound(t *testing.T) {
 	lp := l.plan()
 	lp.SnapshotID = "s_fixture"
 	lp.Identity = &identity.RecoveryContext{Mode: revive.ModeRollback, SourceSnapshot: identity.SnapshotRef{VaultID: "v_fixture", SnapshotID: "s_fixture"}}
-	l.swapWith(t, lp, snapshot, "")
+	// An old, already-stopped journal remains recoverable without inventing
+	// an identity or requiring a new admission under today's default policy.
+	filePlan := lp
+	filePlan.TestOnly, filePlan.Carry, filePlan.Unit, filePlan.Identity = true, false, "", nil
+	filePlan.Body = revive.BodyPlan{Action: revive.BodyKeep}
+	l.stage(t, filePlan, snapshot)
+	j, err := l.r.Store.Load(lp.OpID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.Plan, j.ServiceWasActive = lp, true
+	if err := StopUnit(context.Background(), l.r.Env, lp.Unit); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.r.Store.Set(j, revive.StateStopped); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := l.r.Resume(context.Background(), revive.ResumeParams{OpID: lp.OpID, Action: "continue"}); err != nil || res.State != revive.StateHealthy {
+		t.Fatal("legacy stopped recovery failed", res, err)
+	}
 	if b, err := identitystore.Read(l.home, "demo"); err != nil || b.IdentityState != identity.LegacyUnbound {
 		t.Fatalf("legacy rollback invented identity: %+v %v", b, err)
 	}

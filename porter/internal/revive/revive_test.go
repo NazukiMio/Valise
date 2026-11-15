@@ -59,6 +59,9 @@ esac
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
 	w := &world{home: home, state: filepath.Join(home, ".demo"), bin: filepath.Join(home, "bin")}
 	write(t, filepath.Join(w.bin, "systemctl"), fakeSystemctl, 0o755)
 	write(t, filepath.Join(w.bin, "journalctl"), "#!/bin/sh\necho fake log line\n", 0o755)
@@ -125,7 +128,7 @@ func (w *world) stage(t *testing.T, p revive.Plan, files []snapFile) {
 var snapshot = []snapFile{{"SOUL.md", "old soul"}, {"memory/old.md", "old memory"}}
 
 func TestRollbackCarriesOutsideTier(t *testing.T) {
-	w := newWorld(t)
+	w := newDirectWorld(t)
 	p := w.plan()
 	w.stage(t, p, snapshot)
 	res, err := w.r.Swap(context.Background(), p.OpID)
@@ -190,7 +193,7 @@ func snapshotTree(t *testing.T, dir string) map[string]string {
 }
 
 func TestHealthFailureRollsBackByteIdentical(t *testing.T) {
-	w := newWorld(t)
+	w := newDirectWorld(t)
 	before := snapshotTree(t, w.state)
 	p := w.plan()
 	w.stage(t, p, snapshot)
@@ -219,7 +222,7 @@ func TestHealthFailureRollsBackByteIdentical(t *testing.T) {
 func TestResumeFromLiveMoved(t *testing.T) {
 	for _, action := range []string{"back", "continue"} {
 		t.Run(action, func(t *testing.T) {
-			w := newWorld(t)
+			w := newDirectWorld(t)
 			before := snapshotTree(t, w.state)
 			p := w.plan()
 			w.stage(t, p, snapshot)
@@ -258,7 +261,7 @@ func TestResumeFromLiveMoved(t *testing.T) {
 }
 
 func TestStageRejectsUnsafeEntries(t *testing.T) {
-	w := newWorld(t)
+	w := newDirectWorld(t)
 	p := w.plan()
 	if _, err := StageBegin(context.Background(), w.r.Env, w.r.Store, p); err != nil {
 		t.Fatal(err)
@@ -289,7 +292,7 @@ func TestStageRejectsUnsafeEntries(t *testing.T) {
 }
 
 func TestStageVerifyDetectsTamper(t *testing.T) {
-	w := newWorld(t)
+	w := newDirectWorld(t)
 	p := w.plan()
 	w.stage(t, p, snapshot)
 	j, _ := w.r.Store.Load(p.OpID)
@@ -308,7 +311,7 @@ func TestStageVerifyDetectsTamper(t *testing.T) {
 }
 
 func TestRefusesSymlinkedRoot(t *testing.T) {
-	w := newWorld(t)
+	w := newDirectWorld(t)
 	real := filepath.Join(w.home, "slots", "b")
 	os.MkdirAll(filepath.Dir(real), 0o755)
 	os.Rename(w.state, real)
@@ -320,7 +323,7 @@ func TestRefusesSymlinkedRoot(t *testing.T) {
 }
 
 func TestPendingOperationBlocksNewOne(t *testing.T) {
-	w := newWorld(t)
+	w := newDirectWorld(t)
 	w.stage(t, w.plan(), snapshot)
 	if _, err := StageBegin(context.Background(), w.r.Env, w.r.Store, w.plan()); err == nil || !strings.Contains(err.Error(), "op_pending") {
 		t.Fatal(err)
@@ -328,7 +331,7 @@ func TestPendingOperationBlocksNewOne(t *testing.T) {
 }
 
 func TestIntruderIsMovedAsideOnBack(t *testing.T) {
-	w := newWorld(t)
+	w := newDirectWorld(t)
 	p := w.plan()
 	w.stage(t, p, snapshot)
 	j, _ := w.r.Store.Load(p.OpID)
@@ -387,9 +390,7 @@ func TestCloneSupersedesOverlappingInstance(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()
 	old := enroll.Record{InstanceID: "old", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": w.state}}
-	if _, err := porterenroll.WriteRecord(w.home, old, w.p); err != nil {
-		t.Fatal(err)
-	}
+	allowDirectRecord(t, w, old, w.p)
 	roots := []revive.RootPlan{{ID: "state", Path: w.state}}
 	facts, err := Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{Profile: w.p, InstanceID: "new", Roots: roots})
 	if err != nil || len(facts.Overlapping) != 1 || facts.Overlapping[0] != "old" {
@@ -442,7 +443,7 @@ func TestCloneSupersedesOverlappingInstance(t *testing.T) {
 // swapped: the swap would carry that agent off while it runs. The stage
 // can still be discarded (restore test).
 func TestSwapRefusesNestedInstance(t *testing.T) {
-	w := newWorld(t)
+	w := newDirectWorld(t)
 	w.p.Detect = &profile.Detect{StateDirCandidates: []string{"${HOME}/.demo"}, MarkersAny: []string{"SOUL.md"},
 		Named: []profile.Named{{Glob: "${HOME}/.demo/profiles/*", Env: map[string]string{"DEMO_HOME": "${STATE_DIR}"}}}}
 	write(t, filepath.Join(w.state, "profiles/bot/SOUL.md"), "another agent", 0o644)
@@ -464,7 +465,7 @@ func TestSwapRefusesNestedInstance(t *testing.T) {
 // directories move into the new live directory and back on a rollback.
 func TestSwapCarriesNestedSharedInstance(t *testing.T) {
 	for _, broken := range []bool{false, true} {
-		w := newWorld(t)
+		w := newDirectWorld(t)
 		w.p.Detect = &profile.Detect{StateDirCandidates: []string{"${HOME}/.demo"}, MarkersAny: []string{"SOUL.md"},
 			Named: []profile.Named{{Glob: "${HOME}/.demo/profiles/*", Env: map[string]string{"DEMO_HOME": "${STATE_DIR}"}, Service: "shared"}}}
 		write(t, filepath.Join(w.state, "profiles/bot/SOUL.md"), "another agent", 0o644)
@@ -500,7 +501,7 @@ func TestSwapCarriesNestedSharedInstance(t *testing.T) {
 // passes; anywhere else it is listed as inside and refused by the plan
 // (docs/ARCHITECTURE.md 8.2).
 func TestCloneIntoAnotherInstanceDir(t *testing.T) {
-	w := newWorld(t)
+	w := newDirectWorld(t)
 	ctx := context.Background()
 	w.p.Detect = &profile.Detect{StateDirCandidates: []string{"${HOME}/.demo"}, MarkersAny: []string{"SOUL.md"},
 		Named: []profile.Named{{Glob: "${HOME}/.demo/profiles/*", Service: "shared"}}}
@@ -528,7 +529,7 @@ func TestMigrateCarriesKeptNestedBody(t *testing.T) {
 		name           string
 		broken, noBody bool
 	}{{"healthy", false, false}, {"rolled back", true, false}, {"no body on target", false, true}} {
-		w := newWorld(t)
+		w := newDirectWorld(t)
 		if tc.noBody {
 			os.RemoveAll(filepath.Join(w.state, "runtime"))
 		}

@@ -14,9 +14,11 @@ import (
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
+	"valise/porter/internal/activeview"
 	porterenroll "valise/porter/internal/enroll"
 	porteridentity "valise/porter/internal/identity"
 	porterinstall "valise/porter/internal/install"
+	"valise/porter/internal/runtimeguard"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/timer"
 )
@@ -86,13 +88,28 @@ var methods = map[string]handler{
 				Service: []enroll.ServiceState{}, Entries: []enroll.EntryState{}}
 			if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
 				sum.ProfileStatus = p.Status
-				if r.Superseded == nil {
-					sum.Service, sum.Entries = porterenroll.Live(ctx, s.loginEnv(ctx), p)
+				if len(p.NativeCLI) > 0 {
+					// The dedicated native executor consumes committed metadata only.
+					// Reading an old pair must not advertise or implicitly accept it.
+					d, _, err := porterenroll.ReadInstallation(s.cfg.Home, r.InstanceID)
+					sum.NativeCLI = err == nil && d != nil
 				}
 			}
 			// identity/2: the same read-only binding identity_get returns.
 			b := porteridentity.ListBinding(s.cfg.Home, r.InstanceID)
 			sum.Identity = &b
+			if r.Superseded == nil && b.Agent != nil {
+				if current, units, entries := (activeview.Reader{Home: s.cfg.Home}).Summary(ctx, b.Agent.Ref); current != nil {
+					sum.Runtime, sum.Service, sum.Entries = current, units, entries
+				}
+			}
+			if r.Superseded == nil && sum.Runtime == nil {
+				if err := runtimeguard.CheckInstance(ctx, s.cfg.Home, r.InstanceID); err != nil {
+					sum.Runtime = &enroll.RuntimeState{IssueCode: "environment_binding_unverified"}
+				} else if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
+					sum.Service, sum.Entries = porterenroll.Live(ctx, s.loginEnv(ctx), p)
+				}
+			}
 			res.Instances = append(res.Instances, sum)
 		}
 		return res, err
@@ -234,6 +251,13 @@ func init() {
 			return nil, errInvalidParams
 		}
 		return seal.SealLog(paths(s), p.InstanceID)
+	}
+	methods[vaultrpc.MethodJourney] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.JourneyParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.Journey(ctx, s.loginEnv(ctx), paths(s), p.Target)
 	}
 	methods[vaultrpc.MethodTargetList] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.TargetListParams

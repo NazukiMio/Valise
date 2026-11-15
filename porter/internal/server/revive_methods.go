@@ -67,6 +67,9 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
+		if err := restoreAccess(s, p.OpID, revive.MethodSwap, ""); err != nil {
+			return nil, err
+		}
 		// The swap must not be interrupted by the client going away.
 		runner := s.runner(ctx)
 		if err := runner.RecordDisposition(p.OpID, p.SourceDisposition); err != nil {
@@ -77,6 +80,9 @@ func init() {
 	methods[revive.MethodResume] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[revive.ResumeParams](raw)
 		if err != nil {
+			return nil, err
+		}
+		if err := restoreAccess(s, p.OpID, revive.MethodResume, p.Action); err != nil {
 			return nil, err
 		}
 		return s.runner(ctx).Resume(context.WithoutCancel(ctx), p)

@@ -23,6 +23,8 @@ func TestDaily(t *testing.T) {
 		"valise-porter login-run s", "valise-porter rpc; id", "valise-porter rpc | sh",
 		"env A=1 valise-porter rpc", "/tmp/evil rpc", "valise-porter 'rpc", "valise-porter $(id)",
 		"valise-porter mcp --instance a", "valise-porter seal-timer --instance a",
+		"valise-porter environment-probe", "valise-porter environment-probe --grant fabricated",
+		"valise-porter native --instance fixture", "valise-porter native --instance fixture --grant fabricated",
 	}
 	for _, in := range bad {
 		if got, err := Daily(in); err == nil {

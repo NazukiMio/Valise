@@ -3,11 +3,13 @@ package kit
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
 	"time"
+	"valise/porter/internal/runtimeguard"
 
 	"valise/core/agentkit"
 	"valise/core/valise"
@@ -22,6 +24,9 @@ var skillNameRe = regexp.MustCompile(`^valise-[a-z]+$`)
 // existing file with different content is kept as a dated backup first.
 // It runs only on the user's explicit `valise kit install`.
 func Install(home string, p agentkit.KitInstallParams, now time.Time) (*agentkit.KitInstallResult, error) {
+	if err := runtimeguard.CheckInstance(context.Background(), home, p.InstanceID); err != nil {
+		return nil, err
+	}
 	rec, err := porterenroll.ReadRecord(home, p.InstanceID)
 	if err != nil {
 		return nil, err
@@ -154,6 +159,9 @@ func Status(home string, p agentkit.KitStatusParams) (*agentkit.KitStatusResult,
 // files are kept unless Force. It runs only on the user's explicit
 // `valise kit uninstall`.
 func Uninstall(home string, p agentkit.KitUninstallParams) (*agentkit.KitUninstallResult, error) {
+	if err := runtimeguard.CheckInstance(context.Background(), home, p.InstanceID); err != nil {
+		return nil, err
+	}
 	dir, err := skillsDir(home, p.InstanceID)
 	if err != nil {
 		return nil, err

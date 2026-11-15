@@ -32,6 +32,14 @@ func (r *Runner) RecordDisposition(op, disposition string) error {
 	if err != nil {
 		return err
 	}
+	if err := guardLegacyPlan(context.Background(), r.Store, j.Plan); err != nil {
+		return err
+	}
+	if j.State == revive.StatePlanned {
+		if err := checkDirectPolicy(context.Background(), r.Store, j.Plan); err != nil {
+			return err
+		}
+	}
 	if j.Plan.Identity == nil {
 		if disposition != "" {
 			return identityFailure()

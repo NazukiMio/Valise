@@ -19,17 +19,21 @@ import (
 	_ "time/tzdata" // period time zones (docs/VAULT_FORMAT.md 10.2) on servers without zoneinfo
 	"valise/porter/internal/recovery"
 
+	"valise/core/environment"
 	"valise/core/identity"
+	coreinstall "valise/core/install"
 	"valise/core/login"
 	"valise/core/profile"
 	"valise/core/protection"
 	corerevive "valise/core/revive"
 	"valise/core/rpc"
 	"valise/core/vaultrpc"
+	"valise/porter/internal/activeexec"
 	"valise/porter/internal/backuprun"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/forced"
 	porterinstall "valise/porter/internal/install"
+	"valise/porter/internal/isolated"
 	"valise/porter/internal/kit"
 	porterlogin "valise/porter/internal/login"
 	"valise/porter/internal/mcp"
@@ -51,6 +55,7 @@ func main() {
 const usage = `用法：
   valise-porter version [--json]
   valise-porter rpc
+  valise-porter native --instance <实例>（运行已接受资料中的原生界面）
   valise-porter exec [--path <目录>]... -- <命令>...（用登录环境执行原生界面、安装步骤）
   valise-porter exec [--path <目录>]... --shell（打开用户自己的交互 shell，PATH 中加入这些目录）
   valise-porter path-add --dir <目录> --label <标签>（把家目录下的目录加入登录 shell 的 PATH）
@@ -74,12 +79,48 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 	switch args[0] {
+	case "environment-probe":
+		// Internal namespace-only entry. The daily forced command has no
+		// corresponding allowed request, and this is not an RPC method.
+		if len(args) != 1 || isolated.ProbeGuest(stdout) != nil {
+			fmt.Fprintln(stderr, "isolated gateway probe unavailable")
+			return 1
+		}
+		return 0
 	case "version":
 		return runVersion(args[1:], stdout, stderr)
 	case "rpc":
 		return serveRPC(stdin, stdout, stderr, "")
 	case "serve":
 		return serveForced(args[1:], stdin, stdout, stderr)
+	case "native":
+		if len(args) != 3 || args[1] != "--instance" {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		lock, unlock, err := (seal.Paths{Home: home}).ActionLock("")
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		defer unlock()
+		cmd, display, err := (activeexec.Controller{Home: home}).Native(context.Background(), args[2], lock)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		porterlogin.PrepareTerminal(0, 0)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
+		code, err := porterinstall.RunAcceptedTerminal(home, cmd, display)
+		if err != nil {
+			fmt.Fprintln(stderr, "native:", err)
+		}
+		return code
 	case "exec":
 		// Admin connections only: the daily key's forced command refuses it.
 		argv := args[1:]
@@ -191,6 +232,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
+		unlock, err := (seal.Paths{Home: home}).LockFor("stage-write")
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		defer unlock()
 		n, err := porterrevive.StageWrite(porterrevive.Store{Home: home}, args[2], stdin)
 		if err != nil {
 			fmt.Fprintln(stderr, "stage-write:", err)
@@ -220,6 +267,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
+		unlock, err := (seal.Paths{Home: home}).LockFor("tool-put")
+		if err != nil {
+			fmt.Fprintln(stderr, "tool-put:", err)
+			return 1
+		}
+		defer unlock()
 		if err := kit.ToolPut(home, args[1], args[2], stdin); err != nil {
 			fmt.Fprintln(stderr, "tool-put:", err)
 			return 1
@@ -240,14 +293,22 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
-		// Exec only returns on failure.
+		lock, unlock, err := (seal.Paths{Home: home}).ActionLock("")
+		if err != nil {
+			fmt.Fprintln(stderr, "login-run:", err)
+			return 1
+		}
+		defer unlock()
 		cols, rows := 0, 0
 		if len(args) == 4 {
 			cols, _ = strconv.Atoi(args[2])
 			rows, _ = strconv.Atoi(args[3])
 		}
-		fmt.Fprintln(stderr, "login-run:", porterlogin.Exec(home, args[1], self, cols, rows))
-		return 1
+		code, err := porterlogin.Run(home, args[1], self, cols, rows, lock)
+		if err != nil {
+			fmt.Fprintln(stderr, "login-run:", err)
+		}
+		return code
 	case "mcp":
 		if len(args) != 3 || args[1] != "--instance" {
 			fmt.Fprintln(stderr, usage)
@@ -457,7 +518,7 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 	info := rpc.VersionInfo{
 		Name: "valise-porter", Version: version, Protocol: rpc.ProtocolVersion,
 		OS: runtime.GOOS, Arch: runtime.GOARCH, SelfSHA256: sum,
-		Capabilities: []string{identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.BackupCapability, protection.BackupCapabilityV2, sysfix.Capability, vaultrpc.CopyCheckCapability, vaultrpc.CopyVerifyCapability, vaultrpc.CloudCapability, vaultrpc.CloudFormCapability, identity.LostSourceCapability, corerevive.BodyDirsCapability},
+		Capabilities: []string{identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.BackupCapability, protection.BackupCapabilityV2, protection.BackupCapabilityV3, sysfix.Capability, vaultrpc.JourneyCapability, vaultrpc.CopyCheckCapability, vaultrpc.CopyVerifyCapability, vaultrpc.CloudCapability, vaultrpc.CloudFormCapability, identity.LostSourceCapability, corerevive.BodyDirsCapability, corerevive.ReviewCapability, environment.SettingsCapability, environment.PlanCapability, coreinstall.NativeCapability},
 	}
 	if err := json.NewEncoder(stdout).Encode(info); err != nil {
 		return 1

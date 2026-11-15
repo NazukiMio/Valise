@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,7 +13,9 @@ import (
 	"valise/core/vaultrpc"
 	porteraction "valise/porter/internal/action"
 	"valise/porter/internal/actiontxn"
+	"valise/porter/internal/activeexec"
 	porterenroll "valise/porter/internal/enroll"
+	"valise/porter/internal/runtimeguard"
 	"valise/porter/internal/seal"
 )
 
@@ -21,6 +24,15 @@ func init() {
 		var p action.ApprovalParams
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
+		}
+		lock, unlock, err := (seal.Paths{Home: s.cfg.Home}).ActionLock("")
+		if err != nil {
+			return nil, err
+		}
+		defer unlock()
+		result, err := (activeexec.Controller{Home: s.cfg.Home}).Approval(ctx, p.InstanceID, lock)
+		if !errors.Is(err, activeexec.ErrUnmanaged) {
+			return result, err
 		}
 		prof, err := porterenroll.ReadProfile(s.cfg.Home, p.InstanceID)
 		if err != nil {
@@ -56,6 +68,10 @@ func init() {
 				return nil, lockErr
 			}
 			defer unlock()
+			if err := runtimeguard.CheckInstance(ctx, s.cfg.Home, p.InstanceID); err != nil {
+				return nil, err
+			}
+
 			res, err = porteraction.Run(ctx, s.loginEnv(ctx).ForInstance(prof, rec), a)
 		}
 		result := "failed"

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -224,10 +225,24 @@ func TestSealTiers(t *testing.T) {
 		}
 	}
 
-	// Unchanged instance: the second seal adds < 1% of the first.
+	// Unchanged instance: every payload blob is reused. Header growth is
+	// independent of payload dedupe; only index/head/meta may be added.
 	again := w.seal(t, vault.TierSoul)
-	if again.AddedBytes*100 >= soul.AddedBytes || again.NewEpoch {
-		t.Fatalf("second seal added %d of %d", again.AddedBytes, soul.AddedBytes)
+	var index vault.Index
+	indexBytes, err := os.ReadFile(filepath.Join(w.leaf(t).Dir, vault.IndexPath(again.SnapshotID)))
+	if err != nil || json.Unmarshal(indexBytes, &index) != nil || len(index.Blobs) != 0 || again.NewEpoch {
+		t.Fatalf("unchanged payload was written again: %d blobs, %v", len(index.Blobs), err)
+	}
+	var headerBytes int64
+	for _, name := range []string{vault.IndexPath(again.SnapshotID), vault.SnapshotPath(again.SnapshotID), vault.MetaPath(again.SnapshotID)} {
+		st, err := os.Stat(filepath.Join(w.leaf(t).Dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		headerBytes += st.Size()
+	}
+	if again.AddedBytes != headerBytes {
+		t.Fatal("unchanged backup added more than its own metadata")
 	}
 	if probs, err := vault.VerifyNoKey(w.leaf(t).Dir); err != nil || len(probs) != 0 {
 		t.Fatal(probs, err)

@@ -15,6 +15,7 @@ import (
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
+	"valise/porter/internal/activeview"
 	porterenroll "valise/porter/internal/enroll"
 )
 
@@ -37,9 +38,33 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 	if _, ok := vault.TierCategories[params.Tier]; !ok {
 		return nil, valise.New("tier_invalid", "未知的封存档位："+params.Tier, "可选 soul、soul-secrets、full")
 	}
-	rec, err := porterenroll.ReadRecord(p.Home, params.InstanceID)
+	unlock, err := p.Lock()
 	if err != nil {
 		return nil, err
+	}
+	defer unlock()
+	active, err := activeBackup(ctx, p.Home, params.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	var rec *enroll.Record
+	var prof *profile.Profile
+	if active != nil {
+		rec = active.Record
+		selected := active.Profile.ForAgent(rec.Name)
+		rec.ApplyEntryPorts(&selected)
+		prof = &selected
+	} else {
+		rec, err = porterenroll.ReadRecord(p.Home, params.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		if rec != nil {
+			prof, err = porterenroll.ReadProfile(p.Home, params.InstanceID)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	if rec == nil {
 		return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+params.InstanceID, "先运行 valise enroll <服务器> --accept")
@@ -47,10 +72,6 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 	if rec.Superseded != nil {
 		return nil, valise.New("instance_superseded", "实例 "+params.InstanceID+" 的目录已被实例 "+rec.Superseded.By+" 取代（操作 "+rec.Superseded.OpID+"）",
 			"封存 "+rec.Superseded.By+"；不再需要旧实例时用 valise old cleanup 清理")
-	}
-	prof, err := porterenroll.ReadProfile(p.Home, params.InstanceID)
-	if err != nil {
-		return nil, err
 	}
 	if prof.ProfileVersion != rec.ProfileVersion || prof.ID != rec.ProfileID {
 		return nil, valise.New("instance_profile_mismatch", "实例记录与接入时的 profile 不一致", "重新接入：valise enroll <服务器> --accept")
@@ -62,11 +83,6 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 	if len(recipients) == 0 {
 		return nil, valise.New("no_recipients", "服务器上还没有登记任何收件人公钥，无法加密", "在客户端运行 valise key register <服务器>")
 	}
-	unlock, err := p.Lock()
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
 	defer func() {
 		ent := AuditEntry{Time: time.Now().UTC(), Op: "seal", Instance: params.InstanceID, Initiator: initiator, Reason: params.Reason, Result: "ok"}
 		if err != nil {
@@ -78,6 +94,17 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 	}()
 
 	rpc.Report(ctx, vaultrpc.SealStageScan, 0, 0)
+	provenance := rec.Provenance
+	var runtimeRecord *vault.RuntimeRecord
+	var programVerified bool
+	if active == nil {
+		runtimeRecord, err = captureRuntime(ctx, p.Home, rec, start)
+	} else {
+		runtimeRecord, provenance, programVerified, err = captureActiveRuntime(ctx, p.Home, active, start)
+	}
+	if err != nil {
+		return nil, err
+	}
 	roots := make([]enroll.Root, 0, len(rec.Roots))
 	for id, path := range rec.Roots {
 		st, err := os.Stat(path)
@@ -93,8 +120,24 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		Unstable: []string{}, SQLite: []vault.SQLiteNote{}}
 	var items []porterenroll.Item
 	c := profile.NewClassifier(prof, rec.LocalOverrides)
-	nested := porterenroll.NestedInstances(e.For(prof), prof, params.InstanceID, rec.Roots[profile.StateRoot])
+	var nested []string
+	if active == nil {
+		nested = porterenroll.NestedInstances(e.For(prof), prof, params.InstanceID, rec.Roots[profile.StateRoot])
+	} else {
+		nested, err = activeNested(e, rec, prof)
+		if err != nil {
+			return nil, err
+		}
+	}
+	overlay, hidden, expected, err := activeProgramOverlay(ctx, p.Home, active, params.Tier, programVerified, c)
+	if err != nil {
+		return nil, err
+	}
+	nested = append(nested, hidden...)
 	porterenroll.Walk(roots, nested, c, func(it porterenroll.Item) {
+		if hiddenProgramPath(it.Abs, hidden) {
+			return
+		}
 		if it.SidecarOf != "" {
 			return // covered by the database's VACUUM INTO copy
 		}
@@ -109,6 +152,7 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 	}, func(root, rel string) {
 		rep.Warnings = append(rep.Warnings, "无法读取 "+root+":"+rel+"（权限不足），未封存")
 	})
+	items = append(items, overlay...)
 
 	// Preflight: room for the SQLite copies.
 	var dbBytes uint64
@@ -160,6 +204,23 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 	}
 	pack(0, true)
 	for _, it := range items {
+		if entry, ok := expected[it.Abs]; ok {
+			if !vault.InTier(params.Tier, it.Match.Category) {
+				continue
+			}
+			f, link, err := sealProgramFile(w, it, entry)
+			if err != nil {
+				return nil, err
+			}
+			if link != nil {
+				files.Symlinks = append(files.Symlinks, *link)
+			} else {
+				files.Files = append(files.Files, *f)
+				tally(f.Category, f.Size)
+				pack(f.Size, false)
+			}
+			continue
+		}
 		if it.Symlink {
 			// Symlinks are classified like files: only those whose
 			// category is in the tier are recorded (never followed).
@@ -202,7 +263,9 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 	}
 	pack(0, true)
 
-	if rec.Provenance.Git != nil && rec.Provenance.Git.Path != "" {
+	if active != nil && !active.Native && rec.Provenance.Git != nil {
+		rep.Warnings = append(rep.Warnings, "当前独立程序尚未适配 Git 改动记录；本次备份只保存所选数据范围")
+	} else if rec.Provenance.Git != nil && rec.Provenance.Git.Path != "" {
 		patch, perr := gitPatch(ctx, e, rec.Provenance.Git.Path)
 		switch {
 		case perr != nil:
@@ -218,13 +281,34 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 			rep.BodyPatch = true
 		}
 	}
+	if err := validateActiveBackup(ctx, p.Home, active, programVerified && params.Tier == vault.TierRaw); err != nil {
+		return nil, err
+	}
+	if active != nil && !active.Native && programVerified && params.Tier != vault.TierRaw {
+		if err := (activeview.Reader{Home: p.Home}).VerifyProgram(ctx, active); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			// Preserve readable data even if programme bytes changed during
+			// packing; do not preserve a now-stale source claim in its header.
+			runtimeRecord, _ = runtimeLayout(p.Home, rec.Roots, start)
+			runtimeRecord.Unresolved = []string{"active_program_unverified", "program_source_unverified", "runtime_dependencies_unverified"}
+			provenance, programVerified = enroll.Provenance{}, false
+		}
+	}
+	if active != nil && !active.Native && !programVerified {
+		rep.Warnings = append(rep.Warnings, "已保存所选数据，但当前程序来源尚未核实；这份备份仍可取回数据，完整重建需要补齐程序来源")
+	}
+	if err := validateActiveBackup(ctx, p.Home, active, false); err != nil {
+		return nil, err
+	}
 
 	rpc.Report(ctx, vaultrpc.SealStageCommit, 0, 0)
 	now := time.Now().UTC()
 	snap := vault.Snapshot{InstanceID: rec.InstanceID, Tier: params.Tier, CreatedAt: now,
 		Profile:    vault.ProfileRef{ID: prof.ID, Version: prof.ProfileVersion, Status: prof.Status},
-		ProfileDoc: prof, Provenance: rec.Provenance, LocalOverrides: rec.LocalOverrides, Roots: rec.Roots, SQLite: rep.SQLite,
-		Name: rec.Name, Env: rec.Env,
+		ProfileDoc: prof, Provenance: provenance, LocalOverrides: rec.LocalOverrides, Roots: rec.Roots, SQLite: rep.SQLite,
+		Name: rec.Name, Env: rec.Env, Runtime: runtimeRecord,
 		Notes: vault.Notes{Unstable: rep.Unstable, UnclassifiedCount: rep.UnclassifiedCount}}
 	meta, err := w.Commit(snap, files, vault.Meta{})
 	if err != nil {

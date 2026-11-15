@@ -15,6 +15,7 @@ import (
 
 	"valise/core/revive"
 	"valise/core/valise"
+	"valise/porter/internal/activationrecord"
 )
 
 // Store keeps journals under ~/.local/state/valise/journal.
@@ -46,6 +47,9 @@ func (s Store) Load(op string) (*revive.Journal, error) {
 	var j revive.Journal
 	if err := json.Unmarshal(b, &j); err != nil {
 		return nil, valise.New("journal_corrupt", "交换日志无法解析："+op, "不要手动改动相关目录，联系项目处理").WithDetail(err.Error())
+	}
+	if j.ManagedData != nil {
+		return activationrecord.LoadData(s.Home, op)
 	}
 	return &j, nil
 }
@@ -104,7 +108,13 @@ func (s Store) Finish(j *revive.Journal) error {
 	if err := os.MkdirAll(s.DoneDir(), 0o700); err != nil {
 		return err
 	}
-	return os.Rename(s.path(j.Plan.OpID), filepath.Join(s.DoneDir(), j.Plan.OpID+".json"))
+	if err := os.Rename(s.path(j.Plan.OpID), filepath.Join(s.DoneDir(), j.Plan.OpID+".json")); err != nil {
+		return err
+	}
+	if j.ManagedData != nil {
+		return syncDataDirs(s.Dir(), s.DoneDir())
+	}
+	return nil
 }
 
 // Pending lists unfinished journals.

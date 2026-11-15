@@ -1,6 +1,7 @@
 package install
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"valise/porter/internal/runtimeguard"
 
 	coreinstall "valise/core/install"
 	"valise/core/valise"
@@ -57,6 +59,9 @@ func procStart(pid int) string {
 // RunTracked runs argv as Exec does, but as porter's child, recorded while
 // it runs. It returns the child's exit code.
 func RunTracked(e *porterenroll.Env, argv []string) (int, error) {
+	if err := runtimeguard.Check(context.Background(), e.Home, runtimeguard.Scope{All: true}); err != nil {
+		return 1, err
+	}
 	bin, out, err := resolve(e, argv)
 	if err != nil {
 		return 127, err
@@ -64,26 +69,43 @@ func RunTracked(e *porterenroll.Env, argv []string) (int, error) {
 	cmd := exec.Command(bin, out[1:]...)
 	cmd.Env, cmd.Dir = e.Vars, e.Home
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return RunAcceptedTerminal(e.Home, cmd, out)
+}
+
+// RunAcceptedTerminal is used only by fixed accepted-instance controllers.
+// cmd already carries the actual mutation-lock FD and constrained arguments;
+// no RPC can submit a command or use this as a general execution bypass.
+func RunAcceptedTerminal(home string, cmd *exec.Cmd, display []string) (int, error) {
 	// The terminal's signals reach the child (same process group); porter
 	// catches them (ignoring would be inherited by the child) and stays to
 	// remove the record when the child exits, even after a hangup.
 	sigs := make(chan os.Signal, 4)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP, syscall.SIGTERM)
+	defer signal.Stop(sigs)
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		for range sigs {
+		for {
+			select {
+			case <-sigs:
+				// The terminal's process-group signal also reaches the child.
+				// Stay alive to wait and remove this exact session record.
+			case <-done:
+				return
+			}
 		}
 	}()
 	if err := cmd.Start(); err != nil {
 		return 127, err
 	}
-	rec := sessionRecord{Session: coreinstall.Session{PID: cmd.Process.Pid, Argv: out, StartedAt: time.Now().UTC()},
+	rec := sessionRecord{Session: coreinstall.Session{PID: cmd.Process.Pid, Argv: display, StartedAt: time.Now().UTC()},
 		Start: procStart(cmd.Process.Pid), ConnPID: os.Getppid()}
-	path := filepath.Join(SessionsDir(e.Home), strconv.Itoa(rec.PID)+".json")
-	if err := os.MkdirAll(SessionsDir(e.Home), 0o700); err == nil {
+	path := filepath.Join(SessionsDir(home), strconv.Itoa(rec.PID)+".json")
+	if err := os.MkdirAll(SessionsDir(home), 0o700); err == nil {
 		b, _ := json.Marshal(rec)
 		_ = os.WriteFile(path, b, 0o600)
 	}
-	err = cmd.Wait()
+	err := cmd.Wait()
 	_ = os.Remove(path)
 	var ee *exec.ExitError
 	switch {

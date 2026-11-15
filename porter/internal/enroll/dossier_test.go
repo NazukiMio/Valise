@@ -32,16 +32,22 @@ func TestDossier(t *testing.T) {
 
 	got, err := ReadRecord(home, "demo")
 	if err != nil || got == nil || got.Roots["state"] != "/h/.demo" || got.Service[0].Unit != "demo.service" {
-		t.Fatalf("not migrated: %+v %v", got, err)
+		t.Fatalf("old record not readable: %+v %v", got, err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "demo.legacy.json")); err != nil {
-		t.Fatal("legacy record not kept")
+	if _, err := os.Stat(filepath.Join(dir, "demo.json")); err != nil {
+		t.Fatal("query renamed legacy record")
+	}
+	if _, err := os.Stat(DossierPath(home, "demo")); !os.IsNotExist(err) {
+		t.Fatal("query materialized a dossier", err)
 	}
 
 	// Re-enrolling with the new profile, then a named agent.
 	old.ProfileVersion = 2
 	if _, err := WriteRecord(home, old, p); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "demo.legacy.json")); err != nil {
+		t.Fatal("explicit write did not retain legacy record")
 	}
 	bot := enroll.Record{InstanceID: "demo-bot", ProfileID: "demo", ProfileVersion: 2, Name: "bot", Env: map[string]string{"DEMO_HOME": "/h/.demo/profiles/bot"},
 		Roots: map[string]string{"state": "/h/.demo/profiles/bot"}, Service: []enroll.ServiceState{{Unit: "demo.service", Active: "active"}}}
@@ -98,5 +104,44 @@ func TestDossierMigrationPrefersDefault(t *testing.T) {
 	p, err := ReadProfile(home, "demo")
 	if err != nil || p.Service == nil {
 		t.Fatalf("installation copy lost the service: %+v %v", p, err)
+	}
+}
+
+func TestReadInstallationDoesNotMigrateAndRejectsAmbiguousOwner(t *testing.T) {
+	home := t.TempDir()
+	legacy := InstancesDir(home)
+	if err := os.MkdirAll(legacy, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r := enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": filepath.Join(home, ".demo")}}
+	p := profile.Profile{ID: "demo", ProfileVersion: 1}
+	rb, _ := json.Marshal(r)
+	pb, _ := json.Marshal(p)
+	for name, b := range map[string][]byte{"demo.json": rb, "demo.profile.json": pb} {
+		if err := os.WriteFile(filepath.Join(legacy, name), b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if d, _, err := ReadInstallation(home, "demo"); err != nil || d != nil {
+		t.Fatal("metadata collection migrated a legacy registration", err)
+	}
+	if _, err := os.Stat(filepath.Join(legacy, "demo.json")); err != nil {
+		t.Fatal("metadata collection renamed a legacy record")
+	}
+	if _, err := WriteRecord(home, r, p); err != nil {
+		t.Fatal(err)
+	}
+	d, _, err := ReadInstallation(home, "demo")
+	if err != nil || d == nil {
+		t.Fatal(err)
+	}
+	// One instance appearing in two dossiers cannot choose an origin based on
+	// directory iteration order. No source profile is read from an arbitrary id.
+	d.InstallID = "other"
+	if err := writeDossier(home, d); err != nil {
+		t.Fatal(err)
+	}
+	if d, _, err := ReadInstallation(home, "demo"); err == nil || d != nil {
+		t.Fatal("ambiguous installation silently picked a parent")
 	}
 }

@@ -5,6 +5,7 @@ package login
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -12,17 +13,18 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"valise/porter/internal/runtimeguard"
 
 	"valise/core/login"
 	"valise/core/valise"
 	porterenroll "valise/porter/internal/enroll"
-
-	"golang.org/x/sys/unix"
 )
 
 // Session is what login-run needs; it is written by login_prepare.
@@ -48,6 +50,9 @@ func badSession(id string) error {
 // Prepare expands the login argv for an enrolled instance and writes the
 // session. Nothing runs yet.
 func Prepare(e *porterenroll.Env, p login.PrepareParams) (*login.PrepareResult, error) {
+	if err := runtimeguard.CheckInstance(context.Background(), e.Home, p.InstanceID); err != nil {
+		return nil, err
+	}
 	rec, err := porterenroll.ReadRecord(e.Home, p.InstanceID)
 	if err != nil {
 		return nil, err
@@ -113,13 +118,21 @@ func load(home, id string) (*Session, error) {
 	return &s, nil
 }
 
-// Exec replaces this process with the session's login command, inheriting
-// the ssh PTY. BROWSER points at this porter's browser-shim. cols and rows,
-// when set, size the PTY like the user's terminal.
-func Exec(home, id, porterPath string, cols, rows int) error {
+// Run keeps porter and the mutation lock alive while the login owns the ssh
+// PTY. The child inherits a lock reference as well, so a lost connection cannot
+// immediately race preparation against a surviving login command.
+func Run(home, id, porterPath string, cols, rows int, lock *os.File) (int, error) {
 	s, err := load(home, id)
 	if err != nil {
-		return err
+		return 1, err
+	}
+	if lock == nil {
+		return 1, valise.New("login_lock_missing", "登录操作未取得运行环境互斥", "重新打开登录窗口后再试")
+	}
+	if s.InstanceID != "" {
+		if err := runtimeguard.CheckInstance(context.Background(), home, s.InstanceID); err != nil {
+			return 1, err
+		}
 	}
 	env := make([]string, 0, len(s.Env)+2)
 	for _, kv := range s.Env {
@@ -128,14 +141,25 @@ func Exec(home, id, porterPath string, cols, rows int) error {
 		}
 	}
 	env = append(env, "BROWSER="+porterPath+" browser-shim", login.SessionEnv+"="+id)
-	if err := os.Chdir(home); err != nil {
-		return err
+	PrepareTerminal(cols, rows)
+	if len(s.Argv) == 0 {
+		return 1, badSession(id)
 	}
-	saneTerminal(0)
-	if cols > 0 && rows > 0 && cols < 10000 && rows < 10000 {
-		unix.IoctlSetWinsize(0, unix.TIOCSWINSZ, &unix.Winsize{Col: uint16(cols), Row: uint16(rows)})
+	cmd := exec.Command(s.Argv[0], s.Argv[1:]...)
+	cmd.Dir, cmd.Env, cmd.ExtraFiles = home, env, []*os.File{lock}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	signals := make(chan os.Signal, 4)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	err = cmd.Run()
+	if err == nil {
+		return 0, nil
 	}
-	return syscall.Exec(s.Argv[0], s.Argv, env)
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode(), nil
+	}
+	return 1, err
 }
 
 // Shim records links a login command tried to open. Without a session it

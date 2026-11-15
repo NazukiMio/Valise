@@ -28,12 +28,18 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 	r.State = "running"
 	r.Stage = cp.StageSealing
 	r.Components[0].State = "running"
+	started := time.Now().UTC()
+	r.Components[0].StartedAt = &started
 	if err := s.persist(r); err != nil {
 		return err
 	}
 	fault.Hit(s.Home, "backup-after-running")
 	paths := seal.Paths{Home: s.Home}
-	rep, err := seal.SealPlanned(ctx, s.Env, paths, vaultrpc.SealParams{InstanceID: r.AgentRef.InstanceID, Tier: r.Plan.Scope.Tier, Reason: r.Request.Reason}, "planned")
+	tier := r.Plan.Scope.Tier
+	if r.Request.Selection.Tier != "" {
+		tier = r.Request.Selection.Tier
+	}
+	rep, err := seal.SealPlanned(ctx, s.Env, paths, vaultrpc.SealParams{InstanceID: r.AgentRef.InstanceID, Tier: tier, Reason: r.Request.Reason}, "planned")
 	if err != nil {
 		// A failed call can have crossed the snapshot publication boundary. Never
 		// retry it or claim no snapshot exists without fixed-executor evidence.
@@ -70,6 +76,9 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 	}
 	partial, cancelled := false, false
 	for _, copy := range r.Plan.ServerCopies {
+		if r.Request.Selection.SkipCopies {
+			copy.Enabled = new(false)
+		}
 		ref := copy.TargetRef
 		component := cp.BackupComponent{Kind: "server_copy", TargetRef: &ref, State: "skipped"}
 		if !cancelled && copy.Enabled != nil && *copy.Enabled && s.stop(r, cp.StageCopying) {
@@ -94,6 +103,8 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 				partial = true
 			case due:
 				component.State = "running"
+				at := time.Now().UTC()
+				component.StartedAt = &at
 				r.Stage = cp.StageCopying
 				r.StageTarget = &ref
 				r.Components = append(r.Components, component)
@@ -101,15 +112,14 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 					return err
 				}
 				_, copyErr := seal.Sync(ctx, s.Env, paths, ref.ID, "planned")
+				completed := time.Now().UTC()
+				component.CompletedAt = &completed
 				component.State = "succeeded"
 				if copyErr != nil {
 					component.State = "failed"
 					component.ErrorCode = "copy_failed"
 					component.FailureCause = stationsync.CauseOf(copyErr)
 					partial = true
-				} else {
-					at := time.Now().UTC()
-					component.CompletedAt = &at
 				}
 				r.Components[len(r.Components)-1] = component
 				if err := s.persist(r); err != nil {

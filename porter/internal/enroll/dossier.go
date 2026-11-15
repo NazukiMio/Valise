@@ -5,9 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
-	"time"
 
 	"valise/core/enroll"
 	"valise/core/profile"
@@ -98,14 +96,10 @@ func removeDossier(home, install string) error {
 	return nil
 }
 
-// allDossiers reads every dossier, first moving legacy instance records
-// (instances/<id>.json with <id>.profile.json) into them.
+// allDossiers reads only committed installation dossiers. Queries never import
+// legacy metadata; ReadRecord/ReadProfile/ListRecords provide a read-only view.
 func allDossiers(home string) ([]*enroll.Dossier, error) {
-	if err := migrateLegacy(home); err != nil {
-		return nil, err
-	}
 	names, _ := filepath.Glob(filepath.Join(DossiersDir(home), "*.json"))
-	sort.Strings(names)
 	var out []*enroll.Dossier
 	for _, n := range names {
 		if strings.HasSuffix(n, ".profile.json") {
@@ -124,12 +118,16 @@ func dossierOf(home, id string) (*enroll.Dossier, error) {
 	if err != nil {
 		return nil, err
 	}
+	var found *enroll.Dossier
 	for _, d := range ds {
 		if d.Agent(id) != nil {
-			return d, nil
+			if found != nil {
+				return nil, valise.New("installation_ambiguous", "这个 Agent 出现在多份接入档案中", "重新接入并核对它属于哪一份安装")
+			}
+			found = d
 		}
 	}
-	return nil, nil
+	return found, nil
 }
 
 // InstallOf is the installation holding agent id, "" when none.
@@ -137,74 +135,48 @@ func InstallOf(home, id string) string {
 	if d, err := dossierOf(home, id); err == nil && d != nil {
 		return d.InstallID
 	}
+	if v, err := legacyView(home); err == nil {
+		if d, _ := v.find(id); d != nil {
+			return d.InstallID
+		}
+	}
 	return ""
 }
 
-// migrateLegacy moves each legacy record into its installation's dossier
-// and renames the old files to <id>.legacy.json and <id>.legacy-profile.json
-// (kept, not deleted).
-func migrateLegacy(home string) error {
-	ents, err := os.ReadDir(InstancesDir(home))
+// ReadInstallation returns the saved installation dossier and its general
+// profile. Unlike ReadRecord/ReadProfile, this does not turn installation facts
+// into named-Agent capabilities or replace its deliberately empty provenance.
+func ReadInstallation(home, id string) (*enroll.Dossier, *profile.Profile, error) {
+	if err := enroll.ValidInstanceID(id); err != nil {
+		return nil, nil, err
+	}
+	// Do not invoke the legacy migration path here: runtime collection is
+	// metadata-only. Legacy records remain separate until an explicit mutation.
+	names, err := filepath.Glob(filepath.Join(DossiersDir(home), "*.json"))
 	if err != nil {
-		return nil
+		return nil, nil, err
 	}
-	dir := InstancesDir(home)
-	type legacy struct {
-		id string
-		r  enroll.Record
+	var d *enroll.Dossier
+	for _, name := range names {
+		if strings.HasSuffix(name, ".profile.json") {
+			continue
+		}
+		install := strings.TrimSuffix(filepath.Base(name), ".json")
+		candidate, err := readDossier(home, install)
+		if err != nil || candidate == nil || candidate.InstallID != install || enroll.ValidInstanceID(install) != nil || candidate.Agent(id) == nil {
+			continue
+		}
+		if d != nil {
+			return nil, nil, valise.New("installation_ambiguous", "这个 Agent 出现在多份接入档案中", "重新接入并核对它属于哪一份安装")
+		}
+		d = candidate
 	}
-	var all []legacy
-	for _, e := range ents {
-		id, ok := strings.CutSuffix(e.Name(), ".json")
-		if !ok || strings.Contains(id, ".") || enroll.ValidInstanceID(id) != nil {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(dir, id+".json"))
-		if err != nil {
-			continue
-		}
-		var r enroll.Record
-		if json.Unmarshal(b, &r) != nil || r.ProfileID == "" {
-			continue
-		}
-		all = append(all, legacy{id, r})
+	if d == nil {
+		return nil, nil, nil
 	}
-	// Default agents first: a named agent's legacy profile copy may lack
-	// the service, so the installation's copy comes from the default one.
-	sort.SliceStable(all, func(i, j int) bool { return all[i].r.Name == "" && all[j].r.Name != "" })
-	for _, l := range all {
-		id, r := l.id, l.r
-		pb, err := os.ReadFile(filepath.Join(dir, id+".profile.json"))
-		if err != nil {
-			continue
-		}
-		var p profile.Profile
-		if json.Unmarshal(pb, &p) != nil || p.ID != r.ProfileID {
-			continue
-		}
-		d, err := readDossier(home, p.ID)
-		if err != nil {
-			return err
-		}
-		if d == nil {
-			d = &enroll.Dossier{InstallID: p.ID}
-		}
-		if d.Agent(id) == nil {
-			// The newest profile version is the installation's.
-			if d.Version < p.ProfileVersion || len(d.Agents) == 0 || (r.Name == "" && d.Version == p.ProfileVersion) {
-				if err := writeDossierProfile(home, d.InstallID, p); err != nil {
-					return err
-				}
-			} else {
-				r.ProfileVersion = d.Version
-			}
-			d.Put(r, time.Now())
-			if err := writeDossier(home, d); err != nil {
-				return err
-			}
-		}
-		os.Rename(filepath.Join(dir, id+".json"), filepath.Join(dir, id+".legacy.json"))
-		os.Rename(filepath.Join(dir, id+".profile.json"), filepath.Join(dir, id+".legacy-profile.json"))
+	p, err := readDossierProfile(home, d.InstallID)
+	if err != nil {
+		return nil, nil, err
 	}
-	return nil
+	return d, p, nil
 }

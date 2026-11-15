@@ -38,6 +38,18 @@ func (r *Runner) Swap(ctx context.Context, op string) (*revive.SwapResult, error
 	if err != nil {
 		return nil, err
 	}
+	if j.Plan.TestOnly {
+		return nil, testOnlyError()
+	}
+	if j.ManagedData != nil {
+		return nil, managedDataError()
+	}
+	if err := guardLegacyPlan(ctx, r.Store, j.Plan); err != nil {
+		return nil, err
+	}
+	if err := checkDirectPolicy(ctx, r.Store, j.Plan); err != nil {
+		return nil, err
+	}
 	if j.State != revive.StatePlanned || !j.StageVerified {
 		return nil, valise.New("op_state", "暂存尚未校验通过，不能交换", "先完成暂存与校验")
 	}
@@ -86,6 +98,30 @@ func (r *Runner) Resume(ctx context.Context, p revive.ResumeParams) (*revive.Swa
 	if err != nil {
 		return nil, err
 	}
+	if j.ManagedData != nil {
+		return nil, managedDataError()
+	}
+	if err := guardLegacyPlan(ctx, r.Store, j.Plan); err != nil {
+		return nil, err
+	}
+
+	if j.Plan.TestOnly && p.Action != "discard" && p.Action != "back" {
+		return nil, testOnlyError()
+	}
+	if j.State == revive.StateRolledBack && p.Action == "back" {
+		if _, pending := os.Stat(r.Store.path(p.OpID)); pending == nil {
+			if j.Rollback != nil && j.Rollback.Problem == "rollback_journal_failed" {
+				j.Rollback.Problem = ""
+				if err := r.Store.Save(j); err != nil {
+					return nil, err
+				}
+			}
+			if err := r.Store.Finish(j); err != nil {
+				return nil, err
+			}
+			return &revive.SwapResult{OpID: p.OpID, State: j.State, Rollback: j.Rollback}, nil
+		}
+	}
 	if revive.Final(j.State) {
 		if p.Action == "continue" && j.Plan.Identity != nil && (j.State == revive.StateHealthy || j.State == revive.StateRestored) {
 			return r.advance(ctx, j)
@@ -94,6 +130,11 @@ func (r *Runner) Resume(ctx context.Context, p revive.ResumeParams) (*revive.Swa
 	}
 	switch p.Action {
 	case "continue":
+		if j.State == revive.StatePlanned {
+			if err := checkDirectPolicy(ctx, r.Store, j.Plan); err != nil {
+				return nil, err
+			}
+		}
 		if j.State == revive.StatePlanned && !j.StageVerified {
 			return nil, valise.New("op_state", "暂存没有校验通过，不能继续", "改用 --back 退回")
 		}
@@ -102,6 +143,9 @@ func (r *Runner) Resume(ctx context.Context, p revive.ResumeParams) (*revive.Swa
 		}
 		return r.advance(ctx, j)
 	case "back":
+		if j.Plan.TestOnly {
+			return r.discard(ctx, j)
+		}
 		return r.back(ctx, j, "用户选择退回")
 	case "discard":
 		return r.discard(ctx, j)
@@ -160,7 +204,7 @@ func (r *Runner) advance(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 			}
 			for _, jr := range j.Roots {
 				if jr.LiveExisted && !exists(jr.Prev) {
-					if err := os.Rename(jr.Live, jr.Prev); err != nil {
+					if err := renameData(j, jr.Live, jr.Prev); err != nil {
 						return fail(err)
 					}
 				}
@@ -228,6 +272,10 @@ func (r *Runner) advance(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 					return nil, e
 				}
 			}
+			if j.ManagedData != nil {
+				r.audit(j, "managed_data_placed")
+				return managedDataResult(j), nil
+			}
 			r.audit(j, "ok")
 			res.State = j.State
 			for _, jr := range j.Roots {
@@ -250,6 +298,12 @@ func (r *Runner) advance(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 
 // back undoes an operation according to how far it got.
 func (r *Runner) back(ctx context.Context, j *revive.Journal, why string) (*revive.SwapResult, error) {
+	// A crash or rename error may occur between two roots, before the next
+	// state is durable. Managed transactions reconcile each saved path even
+	// when the durable state still says STOPPED or LIVE_MOVED.
+	if j.ManagedData != nil && j.State != revive.StatePlanned {
+		return r.rollback(ctx, j, why)
+	}
 	switch j.State {
 	case revive.StatePlanned, revive.StateStopped:
 		// The live directories were never touched. The stage is kept and
@@ -275,6 +329,9 @@ func (r *Runner) discard(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 	if j.State != revive.StatePlanned {
 		return nil, valise.New("op_state", "这个操作已经开始切换，不能当作恢复测试丢弃", "用 --back 退回")
 	}
+	if err := r.discardEnvironmentTest(j); err != nil {
+		return nil, err
+	}
 	for _, jr := range j.Roots {
 		if jr.Stage != "" && jr.Stage != jr.Live && strings.HasPrefix(filepath.Base(jr.Stage), ".valise-") && exists(jr.Stage) {
 			if err := os.RemoveAll(jr.Stage); err != nil {
@@ -288,17 +345,27 @@ func (r *Runner) discard(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 // rollback is the failure path after the new state is in place
 // (docs/ARCHITECTURE.md section 8.2 step 5).
 func (r *Runner) rollback(ctx context.Context, j *revive.Journal, why string) (*revive.SwapResult, error) {
+	if j.ManagedData != nil {
+		if err := checkManagedLocations(j); err != nil {
+			return nil, err
+		}
+	}
 	if j.State != revive.StateRollingBack {
 		if err := r.set(j, revive.StateRollingBack); err != nil {
 			return nil, err
 		}
 	}
+	evidence := rollbackEvidence(j)
+	evidence.Problem = ""
 	if j.Plan.Unit != "" && unitExists(ctx, r.Env, j.Plan.Unit) {
-		StopUnit(ctx, r.Env, j.Plan.Unit)
+		if err := StopUnit(ctx, r.Env, j.Plan.Unit); err != nil {
+			evidence.Service = "failed"
+			return r.rollbackFailed(j, "rollback_stop_failed", "无法停止服务，旧目录还没有恢复", err)
+		}
 	}
 	for _, jr := range j.Roots {
 		if exists(jr.Live) && !exists(jr.Failed) && (exists(jr.Prev) || !jr.LiveExisted) {
-			if err := os.Rename(jr.Live, jr.Failed); err != nil {
+			if err := renameData(j, jr.Live, jr.Failed); err != nil {
 				return nil, err
 			}
 		}
@@ -316,7 +383,9 @@ func (r *Runner) rollback(ctx context.Context, j *revive.Journal, why string) (*
 			}
 		}
 		j.BodyMoves[i].Moved = false
-		r.Store.Save(j)
+		if err := r.Store.Save(j); err != nil {
+			return nil, err
+		}
 	}
 	for _, jr := range j.Roots {
 		if jr.LiveExisted && exists(jr.Prev) {
@@ -325,9 +394,21 @@ func (r *Runner) rollback(ctx context.Context, j *revive.Journal, why string) (*
 			}
 		}
 	}
+	evidence.Directories = "restored"
+	if err := r.Store.Save(j); err != nil {
+		return nil, err
+	}
 	// After the old directories are back: npm may live in a body inside them.
 	if j.NPMInstalled && j.NPMOldVersion != "" && j.NPMOldVersion != j.Plan.Body.Version {
-		r.npmInstall(ctx, j.Plan.Body.Package, j.NPMOldVersion, j.Plan.Body.Registry)
+		if err := r.npmInstall(ctx, j.Plan.Body.Package, j.NPMOldVersion, j.Plan.Body.Registry); err != nil {
+			evidence.Program = "failed"
+			return r.rollbackFailed(j, "rollback_program_failed", "旧目录已恢复，但原程序版本没有恢复", err)
+		}
+		evidence.Program = "restored"
+		j.NPMInstalled = false
+		if err := r.Store.Save(j); err != nil {
+			return nil, err
+		}
 	}
 	return r.finishBack(ctx, j, why)
 }
@@ -343,7 +424,7 @@ func (r *Runner) placeAt(j *revive.Journal, jr revive.JournalRoot, from string) 
 		for i := 2; exists(aside); i++ {
 			aside = sibling(jr.Live, fmt.Sprintf("intruder%d", i), j.Plan.OpID, jr.ID)
 		}
-		if err := os.Rename(jr.Live, aside); err != nil {
+		if err := renameData(j, jr.Live, aside); err != nil {
 			return err
 		}
 		j.Intruders = append(j.Intruders, aside)
@@ -351,7 +432,7 @@ func (r *Runner) placeAt(j *revive.Journal, jr revive.JournalRoot, from string) 
 			return err
 		}
 	}
-	if err := os.Rename(from, jr.Live); err != nil {
+	if err := renameData(j, from, jr.Live); err != nil {
 		return valise.New("swap_rename_failed", "无法把 "+from+" 放到 "+jr.Live, "不要手动改动这些目录；用 valise revive resume 重试").WithDetail(err.Error())
 	}
 	if exists(from) || !exists(jr.Live) {
@@ -361,13 +442,32 @@ func (r *Runner) placeAt(j *revive.Journal, jr revive.JournalRoot, from string) 
 }
 
 func (r *Runner) finishBack(ctx context.Context, j *revive.Journal, why string) (*revive.SwapResult, error) {
-	res := &revive.SwapResult{OpID: j.Plan.OpID, State: revive.StateRolledBack}
+	evidence := rollbackEvidence(j)
+	if evidence.Directories == "unknown" {
+		evidence.Directories = "restored"
+		if j.State == revive.StatePlanned || j.State == revive.StateStopped {
+			evidence.Directories = "unchanged"
+		}
+	}
+	evidence.Problem = ""
+	res := &revive.SwapResult{OpID: j.Plan.OpID, State: revive.StateRolledBack, Rollback: evidence}
 	if j.Plan.Unit != "" && j.ServiceWasActive {
-		if err := StartUnit(ctx, r.Env, j.Plan.Unit); err == nil {
-			_, ok := Health(ctx, r.Env, j.Plan.Profile, j.Plan.Unit, r.Timing)
-			if !ok {
-				why += "；退回后原实例的健康检查也没有通过"
+		if err := StartUnit(ctx, r.Env, j.Plan.Unit); err != nil {
+			evidence.Service = "failed"
+			if j.State != revive.StateRollingBack {
+				if e := r.set(j, revive.StateRollingBack); e != nil {
+					return nil, e
+				}
 			}
+			return r.rollbackFailed(j, "rollback_start_failed", "旧目录已恢复，但原服务没有启动", err)
+		}
+		evidence.Service = "started"
+		if _, ok := Health(ctx, r.Env, j.Plan.Profile, j.Plan.Unit, r.Timing); ok {
+			evidence.Health = "passed"
+		} else {
+			evidence.Health = "failed"
+			evidence.Problem = "rollback_health_failed"
+			why += "；旧目录已恢复，原服务健康检查未通过"
 		}
 	}
 	if j.Plan.Unit != "" {
@@ -376,7 +476,9 @@ func (r *Runner) finishBack(ctx context.Context, j *revive.Journal, why string) 
 	if err := r.set(j, revive.StateRolledBack); err != nil {
 		return nil, err
 	}
-	r.Store.Finish(j)
+	if err := r.Store.Finish(j); err != nil {
+		return r.rollbackFailed(j, "rollback_journal_failed", "旧目录已恢复，但操作记录尚未收尾", err)
+	}
 	r.audit(j, "rolled_back")
 	res.Message = "已退回到交换前的状态：" + why
 	for _, jr := range j.Roots {
@@ -477,10 +579,7 @@ func (r *Runner) switchBody(ctx context.Context, j *revive.Journal) error {
 }
 
 func (r *Runner) npmInstall(ctx context.Context, pkg, version, registry string) error {
-	args := []string{"npm", "install", "-g", "--no-fund", "--no-audit", pkg + "@" + version}
-	if registry != "" {
-		args = append(args, "--registry", registry)
-	}
+	args := revive.NPMInstallArgv(pkg, version, registry)
 	out, err := r.Env.Run(ctx, npmTimeout, "", args...)
 	if err != nil || out.Code != 0 {
 		detail := ""

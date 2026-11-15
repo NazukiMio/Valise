@@ -207,6 +207,11 @@ func TestCopyFailureKeepsSnapshotAndMinimumInterval(t *testing.T) {
 	if r.State != "partial" || r.Snapshot == nil || len(r.Components) != 2 || r.Components[1].State != "failed" || r.Components[1].FailureCause != "other" {
 		t.Fatalf("partial %+v", r)
 	}
+	for _, comp := range r.Components {
+		if comp.StartedAt == nil || comp.CompletedAt == nil || comp.CompletedAt.Before(*comp.StartedAt) {
+			t.Fatalf("missing actual start/end for completed component: %+v", comp)
+		}
+	}
 	// A prior successful copy throttles the next accepted backup. No real SSH
 	// command is executed: this fixture records the fixed executor's evidence.
 	at := time.Now().UTC()
