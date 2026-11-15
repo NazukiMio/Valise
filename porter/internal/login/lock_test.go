@@ -3,15 +3,10 @@ package login
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 
-	"valise/core/enroll"
-	"valise/core/environment"
-	"valise/core/profile"
 	porterenroll "valise/porter/internal/enroll"
-	"valise/porter/internal/environments"
 )
 
 func TestLoginLockGuest(t *testing.T) {
@@ -58,35 +53,5 @@ func TestLoginRunRetainsAndInheritsMutationLock(t *testing.T) {
 	}
 	if _, err := Run(home, s.Session, exe, 0, 0, nil); err == nil {
 		t.Fatal("login ran without mutation lock")
-	}
-}
-
-func TestPreparedLoginRechecksOwnershipBeforeExecution(t *testing.T) {
-	home := t.TempDir()
-	if err := os.Chmod(home, 0700); err != nil {
-		t.Fatal(err)
-	}
-	p := profile.Profile{ID: "demo", ProfileVersion: 1}
-	_, agent, err := porterenroll.AcceptRecord(home, enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": filepath.Join(home, "state")}}, p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e := &porterenroll.Env{Home: home, Vars: []string{"HOME=" + home}}
-	s, err := write(e, "demo", "fixture", []string{"/nonexistent/old-program"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = (environments.Store{Home: home}).Update(agent.Ref, 0, func(environment.Registry) (environment.Registry, error) { return environment.New(agent.Ref) })
-	if err != nil {
-		t.Fatal(err)
-	}
-	lock, err := os.CreateTemp(home, "lock-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer lock.Close()
-	_, err = Run(home, s.Session, "/nonexistent/porter", 0, 0, lock)
-	if err == nil || !strings.Contains(err.Error(), "environment_in_use") {
-		t.Fatal("old login session ran after environment was claimed", err)
 	}
 }

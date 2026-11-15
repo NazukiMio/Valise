@@ -14,11 +14,9 @@ import (
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
-	"valise/porter/internal/activeview"
 	porterenroll "valise/porter/internal/enroll"
 	porteridentity "valise/porter/internal/identity"
 	porterinstall "valise/porter/internal/install"
-	"valise/porter/internal/runtimeguard"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/timer"
 )
@@ -98,15 +96,8 @@ var methods = map[string]handler{
 			// identity/2: the same read-only binding identity_get returns.
 			b := porteridentity.ListBinding(s.cfg.Home, r.InstanceID)
 			sum.Identity = &b
-			if r.Superseded == nil && b.Agent != nil {
-				if current, units, entries := (activeview.Reader{Home: s.cfg.Home}).Summary(ctx, b.Agent.Ref); current != nil {
-					sum.Runtime, sum.Service, sum.Entries = current, units, entries
-				}
-			}
-			if r.Superseded == nil && sum.Runtime == nil {
-				if err := runtimeguard.CheckInstance(ctx, s.cfg.Home, r.InstanceID); err != nil {
-					sum.Runtime = &enroll.RuntimeState{IssueCode: "environment_binding_unverified"}
-				} else if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
+			if r.Superseded == nil {
+				if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
 					sum.Service, sum.Entries = porterenroll.Live(ctx, s.loginEnv(ctx), p)
 				}
 			}

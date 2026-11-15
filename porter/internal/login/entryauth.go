@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -14,8 +13,6 @@ import (
 	"strings"
 	"time"
 	"valise/core/profile"
-	"valise/porter/internal/activeexec"
-	"valise/porter/internal/runtimeguard"
 
 	"valise/core/login"
 	"valise/core/valise"
@@ -35,30 +32,9 @@ func EntryAuth(ctx context.Context, e *porterenroll.Env, home string, p login.En
 }
 
 // EntryAuthWithLock is called by the RPC handler holding the existing server
-// mutation lock. Its FD outlives the private namespace if porter disconnects.
+// mutation lock.
 func EntryAuthWithLock(ctx context.Context, e *porterenroll.Env, home string, p login.EntryAuthParams, lock *os.File) (*login.EntryAuthResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, entryAuthTimeout)
-	defer cancel()
-	cmd, accepted, err := (activeexec.Controller{Home: home}).Entry(ctx, p.InstanceID, p.Entry, lock)
-	if err == nil {
-		var output tokenOutput
-		cmd.Stdout, cmd.Stderr = &output, io.Discard
-		err := cmd.Run()
-		if err != nil {
-			reason := "当前环境的取令牌命令未完成"
-			if cmd.ProcessState != nil && ctx.Err() == nil {
-				reason = fmt.Sprintf("当前环境的取令牌命令失败（退出码 %d）", cmd.ProcessState.ExitCode())
-			}
-			return nil, valise.New("entry_auth_failed", reason, "重新检查这个 Agent 后再打开管理页；也可以使用它的原生界面")
-		}
-		return entrySuffix(p, accepted, output.Bytes())
-	}
-	if !errors.Is(err, activeexec.ErrUnmanaged) {
-		return nil, err
-	}
-	if err := runtimeguard.CheckInstance(ctx, home, p.InstanceID); err != nil {
-		return nil, err
-	}
+	_ = lock
 	rec, err := porterenroll.ReadRecord(home, p.InstanceID)
 	if err != nil {
 		return nil, err

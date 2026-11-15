@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"valise/porter/internal/runtimeguard"
 
 	"valise/core/agentkit"
 	"valise/core/valise"
@@ -91,9 +90,6 @@ func ToolsCheck(ctx context.Context, e *porterenroll.Env, home string, p agentki
 
 // ToolBegin checks that name may be written with content sha.
 func ToolBegin(home, name, sha string) error {
-	if err := runtimeguard.Check(context.Background(), home, runtimeguard.Scope{Paths: []string{toolPath(home, name)}}); err != nil {
-		return err
-	}
 	if !toolNameRe.MatchString(name) || !toolSHARe.MatchString(sha) {
 		return valise.New("kit_tool_invalid", "工具名或 SHA-256 无效", "使用 Valise 资料包里的工具")
 	}
@@ -111,9 +107,6 @@ func ToolBegin(home, name, sha string) error {
 
 // ToolPut writes r to ~/.local/bin/name if its SHA-256 is sha.
 func ToolPut(home, name, sha string, r io.Reader) error {
-	if err := runtimeguard.Check(context.Background(), home, runtimeguard.Scope{Paths: []string{toolPath(home, name)}}); err != nil {
-		return err
-	}
 	if err := ToolBegin(home, name, sha); err != nil {
 		return err
 	}
@@ -157,9 +150,6 @@ func ToolPut(home, name, sha string, r io.Reader) error {
 // ToolRemove deletes ~/.local/bin/name when Valise put it there and it is
 // unchanged. It runs only on the user's explicit command.
 func ToolRemove(home, name string) error {
-	if err := runtimeguard.Check(context.Background(), home, runtimeguard.Scope{Paths: []string{toolPath(home, name)}}); err != nil {
-		return err
-	}
 	if !toolNameRe.MatchString(name) {
 		return valise.New("kit_tool_invalid", "工具名无效", "")
 	}

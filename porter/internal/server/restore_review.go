@@ -33,12 +33,12 @@ func restoreReview(s *session, op string) (*revive.ReviewResult, error) {
 			}
 		}
 	}
-	available := porterrevive.LegacyAvailable(context.Background(), store, j)
+	available := !j.Plan.TestOnly && (!revive.Final(j.State) || j.State == revive.StateRolledBack)
 	if !r.Complete && available {
 		if !revive.Final(j.State) || j.State == revive.StateRolledBack {
 			r.Actions = append(r.Actions, "back")
 		}
-		if porterrevive.LegacyCanContinue(context.Background(), store, j) && (!j.Plan.TestOnly && (j.Plan.Mode != revive.ModeMigrate && j.State != revive.StateRollingBack && j.State != revive.StateRolledBack && (j.State != revive.StatePlanned || j.StageVerified && j.ManifestSaved)) || !j.Plan.TestOnly && revive.Final(j.State) && j.State != revive.StateRolledBack) {
+		if (j.Plan.Mode != revive.ModeMigrate && j.State != revive.StateRollingBack && j.State != revive.StateRolledBack && (j.State != revive.StatePlanned || j.StageVerified && j.ManifestSaved)) || (revive.Final(j.State) && j.State != revive.StateRolledBack) {
 			r.Actions = append(r.Actions, "continue")
 		}
 	}

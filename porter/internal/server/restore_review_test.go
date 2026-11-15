@@ -75,20 +75,3 @@ func TestRestoreReviewRollbackOffersOnlyBackUntilArchived(t *testing.T) {
 		}
 	}
 }
-
-func TestManagedDataJournalOffersNoOrdinaryRestoreBranches(t *testing.T) {
-	home := t.TempDir()
-	store := porterrevive.Store{Home: home}
-	s := &session{cfg: Config{Home: home, Tier: rpc.TierAdmin}, owner: true}
-	for _, state := range []string{revive.StatePlanned, revive.StateRestored, revive.StateRollingBack} {
-		op := revive.NewOpID(time.Now())
-		j := &revive.Journal{ManagedData: &revive.ManagedDataRef{}, Plan: revive.Plan{OpID: op, Mode: revive.ModeRollback}, State: state, StageVerified: true, ManifestSaved: true}
-		if err := store.Save(j); err != nil {
-			t.Fatal(err)
-		}
-		r, err := restoreReview(s, op)
-		if err != nil || r.Complete || len(r.Actions) != 0 {
-			t.Fatal("managed data exposed generic recovery action", r, err)
-		}
-	}
-}

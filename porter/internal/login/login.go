@@ -5,7 +5,6 @@ package login
 
 import (
 	"bufio"
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -20,7 +19,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"valise/porter/internal/runtimeguard"
 
 	"valise/core/login"
 	"valise/core/valise"
@@ -50,9 +48,6 @@ func badSession(id string) error {
 // Prepare expands the login argv for an enrolled instance and writes the
 // session. Nothing runs yet.
 func Prepare(e *porterenroll.Env, p login.PrepareParams) (*login.PrepareResult, error) {
-	if err := runtimeguard.CheckInstance(context.Background(), e.Home, p.InstanceID); err != nil {
-		return nil, err
-	}
 	rec, err := porterenroll.ReadRecord(e.Home, p.InstanceID)
 	if err != nil {
 		return nil, err
@@ -128,11 +123,6 @@ func Run(home, id, porterPath string, cols, rows int, lock *os.File) (int, error
 	}
 	if lock == nil {
 		return 1, valise.New("login_lock_missing", "登录操作未取得运行环境互斥", "重新打开登录窗口后再试")
-	}
-	if s.InstanceID != "" {
-		if err := runtimeguard.CheckInstance(context.Background(), home, s.InstanceID); err != nil {
-			return 1, err
-		}
 	}
 	env := make([]string, 0, len(s.Env)+2)
 	for _, kv := range s.Env {

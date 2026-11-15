@@ -11,7 +11,6 @@ import (
 	"valise/core/enroll"
 	"valise/core/profile"
 	"valise/core/valise"
-	"valise/porter/internal/runtimeguard"
 )
 
 // InstancesDir is ~/.config/valise/instances.
@@ -115,9 +114,6 @@ func ReadProfile(home, id string) (*profile.Profile, error) {
 // profile's own port stays the default; setting it back removes the
 // override.
 func SetEntryPort(home, id, entry string, port int) (map[string]int, error) {
-	if err := runtimeguard.CheckInstance(context.Background(), home, id); err != nil {
-		return nil, err
-	}
 	if port < 1 || port > 65535 {
 		return nil, valise.New("entry_port_invalid", "端口必须在 1 到 65535 之间", "")
 	}
@@ -213,9 +209,6 @@ func Live(ctx context.Context, e *Env, p *profile.Profile) ([]enroll.ServiceStat
 // installation's dossier (written atomically, 0600). It returns the
 // dossier's path.
 func WriteRecord(home string, r enroll.Record, p profile.Profile) (string, error) {
-	if err := runtimeguard.CheckRecord(context.Background(), home, r, &p); err != nil {
-		return "", err
-	}
 	if err := enroll.ValidInstanceID(r.InstanceID); err != nil {
 		return "", valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
 	}
@@ -317,9 +310,6 @@ func ListRecords(home string) ([]enroll.Record, error) {
 // MarkSuperseded records that an operation replaced the instance's
 // directories. The agent is kept; only `valise old cleanup` removes it.
 func MarkSuperseded(home, id string, s enroll.Supersession) error {
-	if err := runtimeguard.CheckInstance(context.Background(), home, id); err != nil {
-		return err
-	}
 	if err := materializeLegacy(home, id); err != nil {
 		return err
 	}
@@ -335,9 +325,6 @@ func MarkSuperseded(home, id string, s enroll.Supersession) error {
 // profile copy go with the last agent). It runs only on the user's
 // explicit `valise old cleanup`.
 func RemoveRecord(home, id string) error {
-	if err := runtimeguard.CheckInstance(context.Background(), home, id); err != nil {
-		return err
-	}
 	if err := enroll.ValidInstanceID(id); err != nil {
 		return valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
 	}

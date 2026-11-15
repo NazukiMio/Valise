@@ -12,7 +12,7 @@ import (
 
 func rollbackWorld(t *testing.T) (*world, *revive.Journal) {
 	t.Helper()
-	w := newDirectWorld(t)
+	w := newWorld(t)
 	p := w.plan()
 	w.stage(t, p, snapshot)
 	j, err := w.r.Store.Load(p.OpID)

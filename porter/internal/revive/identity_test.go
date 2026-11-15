@@ -153,7 +153,6 @@ func TestRollbackKeepsGenerationAndLegacyStaysUnbound(t *testing.T) {
 	p := w.plan()
 	p.SnapshotID = "s_fixture"
 	p.Identity = &identity.RecoveryContext{Mode: revive.ModeRollback, SourceSnapshot: identity.SnapshotRef{VaultID: "v_fixture", SnapshotID: "s_fixture"}}
-	allowDirectRecord(t, w, rec, w.p)
 	w.swapWith(t, p, snapshot, "")
 	b, _ := identitystore.Read(w.home, "demo")
 	if b.Agent == nil || b.Agent.Ref != accepted.Ref {

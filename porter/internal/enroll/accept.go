@@ -1,14 +1,12 @@
 package enroll
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"time"
-	"valise/porter/internal/runtimeguard"
 
 	"valise/core/enroll"
 	model "valise/core/identity"
@@ -20,9 +18,6 @@ import (
 // AcceptRecord commits explicit user acceptance with its independent identity.
 // Ordinary WriteRecord calls (including recovery facts) do not create identities.
 func AcceptRecord(home string, r enroll.Record, p profile.Profile) (path string, agent *model.Agent, err error) {
-	if err := runtimeguard.CheckRecord(context.Background(), home, r, &p); err != nil {
-		return "", nil, err
-	}
 	if e := enroll.ValidInstanceID(r.InstanceID); e != nil {
 		return "", nil, e
 	}

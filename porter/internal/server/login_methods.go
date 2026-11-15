@@ -10,7 +10,7 @@ import (
 	"valise/core/install"
 	"valise/core/login"
 	"valise/core/vaultrpc"
-	"valise/porter/internal/activeexec"
+	porterinstall "valise/porter/internal/install"
 	porterlogin "valise/porter/internal/login"
 	"valise/porter/internal/seal"
 )
@@ -21,7 +21,7 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		return activeexec.Info(s.cfg.Home, p.InstanceID)
+		return porterinstall.NativeInfo(s.cfg.Home, p.InstanceID)
 	}
 	methods[login.MethodPrepare] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[login.PrepareParams](raw)

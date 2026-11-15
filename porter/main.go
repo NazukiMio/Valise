@@ -19,7 +19,6 @@ import (
 	_ "time/tzdata" // period time zones (docs/VAULT_FORMAT.md 10.2) on servers without zoneinfo
 	"valise/porter/internal/recovery"
 
-	"valise/core/environment"
 	"valise/core/identity"
 	coreinstall "valise/core/install"
 	"valise/core/login"
@@ -28,12 +27,10 @@ import (
 	corerevive "valise/core/revive"
 	"valise/core/rpc"
 	"valise/core/vaultrpc"
-	"valise/porter/internal/activeexec"
 	"valise/porter/internal/backuprun"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/forced"
 	porterinstall "valise/porter/internal/install"
-	"valise/porter/internal/isolated"
 	"valise/porter/internal/kit"
 	porterlogin "valise/porter/internal/login"
 	"valise/porter/internal/mcp"
@@ -79,14 +76,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 	switch args[0] {
-	case "environment-probe":
-		// Internal namespace-only entry. The daily forced command has no
-		// corresponding allowed request, and this is not an RPC method.
-		if len(args) != 1 || isolated.ProbeGuest(stdout) != nil {
-			fmt.Fprintln(stderr, "isolated gateway probe unavailable")
-			return 1
-		}
-		return 0
 	case "version":
 		return runVersion(args[1:], stdout, stderr)
 	case "rpc":
@@ -109,7 +98,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		defer unlock()
-		cmd, display, err := (activeexec.Controller{Home: home}).Native(context.Background(), args[2], lock)
+		cmd, display, err := porterinstall.NativeCommand(context.Background(), home, args[2], lock)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
@@ -518,7 +507,7 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 	info := rpc.VersionInfo{
 		Name: "valise-porter", Version: version, Protocol: rpc.ProtocolVersion,
 		OS: runtime.GOOS, Arch: runtime.GOARCH, SelfSHA256: sum,
-		Capabilities: []string{identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.BackupCapability, protection.BackupCapabilityV2, protection.BackupCapabilityV3, sysfix.Capability, vaultrpc.JourneyCapability, vaultrpc.CopyCheckCapability, vaultrpc.CopyVerifyCapability, vaultrpc.CloudCapability, vaultrpc.CloudFormCapability, identity.LostSourceCapability, corerevive.BodyDirsCapability, corerevive.ReviewCapability, environment.SettingsCapability, environment.PlanCapability, coreinstall.NativeCapability},
+		Capabilities: []string{identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.BackupCapability, protection.BackupCapabilityV2, protection.BackupCapabilityV3, sysfix.Capability, vaultrpc.JourneyCapability, vaultrpc.CopyCheckCapability, vaultrpc.CopyVerifyCapability, vaultrpc.CloudCapability, vaultrpc.CloudFormCapability, identity.LostSourceCapability, corerevive.BodyDirsCapability, corerevive.ReviewCapability, coreinstall.NativeCapability},
 	}
 	if err := json.NewEncoder(stdout).Encode(info); err != nil {
 		return 1

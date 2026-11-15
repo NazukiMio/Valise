@@ -1,7 +1,6 @@
 package kit
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -10,7 +9,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"valise/porter/internal/runtimeguard"
 
 	"valise/core/agentkit"
 	"valise/core/enroll"
@@ -155,9 +153,6 @@ func checkItem(rec *enroll.Record, p *profile.Profile, cls *profile.Classifier, 
 // instance record's local_overrides. A demotion is accepted only from
 // acceptDemotions.
 func Decide(home string, d agentkit.DecideParams) (*agentkit.DecideResult, error) {
-	if err := runtimeguard.CheckInstance(context.Background(), home, d.InstanceID); err != nil {
-		return nil, err
-	}
 	rec, err := porterenroll.ReadRecord(home, d.InstanceID)
 	if err != nil {
 		return nil, err

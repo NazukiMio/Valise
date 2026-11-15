@@ -1,7 +1,6 @@
 package enroll
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,7 +9,6 @@ import (
 
 	"valise/core/enroll"
 	"valise/core/valise"
-	"valise/porter/internal/runtimeguard"
 )
 
 // materializeLegacy is called only by existing explicit write operations,
@@ -58,9 +56,6 @@ func materializeLegacy(home, id string) error {
 		}
 		r := *legacy.Record(a.InstanceID)
 		r.ProfileVersion = general.ProfileVersion
-		if err := runtimeguard.CheckRecord(context.Background(), home, r, general); err != nil {
-			return err
-		}
 		imports = append(imports, r)
 	}
 	// Check the complete conversion scope before its first write. In particular,

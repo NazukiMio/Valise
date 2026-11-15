@@ -21,7 +21,6 @@ import (
 	_ "modernc.org/sqlite"
 
 	"valise/core/enroll"
-	"valise/core/environment"
 	"valise/core/profile"
 	"valise/core/revive"
 	"valise/core/valise"
@@ -187,23 +186,23 @@ func swapRoots(p revive.Plan) []revive.RootPlan {
 	return out
 }
 
+func testOnlyError() error {
+	return valise.New("test_only", "这是备份测试，不能替换当前实例或启停原服务", "测试结束后查看结果；需要恢复时请另外发起恢复")
+}
+
+func validateTestPlan(p revive.Plan) error {
+	if p.TestOnly && (p.Mode != revive.ModeRollback || p.Carry || p.Body.Action != revive.BodyKeep || len(p.Body.Dirs) != 0 ||
+		p.Unit != "" || p.InstallService || p.Identity != nil || p.Record != nil || len(p.Keep) != 0 || len(p.Supersedes) != 0) {
+		return testOnlyError()
+	}
+	return nil
+}
+
 // StageBegin validates the plan, writes the PLANNED journal and creates the
 // stage directories next to the live ones.
 func StageBegin(ctx context.Context, e *porterenroll.Env, s Store, p revive.Plan) (*revive.Journal, error) {
-	return stageBegin(ctx, e, s, p, nil)
-}
-
-func stageBegin(ctx context.Context, e *porterenroll.Env, s Store, p revive.Plan, managed *revive.ManagedDataRef, claim ...func(string, revive.ManagedRoot) error) (*revive.Journal, error) {
 	if err := validateTestPlan(p); err != nil {
 		return nil, err
-	}
-	if managed == nil {
-		if err := guardLegacyPlan(ctx, s, p); err != nil {
-			return nil, err
-		}
-		if err := checkDirectPolicy(ctx, s, p); err != nil {
-			return nil, err
-		}
 	}
 
 	if !revive.ValidOpID(p.OpID) {
@@ -227,7 +226,7 @@ func stageBegin(ctx context.Context, e *porterenroll.Env, s Store, p revive.Plan
 				"先处理它：valise revive resume <服务器> "+j.Plan.OpID+" --continue 或 --back")
 		}
 	}
-	j := &revive.Journal{Plan: p, ManagedData: managed}
+	j := &revive.Journal{Plan: p}
 	for _, r := range swapRoots(p) {
 		if !filepath.IsAbs(r.Path) || filepath.Clean(r.Path) != r.Path || r.Path == "/" || r.Path == e.Home {
 			return nil, valise.New("root_invalid", "目标路径无效："+r.Path, "检查 --root 参数")
@@ -253,24 +252,6 @@ func stageBegin(ctx context.Context, e *porterenroll.Env, s Store, p revive.Plan
 		if err := os.Mkdir(jr.Stage, 0o700); err != nil {
 			return nil, valise.New("stage_exists", "无法创建暂存目录 "+jr.Stage, "检查是否有残留的同名目录").WithDetail(err.Error())
 		}
-		if managed != nil {
-			identity, err := managedRootIdentity(jr.ID, jr.Stage)
-			if err != nil {
-				return nil, err
-			}
-			managed.CandidateRoots = append(managed.CandidateRoots, identity)
-			if len(claim) > 1 {
-				return nil, managedDataError()
-			}
-			if len(claim) == 1 && claim[0] != nil {
-				if err := claim[0](jr.ID, identity); err != nil {
-					return nil, err
-				}
-			}
-		}
-	}
-	if err := createLogicalStageRoots(j); err != nil {
-		return nil, err
 	}
 	if err := s.Set(j, revive.StatePlanned); err != nil {
 		return nil, err
@@ -340,10 +321,7 @@ func StageWrite(s Store, op string, r io.Reader) (files int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := guardStage(context.Background(), s, j); err != nil {
-		return 0, err
-	}
-	if j.State != revive.StatePlanned || j.StageVerified || j.EnvironmentTest != nil {
+	if j.State != revive.StatePlanned || j.StageVerified {
 		return 0, errors.New("stage is not open for writing")
 	}
 	tr := tar.NewReader(r)
@@ -405,18 +383,8 @@ func StageVerify(s Store, p revive.StageVerifyParams) (*revive.StageVerifyResult
 	if err != nil {
 		return nil, err
 	}
-	if j.ManagedData == nil {
-		if err := guardLegacyPlan(context.Background(), s, j.Plan); err != nil {
-			return nil, err
-		}
-	} else if err := checkManagedData(s, j, environment.Building, environment.Prepared, environment.OriginalDown); err != nil {
-		return nil, err
-	}
-	if j.State != revive.StatePlanned || j.EnvironmentTest != nil {
+	if j.State != revive.StatePlanned {
 		return nil, valise.New("op_state", "操作已经越过暂存阶段", "用 valise revive resume 处理")
-	}
-	if j.ManagedData != nil && !managedManifestMatches(j, p.Manifest) {
-		return nil, managedDataError()
 	}
 	res := &revive.StageVerifyResult{Problems: []string{}}
 	want := map[string]bool{}

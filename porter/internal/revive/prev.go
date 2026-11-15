@@ -1,7 +1,6 @@
 package revive
 
 import (
-	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 	"valise/core/revive"
 	"valise/core/valise"
 	porterenroll "valise/porter/internal/enroll"
-	"valise/porter/internal/runtimeguard"
 )
 
 // leftovers are the directories an operation left next to live roots.
@@ -37,9 +35,6 @@ func PrevList(s Store) (*revive.PrevListResult, error) {
 	}
 	res := &revive.PrevListResult{Entries: []revive.PrevEntry{}}
 	for _, j := range done {
-		if j.ManagedData != nil {
-			continue // Parent transaction owns retention and cleanup.
-		}
 		res.Entries = append(res.Entries, entries(j)...)
 	}
 	return res, nil
@@ -91,9 +86,6 @@ func OldList(s Store) (*revive.OldListResult, error) {
 // operation kept, then its record and profile copy. It runs only on the
 // user's explicit `valise old cleanup`; vault snapshots are not touched.
 func OldCleanup(s Store, id string) ([]string, error) {
-	if err := runtimeguard.CheckInstance(context.Background(), s.Home, id); err != nil {
-		return nil, err
-	}
 	rec, err := porterenroll.ReadRecord(s.Home, id)
 	if err != nil {
 		return nil, err
@@ -134,15 +126,6 @@ func Finished(s Store, op string) (time.Time, error) {
 func PrevDrop(s Store, op string) ([]string, error) {
 	j, err := s.Load(op)
 	if err != nil {
-		return nil, err
-	}
-	if j.ManagedData != nil {
-		return nil, managedDataError()
-	}
-	if err := guardLegacyPlan(context.Background(), s, j.Plan); err != nil {
-		return nil, err
-	}
-	if err := runtimeguard.Check(context.Background(), s.Home, runtimeguard.Scope{Paths: leftovers(j)}); err != nil {
 		return nil, err
 	}
 

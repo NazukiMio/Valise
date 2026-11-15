@@ -1,7 +1,6 @@
 package install
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -12,7 +11,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"valise/porter/internal/runtimeguard"
 
 	coreinstall "valise/core/install"
 	"valise/core/valise"
@@ -59,9 +57,6 @@ func procStart(pid int) string {
 // RunTracked runs argv as Exec does, but as porter's child, recorded while
 // it runs. It returns the child's exit code.
 func RunTracked(e *porterenroll.Env, argv []string) (int, error) {
-	if err := runtimeguard.Check(context.Background(), e.Home, runtimeguard.Scope{All: true}); err != nil {
-		return 1, err
-	}
 	bin, out, err := resolve(e, argv)
 	if err != nil {
 		return 127, err

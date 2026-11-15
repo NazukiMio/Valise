@@ -8,7 +8,6 @@ import (
 
 	"valise/core/action"
 	"valise/porter/internal/actionjournal"
-	"valise/porter/internal/runtimeguard"
 	"valise/porter/internal/seal"
 )
 
@@ -24,12 +23,6 @@ func (r Runner) Resume(ctx context.Context, p action.ResumeParams) (*action.RunR
 	s := actionjournal.Store{Home: r.Env.Home}
 	j, err := s.Load(p.OperationID)
 	if err != nil {
-		return nil, err
-	}
-	if err := runtimeguard.CheckInstance(ctx, r.Env.Home, j.Plan.InstanceID); err != nil {
-		return nil, err
-	}
-	if err := runtimeguard.Check(ctx, r.Env.Home, runtimeguard.Scope{Paths: []string{j.Plan.Live, j.Stage, j.Previous}}); err != nil {
 		return nil, err
 	}
 	if err = checkPlan(&j.Plan); err != nil {
@@ -111,12 +104,6 @@ func (r Runner) Cleanup(ctx context.Context, p action.CleanupParams) ([]string, 
 	}
 	if j.Cleaned {
 		return nil, nil
-	}
-	if err := runtimeguard.CheckInstance(ctx, r.Env.Home, j.Plan.InstanceID); err != nil {
-		return nil, err
-	}
-	if err := runtimeguard.Check(ctx, r.Env.Home, runtimeguard.Scope{Paths: []string{j.Plan.Live, j.Stage, j.Previous}}); err != nil {
-		return nil, err
 	}
 	if err = checkPlan(&j.Plan); err != nil {
 		return nil, err

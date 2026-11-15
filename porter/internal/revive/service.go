@@ -7,10 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"valise/core/profile"
 	"valise/core/valise"
 	porterenroll "valise/porter/internal/enroll"
-	"valise/porter/internal/runtimeguard"
 )
 
 var unitRe = regexp.MustCompile(`^[A-Za-z0-9@._:-]+\.service$`)
@@ -41,9 +39,6 @@ func unitExists(ctx context.Context, e *porterenroll.Env, unit string) bool {
 
 // StopUnit stops a unit and waits until it is no longer active.
 func StopUnit(ctx context.Context, e *porterenroll.Env, unit string) error {
-	if err := runtimeguard.Check(ctx, e.Home, runtimeguard.Scope{Units: []profile.ServiceUnit{{Scope: "user", Unit: unit}}}); err != nil {
-		return err
-	}
 	if !unitRe.MatchString(unit) {
 		return valise.New("unit_invalid", "服务单元名无效："+unit, "检查 profile")
 	}
@@ -61,9 +56,6 @@ func StopUnit(ctx context.Context, e *porterenroll.Env, unit string) error {
 
 // StartUnit starts a unit.
 func StartUnit(ctx context.Context, e *porterenroll.Env, unit string) error {
-	if err := runtimeguard.Check(ctx, e.Home, runtimeguard.Scope{Units: []profile.ServiceUnit{{Scope: "user", Unit: unit}}}); err != nil {
-		return err
-	}
 	if !unitRe.MatchString(unit) {
 		return valise.New("unit_invalid", "服务单元名无效："+unit, "检查 profile")
 	}

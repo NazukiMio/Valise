@@ -454,7 +454,6 @@ func (c *checker) checkTop(p *Profile) {
 	}
 	c.checkInstall(p.Install)
 	c.checkCapabilities(p)
-	c.checkEnvironments(p)
 }
 
 func (c *checker) checkProvenance(pv *Provenance) {

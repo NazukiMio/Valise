@@ -326,10 +326,6 @@ type InstanceGetResult struct {
 
 // InstanceSummary is one enrolled instance on a server.
 type InstanceSummary struct {
-	// Runtime is an independent observation of a private environment. Its
-	// presence prevents clients from mistaking the old native service for the
-	// current managed Agent. It conveys no execution or cleanup authority.
-	Runtime *RuntimeState `json:"runtime,omitempty"`
 	// NativeCLI means the accepted profile declares the typed instance entry;
 	// it is not proof of programme integrity, service or conversation health.
 	NativeCLI      bool              `json:"native_cli_available,omitempty"`
@@ -353,22 +349,6 @@ type InstanceSummary struct {
 	// Identity is filled only by porters declaring identity/2; absent
 	// means the client must read identity_get (identity/1) itself.
 	Identity *identity.Binding `json:"identity,omitempty"`
-}
-
-type RuntimeState struct {
-	Known                 bool   `json:"known"`
-	Slot                  string `json:"slot,omitempty"`
-	Revision              uint64 `json:"revision,omitempty"`
-	OperationID           string `json:"operation_id,omitempty"`
-	Phase                 string `json:"phase,omitempty"`
-	Native                bool   `json:"native"`
-	Running               bool   `json:"running"`
-	Stopped               bool   `json:"stopped"`
-	PortOwned             bool   `json:"port_owned"`
-	HTTPResponded         bool   `json:"http_responded"`
-	GatewayPassed         bool   `json:"gateway_passed"`
-	ConversationConfirmed bool   `json:"conversation_confirmed"`
-	IssueCode             string `json:"issue_code,omitempty"`
 }
 
 // InstanceListResult lists the enrolled instances, sorted by id.

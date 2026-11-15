@@ -17,7 +17,6 @@ import (
 	"valise/porter/internal/actionjournal"
 	porterenroll "valise/porter/internal/enroll"
 	porterrevive "valise/porter/internal/revive"
-	"valise/porter/internal/runtimeguard"
 	"valise/porter/internal/seal"
 )
 
@@ -59,9 +58,6 @@ func (r Runner) Run(ctx context.Context, p action.RunParams) (*action.RunResult,
 		return nil, err
 	}
 	defer unlock()
-	if err := runtimeguard.CheckInstance(ctx, r.Env.Home, p.InstanceID); err != nil {
-		return nil, err
-	}
 
 	s := actionjournal.Store{Home: r.Env.Home}
 	pending, err := (porterrevive.Store{Home: r.Env.Home}).Pending()
