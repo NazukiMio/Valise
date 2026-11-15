@@ -11,7 +11,6 @@ import (
 
 	"valise/client/config"
 	"valise/core/enroll"
-	"valise/core/environment"
 	"valise/core/identity"
 	"valise/core/protection"
 	"valise/core/revive"
@@ -21,17 +20,6 @@ import (
 // is checked separately. The same checks run before staging and before swap.
 func (s *Service) restoreStamp(ctx context.Context, p *PreparedRestore, ownOp string) (string, error) {
 	rp := p.Revive
-	var settings *environment.Settings
-	if rp.Plan.Mode == revive.ModeRollback {
-		v, err := s.InstanceEnvironmentSettings(ctx, rp.Target, rp.Plan.InstanceID)
-		if err != nil {
-			return "", err
-		}
-		if err := requireDirectRestore(v); err != nil {
-			return "", err
-		}
-		settings = &v
-	}
 	var provenance enroll.Provenance
 	if rp.Plan.Record != nil {
 		provenance = rp.Plan.Record.Provenance
@@ -92,8 +80,7 @@ func (s *Service) restoreStamp(ctx context.Context, p *PreparedRestore, ownOp st
 		Identity identity.Binding
 		Source   identity.Binding
 		Trust    string
-		Settings *environment.Settings
-	}{facts, binding, source, trust, settings})
+	}{facts, binding, source, trust})
 }
 
 func (s *Service) validateRestore(ctx context.Context, p *PreparedRestore, ownOp string) error {

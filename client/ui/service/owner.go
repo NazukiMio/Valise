@@ -11,7 +11,6 @@ import (
 	"filippo.io/age"
 
 	"valise/client/ssh"
-	"valise/core/environment"
 	"valise/core/revive"
 	"valise/core/rpc"
 	"valise/core/valise"
@@ -147,7 +146,7 @@ func (s *Service) callOwner(ctx context.Context, o *ownerPorter, env []string, m
 		return err
 	}
 	defer c.Close()
-	if method == revive.MethodStageBegin || method == environment.MethodSettingsSet {
+	if method == revive.MethodStageBegin {
 		if err := n2Compatibility(hello, method, params); err != nil {
 			return err
 		}

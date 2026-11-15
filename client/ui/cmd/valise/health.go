@@ -39,9 +39,6 @@ func (c *cli) health(ctx context.Context, args []string) error {
 			fmt.Fprintf(c.out, "  · %s：%s\n", check.Title, check.Reason)
 		}
 	}
-	for _, line := range service.RuntimeHealthLines(r.Runtime) {
-		fmt.Fprintln(c.out, line)
-	}
 	group := ""
 	for _, it := range r.Items {
 		if it.Group != group {

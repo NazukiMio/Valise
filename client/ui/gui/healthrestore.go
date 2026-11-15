@@ -20,9 +20,6 @@ type restoreTestFlow struct {
 	selected         *journey.TimelinePoint
 	sources          []service.RestoreSource
 	source           int
-	depth            string
-	materialReview   *service.TestMaterialReview
-	reviewReply      chan bool
 	request          *service.SelectedRestoreTest
 	j                job
 	progress         service.Progress
@@ -60,7 +57,7 @@ func (a *App) startRestoreTest(t *restoreTestFlow, cleanup bool) {
 		if t.request != nil {
 			selection = *t.request
 		} else {
-			selection = service.SelectedRestoreTest{Depth: t.depth, Target: t.server, Instance: t.instance, Snapshot: t.selected.SnapshotRef, Source: t.sources[t.source]}
+			selection = service.SelectedRestoreTest{Depth: "files", Target: t.server, Instance: t.instance, Snapshot: t.selected.SnapshotRef, Source: t.sources[t.source]}
 		}
 	}
 	t.confirm = false
@@ -82,9 +79,6 @@ func (a *App) startRestoreTest(t *restoreTestFlow, cleanup bool) {
 		stage, last = p.Stage, time.Now()
 		a.update(func() { t.progress = p })
 	})
-	if !cleanup && selection.Depth == "isolated" {
-		selection.ReviewMaterials = func(review service.TestMaterialReview) bool { return a.reviewTestMaterials(ctx, t, review) }
-	}
 	a.run(func() {
 		defer cancel()
 		var result *service.RestoreTest
@@ -138,20 +132,12 @@ func (a *App) restoreTestReport(c *ui.Context, t *restoreTestFlow) {
 	}
 	card(ui.Column(c)).Gap(10).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			title := "restoretest.title"
-			if t.depth == "isolated" || t.result != nil && t.result.Depth == "isolated" {
-				title = "restoretest.environment.title"
-			}
-			ui.Text(c, T(title)).Bold().Grow(1)
+			ui.Text(c, T("restoretest.title")).Bold().Grow(1)
 			pending := t.result != nil && (t.result.State == "running" || t.result.State == "needs_cleanup")
 			if st := a.health[t.server+"/"+t.instance]; !t.j.busy && !pending && st != nil && st.canTest {
 				ui.Button(c, T("restoretest.open")).OnClick(func() { a.openRestoreTest(&agentRow{Server: t.server, Instance: t.instance}) })
 			}
 		})
-		if t.materialReview != nil {
-			a.restoreTestMaterialReview(c, t)
-			return
-		}
 		if t.j.busy {
 			c.After(time.Second)
 			ui.Row(c).Gap(8).Children(func() { ui.Spinner(c); ui.Text(c, T("restoretest.progress."+testStage(t.progress.Stage))).Wrap() })
@@ -174,11 +160,7 @@ func (a *App) restoreTestReport(c *ui.Context, t *restoreTestFlow) {
 					state = "failed"
 				}
 			}
-			stateKey := "restoretest.state." + state
-			if r.Depth == "isolated" && state == "passed" {
-				stateKey = "restoretest.environment.passed"
-			}
-			ui.Text(c, T(stateKey)).Bold().Wrap()
+			ui.Text(c, T("restoretest.state."+state)).Bold().Wrap()
 			if !r.Created.IsZero() {
 				fact(c, T("restore.snapshot_time"), r.Created.Local().Format("2006-01-02 15:04:05"))
 			}
@@ -196,11 +178,7 @@ func (a *App) restoreTestReport(c *ui.Context, t *restoreTestFlow) {
 			}
 			fact(c, T("restoretest.local_result"), local)
 			fact(c, T("restoretest.server_result"), server)
-			if r.Depth == "isolated" {
-				a.environmentTestReport(c, r)
-			} else {
-				muted(ui.Text(c, T("restoretest.result_hint"))).Wrap()
-			}
+			muted(ui.Text(c, T("restoretest.result_hint"))).Wrap()
 			if r.AgentRef == nil && r.State == "" {
 				muted(ui.Text(c, T("restoretest.legacy"))).Wrap()
 			}
@@ -216,7 +194,7 @@ func (a *App) restoreTestReport(c *ui.Context, t *restoreTestFlow) {
 
 func testStage(stage string) string {
 	switch stage {
-	case service.StagePull, service.StagePullMeta, service.StagePullPacks, service.StageOpen, service.StageInspect, service.StageStage, service.StageVerify, service.TestLocal, service.TestServer, "test_cleanup", "test_environment":
+	case service.StagePull, service.StagePullMeta, service.StagePullPacks, service.StageOpen, service.StageInspect, service.StageStage, service.StageVerify, service.TestLocal, service.TestServer, "test_cleanup":
 		return stage
 	}
 	return "reading"

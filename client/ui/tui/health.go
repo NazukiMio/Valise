@@ -260,9 +260,6 @@ func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 		}
 	}
 	var b strings.Builder
-	if p.health != nil && p.health.Runtime != nil {
-		b.WriteString(strings.Join(service.RuntimeHealthLines(p.health.Runtime), "\n") + "\n")
-	}
 	notices := p.healthNotices()
 	if len(notices) > 0 {
 		b.WriteString(warnStyle.Render("! 部分检查未完成，暂无法完整判断") + "\n")

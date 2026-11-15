@@ -100,13 +100,6 @@ func (s *Service) PrepareRestore(ctx context.Context, req RestoreRequest) (*Prep
 		if err := s.currentRestoreRoots(ctx, &o, req.Source.Copy.Metadata.InstanceID); err != nil {
 			return nil, err
 		}
-		settings, err := s.InstanceEnvironmentSettings(ctx, o.Target, req.Source.Copy.Metadata.InstanceID)
-		if err != nil {
-			return nil, err
-		}
-		if err := requireDirectRestore(settings); err != nil {
-			return nil, err
-		}
 	}
 	o.Source = req.Source.Spec
 	rp, err := s.PlanRevive(ctx, o, "")

@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"slices"
 
-	"valise/core/environment"
 	"valise/core/identity"
 	"valise/core/install"
 	"valise/core/protection"
-	"valise/core/revive"
 	"valise/core/rpc"
 	"valise/core/valise"
 	"valise/core/vaultrpc"
@@ -22,29 +20,6 @@ func n2Compatibility(hello *rpc.HelloResult, method string, params any) error {
 	switch method {
 	case install.MethodNativeInfo:
 		capability = install.NativeCapability
-	case environment.MethodSettingsGet, environment.MethodSettingsSet:
-		capability = environment.SettingsCapability
-	case environment.MethodPlan:
-		capability = environment.PlanCapability
-	case environment.MethodPreparationBegin, environment.MethodPreparationFinish, environment.MethodPreparationStatus,
-		environment.MethodPreparationCancel, environment.MethodPreparationCleanupReview, environment.MethodPreparationCleanup:
-		capability = environment.PreparationCapability
-	case environment.MethodSwitchReview, environment.MethodSwitchStatus, environment.MethodSwitch, environment.MethodReturn, environment.MethodConfirm, environment.MethodOldCleanupReview, environment.MethodOldCleanup, environment.MethodCurrentOldCleanup:
-		capability = environment.SwitchCapability
-	case environment.MethodTest:
-		capability = environment.TestCapability
-	case revive.MethodStageBegin:
-		var request revive.StageBeginParams
-		b, err := json.Marshal(params)
-		if err != nil || json.Unmarshal(b, &request) != nil {
-			return testSelectionError()
-		}
-		if request.Plan.IsolatedTest != nil {
-			capability = environment.TestCapability
-			if request.Plan.IsolatedTest.Baseline != nil {
-				capability = environment.TestCompositionCapability
-			}
-		}
 	case identity.MethodGet:
 		capability = identity.Capability
 	case protection.MethodGet, protection.MethodApply, protection.MethodStatus, protection.MethodReconcile:
@@ -73,9 +48,6 @@ func n2Compatibility(hello *rpc.HelloResult, method string, params any) error {
 		}
 	}
 	if capability != "" && (hello == nil || !slices.Contains(hello.Capabilities, capability)) {
-		if capability == environment.SettingsCapability {
-			return valise.New("unsupported_capability", "服务器上的 porter 还不能读取或保存 Agent 的恢复方式", "在服务器设置中更新 porter，然后重新读取恢复设置")
-		}
 		return valise.New("unsupported_capability", "服务器 porter 尚不支持这项能力："+capability, "更新服务器 porter 后重新准备操作")
 	}
 	return nil

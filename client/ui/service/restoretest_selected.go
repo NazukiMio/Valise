@@ -14,12 +14,11 @@ import (
 // SelectedRestoreTest freezes the human's exact point and copy. The legacy CLI
 // method may still select latest; desktop actions always use this binding.
 type SelectedRestoreTest struct {
-	ReviewMaterials func(TestMaterialReview) bool `json:"-"`
-	Depth           string
-	Target          string
-	Instance        string
-	Snapshot        journey.SnapshotRef
-	Source          RestoreSource
+	Depth    string
+	Target   string
+	Instance string
+	Snapshot journey.SnapshotRef
+	Source   RestoreSource
 }
 
 func testSelectionError() error {
@@ -27,7 +26,7 @@ func testSelectionError() error {
 }
 
 func (s *Service) RunSelectedRestoreTest(ctx context.Context, req SelectedRestoreTest) (*RestoreTest, error) {
-	if req.Depth != "" && req.Depth != "files" && req.Depth != "isolated" {
+	if req.Depth != "" && req.Depth != "files" {
 		return nil, testSelectionError()
 	}
 	cp := req.Source.Copy

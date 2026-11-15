@@ -2,7 +2,6 @@ package gui
 
 import (
 	"github.com/egoist/mygo/ui"
-	"valise/core/journey"
 	"valise/ui/service"
 )
 
@@ -27,9 +26,6 @@ func (a *App) restoreTaskList(c *ui.Context) {
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
 				ui.Text(c, task.Target+" / "+task.Instance).Bold()
 				muted(ui.Text(c, T("restore.mode."+task.Mode)+" · "+T("restore.state."+task.State))).Wrap()
-				if task.OldCleanupState != "" {
-					muted(ui.Text(c, oldCleanupStateText(task.OldCleanupState))).Wrap()
-				}
 				muted(ui.Text(c, T("restore.observed", "time", task.Updated.Local().Format("2006-01-02 15:04:05")))).Wrap()
 			})
 			ui.Button(c, T("restore.open_task")).OnClick(func() {
@@ -48,12 +44,7 @@ func reopenRestoreTask(task service.RestoreTask) *restoreFlow {
 	if task.State == "reconciling" || task.State == "needs_recovery" {
 		step = "reconcile"
 	}
-	r := &restoreFlow{task: task, mode: task.Mode, origin: task.Target, step: step}
-	if task.Kind == service.RestoreKindEnvironment {
-		r.step = "parallel_preparation"
-		r.point = journey.TimelinePoint{SnapshotRef: task.Snapshot, CreatedAt: task.SnapshotTime, Scope: journey.Scope{Tier: task.SnapshotTier}}
-	}
-	return r
+	return &restoreFlow{task: task, mode: task.Mode, origin: task.Target, step: step}
 }
 
 func (a *App) restoreNewDialog(c *ui.Context, r *restoreFlow) {

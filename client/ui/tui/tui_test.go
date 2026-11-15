@@ -202,7 +202,6 @@ func TestHomeServerInstanceAndSeal(t *testing.T) {
 
 func TestLandingRollback(t *testing.T) {
 	m, home := world(t)
-	selectDirectForTUITest(t, m)
 	openInstance(t, m)
 	os.WriteFile(filepath.Join(home, ".demo/memory/a.md"), []byte("changed after the seal"), 0o644)
 	key(t, m, "5")

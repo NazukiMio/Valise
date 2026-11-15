@@ -68,19 +68,9 @@ func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 			})
 		}
 	})
-	if r.mode == revive.ModeRollback {
-		a.restorePolicyPanel(c, r)
-	}
 	muted(ui.Text(c, T("restore.plan_note"))).Wrap()
 	ui.Row(c).Justify(ui.End).Children(func() {
-		if r.mode == revive.ModeRollback && !directRestoreReady(r.restoreMode) {
-			m := r.restoreMode
-			if m != nil && !m.j.busy && m.j.err == nil && m.view != nil && !m.view.Busy && m.planSupported {
-				ui.PrimaryButton(c, T("environment.preview")).OnClick(func() { a.needKey(func() { a.previewParallelRestore(r) }) })
-			}
-		} else {
-			ui.PrimaryButton(c, T("restore.view_plan")).OnClick(func() { a.needKey(func() { a.prepareRestore(r) }) })
-		}
+		ui.PrimaryButton(c, T("restore.view_plan")).OnClick(func() { a.needKey(func() { a.prepareRestore(r) }) })
 	})
 }
 

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"valise/core/environment"
 	"valise/core/journey"
 	"valise/core/revive"
 	"valise/core/vault"
@@ -23,13 +22,6 @@ func desktopRestorePlan(t *testing.T) (*Service, *PreparedRestore, string) {
 		t.Fatal(err)
 	}
 	s.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
-	settings, err := s.InstanceEnvironmentSettings(context.Background(), "box", "demo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.SaveEnvironmentSettings(context.Background(), "box", settings, environment.Direct); err != nil {
-		t.Fatal(err)
-	}
 	page, err := s.ListTimeline(context.Background(), JourneyListRequest{AllLocations: true, Limit: 200})
 	if err != nil {
 		t.Fatal(err)

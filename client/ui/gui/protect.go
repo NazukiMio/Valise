@@ -36,7 +36,6 @@ type protState struct {
 	newBackupConfirm bool
 	oneOff           *oneOffBackup
 	oneOffSupported  bool
-	restoreMode      *restoreModeState
 }
 
 // schedEdit is the schedule being edited.
@@ -131,7 +130,6 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 		})
 		return
 	}
-	a.restoreModeCard(c, row, ps)
 	a.nativeCard(c, row)
 	if ps.read.busy && ps.view == nil {
 		a.jobLine(c, &ps.read)

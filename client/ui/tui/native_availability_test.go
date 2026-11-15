@@ -1,30 +1,13 @@
 package tui
 
 import (
-	"context"
 	"strings"
 	"testing"
 
 	"valise/core/enroll"
-	"valise/core/environment"
 	"valise/core/profile"
 	"valise/ui/service"
 )
-
-func selectDirectForTUITest(t *testing.T, m *Model) {
-	t.Helper()
-	ctx := context.Background()
-	v, err := m.svc.InstanceEnvironmentSettings(ctx, "box", "demo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	previous := m.svc.OwnerAuth.Passphrase
-	m.svc.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
-	defer func() { m.svc.OwnerAuth.Passphrase = previous }()
-	if _, err := m.svc.SaveEnvironmentSettings(ctx, "box", v, environment.Direct); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestNativeEntriesRequireAcceptedServerAvailability(t *testing.T) {
 	p := &instancePage{host: "box", inst: enroll.InstanceSummary{InstanceID: "demo"}, target: &service.LoginTarget{Profile: profile.Profile{ID: "demo", NativeCLI: []string{"fixture-native"}}}}

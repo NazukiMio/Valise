@@ -79,16 +79,13 @@ type RevivePlan struct {
 	// SourceBackupFirst; set during execution.
 	PreRestoreBackup *vaultrpc.SealReport `json:"pre_restore_backup,omitempty"`
 
-	snapshotHeader  *vault.Snapshot
-	testDataSources map[string]*RevivePlan
-	testSourceAgent *identity.AgentRef
-	testMaterials   *TestMaterialReview
-	files           []vault.File
-	links           []vault.Symlink
-	sqlite          map[string]bool
-	vault           *vault.Vault
-	ident           age.Identity
-	target          *ownerPorter
+	snapshotHeader *vault.Snapshot
+	files          []vault.File
+	links          []vault.Symlink
+	sqlite         map[string]bool
+	vault          *vault.Vault
+	ident          age.Identity
+	target         *ownerPorter
 	// sourceStatus: the source porter supports service_control "status"
 	// (identity/1). Older porters treat unknown actions as start.
 	sourceStatus bool

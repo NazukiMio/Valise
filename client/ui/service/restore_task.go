@@ -9,10 +9,8 @@ import (
 	"sort"
 	"time"
 
-	"valise/core/environment"
 	"valise/core/identity"
 	"valise/core/journey"
-	"valise/core/protection"
 	"valise/core/revive"
 	"valise/core/valise"
 )
@@ -20,12 +18,6 @@ import (
 // RestoreTask is an index, never an execution permission. It contains no
 // profile, decrypted header, file contents, command output or human approval.
 type RestoreTask struct {
-	Kind              string                   `json:"kind,omitempty"`
-	EnvironmentMode   environment.Mode         `json:"environment_mode,omitempty"`
-	SnapshotTime      time.Time                `json:"snapshot_time,omitempty"`
-	SnapshotTier      string                   `json:"snapshot_tier,omitempty"`
-	RuntimeRequested  bool                     `json:"runtime_requested,omitempty"`
-	OldCleanupState   string                   `json:"old_cleanup_state,omitempty"`
 	TargetAgent       *identity.AgentRef       `json:"target_agent,omitempty"`
 	PreBackupSnapshot string                   `json:"pre_backup_snapshot,omitempty"`
 	Rollback          *revive.RollbackEvidence `json:"rollback,omitempty"`
@@ -73,7 +65,7 @@ func (s *Service) ListRestoreTasks() ([]RestoreTask, error) {
 		}
 		var t RestoreTask
 		b, err := os.ReadFile(filepath.Join(s.Dirs.Data, "restore-tasks", e.Name()))
-		if err != nil || json.Unmarshal(b, &t) != nil || !validRestoreTaskID(t) || e.Name() != t.OpID+".json" || t.Kind != "" && t.Kind != RestoreKindEnvironment {
+		if err != nil || json.Unmarshal(b, &t) != nil || !validRestoreTaskID(t) || e.Name() != t.OpID+".json" {
 			return nil, restoreError("record_corrupt", "恢复任务索引无法读取")
 		}
 		if t.State == "running" || t.State == "waiting" {
@@ -86,9 +78,6 @@ func (s *Service) ListRestoreTasks() ([]RestoreTask, error) {
 }
 
 func validRestoreTaskID(t RestoreTask) bool {
-	if t.Kind == RestoreKindEnvironment {
-		return protection.ValidID(t.OpID)
-	}
 	return revive.ValidOpID(t.OpID)
 }
 

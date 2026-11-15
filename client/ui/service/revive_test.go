@@ -58,7 +58,6 @@ func readFile(t *testing.T, p string) string {
 
 func TestRollbackOverFakeSSH(t *testing.T) {
 	s, home, soul, _ := sealedWorld(t)
-	selectDirectTestMode(t, s, "box", "demo")
 	ctx := context.Background()
 	state := filepath.Join(home, ".demo")
 	os.WriteFile(filepath.Join(state, "memory/a.md"), []byte("changed after seal"), 0o644)
@@ -107,7 +106,6 @@ func TestRollbackOverFakeSSH(t *testing.T) {
 
 func TestCrashInjectionAndResume(t *testing.T) {
 	s, home, soul, _ := sealedWorld(t)
-	selectDirectTestMode(t, s, "box", "demo")
 	ctx := context.Background()
 	state := filepath.Join(home, ".demo")
 	os.WriteFile(filepath.Join(state, "memory/a.md"), []byte("live"), 0o644)
@@ -178,12 +176,9 @@ func TestCloneToAnotherServer(t *testing.T) {
 	}
 
 	// Migrating the original over the clone supersedes the clone.
-	// This old file-only clone has no completed runtime identity. Explicitly
-	// enroll it and select direct before replacing that existing Agent.
 	if _, err := s.Enroll(ctx, "box2", EnrollOptions{ProfileID: "demo", InstanceID: "demo-clone", Assign: []string{"state:notes/**=memory"}, Accept: true}); err != nil {
 		t.Fatal(err)
 	}
-	selectDirectTestMode(t, s, "box2", "demo-clone")
 	rp, err = s.PlanRevive(ctx, ReviveOptions{Target: "box2", From: "box", SnapshotID: ss, Mode: revive.ModeMigrate, AllowDraft: true}, pass)
 	if err != nil || len(rp.Blockers) != 0 || len(rp.Plan.Supersedes) != 1 || rp.Plan.Supersedes[0] != "demo-clone" ||
 		!strings.Contains(strings.Join(rp.Warnings, "\n"), "demo-clone") {
@@ -222,7 +217,6 @@ func TestCloneToAnotherServer(t *testing.T) {
 
 func TestReviveWithProfileFromSnapshot(t *testing.T) {
 	s, home, soul, _ := sealedWorld(t)
-	selectDirectTestMode(t, s, "box", "demo")
 	ctx := context.Background()
 	// The client's profile moves on to a newer version after the seal.
 	p := filepath.Join(s.Dirs.Data, "profiles", "demo.yaml")
@@ -284,7 +278,6 @@ func TestRollbackOnDailyKey(t *testing.T) {
 	}
 	// From here any admin login fails, and the owner is only proved by
 	// the plan's passphrase.
-	selectDirectTestMode(t, s, "vps", "demo")
 	list, _ := config.LoadServerList(s.Dirs.Data)
 	list[0].Login, list[0].LoginKey = config.LoginKey, s.keyPath("vps", "nonexistent")
 	config.SaveServerList(s.Dirs.Data, list)

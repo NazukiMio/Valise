@@ -2,7 +2,6 @@ package gui
 
 import (
 	"context"
-	"github.com/egoist/mygo/ui"
 	"os"
 	"path/filepath"
 	"sync"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"valise/client/config"
-	"valise/core/environment"
 	"valise/core/revive"
 	"valise/core/vaultrpc"
 	"valise/testbed/fakesshenv"
@@ -60,37 +58,8 @@ provenance: { kind: binary, binary: { name: demo } }
 		t.Fatal(err)
 	}
 	svc.OwnerAuth.Passphrase = func(string) (string, error) { return "restore-test-passphrase", nil }
-	settings, err := svc.InstanceEnvironmentSettings(ctx, "box", "demo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if settings.Mode != environment.Parallel || settings.Managed {
-		t.Fatal("new Agent not default parallel", settings)
-	}
 	if err := svc.BackUpKeyLater(); err != nil {
 		t.Fatal(err)
-	}
-	settingsApp := New(svc)
-	settingsApp.run = func(f func()) { f() }
-	ps := &protState{ref: &settings.Agent, restoreMode: &restoreModeState{view: &settings, draft: settings.Mode, started: true}}
-	modeTester := ui.NewTester(func(c *ui.Context) {
-		ui.Column(c).Width(800).Padding(16).Children(func() { settingsApp.restoreModeCard(c, &agentRow{Server: "box", Instance: "demo"}, ps) })
-	}, 860, 560)
-	modeTester.Frame()
-	modeTester.Advance(time.Second)
-	click(t, modeTester, T("environment.edit"))
-	click(t, modeTester, T("environment.mode.direct"))
-	beforeSave, err := svc.InstanceEnvironmentSettings(ctx, "box", "demo")
-	if err != nil || beforeSave.Mode != environment.Parallel {
-		t.Fatal("radio saved before confirmation", beforeSave, err)
-	}
-	click(t, modeTester, T("environment.save"))
-	if ps.restoreMode.j.err != nil || !modeTester.HasText(T("environment.saved")) {
-		t.Fatal("GUI save failed", ps.restoreMode.j.err, modeTester.Texts())
-	}
-	settings, err = svc.InstanceEnvironmentSettings(ctx, "box", "demo")
-	if err != nil || settings.Mode != environment.Direct {
-		t.Fatal("GUI did not persist server policy", settings, err)
 	}
 	timeline, err := svc.ListTimeline(ctx, service.JourneyListRequest{AllLocations: true, Limit: 200})
 	if err != nil || len(timeline.Items) != 1 {

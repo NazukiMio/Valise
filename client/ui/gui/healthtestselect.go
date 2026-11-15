@@ -38,7 +38,7 @@ func (a *App) confirmTestSelection(t *restoreTestFlow) {
 	if t.selected == nil || t.source < 0 || t.source >= len(t.sources) {
 		return
 	}
-	req := service.SelectedRestoreTest{Depth: t.depth, Target: t.server, Instance: t.instance, Snapshot: t.selected.SnapshotRef, Source: t.sources[t.source]}
+	req := service.SelectedRestoreTest{Depth: "files", Target: t.server, Instance: t.instance, Snapshot: t.selected.SnapshotRef, Source: t.sources[t.source]}
 	t.request, t.confirm = &req, false
 	a.needKey(func() { a.startRestoreTest(t, false) })
 }
@@ -103,7 +103,6 @@ func (a *App) restoreTestSelection(c *ui.Context, t *restoreTestFlow) {
 						muted(ui.Text(c, T("restoretest.no_readable_copy"))).Wrap()
 						ui.Link(c, T("nav.locations"), "/locations")
 					}
-					a.environmentTestDepth(c, t)
 					muted(ui.Text(c, T("restoretest.confirm_hint"))).Wrap()
 				})
 			})

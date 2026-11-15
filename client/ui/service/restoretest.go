@@ -11,7 +11,6 @@ import (
 	"slices"
 	"time"
 
-	"valise/core/environment"
 	"valise/core/identity"
 	"valise/core/journey"
 	"valise/core/revive"
@@ -28,26 +27,24 @@ const restoreTestsFile = "restore-tests.json"
 
 // RestoreTest is the outcome of one restore test.
 type RestoreTest struct {
-	Depth          string                  `json:"depth,omitempty"`
-	Materials      *TestMaterialReview     `json:"materials,omitempty"`
-	Environment    *environment.TestResult `json:"environment,omitempty"`
-	SourceLocation *journey.LocationRef    `json:"source_location,omitempty"`
-	HeaderDigest   string                  `json:"header_digest,omitempty"`
-	AgentRef       *identity.AgentRef      `json:"agent_ref,omitempty"`
-	LocalVerified  bool                    `json:"local_verified,omitempty"`
-	ServerVerified bool                    `json:"server_verified,omitempty"`
-	State          string                  `json:"state,omitempty"`
-	OpID           string                  `json:"op_id,omitempty"`
-	VaultID        string                  `json:"vault_id,omitempty"`
-	TrustDigest    string                  `json:"trust_digest,omitempty"`
-	Cleanup        string                  `json:"cleanup,omitempty"`
-	At             time.Time               `json:"at"`
-	Snapshot       string                  `json:"snapshot"`
-	Tier           string                  `json:"tier"`
-	Created        time.Time               `json:"created"`
-	Files          int                     `json:"files"`
-	Bytes          int64                   `json:"bytes"`
-	OK             bool                    `json:"ok"`
+	Depth          string               `json:"depth,omitempty"`
+	SourceLocation *journey.LocationRef `json:"source_location,omitempty"`
+	HeaderDigest   string               `json:"header_digest,omitempty"`
+	AgentRef       *identity.AgentRef   `json:"agent_ref,omitempty"`
+	LocalVerified  bool                 `json:"local_verified,omitempty"`
+	ServerVerified bool                 `json:"server_verified,omitempty"`
+	State          string               `json:"state,omitempty"`
+	OpID           string               `json:"op_id,omitempty"`
+	VaultID        string               `json:"vault_id,omitempty"`
+	TrustDigest    string               `json:"trust_digest,omitempty"`
+	Cleanup        string               `json:"cleanup,omitempty"`
+	At             time.Time            `json:"at"`
+	Snapshot       string               `json:"snapshot"`
+	Tier           string               `json:"tier"`
+	Created        time.Time            `json:"created"`
+	Files          int                  `json:"files"`
+	Bytes          int64                `json:"bytes"`
+	OK             bool                 `json:"ok"`
 	// Step names the step that failed, Problem says why.
 	Step    string `json:"step,omitempty"`
 	Problem string `json:"problem,omitempty"`
@@ -102,9 +99,6 @@ func (s *Service) runRestoreTest(ctx context.Context, host, instance, snapshot s
 	if err != nil {
 		return nil, err
 	}
-	if selected != nil && selected.Depth == "isolated" && !slices.Contains(caps, environment.TestCapability) {
-		return nil, valise.New("unsupported_capability", "此服务器的 porter 尚不支持完整隔离测试", "在服务器设置中更新 porter，或先选择文件校验")
-	}
 	if !slices.Contains(caps, revive.ReviewCapability) {
 		return nil, valise.New("unsupported_capability", "此服务器的 porter 尚不支持测试结果核实", "在服务器设置中更新 porter 后再测试")
 	}
@@ -128,17 +122,11 @@ func (s *Service) runRestoreTest(ctx context.Context, host, instance, snapshot s
 			return nil, err
 		}
 	}
-	if selected != nil && selected.Depth == "isolated" {
-		if err := s.prepareEnvironmentTest(ctx, rp, *selected); err != nil {
-			return nil, err
-		}
-	}
 	if err := currentRestorePlan(rp, instance, o.Roots); err != nil {
 		return nil, err
 	}
 	res := &RestoreTest{At: time.Now().UTC(), Snapshot: snapshot, Tier: rp.Snapshot.Tier, Created: rp.Snapshot.CreatedAt,
 		Files: rp.Files, Bytes: rp.Bytes, Downtime: rp.Downtime, Warnings: rp.Warnings, Transfer: rp.Transfer}
-	res.Materials = rp.testMaterials
 	res.State, res.Cleanup, res.OpID, res.VaultID = "running", "not_needed", rp.Plan.OpID, rp.vault.Desc.VaultID
 	if selected != nil {
 		res.Depth = selected.Depth
@@ -271,9 +259,6 @@ func (s *Service) unpackServer(ctx context.Context, rp *RevivePlan, result *Rest
 		if err == nil {
 			result.ServerVerified = true
 		}
-	}
-	if err == nil && rp.Plan.IsolatedTest != nil {
-		err = s.testEnvironment(ctx, rp, result)
 	}
 	report(ctx, "test_cleanup", 0, 0)
 	if derr := s.discardRestoreTest(context.WithoutCancel(ctx), rp.Target, rp.Plan.InstanceID, result); derr != nil {

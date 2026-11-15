@@ -11,12 +11,6 @@ import (
 
 func restoreStageText(stage string) string {
 	switch stage {
-	case "environment_switch_login":
-		return T("environment.progress_switch_login")
-	case "environment_capture":
-		return T("environment.progress_capture")
-	case "environment_build":
-		return T("environment.progress_build")
 	case service.StageSealScan, service.StageSealPack, service.StageSealCommit:
 		return T("restore.progress.backup_first")
 	case service.StagePull, service.StageOpen, service.StageInspect, service.StageStage, service.StageVerify, service.StageSwap:
@@ -29,11 +23,7 @@ func (a *App) restoreProgress(c *ui.Context, r *restoreFlow) {
 	card(ui.Column(c)).Gap(12).Children(func() {
 		ui.Row(c).Gap(10).Children(func() {
 			ui.Spinner(c)
-			stage := restoreStageText(r.progress.Stage)
-			if r.step == "swap" && r.task.Kind == service.RestoreKindEnvironment {
-				stage = restoreStepLabel(r)
-			}
-			ui.Text(c, stage).Bold()
+			ui.Text(c, restoreStageText(r.progress.Stage)).Bold()
 		})
 		muted(ui.Text(c, T("restore.elapsed", "duration", backupDuration(c.Now().Sub(r.j.doingAt))))).Wrap()
 		if p := r.progress; p.Total > 0 {
@@ -41,17 +31,9 @@ func (a *App) restoreProgress(c *ui.Context, r *restoreFlow) {
 			muted(ui.Text(c, T("restore.bytes", "done", size(p.Done), "total", size(p.Total)))).Wrap()
 		}
 		if r.step == "swap" {
-			hint := "restore.swap_in_progress"
-			if r.parallelSwitchAction == "confirm" {
-				hint = "environment.confirm_progress_hint"
-			}
-			muted(ui.Text(c, T(hint))).Wrap()
+			muted(ui.Text(c, T("restore.swap_in_progress"))).Wrap()
 		} else {
-			hint := "restore.preparing_hint"
-			if r.parallelSwitchPlan != nil {
-				hint = "environment.switch_login_hint"
-			}
-			muted(ui.Text(c, T(hint))).Wrap()
+			muted(ui.Text(c, T("restore.preparing_hint"))).Wrap()
 			ui.Button(c, T("restore.stop")).OnClick(func() { r.stopConfirm = true })
 		}
 	})
@@ -260,16 +242,10 @@ func (a *App) restoreBanner(c *ui.Context) {
 	}
 	if r == nil {
 		for _, t := range a.restoreTasks {
-			if t.State == "reconciling" || t.State == "needs_recovery" || t.Kind == service.RestoreKindEnvironment && t.State == "awaiting_human" || oldCleanupPending(t) {
+			if t.State == "reconciling" || t.State == "needs_recovery" {
 				task := t
 				ui.Row(c).Padding(8, 16).Gap(10).Children(func() {
-					message := T("restore.unfinished", "target", task.Target)
-					if task.State == "awaiting_human" {
-						message = T("environment.awaiting_banner", "target", task.Target+" / "+task.Instance)
-					} else if oldCleanupPending(task) {
-						message = T("environment.old_cleanup_banner", "target", task.Target+" / "+task.Instance)
-					}
-					muted(ui.Text(c, message)).Grow(1).Wrap()
+					muted(ui.Text(c, T("restore.unfinished", "target", task.Target))).Grow(1).Wrap()
 					ui.Button(c, T("restore.open_task")).OnClick(func() {
 						a.restore = reopenRestoreTask(task)
 						a.navigate("/restore")
@@ -280,15 +256,9 @@ func (a *App) restoreBanner(c *ui.Context) {
 		}
 		return
 	}
-	if r.j.busy || r.task.State == "reconciling" || r.task.State == "needs_recovery" || r.task.Kind == service.RestoreKindEnvironment && r.task.State == "awaiting_human" || oldCleanupPending(r.task) {
+	if r.j.busy || r.task.State == "reconciling" || r.task.State == "needs_recovery" {
 		ui.Row(c).Padding(8, 16).Gap(10).Children(func() {
-			message := T("restore.task_banner", "stage", restoreStepLabel(r))
-			if !r.j.busy && r.task.State == "awaiting_human" {
-				message = T("environment.awaiting_banner", "target", r.task.Target+" / "+r.task.Instance)
-			} else if !r.j.busy && oldCleanupPending(r.task) {
-				message = T("environment.old_cleanup_banner", "target", r.task.Target+" / "+r.task.Instance)
-			}
-			ui.Text(c, message).Grow(1).Wrap()
+			ui.Text(c, T("restore.task_banner", "stage", T("restore.step."+r.step))).Grow(1).Wrap()
 			ui.Button(c, T("restore.open_task")).OnClick(func() { a.navigate("/restore") })
 		})
 	}

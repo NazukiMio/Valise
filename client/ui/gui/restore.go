@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"valise/core/environment"
 	"valise/core/journey"
 	"valise/core/revive"
 	"valise/core/valise"
@@ -20,44 +19,30 @@ type restoreSwapReply struct {
 }
 
 type restoreFlow struct {
-	point                                      journey.TimelinePoint
-	sources                                    []service.RestoreSource
-	source                                     int
-	origin, target, mode, id, roots            string
-	step                                       string
-	plan                                       *service.PreparedRestore
-	task                                       service.RestoreTask
-	review                                     *revive.ReviewResult
-	j                                          job
-	progress                                   service.Progress
-	credential, draft, snapshotProfile, swap   bool
-	sourceChoice                               string
-	backupCurrent                              bool
-	verify                                     *revive.StageVerifyResult
-	deadline                                   time.Time
-	reply                                      chan restoreSwapReply
-	stopConfirm                                bool
-	newIntent                                  bool
-	recoverAction                              string
-	restoreMode                                *restoreModeState
-	parallelPlan                               *revive.EnvironmentPlan
-	parallelPrepared                           *service.PreparedParallelRestore
-	parallelStatus                             *environment.PreparationStatus
-	parallelCleanup                            *environment.PreparationCleanupReview
-	parallelBaseline, parallelRead             bool
-	parallelSwitchPlan                         *service.PreparedParallelSwitch
-	parallelSwitchStatus                       *environment.SwitchStatus
-	parallelSwitchAction                       string
-	parallelSwitchConfirm, parallelSwitchDraft bool
-	parallelSwitchCapability                   *bool
-	parallelCapabilityJob                      job
-	oldCleanupPlan                             *service.PreparedOldCleanup
-	oldCleanupConfirm                          bool
-	exit                                       func()
+	point                                    journey.TimelinePoint
+	sources                                  []service.RestoreSource
+	source                                   int
+	origin, target, mode, id, roots          string
+	step                                     string
+	plan                                     *service.PreparedRestore
+	task                                     service.RestoreTask
+	review                                   *revive.ReviewResult
+	j                                        job
+	progress                                 service.Progress
+	credential, draft, snapshotProfile, swap bool
+	sourceChoice                             string
+	backupCurrent                            bool
+	verify                                   *revive.StageVerifyResult
+	deadline                                 time.Time
+	reply                                    chan restoreSwapReply
+	stopConfirm                              bool
+	newIntent                                bool
+	recoverAction                            string
+	exit                                     func()
 }
 
 func (a *App) openRestore(p journey.TimelinePoint, origin string) {
-	if a.restore != nil && (a.restore.j.busy || a.restore.task.State == "needs_recovery" || a.restore.task.State == "reconciling" || oldCleanupPending(a.restore.task)) {
+	if a.restore != nil && (a.restore.j.busy || a.restore.task.State == "needs_recovery" || a.restore.task.State == "reconciling") {
 		a.navigate("/restore")
 		return
 	}
@@ -89,7 +74,7 @@ func (a *App) restorePage(c *ui.Context) {
 		return
 	}
 	ui.Link(c, "‹ "+T("nav.agents"), "/agents")
-	pageHead(c, T("restore.title"), restoreStepLabel(r))
+	pageHead(c, T("restore.title"), T("restore.step."+r.step))
 	if !r.point.CreatedAt.IsZero() {
 		card(ui.Column(c)).Children(func() {
 			fact(c, T("point.scope"), tierText(r.point.Scope.Tier))
@@ -104,14 +89,6 @@ func (a *App) restorePage(c *ui.Context) {
 		a.restoreSetup(c, r)
 	case "plan":
 		a.restorePlan(c, r)
-	case "parallel_preview":
-		a.parallelPreview(c, r)
-	case "parallel_preparation":
-		a.parallelPreparationPage(c, r)
-	case "parallel_switch_review":
-		a.parallelSwitchReview(c, r)
-	case "parallel_old_cleanup":
-		a.oldCleanupPage(c, r)
 	case "prepare", "swap":
 		a.restoreProgress(c, r)
 	case "confirm":

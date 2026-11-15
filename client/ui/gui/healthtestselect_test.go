@@ -71,6 +71,6 @@ func TestJourneyOpensTestForThatExactPoint(t *testing.T) {
 	if a.restoreTest == nil || a.restoreTest.selected == nil || a.restoreTest.selected.SnapshotRef != p.SnapshotRef || !a.restoreTest.confirm || a.agentTab != tabHealth {
 		t.Fatal("journey test silently changed the selected point")
 	}
-	hasAll(t, tt.Texts(), T("restoretest.choose_title"), p.CreatedAt.Local().Format("2006-01-02 15:04:05"), T("restoretest.depth.files"))
+	hasAll(t, tt.Texts(), T("restoretest.choose_title"), p.CreatedAt.Local().Format("2006-01-02 15:04:05"))
 	shot(t, tt, "journey-selected-point-test")
 }

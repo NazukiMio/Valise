@@ -58,13 +58,11 @@ type HealthItem struct {
 
 // HealthReport is one agent's health.
 type HealthReport struct {
-	Runtime                  *enroll.RuntimeState `json:"runtime,omitempty"`
-	EnvironmentTestSupported bool                 `json:"environment_test_supported,omitempty"`
-	AgentRef                 *identity.AgentRef   `json:"agent_ref,omitempty"`
-	Host                     string               `json:"host"`
-	Instance                 string               `json:"instance"`
-	Items                    []HealthItem         `json:"items"`
-	Checks                   []HealthCheck        `json:"checks,omitempty"`
+	AgentRef *identity.AgentRef `json:"agent_ref,omitempty"`
+	Host     string             `json:"host"`
+	Instance string             `json:"instance"`
+	Items    []HealthItem       `json:"items"`
+	Checks   []HealthCheck      `json:"checks,omitempty"`
 }
 
 // Rank orders levels for sorting: bad first.
@@ -159,14 +157,9 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 					currentAgent = &ref
 				}
 				it := serviceItem(in.Service, in.Entries)
-				if in.Runtime != nil {
-					r.Runtime = in.Runtime
-					it = runtimeServiceItem(in.Runtime)
-				}
 				s.bindServiceRepair(&it, in)
 				add(it)
 				profileID = in.ProfileID
-				r.EnvironmentTestSupported = s.environmentTestSupported(in)
 				found = true
 				break
 			}
@@ -321,18 +314,6 @@ func (s *Service) restoreTestItem(host, instance string, now time.Time, current 
 		it.Detail = "可以重新测试当前备份。"
 	case t.State == "cancelled":
 		it.Level, it.Text = HealthWarn, "上次测试已停止，暂存已清理"
-	case t.Depth == "isolated":
-		it.Title = "备份重建测试"
-		if t.OK && t.Environment != nil && t.Environment.CandidateBuilt && t.Environment.Probe.Verified() {
-			it.Level, it.Text = HealthOK, "上次完整隔离重建测试通过；原 Agent 保持运行"
-			it.Detail = "测试到网关就绪，不代表外部渠道或实际对话已经验证。正式恢复后仍由你对话并确认可用。"
-		} else {
-			it.Level, it.Text = HealthWarn, "完整隔离重建尚未通过"
-			if t.LocalVerified && t.ServerVerified {
-				it.Text = "文件校验通过；完整隔离重建尚未通过"
-			}
-			it.Detail = t.Problem
-		}
 	case !t.OK:
 		it.Level = HealthBad
 		it.Text = "上次测试 " + agoPlain(now.Sub(t.At)) + "前，没有通过：" + t.Problem

@@ -62,9 +62,6 @@ func (s *Service) discardRestoreTest(ctx context.Context, host, instance string,
 		return err
 	}
 	j := r.Journal
-	if t.Depth == "isolated" {
-		t.Environment = j.EnvironmentTest
-	}
 	if j.Plan.OpID != t.OpID || j.Plan.InstanceID != instance || j.Plan.SnapshotID != t.Snapshot || j.Plan.Mode != revive.ModeRollback || j.Plan.Unit != "" || j.Plan.InstallService || j.Plan.Body.Action != revive.BodyKeep || j.Plan.Carry || j.Plan.Identity != nil {
 		return valise.New("restore_test_changed", "服务器上的操作不符合原文件测试记录", "保留现场，查看原操作；不能把恢复操作当作测试清理")
 	}

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 	"valise/client/config"
-	"valise/core/environment"
 	"valise/core/journey"
 	"valise/core/revive"
 	"valise/core/valise"
@@ -20,7 +19,6 @@ func restoreWorld(t *testing.T) (*App, *ui.Tester, *restoreFlow) {
 	p := a.timeline.value.Items[0]
 	p.Copies[0].HeaderDigest = "sample-header"
 	a.openRestore(p, "home")
-	a.restore.restoreMode = &restoreModeState{started: true, view: &environment.Settings{Mode: environment.Direct}, draft: environment.Direct}
 	tt.Frame()
 	tt.Advance(time.Second)
 	return a, tt, a.restore

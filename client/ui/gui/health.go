@@ -9,7 +9,6 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"slices"
-	"valise/core/environment"
 	"valise/core/profile"
 	"valise/core/revive"
 	"valise/core/valise"
@@ -18,15 +17,13 @@ import (
 
 // healthState is one agent's health page while this window lives.
 type healthState struct {
-	busy                   bool
-	report                 *service.HealthReport
-	err                    error
-	at                     time.Time
-	fix                    *fixState
-	canTest                bool
-	canEnvironmentTest     bool
-	environmentUnavailable bool
-	testReadFailed         bool
+	busy           bool
+	report         *service.HealthReport
+	err            error
+	at             time.Time
+	fix            *fixState
+	canTest        bool
+	testReadFailed bool
 }
 
 // fixState is one repair action from its confirmation to its result: the
@@ -63,9 +60,6 @@ func (a *App) readHealth(server, instance string) {
 		a.update(func() {
 			st.busy, st.report, st.err, st.at = false, r, err, time.Now()
 			st.canTest = slices.Contains(caps, revive.ReviewCapability)
-			transport := slices.Contains(caps, environment.TestCapability)
-			st.canEnvironmentTest = transport && r != nil && r.EnvironmentTestSupported
-			st.environmentUnavailable = transport && r != nil && !r.EnvironmentTestSupported
 			st.testReadFailed = capErr != nil
 			if last.AgentRef != nil && last.State != "running" && last.State != "needs_cleanup" {
 				matched := r != nil && r.AgentRef != nil && *r.AgentRef == *last.AgentRef
@@ -114,7 +108,6 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 	if st.report == nil {
 		return
 	}
-	a.currentRuntime(c, st.report.Runtime, st.at, st.busy)
 	items := append([]service.HealthItem(nil), st.report.Items...)
 	if t := a.restoreTest; t != nil && t.server == row.Server && t.instance == row.Instance && (t.j.busy || t.result != nil || t.j.err != nil) {
 		items = slices.DeleteFunc(items, func(it service.HealthItem) bool { return it.ID == "restore_test" })

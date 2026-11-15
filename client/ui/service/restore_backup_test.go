@@ -12,7 +12,6 @@ import (
 
 func TestRestoreOptionalBackupWorksForVerifiedSourceWithoutChangingPlan(t *testing.T) {
 	s, home, ref := acceptedPlanWorld(t)
-	selectDirectTestMode(t, s, "box", "demo")
 	s.BackupReview = approveBackup
 	ctx := context.Background()
 	prepared, err := s.PrepareBackup(ctx, "box", ref)

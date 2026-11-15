@@ -34,7 +34,6 @@ func untouched(t *testing.T, s *Service, home, memory string) {
 func unverifiedRollback(t *testing.T) (*Service, string, *RevivePlan) {
 	t.Helper()
 	s, home, soul, _ := sealedWorld(t)
-	selectDirectTestMode(t, s, "box", "demo")
 	os.WriteFile(filepath.Join(home, ".demo/memory/a.md"), []byte("changed"), 0o644)
 	rp, err := s.PlanRevive(context.Background(), ReviveOptions{Target: "box", SnapshotID: soul, Mode: revive.ModeRollback, AllowDraft: true}, pass)
 	if err != nil || len(rp.Blockers) != 0 || rp.UnverifiedSource == nil || !rp.UnverifiedSource.BackupFirst {
@@ -157,7 +156,6 @@ func TestKnownSourceHasNoExtraStep(t *testing.T) {
 	if _, _, err := s.KeyRegister(ctx, "box", "test"); err != nil {
 		t.Fatal(err)
 	}
-	selectDirectTestMode(t, s, "box", "demo")
 	s.ProtectionReview = func(context.Context, string, protection.FrozenChange) (bool, error) { return true, nil }
 	s.BackupReview = func(context.Context, string, BackupPlan) (bool, error) { return true, nil }
 	desired := protection.NewDefault()

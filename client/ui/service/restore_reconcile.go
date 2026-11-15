@@ -10,9 +10,6 @@ import (
 // InspectRestore never replays an operation. The porter takes its mutation
 // lock while reading, so an active swap is reported busy rather than resumable.
 func (s *Service) InspectRestore(ctx context.Context, t RestoreTask) (RestoreTask, *revive.ReviewResult, error) {
-	if t.Kind != "" {
-		return t, nil, restoreError("environment_operation_required", "这项恢复使用并行准备记录，请从原操作核实，不能走旧目录交换")
-	}
 	if t.TrustDigest != "" {
 		trust, err := s.restoreTrust(t.Target)
 		if err != nil {
@@ -80,9 +77,6 @@ func (s *Service) InspectRestore(ctx context.Context, t RestoreTask) (RestoreTas
 // Migration interruption offers back only until the target is already final:
 // continuing earlier would require renewed cross-host isolation evidence.
 func (s *Service) ResumeRestore(ctx context.Context, t RestoreTask, r *revive.ReviewResult, action string) (RestoreTask, error) {
-	if t.Kind != "" {
-		return t, restoreError("environment_operation_required", "这项操作不能使用旧恢复的继续或退回入口")
-	}
 	if r == nil || !slices.Contains(r.Actions, action) {
 		return t, restoreError("plan_stale", "没有现场核实允许的恢复分支")
 	}

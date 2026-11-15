@@ -45,18 +45,6 @@ func (a *App) agentRows(res service.AgentListResult) []agentRow {
 		r.Service, r.ServiceTone = serviceText(in.Service)
 		r.HasService, r.Profile = len(in.Service) > 0, in.ProfileID
 		r.HasNative = in.NativeCLI
-		if current := in.Runtime; current != nil {
-			r.HasService = true
-			switch {
-			case !current.Known || !current.Running && !current.Stopped:
-				r.Service, r.ServiceTone = T("service.unknown"), "warn"
-				in.Entries = nil
-			case current.Running:
-				r.Service, r.ServiceTone = T("service.running"), "ok"
-			case current.Stopped:
-				r.Service, r.ServiceTone = T("service.stopped"), "stop"
-			}
-		}
 		if len(in.Entries) > 0 {
 			r.Entry = T("entry.closed")
 			for _, e := range in.Entries {
