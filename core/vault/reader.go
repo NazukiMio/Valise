@@ -198,7 +198,12 @@ func (v *Vault) SnapshotHeader(snapshotID string, ids ...age.Identity) (*Snapsho
 		return nil, err
 	}
 	var s Snapshot
-	if err := json.NewDecoder(r).Decode(&s); err != nil || s.Format != FormatSnapshot || s.SnapshotID != snapshotID {
+	d := json.NewDecoder(r)
+	if err := d.Decode(&s); err != nil || !SupportedSnapshotFormat(s.Format) || s.SnapshotID != snapshotID || s.Format == FormatSnapshotLegacy && s.Runtime != nil {
+		return nil, errors.New("vault: snapshot header is invalid")
+	}
+	var extra any
+	if d.Decode(&extra) != io.EOF {
 		return nil, errors.New("vault: snapshot header is invalid")
 	}
 	return &s, nil

@@ -18,6 +18,7 @@ const (
 	// recorded stages and backup_run_cancel. A client without it in hello
 	// keeps the synchronous backup-runs/1 behaviour.
 	BackupCapabilityV2 = "backup-runs/2"
+	BackupCapabilityV3 = "backup-runs/3"
 	BackupRunSchema    = "valise-backup-run/1"
 )
 
@@ -29,8 +30,28 @@ type BackupParams struct {
 	// Detach (backup-runs/2) lets the porter hand the accepted run to a
 	// transient user unit and return at once. Only a client that follows
 	// the run by status sends it; without it the call stays synchronous.
-	Detach bool `json:"detach,omitempty"`
+	Detach    bool            `json:"detach,omitempty"`
+	Selection BackupSelection `json:"selection,omitzero"`
 }
+
+// An empty selection uses the accepted plan. A nonempty tier applies only
+// to this run; the accepted plan and its copies are never rewritten.
+type BackupSelection struct {
+	Tier       string `json:"tier"`
+	SkipCopies bool   `json:"skip_copies,omitempty"`
+}
+
+func (s BackupSelection) Validate() error {
+	if s == (BackupSelection{}) {
+		return nil
+	}
+	switch s.Tier {
+	case "soul", "soul-secrets", "full", "raw":
+		return nil
+	}
+	return valise.New("unsupported_scope", "本次备份范围不受支持", "选择现有备份档位")
+}
+
 type SnapshotBindingParams struct {
 	SnapshotRef identity.SnapshotRef `json:"snapshot_ref"`
 }
@@ -68,6 +89,7 @@ type BackupComponent struct {
 	Kind        string       `json:"kind"`
 	TargetRef   *LocationRef `json:"target_ref,omitempty"`
 	State       string       `json:"state"`
+	StartedAt   *time.Time   `json:"started_at,omitempty"`
 	CompletedAt *time.Time   `json:"completed_at,omitempty"`
 	ErrorCode   string       `json:"error_code,omitempty"`
 	// FailureCause (contracts 16.G1) classifies a failed copy: host_unknown,
@@ -101,6 +123,18 @@ type BackupRun struct {
 // Normalize accepts only fixed reason classes; free-form native output cannot
 // enter durable history through this field. A new key denotes a new intent.
 func (p BackupParams) Normalize() (BackupParams, error) {
+	if p.Selection.Tier != "" {
+		switch p.Selection.Tier {
+		case "soul", "soul-secrets", "full", "raw":
+		default:
+			return p, valise.New("unsupported_scope", "本次备份范围不受支持", "选择现有备份档位")
+		}
+		if p.Reason != "manual" && strings.TrimSpace(p.Reason) != "" {
+			return p, valise.New("request_invalid", "一次性范围只能由手动备份选择", "定时备份沿用保护计划")
+		}
+	} else if p.Selection.SkipCopies {
+		return p, valise.New("request_invalid", "本次复制选择缺少备份范围", "重新准备一次性备份")
+	}
 	p.Reason = strings.TrimSpace(p.Reason)
 	if p.Reason == "" {
 		p.Reason = "manual"

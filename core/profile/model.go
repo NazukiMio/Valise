@@ -69,6 +69,7 @@ type Profile struct {
 	// Capabilities record what was verified, per capability
 	// (docs/PROFILES.md 1.2).
 	Capabilities map[string]Capability `yaml:"capabilities" json:"capabilities,omitempty"`
+	Environments *Environments         `yaml:"environments" json:"environments,omitempty"`
 }
 
 // Display is how the instance card looks in the UI (docs/PROFILES.md).
@@ -138,6 +139,9 @@ func (p Profile) ForAgent(name string) Profile {
 		p.Service = nil
 	}
 	p.Entries, p.Body, p.Provenance = nil, nil, nil
+	// A shared service or a verified default gateway does not prove that a
+	// named instance can run independently in a private environment.
+	p.Environments = nil
 	return p
 }
 

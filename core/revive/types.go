@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"valise/core/enroll"
+	"valise/core/environment"
 	"valise/core/identity"
 	"valise/core/profile"
 	"valise/core/vault"
@@ -84,6 +85,7 @@ type InspectParams struct {
 
 // RootFacts describes one target root.
 type RootFacts struct {
+	Identity  string `json:"identity,omitempty"`
 	ID        string `json:"id"`
 	Path      string `json:"path"`
 	Exists    bool   `json:"exists"`
@@ -152,14 +154,16 @@ type BodyPlan struct {
 
 // Plan is the confirmed plan the target executes.
 type Plan struct {
-	OpID       string             `json:"op_id"`
-	Mode       string             `json:"mode"`
-	InstanceID string             `json:"instance_id"`
-	SnapshotID string             `json:"snapshot_id"`
-	Tier       string             `json:"tier"`
-	Profile    profile.Profile    `json:"profile"`
-	Overrides  []profile.Override `json:"overrides,omitempty"`
-	Roots      []RootPlan         `json:"roots"`
+	TestOnly     bool                   `json:"test_only,omitempty"`
+	IsolatedTest *environment.TestInput `json:"isolated_test,omitempty"`
+	OpID         string                 `json:"op_id"`
+	Mode         string                 `json:"mode"`
+	InstanceID   string                 `json:"instance_id"`
+	SnapshotID   string                 `json:"snapshot_id"`
+	Tier         string                 `json:"tier"`
+	Profile      profile.Profile        `json:"profile"`
+	Overrides    []profile.Override     `json:"overrides,omitempty"`
+	Roots        []RootPlan             `json:"roots"`
 	// Carry copies live content outside the tier into the stage (rollback).
 	Carry bool     `json:"carry"`
 	Body  BodyPlan `json:"body"`
@@ -206,16 +210,21 @@ type Transition struct {
 
 // Journal is ~/.local/state/valise/journal/<op_id>.json.
 type Journal struct {
-	Plan             Plan          `json:"plan"`
-	State            string        `json:"state"`
-	History          []Transition  `json:"history"`
-	Roots            []JournalRoot `json:"roots"`
-	BodyMoves        []BodyMove    `json:"body_moves,omitempty"`
-	NPMOldVersion    string        `json:"npm_old_version,omitempty"`
-	NPMInstalled     bool          `json:"npm_installed,omitempty"`
-	ServiceWasActive bool          `json:"service_was_active"`
-	ServiceInstalled bool          `json:"service_installed,omitempty"`
-	StageVerified    bool          `json:"stage_verified"`
+	ManagedData      *ManagedDataRef         `json:"managed_data,omitempty"`
+	EnvironmentTest  *environment.TestResult `json:"environment_test,omitempty"`
+	Rollback         *RollbackEvidence       `json:"rollback,omitempty"`
+	Plan             Plan                    `json:"plan"`
+	State            string                  `json:"state"`
+	History          []Transition            `json:"history"`
+	Roots            []JournalRoot           `json:"roots"`
+	BodyMoves        []BodyMove              `json:"body_moves,omitempty"`
+	NPMOldVersion    string                  `json:"npm_old_version,omitempty"`
+	NPMInstalled     bool                    `json:"npm_installed,omitempty"`
+	ServiceWasActive bool                    `json:"service_was_active"`
+	ServiceInstalled bool                    `json:"service_installed,omitempty"`
+	Manifest         []ManifestEntry         `json:"stage_manifest,omitempty"`
+	ManifestSaved    bool                    `json:"stage_manifest_saved,omitempty"`
+	StageVerified    bool                    `json:"stage_verified"`
 	// RecoveryDisposition is recorded only by the owner swap execution path.
 	RecoveryDisposition string          `json:"recovery_disposition,omitempty"`
 	RecoveryTarget      *identity.Agent `json:"recovery_target,omitempty"`
@@ -268,14 +277,15 @@ type ResumeParams struct {
 
 // SwapResult is the end of a swap.
 type SwapResult struct {
-	OpID      string   `json:"op_id"`
-	State     string   `json:"state"`
-	Prev      []string `json:"prev"`
-	Logs      string   `json:"logs,omitempty"` // service logs on rollback; shown, never audited
-	Message   string   `json:"message"`
-	Carried   int      `json:"carried_files"`
-	Intruders []string `json:"intruders,omitempty"`
-	HealthLog []string `json:"health_log,omitempty"`
+	Rollback  *RollbackEvidence `json:"rollback,omitempty"`
+	OpID      string            `json:"op_id"`
+	State     string            `json:"state"`
+	Prev      []string          `json:"prev"`
+	Logs      string            `json:"logs,omitempty"` // service logs on rollback; shown, never audited
+	Message   string            `json:"message"`
+	Carried   int               `json:"carried_files"`
+	Intruders []string          `json:"intruders,omitempty"`
+	HealthLog []string          `json:"health_log,omitempty"`
 }
 
 // PrevEntry is one kept pre-swap state.

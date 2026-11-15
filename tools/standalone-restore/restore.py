@@ -2,7 +2,7 @@
 """Restore a Valise snapshot without Valise.
 
 Needs only Python 3 (standard library), and the `age` and `zstd` command-line
-tools. Implements docs/VAULT_FORMAT.md (valise-vault/1):
+tools. Implements docs/VAULT_FORMAT.md (valise-vault/1, snapshot heads /1 and /2):
 
     restore.py --vault DIR --identity identity.txt --list
     restore.py --vault DIR --identity identity.txt --snapshot s_... --out DIR [--include-secrets]
@@ -79,7 +79,10 @@ class Vault:
     def snapshot(self, sid):
         with open(os.path.join(self.root, "snapshots", sid + ".age"), "rb") as f:
             head = json.loads(self.decrypt(f.read()))
-        if head.get("format") != "valise-snapshot/1" or head.get("snapshot_id") != sid:
+        version = head.get("format")
+        if (version not in ("valise-snapshot/1", "valise-snapshot/2")
+                or head.get("snapshot_id") != sid
+                or version == "valise-snapshot/1" and head.get("runtime") is not None):
             die("snapshot header is invalid")
         doc = b"".join(self.blob(b) for b in head["files_blobs"])
         if hashlib.sha256(doc).hexdigest() != head["files_sha256"]:

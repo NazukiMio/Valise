@@ -12,12 +12,13 @@ import (
 
 // Format identifiers.
 const (
-	FormatVault    = "valise-vault/1"
-	FormatDedupe   = "valise-dedupe/1"
-	FormatIndex    = "valise-index/1"
-	FormatSnapshot = "valise-snapshot/1"
-	FormatFiles    = "valise-files/1"
-	FormatMeta     = "valise-meta/1"
+	FormatVault          = "valise-vault/1"
+	FormatDedupe         = "valise-dedupe/1"
+	FormatIndex          = "valise-index/1"
+	FormatSnapshot       = "valise-snapshot/2"
+	FormatSnapshotLegacy = "valise-snapshot/1"
+	FormatFiles          = "valise-files/1"
+	FormatMeta           = "valise-meta/1"
 )
 
 // Seal tiers.
@@ -111,6 +112,9 @@ type Snapshot struct {
 	Tier       string            `json:"tier"`
 	Profile    ProfileRef        `json:"profile"`
 	Provenance enroll.Provenance `json:"provenance"`
+	// Runtime is encrypted source evidence, never permission to execute a
+	// recorded path or proof that all dependencies can be rebuilt.
+	Runtime *RuntimeRecord `json:"runtime,omitempty"`
 	// ProfileDoc is the effective profile the snapshot was sealed with; a
 	// client without that profile version may revive with it explicitly.
 	ProfileDoc *profile.Profile `json:"profile_doc,omitempty"`

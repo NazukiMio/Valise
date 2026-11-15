@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 22
+profile_version: 23
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -145,7 +145,30 @@ health:
   checks:
     - { kind: systemd_active }
     - { kind: tcp, entry: gateway }
+    - { kind: http, entry: gateway, expect_status: [200] }   # OBS (2026-11-12 ubuntu-vm): GET /, status only, body not read
     # No argv check: a read-only health command with documented exit codes was not found.
+
+# OBS (2026-11-12 ubuntu-vm, npm 2026.10.9): private prefix and entry were
+# read from the accepted NPM record/package metadata. CLI source declares
+# gateway run, --bind and --allow-unconfigured. Private runtime/empty-state
+# HTTP smoke passed; selected-point reconstruction and activation are pending.
+# This declaration does not advertise a tested environment or named Agent.
+environments:
+  engine: linux-bwrap
+  start_argv:
+    - "${RUNTIME_EXECUTABLE}"
+    - "${HOME}/.openclaw/tools/node-v24.22.1/lib/node_modules/openclaw/openclaw.mjs"
+    - gateway
+    - run
+    - --allow-unconfigured
+    - --bind
+    - loopback
+  working_dir: "${STATE_DIR}"
+  path: ["${RUNTIME_DIR}"]
+  runtime_executable: {service: {scope: user, unit: openclaw-gateway.service}, name: node}
+  program_paths: [{root: state, glob: tools}, {root: state, glob: bin}]
+  gateway_entry: gateway
+  verification: {status: untested, versions: ["2026.10.9"], env: "Ubuntu 26.04 arm64, executable bound to the declared user service", date: "2026-11-12"}
 
 # OBS: `openclaw models auth login --help` (2026.10.9). Over ssh (a "remote/VPS
 # environment") the openai provider prints its authorization link and also
