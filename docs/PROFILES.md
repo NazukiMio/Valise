@@ -70,31 +70,9 @@ capabilities:
 - N1 / N5b 在引入新范围前定稿匹配、SQLite 单位、快照范围记录、回滚携带/删除语义及旧工具拒绝策略；本文件 schema 和 lint 未扩展前不在 YAML 中使用假定字段。
 - full / raw 不等于可重建所有程序。来源记录与能力核实继续逐项检查，目录外程序、版本不可得与架构限制如实报告；通过备份测试不自动将 restore 标为 tested。
 
-### 1.5 并行运行环境与隔离重建（2026-11-12，首个输入 schema 已实现）
+### 1.5 已废弃：并行运行环境声明（`environments`，2026-11-15 撤销）
 
-新并行/隔离能力必须由通用 profile 声明与现场事实共同支持，不凭现有 restore 能力、命名实例发现或目录存在推定可用，也不能在 Go 中按 harness 名称分支。首个可选输入 schema 已增加；执行适配尚未完成，不能在官方资料中伪造已支持状态。
-
-技术设计须覆盖：每个环境的私有程序版本与启动配置、所有可写根与共享依赖、隔离运行时的对外连接限制、固定启动/停止和停止核实方式、独立管理入口/端口、网关探针和运行环境重建所需的受信来源。未核实的路径与能力按既有 pending 规则处理；共享安装的更新不能破坏原环境的独立可启动性。
-
-隔离测试仅到网关可打开；正式恢复后的对话由用户在原生界面验证并确认，不能读取聊天或自动调用模型。用户确认不自动把官方能力状态改为 tested。非全量候选的程序按目标记录版本重建，数据底座不得晚于目标时间点；布局或来源不兼容时不能静默拼接。
-
-首个 schema 扩展为可选 `environments`：`engine: linux-bwrap`，固定 `start_argv`、`working_dir`、私有 HOME 下的 `path`、用于私有重建的 `program_paths`（受管根的明确目录）、引用本 profile 管理入口的 `gateway_entry`、独立 `verification`（Capability 的 status/versions/env/date 结构）。默认只允许 HOME/STATE_DIR 路径变量；下面明确声明运行时后可使用其受信绑定，不提供脚本或用户表达式。tested 必须有版本、环境和有效日期证据；不继承整份 profile 的 verified 作为环境能力证据。未声明或未核实不得称为支持。第一模块不自动将主实例的环境声明用于命名实例（其入口和共享服务尚需单独适配）；不修改现有官方 profiles 的支持状态。
-
-运行时不一定等于 npm prefix 中的解释器。可选 `runtime_executable: {service: {scope: user, unit: ...}, name: ...}` 必须引用同一 profile 已声明的用户服务；name 是单个明确的程序文件名。来源采集只读查询该服务的 active/MainPID，再核对本用户进程的内核启动标识与 `/proc/<pid>/exe`，实际文件必须位于本用户 HOME 内、非链接、非硬链接且拥有执行权限；前后 PID/启动标识/文件身份必须一致。只复制这一个明确可执行文件，不读命令行、环境、终端或模型配置，不从 PATH 选版本，也不把用户服务 active 当作 Agent 归属或健康证明。
-
-声明该项时，`start_argv[0]` 必须是 `${RUNTIME_EXECUTABLE}`，PATH 可用 `${RUNTIME_DIR}`（该文件所在目录）。两个变量只来自上述受信采集或对应解密运行时记录；缺失时拒绝，不回落到共享命令。运行时文件单独作为明确的程序材料挂入其私有 HOME 对应位置，不自动增加备份数据 roots、不复制该目录中的其他文件。它与程序树摘要是两类独立证据，正式切换仍需额外核实服务/根/进程归属。
-
-`path` 是目录数组，每项必须位于私有 `${HOME}` 下；`working_dir` 必须位于 `${HOME}` 或 `${STATE_DIR}` 下；`program_paths` 每项用既有 `{root, glob}` 结构，但 glob 必须是无通配符的明确目录。`gateway_entry` 必须引用本 profile 的回环 web 入口；不能用 `${env:...}` 继承宿主变量。
-
-没有网页入口时可用 `offline_readiness` 代替 `gateway_entry`（二选一）。首种类型 `kind: unix-json` 只连接本次私有 HOME 内的明确 `socket`，发送官方协议的固定 `request` JSON 对象加换行，最多读取 512 KiB 的一行 JSON；不支持 socket 发现脚本、任意命令、认证输入或外部路径。socket 必须由本用户拥有、权限不对组/其他用户开放，并核对实际连接的 peer UID。`checks` 是 `{field, kind, value?}` 的固定断言数组：`string_equal`、`integer_equal`、`boolean_equal`、`nonempty_string`、`positive_integer`、`string_array_contains`、`loopback_http_origin`。仅点分对象字段，不提供表达式、脚本或任意比较器。`members` 可指定 `{field, match_field, match_value, checks}`，在明确数组中必须恰有一个对象匹配后再检查其字段；用于核实目标实例，而非笼统信任共享网关。
-
-socket 及字符串断言只允许 `${HOME}`、`${STATE_DIR}`；字符串相等断言还可用 `${PROGRAM_REVISION}` 绑定控制层从已认证来源取得的精确程序修订，缺少值时拒绝，不能从当前 PATH/当前父实例推断历史版本。固定请求禁止变量和换行，限制为 4 KiB；断言及成员数量有限。离线响应只在内存按声明核对公开就绪元数据，不保存、返回或记录响应内容。官方协议、字段和版本依据只存在于 profile；通用 Go 探针不写具体 harness 知识。只有实际对应版本验收后才能把独立环境能力标为 tested；未核实的声明不开放完整测试。
-
-当前内部构建器能把已核实的标准 tar 程序材料与快照数据写入新私有 HOME，并执行隔离 HTTP/离线网关试运行。程序入口必须落在 `program_paths` 对应的私有目录中；本段不调用全局安装、共享入口或安装脚本。程序材料接受逐文件大小/SHA-256/权限清单和完整 tar 摘要；链接扩展仅接受清单中目标文字及其 SHA-256 已绑定的符号链接，最终目标必须存在于同一材料的 `program_paths` 内。允许私有 HOME 内的绝对目标或可解析到这些目录的相对目标，不允许借链接访问数据、外部目录、系统解释器或未列条目；拒绝循环/目录祖先循环与硬链接。先校验和写完普通文件，整体归档摘要通过后才建立链接。长名仅放行与条目一致的 tar path/linkpath 扩展，其他 PAX 元数据拒绝。官方来源下载/运行时适配尚未接入，不能把普通用户上传的 tar 当成已核实官方材料。
-
-程序材料与数据使用不同的宿主暂存树，运行时按 `program_paths` 只读覆盖；程序目录之间不得重复或包含。隔离 HOME 保留已绑定的来源 HOME 绝对路径，以支持不可改写前缀的运行时；不会因此挂入该宿主 HOME。与系统或控制器保留路径重叠的 HOME、描述符与工作区 HOME 不一致时拒绝启动。
-
-缺少非全量所需的数据底座时，首版内部构建器返回需要按记录版本重建基础数据；该来源适配未完成前不退而读取活动状态。HOME 外的根、程序路径/跨根冲突与未核实的布局也拒绝。源程序依赖与独立运行能力仍须逐 profile 验证，合成 Go 程序通过不代表任何官方 harness 已支持。服务入口/槽位激活仍待后续实现及靶机核实，不把字段或材料构建完成当成已可执行并行恢复。
+> **DEPRECATED（2026-11-15）**：`environments`（`engine: linux-bwrap`、`runtime_executable`、`offline_readiness` 等 A/B 并行槽位字段）已随 A/B 双槽位架构于 2026-11-15 正式撤销，官方与用户 profile 中不再配置该字段，并从 `profilelint` / schema 中移除。恢复与健康页恢复测试统一使用标准的 `detect`、`paths`、`consistency`、`provenance`、`service`、`entries` 与 `health` 声明。历史说明见 `docs/history/RESTORE_ENVIRONMENTS_DEPRECATED_2026-11-15.md`。
 
 ## 2. Schema
 

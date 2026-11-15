@@ -70,7 +70,9 @@ https://github.com/yetone/magpie （MIT，阅读时的提交 `4d55a0a`，2026-11
 - Graphiti：事实随时间失效、被新结论替代的思路。https://github.com/getzep/graphiti
 
 
-## 2026-11-12 并行环境底座参考
+## 2026-11-12 并行环境底座参考（历史参考 · 2026-11-15 已撤销相关方案）
+
+> 以下条目系 2026-11-12–14 试验 A/B 并行运行环境时的外部资料查证记录；A/B 双槽位与 `bwrap` 容器接管方案已于 2026-11-15 撤销，保留外链查证原文仅供历史查阅。
 
 - [bubblewrap 官方项目与安全边界](https://github.com/containers/bubblewrap)：它提供低层命名空间/挂载机制，隔离保障取决于调用方构造的完整策略，不以工具名字作背书。
 - [bubblewrap 官方私有 HOME 示例](https://github.com/containers/bubblewrap/blob/main/demos/bubblewrap-shell.sh)：OS 目录只读、其余可见目录独立；Valise 的测试策略不启用 share-net。

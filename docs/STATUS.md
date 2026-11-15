@@ -1,150 +1,69 @@
 # 当前状态与交接
 
-> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-15。新会话读完 `AGENTS.md` 后先读本文件，再按 `AGENTS.md` 第 1 节读规范。
+> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-15。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前工作与交接（2026-11-15）
+## 0. 当前工作与交接（2026-11-15 Stage 1 完成，待执行 Stage 2 & Stage 3）
 
-**用户已取消长时自动 Goal，改为短周期交付并亲自参与测试。本轮授权的收尾、提交与推送已经完成：受管 Agent 的旧槽正常复用、取消后重新准备、切回后再次恢复、历史记录只读显示。接手后先等待用户指定下一轮具体任务，不自动继续开发。** SERVICE_CONTRACTS.md 19.7 保留完整产品范围，不再作为自动继续执行的指令；不要自行扩展到其他来源、受管直通、分身或迁移。
+**架构收敛与分段剥离计划**：
+经 2026-11-15 代码审计与产品复盘，用户已确认**撤销** A/B 双槽位并行运行环境（`linux-bwrap` 容器接管、三档恢复保护模式、独立程序树采集与父子切换状态机），改为在新分支 `refactor/revoke-ab-slots-and-doc-audit` 上分阶段清理：
+- **Stage 1（已完成）**：创建分支 `refactor/revoke-ab-slots-and-doc-audit`，完成 Prompt Audit 与规范文档重整；归档废止的 A/B 契约、提案与合成实验记录至 `docs/history/`；补充 MVP（`v0.1`）边界、工程减负计划与 5 项高阶用户痛点规划。
+- **Stage 2（下一步，仅改 `client/ui`）**：剥离 `client/ui/gui` 与 `client/ui/service` 的 A/B 并行环境、三模式设置与隔离试运行代码；保留全部非 A/B 有效 N4 交付，验证 `client/ui` 测试、`vet`、`gofmt` 与 `go tool mygo vet`（单文件 `<= 400` 行，全 `T("key")`）后更新本文件并提交 Commit 2。
+- **Stage 3（最后，改 `porter` / `core` / `profiles`）**：解除 `porter/internal/revive/direct_policy.go` 对直接恢复的拦截，剥离 `porter`、`core/environment`、`profiles/openclaw.yaml` 的 A/B 槽位代码，保留 `valise-snapshot/1` 与 `/2` 永久读取兼容，恢复新封存写入标准 `/1`；跑通 `AGENTS.md` 第 6 节全部五模块自检及 Linux ARM64/AMD64 交叉编译，更新本文件并提交 Commit 3。
 
-### 用户构建与代码边界
+### 本轮保留的非 A/B 有效成果（Stage 2/3 禁止误删）
 
-- 用户手上的最新阶段版仍是 `0.0.0-dev+stage-test-20261114`，路径 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261114/Valise Test.app`。本轮只收尾并推送源码，没有更新用户应用、实际 porter 或资料包；不能告诉用户完整 A/B 已可在此旧包里测试。
-- 旧包可测旅程按位置增量/独立范围/多位置合并、精确时间点和副本的文件测试、一次性备份/进度、个性化、文件窗口提示、Agent 三模式设置及已适配来源的只读恢复预览。默认并行不降级为旧直接恢复。
-- 已推送源码包含首次准备的管理传输和 GUI，正式切换/切回审阅、人工对话确认、独立清理、当前备份/原生界面/审批绑定及健康读取。已通过的组件和合成 Linux 证据见 acceptance/N4.md 6.24–6.38；这不代替真实备份的前端端到端验收。
-- 正式切换能力 `environment-restore-switch/1` 仍不广告。首适配限同机默认实例、来源精确匹配的私有 npm 和普通正式数据文件；完整产品流程及其他来源尚未交付。
+1. **旅程范围化与增量加载**（`journey_stream.go`、`journey_scope.go`、`journeyread.go`、`journeylocations.go` 等）：按当前连接与明确迁移关系查询，支持分位置超时与重试。
+2. **一次性备份进度与视图**（`backupfollow.go`、`backuponce.go`、`backupview.go`、`backupclientcopies.go` 及 `porter/internal/server/backuprun.go`）。
+3. **直通恢复 / 失联恢复 / 导出 / 恢复前可选备份 / 恢复历史**（`restore.go`、`restoresetup.go`、`restoreprogress.go`、`restorehistory.go`、`restorelocations.go`、`lostsource.go`、`migrate.go` 及 `porter/internal/server/restore_review.go`）。
+4. **健康页按时间点选择的文件与暂存恢复测试**（`healthrestore.go`、`healthtestselect.go`、`restoretest*.go`）：保留 `file` 与 `staging` 两档核对（`test_only` 写入暂存后 `discard`），移除 `environment` 隔离网关深度与来源确认弹窗。
+5. **按实例原生终端**（`native.go`、`native_instance.go` 及 `porter` `native --instance <id>`）：保留 `--instance` 直接按 dossier/profile 解析 `native_cli`，去掉 A/B 运行环境守卫。
+6. **快照与档案兼容**：`core/vault/` 与 `tools/standalone-restore/restore.py` 永久保持 `valise-snapshot/1` 与 `/2` 读取兼容；保留旧档案只读兼容逻辑（非 A/B 部分）。
 
-### 本次收尾节点（acceptance/N4.md 6.39）
+### Stage 2（`client/ui` 剥离）待清理清单
 
-- 普通恢复计划列出将复用的非活动环境、数据/程序/临时材料及逻辑量，准备按钮明确说明复用，不要求用户先手动清空。范围依据登记、创建身份和交换日志派生；准备保持当前环境运行、备份保留。
-- 修正保存新准备记录时把已归属旧工作目录误判为未知操作的问题；只允许计划内所有者且设备/inode/目录链仍吻合的目录。删除前记录意图、复核目录元数据树及备份保护，逐项保存进度。
-- 受管来源支持连续取消后保留材料直接再准备，以及保留旧槽再次 A/B 交替。切回后的候选数据从确切 failed 位置派生。旧操作被取代后显示历史结果和当时的人类确认，不借用当前运行/网关事实，不开放历史动作。
-- 当前专项 Linux 日志 `/tmp/valise-closeout-linux-verified.log` 已为 REUSE_LINUX_PASS：保留旧槽连续取消 A2/A3，再切换/确认 A4、B2；另一场景在 A4 明确切回 B1 后再恢复 A5、B2。两场景分别 13.64 / 15.11 秒，原进程/数据在准备时保持不变，历史查询不写状态，随机测试文件清单前后一致，TMPDIR 为空。
-- GUI 大小窗口/滚动预览和历史状态专项通过，渲染位于 `/tmp/valise-closeout-shots/`。服务层新增冻结复用确认与历史状态不得夹带当前事实的检查。core/porter/前端相关 race、双架构恢复测试编译及最终 Linux 扩展回归均通过，后者为 CLOSEOUT_LINUX_PASS；随机文件清单前后为零、加载项为空、TMPDIR 为空。完整顺序自检 `/tmp/valise-closeout-selfcheck.log` 为 SELFCHECK_PASS（service 275.410 秒、TUI 151.603 秒、GUI 10.992 秒），含五模块、双架构主程序、profilelint 和 mygo vet；详细结果见 6.39。
-- 复用过程中实际进程中断后的清理/继承、首次原生准备取消后的正常复用，以及自动失败退回后的再次恢复仍需独立验证；本次通过不扩展为这些路径已验收。
+- **待移除 `client/ui/gui/` 文件**（用 `git rm`）：
+  - `environmentcleanup.go`, `environmentcleanup_test.go`, `environmentsettings.go`, `environmentsettings_test.go`
+  - `healthtestenvironment.go`, `healthtestenvironment_test.go`, `healthtestmaterials.go`, `healthtestmaterials_test.go`
+  - `restoreoldcleanup.go`, `restoreoldcleanup_test.go`
+  - `restoreparallelconfirm_test.go`, `restoreparallelhistory_test.go`, `restoreparallelprepare.go`, `restoreparallelprepare_test.go`, `restoreparallelpreview.go`, `restoreparallelpreview_test.go`, `restoreparallelstatus.go`, `restoreparallelswitch.go`, `restoreparallelswitch_test.go`, `restoreparallelswitchview.go`
+- **待适配 `client/ui/gui/` 保留文件**：`app.go`, `health.go`, `health_test.go`, `healthrestore.go`, `healthtestselect.go`, `healthtestselect_test.go`, `personalization.go`, `personalization_test.go`, `restore.go`, `restore_test.go`, `restoresetup.go`, `restoreprogress.go`, `pages_test.go` 等（另检查 `gui/i18n/zh-CN.json`、`TUI` / `CLI` 中残留的 A/B 运行环境调用）。
+- **待移除 `client/ui/service/` 文件**（用 `git rm`）：
+  - `direct_policy_test.go`, `environment_guard_test.go`, `environment_history_test.go`
+  - `environment_old_cleanup.go`, `environment_old_cleanup_test.go`
+  - `environment_plan.go`, `environment_plan_test.go`
+  - `environment_prepare.go`, `environment_prepare_status.go`, `environment_prepare_stream.go`, `environment_prepare_test.go`, `environment_prepare_wire_test.go`
+  - `environment_settings.go`, `environment_settings_test.go`
+  - `environment_switch.go`, `environment_switch_test.go`
+  - `restoretest_environment.go`, `restoretest_environment_test.go`, `active_approval_test.go`
+- **待适配 `client/ui/service/` 保留文件**：移除对 `core/environment`、`environment_*` RPC 与 `RestoreTestDepthEnvironment` 的调用，确保直通恢复直接基于 `PlanRevive` / `PrepareRestore` / `RunRestore` 执行。
+- **Stage 2 结束校验**：`export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3 && cd client/ui && go test ./... && go vet ./... && test -z "$(gofmt -l .)" && go tool mygo vet`。
 
-### 剩余范围与下一次人工测试
+### Stage 3（`porter` / `core` / `profiles` 剥离）待清理清单
 
-1. 先由用户选择下一轮可测流程，再交付相应构建、步骤和已知限制；不要重新开启长时自动 Goal。
-2. 并行仍缺真实生产备份端到端与用户实际对话验收，以及部分中断/失败候选边界；受管直通后续恢复未完成。
-3. 非全量无适用全量时的记录版本重建、命名实例/Git/其他来源、正式数据链接和完整离线就绪适配未完成。
-4. 同机/跨机分身默认位置、准备后人工启用、迁移成功已迁出及失败收尾未完成。完整隔离测试按 profile 的实际核实能力分级，不能把小型合成测试说成生产或性能验收。
+- **待移除 `core/` 文件**：`core/environment/` 整包、`core/profile/environments.go`、`core/profile/environments_test.go`、`core/revive/environment_plan.go`、`core/revive/environment_preparation.go`、`core/revive/managed.go`（及对应测试）。清理 `core/profile/`、`core/revive/`、`core/vaultrpc/` 中对 `environments` / `environment-*` 能力的依赖。
+- **待移除 `porter/` 包与文件**：
+  - 整包：`porter/internal/activationrecord/`、`activeexec/`、`activeview/`、`environments/`、`isolated/`、`managedruntime/`、`runtimeguard/`
+  - `porter/internal/revive/` 中 `direct_policy*.go`、`environment_*.go`、`managed_*.go`、`activation*.go`
+  - `porter/internal/server/` 中 `environment_*.go` 及环境相关方法注册（保留 `backuprun`、`restore_review` 与 `native --instance`）
+  - `porter/internal/seal/` 中 `active.go`、`active_program.go` 与运行期程序树采集（新封存写回 `valise-snapshot/1`），保留 `seal/journey.go`
+- **待清理 `profiles/`**：移除 `profiles/openclaw.yaml` 中已废弃的 `environments:` 字段（及清理 `core/cmd/profilelint` 中的 `environments` 校验或将其标为已废弃）。
+- **Stage 3 结束校验**：按顺序跑通 `AGENTS.md` 第 6 节全部 5 步（含 `profilelint`、Linux `arm64`/`amd64` 交叉编译与 `mygo vet`）。
 
-### 必须保留的实机事实
+### 必须保留的环境与基线事实
 
-- 默认资料包仍为 2026.11.10（OpenClaw 22、Hermes 11），未替换实际登记。默认配置公钥为 `~/.cache/valise-drill/devpack/key.pub`，演练配置对应另一把 `drillpack/key.pub`；不得混用、重生成或覆盖。仓库 OpenClaw 23 的环境能力仍 untested。
-- ubuntu-vm 有 bwrap 0.11.1。原私有 prefix 中 Node 自 2026-11-07 为 0600，不得改权限或用 PATH Node 代替；实际服务使用 `/home/parallels/.local/opt/node-v24.22.2-linux-arm64/bin/node`。真实来源 48,102 项、842,130,982 字节，尚无真实备份的完整恢复/对话验收。
-- 本轮仅使用 `/home/parallels/.cache/valise-old-cleanup.SbPDHmH5/` 的合成数据和本测试创建的随机用户单元；不能启停实际 Agent。mygo 固定 v0.7.3，不读取模型凭据、不代用户发对话。
-- 四组提交已推送至 `origin/n2-agent-protection-journey`，本地与远端已核对一致，代码收尾基线为 `4d890c275f077e1e001f031e7ff9597a593deda6`。用户的图标移动、`.DS_Store` 和 `references/` 参考素材保留在工作树，不混入本轮提交。旧提交署名缺口不在本轮改写历史。
+- **当前用户构建**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261114/Valise Test.app`（`0.0.0-dev+stage-test-20261114`）。A/B 剥离完成后应重新打出干净 `v0.1` 测试包交用户验证。
+- **默认资料包与演练公钥**：默认资料包为 `2026.11.10`（OpenClaw 22、Hermes 11）；默认配置公钥 `~/.cache/valise-drill/devpack/key.pub`，演练配置公钥 `~/.cache/valise-drill/drillpack/key.pub`，不得混用或覆盖。
+- **构建环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；禁止执行 `rm -f`（用 `git rm` 或 `t.TempDir()`）；禁止自动 `git push`。
+- **原基线**：分叉前分支 `n2-agent-protection-journey` 位于 `f243bcf`（含 `07d7952`、`4bdd0fb`、`3e9f124`、`4d890c2`、`f243bcf`）；工作树中的 `references/` 与 `.DS_Store` 保留不提交。
 
-### 接手定位与下一轮建议
+---
 
-- 按 AGENTS.md 阅读现行规范；实现入口依次看 `core/environment/`（状态机/公开投影）、`porter/internal/revive/environment_reuse*.go`（固定复用范围/执行/清理）、`environment_preparation*.go`（准备与取消）、`activation*.go`（父事务/审阅/历史）、`client/ui/service/environment_*.go` 和 `client/ui/gui/restoreparallel*.go`（人类适配/界面）。正式能力广告在 `porter/internal/server/server.go`，不能为了出现按钮而提前加入 SwitchCapability。
-- 本轮自检与 Linux 回归均已结束，没有本轮待轮询的验证进程。完整输出仍在上述 `/tmp/valise-closeout-*` 文件中；这些是本机临时证据，持久结论已写入 acceptance/N4.md 6.39。
-- 下一轮建议先交付“准备新环境 → 取消 → 再次准备”的专用测试包、简短测试步骤和已知限制，由用户测试后再修反馈；这是待用户选择的建议，本交接不自动开始打包或部署。
-- 出包前核实目标 Agent 的实际来源和已接受 profile。当前首适配不能直接覆盖用户曾测试的 `hermes-valisetest` 命名实例；默认资料包也未更新。不得靠更改真实安装、放松来源校验或冒充已核实能力让流程可用。
-- 构建环境仍为 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`，可使用既有 `GOCACHE=/tmp/valise-go-build`。新 porter 交付目录遵照用户指定 `/Users/nazukimio/Downloads/valise-porter-test/`；源码推送不等于此处产物或服务器已更新。
+## 1. 历史阶段摘要（N1–N3 已验收，N4 进行中）
 
-## 1. 代码与分支
-
-- 工作分支 `n2-agent-protection-journey`，已推送并设置跟踪 `origin/n2-agent-protection-journey`。N2 实现从 `305e14e` 开始，之后的提交都在这个分支上；`references/`（用户的参考 HTML）有意不纳入版本控制。
-- 收尾前基线为 `ffcde4f`，本轮四组提交为：`07d7952`（共享核心/格式）、`4bdd0fb`（porter）、`3e9f124`（客户端）、`4d890c2`（规范/验收）。新提交均带两行规定署名。最新自检与节点验收见第 0 节和 acceptance/N4.md 6.39；本次交接只更新 STATUS，不改运行代码。
-- **提交署名缺口**：`c04b266`、`cfcb916`、`de37ced`、`e30a84e`、`021121c` 少了 `AGENTS.md` 第 8 节要求的两行 Co-authored-by（只有 Claude 的署名）。本轮仅为新提交附上两行署名，不改写上述历史；如需修正，另由用户决定。更早的 `b990c75`、`6364c15`、`6c7e3c5`、`b45a883` 也没有这两行，不是本轮提交。
-- 用户 2026-11-10 在桌面版里给测试用的服务器更新过本轮 porter（`0.0.0-dev+d13ae9c` 或之后的 `1d7dd60`，以服务器设置页显示为准）。更早：三台靶机（`ubuntu-vm`、`ubuntu-vm-x86`、`debian-vm`）已部署 `a1c5ba1` 构建的本地 porter（2026-11-08；在原有能力之外声明 copy-verify/1、cloud/1、identity-lost-source/1、revive-body-dirs/1）。`nazukiki-cloud` 未部署本轮 porter。
-
-## 2. N2 进度（2026-11-07 验收为 Done）
-
-已实现并在真实 systemd 上验证（详见 [acceptance/N2.md](acceptance/N2.md)）：
-
-- 身份与旅程：实例世代、迁移关系（ubuntu-vm → x86 真实迁移）、恢复与创建副本的关系、跨服务器 Agent 列表标注“已迁出”。
-- 保护计划：版本化 CAS、意图 → 配置 → 发布 → 核实事务、失败回退、崩溃后的待核实（故障注入构建实测三种崩溃）、`valise protection resolve`。
-- 按计划备份：默认 full、服务器复制、分离执行（一次性 systemd 单元，由“分离模式”设置开关，默认关闭）、取消。
-- 错过的定时备份与补跑（`Persistent=true`）、补跑标记“服务器从停机状态恢复”；重启后未登录时定时照常运行（debian-vm，linger）。
-- 被计划引用的复制目标的版本化修改；来源不明快照恢复前的明确选择。
-- 健康：linger 与时钟一键修复（列命令与改动，再次同意）、接管模式（TUI 内 `sudo -n`）、破坏性步骤才检查别处备份、高级模式持续到按 `L` 关闭/切换服务器/退出。
-- 复制位置：失败原因分类留在记录里、计划视图给出各位置最近结果、健康页解释、保存前由服务器 `target_check`。
-- Debian 13（systemd 257）时间戳兼容修复。
-
-2026-11-07 收尾补测（详见 acceptance/N2.md 末节）：夏令时模拟、sudo 时钟修复（终端高级模式）、TUI 接管模式、`ubuntu-vm-x86` 恢复当前实例与创建副本的关系记录、真实复制失败原因、`kill -9` 客户端后本机任务显示待核实，全部实机通过。期间修正“服务器时钟偏差使保护计划无法修改”。已知限制：真实夏令时切换未在自然时间经历（以调钟模拟）；时钟跳变触发的运行被记为补跑，界面文字“服务器从停机状态恢复”不够准确；界面层各项属 N4。
-
-界面层：弹窗、错过记录“标记已读”、分离模式开关的界面入口、发起按计划备份的界面都属于 N4；当前提示只在服务层结果中。
-
-## 3. 待用户决定
-
-2026-11-12 三轮产品问卷已回答，无待回答产品题。规则见第 0 节和 SERVICE_CONTRACTS.md 第 19 节；第一模块底座已实现；完整技术设计、并行切换、harness 隔离重建及分身/迁移新流程仍待完成。
-
-## 3a. 用户决定（2026-11-07）
-
-1. **提交署名**：不改写旧提交；之后的新提交照常带两行 Co-authored-by。
-2. **旧说法现在统一**：TUI、CLI、porter 返回的原因与错误文字，以及新写入的备份原因全部改用 PRODUCT.md 8.1 的说法；服务器上已有记录不改写，客户端显示时把已知旧说法映射为新说法。改完后三台靶机重新部署 porter。
-3. **`debian-vm` 改为 Valise 接入**，并创建管理钥匙（单独的管理口令），用于实测高级模式、接管模式与 sudo 时钟修复。
-4. **N2 Done 前补测四项**：真实复制失败的原因记录；`ubuntu-vm-x86` 实际恢复当前实例与创建副本的关系记录；`debian-vm` 的 sudo 时钟修复与接管模式；在 `debian-vm` 模拟夏令时切换（计划时区 America/New_York，时钟调到 2027-03-14 02:00 前，须在时钟修复之前做）；本机任务进行中 `kill -9` 客户端，核对显示待核实且不重跑。界面层各项（N4）记为已知限制。
-5. **B03 采纳提案，在 N3 之前做**：
-   - 指向同一状态目录内部的绝对链接：运行时临时指向暂存中的对应位置，交换前还原为原链接文本并核对。
-   - 程序代码的认定：完整解析后的目标位于登记时记录的程序目录内、且为普通目录/文件；复制时记摘要，运行后核对原代码未变；目标在程序目录外就停止。
-   - 命令改动了暂存中的私有代码副本：按越界写入拒绝发布、恢复原服务并指出文件；harness 确实需要写那里时先在 profile 中声明。
-   - 验收：在 `ubuntu-vm` 上另起独立测试网关，不动现有实例。
-6. **N3 云盘**：“服务器登录”在服务器上运行 rclone config，复用登录中继 `loopback_oauth` 转发 53682 端口，在本机浏览器授权；端口占用或该云盘不支持时，退回原生终端里 rclone 自己的无浏览器授权并粘贴。“这台电脑登录”优先用 PATH 里已有的 rclone（显示版本），没有时经用户确认后按 `kit/tools.yaml` 的锁定版本下载并核对 SHA-256 到 Valise 自己的目录（需补 macOS 构建条目）。
-7. **执行顺序**：① 代码与规范用语统一、服务契约第 16 节并入正文、重新部署 porter → ② `debian-vm` 接入与四项实测、N2 标 Done → ③ B03 规范、实现与测试网关验收 → ④ N3 云盘登录写入规范并开工 N3。
-8. **取代规则**（同意建议）：目标与已登记实例目录相同、或该实例目录在目标之内才取代；目标在另一实例目录之内时，命名实例位置放行，其他阻断。已实现并实机复测。
-9. **N3 云盘细节**（问卷确认，已写入 ARCHITECTURE.md 7.3、LOGIN_RELAY.md 第 7 节、AGENT_KIT.md 8.4、UI.md 备份位置；提案移入 `history/N3_CLOUD_LOGIN_PROPOSAL_2026-11-07.md`）：服务器与这台电脑都用 Valise 自己的 rclone 配置文件；53682 不可用时由 Valise 用本机 rclone 代为运行 `rclone authorize`，结果由用户粘贴；不加 rclone crypt，界面说明云端可见的名字；Dropbox、OneDrive 的整盘权限允许服务器登录但加重说明；N3 顺序为严格副本 → 云盘 → 自动同步收入共享服务 → 失联恢复；实机验收用 Google Drive 测试账户，由用户亲自授权。
-10. **严格副本**（问卷确认，写入 ARCHITECTURE.md 7.1.1；提案移入 `history/N3_STRICT_COPIES_PROPOSAL_2026-11-07.md`）：远端 pack 下载计算、已核对的按大小与修改时间复用；复制后自动核对清单，pack 内容在“核对副本”或删除前做；删除时可跳过某处核对，按未核对处理；服务器不可达时写“能恢复这里列出的 N 个备份”。
-11. **服务器复制后核对**（2026-11-08）：porter 在服务器发起的复制后核对清单有变化的周期，写进同步记录。
-12. **Google Drive 自己的应用**（2026-11-08）：rclone 共享的 Google Drive 应用将在 2026 年内停用；登录时用 `--all` 让 rclone 自己问 client_id 等，用户在 rclone 的提问里填，Valise 不解析不保存；实机测试账户仍用 Google Drive。
-
-## 4. 用语统一与契约整理（2026-11-07 完成，步骤 ①）
-
-- **代码与界面**：TUI、CLI、porter 返回的原因与错误文字、Agent 保护技能说明、新写入的备份原因、systemd 单元说明都已改用 PRODUCT.md 8.1 的说法（“上云”也改为“同步”）。服务器上已有记录与旧 porter 的文字由客户端显示时经 `service.PlainWording` 映射。代码标识、命令名、RPC 与错误码不变。技能 `valise-enroll` 仍识别旧说法“逃生舱”。
-- **规范正文**：各规范的旧词已逐处改写；保留旧词的只有规定用语本身的条款（AGENTS.md 7.4、PRODUCT.md 8.1、AGENT_KIT.md 技能触发、UI.md 健康页措辞）与历史记录。
-- **服务契约**：第 16 节的增补已并入正文（4.4、4.5、5.4、6.3、7.5、9.4，并改写 4.1、4.3、9.1、第 10 节的冲突条款），第 16 节改为决定与位置对照。
-- 尚未做：各规范开头的“2026-11-05 同步”说明段较多且重复，可另行精简。
-- 三台靶机已部署 `add44a4` 构建的 porter（`porter deploy --local`）；`debian-vm` 健康页核对：保护计划无待核实修改，定时备份照常（每天 04:40 UTC），文字为新说法。技能 `valise-enroll` 文本改了，健康页显示“2 个不是这个版本的”，属预期，需要时重新安装技能。
-
-## 5. 演练环境
-
-- 演练客户端：`valise --config-dir "$HOME/.cache/valise-drill/config"`，口令文件 `$HOME/.cache/valise-drill/passphrase.txt`（不要打印内容）。
-- 靶机现状：`ubuntu-vm` 的 OpenClaw 计划 revision 约 10，日程关闭，复制到 `nas`（经 Tailscale）；`debian-vm` 的 OpenClaw 计划日程开启，每天 04:40 UTC，linger 已开；`ubuntu-vm-x86` 保留一个恢复前目录 `~/.valise-prev-op_01M6TJ0J2JHBKHV2SFXHXHB56Y-state`。靶机详情见 [LAB.md](LAB.md)。
-- 本轮的验收脚本放在会话临时目录，不在仓库里；需要时按 [acceptance/N2.md](acceptance/N2.md) 的步骤重写，故障注入用 `go build -tags faultinject` 构建 porter，测完换回正式构建。
-
-## 6. B03 完成（2026-11-07，步骤 ③）
-
-- 链接处理按 INSTALL.md 5.2.1 实现；隔离真实网关与 `ubuntu-vm` 的真实 OpenClaw 实例都经真实 CLI 验收通过：审批 Bypass → 执行前询问，健康通过。详见 [acceptance/B03.md](acceptance/B03.md)。
-- 本轮用户决定（已写进 INSTALL.md 5.2.1）：确认只绑定动作与规则，状态目录大小与链接清单停服后重读并冻结；写入区域内的链接按规则放行；新增 `scratch`（命令每次运行都会重写的区域，审批读法改它不算改配置）。
-- 官方 `profiles/openclaw.yaml` 升到 22，登记 `approval-ask`；健康页入口开放。演练客户端的 profile 副本在 `~/.cache/valise-drill/config/profiles/`，换 profile 后要同步复制。
-- 待用户显式清理：`ubuntu-vm` 的 `~/.valise-action-act_9efa2532dcb538d7e770453ebb99c7d2/prev`（执行前的活动目录，约 1.4 GB）与 `~/.cache/valise-b03-gw`（约 206 MB）。验收驱动 `porter/cmd/b03accept`、`client/ui/cmd/n2accept`、`client/ui/tui/zz_live_test.go` 在 `.git/info/exclude`，不入库。
-
-## 6a. N3 严格副本（2026-11-07）
-
-已实现并实机验证（`ubuntu-vm` 的服务器备份库、`nas`、本机仓库），详见 [acceptance/N3.md](acceptance/N3.md)。旧的按快照数判断已删除；删除周期前当场核对各处。只有 `ubuntu-vm` 部署了本轮 porter（声明 `copy-verify/1`）。服务器发起的复制完成后由 porter 核对清单有变化的周期（2026-11-08 用户决定，已实机验证）。未完成：Valise 管理的远程备份位置未实机验证；TUI 备份位置页的“核对副本”入口（N4）。
-
-## 6b. N3 云盘（2026-11-08）
-
-实现完成。Google Drive 的服务器登录、同步、核对副本（含数据包）、只追加再同步与移除已在 `ubuntu-vm` 实机通过，gdrive 去掉 `verify: pending`（详见 [acceptance/N3.md](acceptance/N3.md) 第 2 节）。实机修复了登录终端、链接识别、残余登录、令牌打印与连通测试报错。未验收：无浏览器授权、这台电脑登录与中转、OneDrive、Dropbox（仍为 pending）。用 rclone 共享应用时复制很慢，疑似限流。TUI 的云盘入口属 N4。
-
-## 6c. N3 这台电脑负责的自动补齐（2026-11-08）
-
-本机仓库与这台电脑登录的云盘由共享服务 `AutoCopy` 统一补齐（ARCHITECTURE.md 7.4）：TUI 打开与备份后、CLI `seal` 之后前台；按本客户端绑定（`valise protection copies`），没有绑定的实例沿用原规则；按位置与服务器加锁。已在三台靶机实机验证，详见 [acceptance/N3.md](acceptance/N3.md) 第 3 节。顺带修复：中断留下的临时文件让本机仓库校验一直失败。GUI 与 TUI 设置页属 N4。
-
-## 6d. N3 源服务器失联恢复（2026-11-08）
-
-源服务器连不上时，可从本机仓库、选择的本机文件夹或这台电脑登录的云盘读取备份：列出（`vault status --source`）、失联迁移（`revive --source`，沿用原实例名、排除独占凭据、不碰源服务器，之后源又连上会提醒）、导出到本机文件夹（`export`）。挂起 `ubuntu-vm` 实机验证，详见 [acceptance/N3.md](acceptance/N3.md) 第 4 节；porter 新能力 `identity-lost-source/1`（`ubuntu-vm`、`debian-vm` 已部署）。N3 四项交付都已实现。
-
-收尾验收（acceptance/N3.md 4.4）：OpenClaw 从 `repo:local` 失联迁移到 `debian-vm`，服务健康，目标记下 `migration_completed`（来源未知、`exclusive_omitted`），源恢复后提醒、`--settle` 后停止。期间发现并修正“身体装在状态目录里时迁移把它换掉”（用户决定原样搬进新目录，新能力 `revive-body-dirs/1`；本轮 porter 已部署到 `ubuntu-vm`、`ubuntu-vm-x86`、`debian-vm`，`nazukiki-cloud` 仍是旧版），以及不含凭据的备份替换已有目录时在计划里写明后果。云盘与文件夹来源的实机迁移仍未验证。
-
-## 7. 历史推进索引（现行下一步见第 0 节）
-
-1. 云盘剩余验收（acceptance/N3.md 2.5）：无浏览器授权、这台电脑登录与中转。
-2. N3 已于 2026-11-08 标为 Done（未验证项见 DEV_PLAN.md N3 状态）。N4 开工（2026-11-08 用户决定）：桌面界面用 mygo v0.7.3 **原生 UI**（Go 写，UI.md 第 2–7 节已改写）；先骨架再分段，每段开工前先出草图；配色取用户参考页的米白与金色，功能可看后由 Claude 收集优秀案例供用户挑选设计。
-3. N4 骨架已完成：`client/ui/gui/`（主题、侧栏与路由、错误展示、只读的“我的 Agent”、Agent 概览、旅程与备份详情、服务器列表）与入口 `client/ui/cmd/valise-desktop`（`--config-dir` 可指向演练配置）。视图测试 `gui/gui_test.go`；`gui/shots_test.go` 在设置 `VALISE_SHOTS`（和 `VALISE_SHOTS_CONFIG`）时把页面渲染成 PNG。用演练配置实测读到 15 个 Agent、343 个本机备份记录。设计方向已定（UI.md 7.1，用户选混搭）：纸与金线作底色、首页与 Agent 页用分格状态牌、旅程页金线曲线（点击约 300ms 柔光后打开详情，减少动效时直接打开）、迁移过的 Agent 有路线视图（只按记录的迁移关系连线，失联迁移画成“来源未知”），已实现并用演练数据渲染核对。之后按用户反馈“看不出重点”讨论定下轻重缓急（UI.md 7.2）并实现：首页一句结论 + 三类待处理卡片 + 安静行 + 折叠的“不再使用”；头像用 harness 颜色与字符画（点阵绘制，与 TUI 共用 `client/ui/iconart`）；Agent 页一句结论与唯一主按钮“打开管理页”（分步显示隧道、远端监听、页面、令牌，令牌不显示）；旅程页金线为主、列表按月折叠。“打开管理页”只在视图测试中用替身验证，尚未在真实窗口里对靶机点过。
-4. 第二轮反馈（2026-11-08，UI.md 7.3、PROFILES.md `display.logo`）已实现：待处理卡片都有「知道了」（按情况指纹记在本机 `desktop/prefs.json`，情况变化后重新出现；结论句下“另有 N 件已知道”可展开、可“重新提醒”）与「带我去处理」；最小处理页：Agent 页“健康”页签（资料登记了修复动作时提供该动作，确认框写明命令、风险与登录方式；退出码与之后读到的服务状态分开写；只有服务器密码时说明桌面版暂不能转交并给出终端命令）、服务器详情 `/servers/<名字>`（原因、建议、重新连接）、备份位置 `/locations`（逐个仓库与服务器“现在补到本机”）。首页默认卡片、可切换列表（记在本机），搜索按名字、harness、服务器过滤，⌘F 聚焦。图标换成 2026-11-05 草图的线条图标；头像按“本机自选图片 > 资料官方图标 > 线条机器人”取，Agent 页可“更换图标/恢复默认”（系统文件对话框，图片复制到本机数据目录）。管理口令在窗口弹框里输入，不保存。旅程改为发丝时间线。资料包还没有任何官方图标（来源与许可要逐个核实，下载前问用户）。修复动作、管理口令弹框、文件对话框、补到本机只在视图测试与渲染中核对，尚未在真实窗口里对靶机操作。
-5. 主题（2026-11-08 用户决定，UI.md 7.4；AGENTS.md 第 3 节写明主题只是数据）已实现：视图的颜色、字体、尺寸全部取当前主题的令牌；内置“经典浅色”“经典深色”，默认跟随系统；侧栏底部主题菜单可切换与“导入主题…”（系统对话框选文件夹，检查后只复制 theme.json 与它引用的图片到 `desktop/themes/<id>/`）。主题可改令牌、时间线变体（发丝 / 金线 / 简洁）、外壳与首页的声明式布局（插槽表 UI.md 7.4.1，示例 7.4.2，测试核对示例可用）；缺少始终显示的插槽（主题菜单、页面区、结论句、提醒）时补在经典位置并在菜单下说明；坏主题退回跟随系统并写明原因。其余页面暂只用令牌与变体，之后逐页开放插槽。导入与切换只在视图测试与渲染里核对，尚未在真实窗口里点过。
-6. 真实窗口试用（2026-11-08，记录见 [acceptance/N4.md](acceptance/N4.md) 第 1 节）：首页、搜索、提醒去处理、补到本机、健康页签、打开管理页在演练配置上通过；修了按连接名匹配本机备份、自绘卡片缺按钮角色、桌面版缺 Valise 口令框、“每 一次”与未来时间文案、搜索计数。“超过 7 天”提醒已按原因分成“还没复制到这台电脑”和“服务器也没有新备份”（用户决定，已实机复核）。待用户在场测：主题菜单与导入、更换图标、管理页令牌、启动服务。
-7. 服务器与接入（UI.md 7.5，草图 `docs/sketches/valise-servers-gui-2026-11-08.html`）已按草图实现：四种状态、添加服务器向导（连接 / 确认身份 / 登录 / 准备服务器，或从 SSH 配置导入）、这台服务器上的 Agent（接入报告与逐项归类、未适配教程、安装第一个）、安装页（计划全文与窗口内终端，结果以重新检测为准）、服务器详情（通行证办理与注销）。只在视图测试与渲染中核对；真实窗口里的添加、接入、安装、办通行证待用户在场（acceptance/N4.md 第 2 节）。实现时的细化写在 UI.md 7.5 末条（名字只能用小写字母、数字和连字符；管理员通行证的勾选在“登录”屏）。
-8. 用户实机走过一遍（2026-11-09），反馈两处已修：换网络后已有服务器全部变“未知”（`context deadline exceeded`）——一台服务器不回应就拖到总时限，整批结果被丢弃；ssh 没有连接与保活超时，断掉的复用连接会一直挂着。现在每台服务器单独限时、超时记为离线，ssh 带 ConnectTimeout 与 ServerAlive（ARCHITECTURE.md 2.1）。向导准备服务器时写出当前子步骤与已等时间，并可“停止”（UI.md 7.5）。换网络的场景未能在本机复现，修复以 fake-ssh 卡住替身验证，待用户实机复核。
-9. 用户确认服务器与接入段全部功能实机正常（2026-11-09）。新决定（已写入规范，待实现）：“金库”改称“备份库”（规范正文与界面文字已替换，文件名、代码标识、磁盘目录不变）；删除服务器分两层、清理逐项勾选、Agent 保护技能默认不勾并提示不建议、备份库保留并标“已删除的服务器”（ARCHITECTURE.md 2.3，VAULT_FORMAT `removed_at`）；找回 Valise 口令用备用锁（电脑上的文件 + 服务器 sudo 验证码，默认开启可关，ARCHITECTURE.md 3.2；之后补充：找回模式与提前扫描 porter 只作提醒，sudo 命令先把 porter 复制到 root 专属临时文件并核对 SHA-256，porter 读完主机密钥立即降权；用户接受“任一服务器 root + 这台电脑”可打开全部备份的代价）；忘了管理口令时逐台重办管理员通行证，不做恢复（ARCHITECTURE.md 3.3）。实现需要部署 porter 时按服务器记下其 SHA-256。N4 在“服务器与接入”之后插入“服务器设置与删除”段，找回口令放进“钥匙与备份”段。
-10. 桌面文字改为标准键（UI.md 7.6）：非测试代码不写界面文字，一律 `T("key")` 取自 `client/ui/gui/i18n/zh-CN.json`；可导入经检查的非官方语言文件。服务层错误文字仍是中文，随后再收。
-11. 服务器设置与删除（草图 `docs/sketches/valise-server-settings-gui-2026-11-09.html`，用户确认后实现，映射见 [acceptance/N4.md](acceptance/N4.md) 第 3 节）：服务器详情分“概览 / 设置”；设置页的服务器名（第一次起名、改名先列出每一处）、登录方式（改用 Valise 通行证，跳板机不画按钮）、porter（更新，部署时按服务器记下文件的 SHA-256 于 `porter-deploys.json`）、重装用户通行证（打开添加向导的登录步）、加密钥匙是否已登记；删除服务器两层、清理逐项、失败就停、连不上时只能从这台电脑移除并列出上次读到还留着的东西；服务器页底部“已删除的服务器”，备份位置里带标签。porter 新增管理方法 `server_leave`（停全部定时备份、写 `removed_at`、删自身），重新部署后才能在真实服务器上清理。只在 fake-ssh 与视图测试、渲染中核对，真实窗口与靶机待用户在场。用户实机测试通过（2026-11-09），期间加了“没有资料包时直说”和“忘记已删除的服务器”。
-12. 钥匙与备份（UI.md 7.7、7.8，草图 `docs/sketches/valise-keys-backup-gui-2026-11-09.html`，用户确认后按“每处一句话、详情折叠”实现，映射见 [acceptance/N4.md](acceptance/N4.md) 第 4 节）：侧栏第四项“设置”（钥匙与口令、备份）；第一次需要时设 Valise 口令（默认同时开备用锁），第一次备份前必须导出恢复套件或选“稍后”；导入、修改口令；Agent 页第四个页签“管理与设置”（保护计划、定时备份修改、现在备份、错过的定时备份“标记已读”）；服务器设置可登记钥匙；找回 Valise 口令（备用锁、找回模式、porter 提前扫描、用户自己跑 sudo 命令、验证码错 3 次作废）；忘了管理口令时逐台重办。porter 新增 `recovery-code` 子命令与三个日常级方法，靶机要重新部署本轮 porter 才能实测找回。只在 fake-ssh、视图测试与渲染中核对；`recovery-code` 的 sudo 与降权只能在真实 Linux 上验证。用户实机测试本段尚未回报。“备份位置与同步”段草图已出（`docs/sketches/valise-locations-gui-2026-11-10.html`），等用户确认。
-13. 实机测试第一轮修正（2026-11-10）：porter 更新页选好的本地文件丢失（每帧新建选择器）已修；以前接入、没有身份记录的 Agent（legacy_unbound）在“管理与设置”和服务器的 Agent 列表上有“重新接入…”，重新接受接入时建立身份；旧世代的保护计划按用户决定（SERVICE_CONTRACTS.md 4.2）显示为“已失效”，可“按原设置重新生效”，版本号接着旧计划递增。porter 的 `protection_get` / 准备计划随之改动，靶机要重新部署本轮 porter。用户实机测试通过。备用锁并入“Valise 口令”一行（UI.md 7.8）。
-14. 备份位置与同步（UI.md 7.9，草图 `docs/sketches/valise-locations-gui-2026-11-10.html`，用户确认，映射见 [acceptance/N4.md](acceptance/N4.md) 第 5 节）：位置页按位置列出本机文件夹、另一台机器、云盘与服务器的 SSH 主机；位置详情按服务器、Agent、周期对照；添加、同步、核对副本、删除周期、移除；Agent 的“备份后复制到”。只在视图测试与渲染中核对，真实窗口待用户在场。
-15. 云盘表单登录（用户实机基本跑通；2026-11-10 用户决定：rclone 保持独立程序；登录改表单，自己的应用在表单里填、不保存；无浏览器授权仍用终端）：porter 新增 `cloud_config_step`，靶机要重新部署本轮 porter 才能用表单（旧 porter 自动退回终端）。
-4. 小问题：接管模式确认页两段说明重复；无服务实例的恢复计划仍写“复活前会先停止服务”；开启高级模式的备份检查在钥匙不对时逐个列出每个快照，信息过长。
+| 阶段 | 状态 | 说明与记录位置 |
+| :--- | :--- | :--- |
+| N1 规范与服务契约 | `Done`（2026-11-05） | [SERVICE_CONTRACTS.md](SERVICE_CONTRACTS.md) 第 1–16 节 |
+| N2 汇总、保护计划、时间轴与 B03 | `Done`（2026-11-07） | [acceptance/N2.md](acceptance/N2.md)、[acceptance/B03.md](acceptance/B03.md) |
+| N3 严格副本、云盘与失联恢复 | `Done`（2026-11-08） | [acceptance/N3.md](acceptance/N3.md) |
+| N4 mygo GUI 完整流程与 TUI 对齐 | `In progress`（架构减负中） | [acceptance/N4.md](acceptance/N4.md) |
+| N5 管理方自动化、自定义与扩展 | `Planned` | [DEV_PLAN.md](DEV_PLAN.md) |
