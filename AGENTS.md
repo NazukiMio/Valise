@@ -2,12 +2,12 @@
 
 Valise 是一个开源的「自托管 Agent 安装与管理入口」，帮助缺少系统管理经验的用户搭好并照看自己的 Agent，附带可靠的备份、恢复与迁移。品牌表达是「带着你的 Agent 去旅行」。本文件是主控指令的唯一正文（`CLAUDE.md` 只导入本文件）。正式规范在 `docs/` 根目录；排期以 `docs/DEV_PLAN.md` 的 N1–N5 为准；现行服务契约为 `docs/SERVICE_CONTRACTS.md`。规范中的目标能力不代表已实现。它从零开始开发，不继承任何旧版代码或旧版文档。旧版名称 Fathom、旧版的 `fathomd`、`AEV1`、`agent-manifest.json`、AB 槽位软链、五级备份、`.fathom-soul/` 等概念**全部作废**，不得以任何形式复活。
 
-**2026-11-15 架构收敛决定（撤销 A/B 双槽位方案）**：经全面评估与用户确认，正式**撤销** 2026-11-12 至 2026-11-15 试探引入的 A/B 双槽位并行运行环境、`linux-bwrap` 容器接管、三档恢复保护模式（保留旧环境并行 / 小占用并行 / 直通）及 `environment-restore-*` 管理链路（历史设计已归档至 `docs/history/RESTORE_ENVIRONMENTS_DEPRECATED_2026-11-15.md` 与 `docs/history/AB_ENVIRONMENTS_CONTRACTS_AND_LAB_DEPRECATED_2026-11-15.md`）。Valise 恢复与迁移统一收敛为单一架构：
+**恢复与迁移只有一套架构。**A/B 双槽位并行运行环境、`linux-bwrap` 容器接管、三档恢复保护模式（保留旧环境并行 / 小占用并行 / 直通）与 `environment-restore-*` 管理链路已作废，不得实现；其设计只留在 `docs/history/RESTORE_ENVIRONMENTS_DEPRECATED_2026-11-15.md` 与 `docs/history/AB_ENVIRONMENTS_CONTRACTS_AND_LAB_DEPRECATED_2026-11-15.md`，不作为依据。现行架构：
 - **恢复与迁移**：暂存目录完整解压与逐项校验（`.valise-stage-<op>`）→ 带交换日志（journal）的原子目录交换 → 保留交换前目录 `.valise-prev-<op>` 供失败回退与人工一键退回。
 - **恢复测试（健康页）**：只执行非破坏性的“文件解密校验 + 服务器暂存目录校验（`test_only` 用后即删）”，不拉起隔离网关或接管宿主 systemd 单元。
 - **备份格式兼容**：所有读取端（`core/vault` 与 `tools/standalone-restore/restore.py`）永久兼容 `valise-snapshot/1` 与 `valise-snapshot/2`（`VAULT_FORMAT.md`），新封存不再强制采集运行期程序树。
 
-## 1. 启动必读与按需阅读（Prompt Audit 后分级）
+## 1. 启动必读与按需阅读
 
 ### 核心必读（每次新会话或交接前必读，共 3 份）
 
@@ -37,7 +37,7 @@ Valise 是一个开源的「自托管 Agent 安装与管理入口」，帮助缺
 1. **能用代码解决的绝不用 prompt。**LLM 只参与三件事：登记时补充信息、交接时撰写交接内容、体检时用自然语言解读结果。封存、校验、复活、回滚的执行路径上不允许出现任何 LLM 调用。
 2. **备份不能依赖 Valise 自己活着。**备份库格式公开，加密只用标准 age。即使 Valise 项目消失，用户仍能用 `age`、`zstd` 和仓库内的 `tools/standalone-restore/` 恢复全部数据。
 3. **只看见、只兜底，不越俎代庖。**Valise 不擅自修改 agent 的记忆；只在用户明确发起并确认后才安装 harness、依赖或工具，绝不悄悄往 harness 里放代码；不代管模型凭据；不为任何第三方软件背书。
-4. **克制复杂度，不接管原生服务，先跑通真实端到端闭环（2026-11-15 新增）。**Valise 是照看与兜底工具，不是容器编排器或 PaaS。禁止用私有运行时包装器（如 `bwrap` 槽位）替换用户原有的 systemd 服务或启动链路；禁止在端到端用户主路径尚未跑通前堆叠多层状态机。正式规范只保留现行终态规则，阶段性验证记录一律写进 `docs/acceptance/`，禁止把施工日志追加进正式规范正文。
+4. **克制复杂度，不接管原生服务，先跑通真实端到端闭环。**Valise 是照看与兜底工具，不是容器编排器或 PaaS。禁止用私有运行时包装器（如 `bwrap` 槽位）替换用户原有的 systemd 服务或启动链路；禁止在端到端用户主路径尚未跑通前堆叠多层状态机。正式规范只保留现行终态规则，阶段性验证记录一律写进 `docs/acceptance/`，禁止把施工日志追加进正式规范正文。
 
 ## 3. 架构铁律（严禁违背）
 
@@ -100,7 +100,7 @@ go test ./... && go vet ./... && test -z "$(gofmt -l .)"
 go tool mygo vet
 ```
 
-`testbed/selfcheck.sh` 按上述顺序执行全部检查；`client/ui/go.mod` 尚未引入 mygo 时自动跳过 `go tool mygo vet`。
+`testbed/selfcheck.sh` 按上述顺序执行全部检查，并追加几项 `-count=1` 的不走缓存复测。
 
 ## 7. 安全与文案红线
 
