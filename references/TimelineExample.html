@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snapshot Recovery Experience</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+
+    :root {
+      --bg-color: #f7f6f3;
+      --card-bg: rgba(255, 255, 255, 0.96);
+      --card-border: rgba(220, 215, 206, 0.7);
+      --text-main: #2b2825;
+      --text-sub: #8c857b;
+      --gold-glow: rgba(212, 192, 163, 0.9);
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      overflow: hidden;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Ambient Warm Atmosphere */
+    .ambient-glow {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.85) 0%, rgba(245, 242, 236, 0.4) 100%);
+      pointer-events: none;
+    }
+
+    /* Universal View Transitions */
+    .view-container {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: transform, opacity;
+    }
+
+    .view-hidden-enter {
+      opacity: 0;
+      transform: scale(0.94);
+      pointer-events: none;
+    }
+    .view-visible {
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+    .view-hidden-exit-zoom {
+      opacity: 0;
+      transform: scale(1.08);
+      pointer-events: none;
+    }
+
+    /* Detail View Expanding from Origin */
+    #view-detail {
+      transform-origin: 50% 50%;
+      transition: opacity 0.48s cubic-bezier(0.16, 1, 0.3, 1), transform 0.48s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #view-detail.detail-collapsed {
+      opacity: 0;
+      transform: scale(0.18);
+      pointer-events: none;
+    }
+    #view-detail.detail-expanded {
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+
+    /* Snapshot Label Card Container */
+    .snapshot-node-container {
+      position: absolute;
+      pointer-events: auto;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
+      /* transform-origin at anchor center */
+    }
+
+    .snapshot-card {
+      transition: box-shadow 0.25s ease, border-color 0.25s ease, background-color 0.25s ease;
+      box-shadow: 0 4px 16px -3px rgba(62, 54, 44, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(10px);
+      white-space: nowrap;
+    }
+
+    .snapshot-card:hover {
+      box-shadow: 0 10px 24px -4px rgba(62, 54, 44, 0.12), 0 2px 4px rgba(0, 0, 0, 0.04);
+      border-color: rgba(186, 172, 153, 0.9);
+      background-color: #ffffff;
+    }
+
+    /* Galgame Diminishing Multi-Pulse Flash - 3 to 4 pulses */
+    @keyframes galgameRapidShimmer {
+      0% {
+        filter: brightness(1);
+      }
+      10% {
+        /* Pulse 1: Strong initial burst */
+        filter: brightness(2.1);
+        box-shadow: 0 0 28px 7px rgba(245, 230, 205, 0.95), 0 0 45px 12px rgba(255, 255, 255, 0.9);
+      }
+      24% {
+        filter: brightness(1.08);
+        box-shadow: 0 0 6px 1px rgba(220, 200, 175, 0.25);
+      }
+      38% {
+        /* Pulse 2: Second firm pulse */
+        filter: brightness(1.85);
+        box-shadow: 0 0 22px 6px rgba(240, 220, 195, 0.85);
+      }
+      52% {
+        filter: brightness(1.05);
+        box-shadow: 0 0 4px 1px rgba(220, 200, 175, 0.2);
+      }
+      66% {
+        /* Pulse 3: Third focused pulse - zoom triggers here! */
+        filter: brightness(1.6);
+        box-shadow: 0 0 18px 4px rgba(235, 215, 190, 0.75);
+      }
+      78% {
+        filter: brightness(1.04);
+        box-shadow: 0 0 3px 0.5px rgba(220, 200, 175, 0.15);
+      }
+      90% {
+        /* Pulse 4: Soft trailing twinkle */
+        filter: brightness(1.3);
+        box-shadow: 0 0 10px 2px rgba(235, 215, 190, 0.4);
+      }
+      100% {
+        filter: brightness(1);
+        box-shadow: 0 4px 16px -3px rgba(62, 54, 44, 0.05);
+      }
+    }
+
+    .card-flashing {
+      animation: galgameRapidShimmer 0.58s cubic-bezier(0.2, 0.8, 0.25, 1) forwards !important;
+      z-index: 60 !important;
+    }
+
+    /* Minimalist tactile button */
+    .minimal-btn {
+      transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .minimal-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px -4px rgba(60, 50, 40, 0.08);
+      background-color: #ffffff;
+    }
+    .minimal-btn:active {
+      transform: translateY(0) scale(0.98);
+    }
+
+    /* Directional Slide Carousel for Detail View */
+    .detail-card-track {
+      position: relative;
+      width: 100%;
+      height: 380px;
+      overflow: hidden;
+    }
+    .detail-content-box {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.38s ease;
+      will-change: transform, opacity;
+    }
+    .detail-content-box.slide-exit-to-left {
+      transform: translateX(-110%);
+      opacity: 0;
+    }
+    .detail-content-box.slide-exit-to-right {
+      transform: translateX(110%);
+      opacity: 0;
+    }
+    .detail-content-box.slide-enter-from-right {
+      transform: translateX(110%);
+      opacity: 0;
+    }
+    .detail-content-box.slide-enter-from-left {
+      transform: translateX(-110%);
+      opacity: 0;
+    }
+    .detail-content-box.slide-active {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body class="w-screen h-screen relative bg-[#f7f6f3]">
+
+  <div class="ambient-glow"></div>
+
+  <!-- ========================================================= -->
+  <!-- 页面一：系统概览 (进入时间轴前)                                -->
+  <!-- ========================================================= -->
+  <section id="view-home" class="view-container view-visible flex-col z-30 px-6">
+    <div class="text-center max-w-sm flex flex-col items-center">
+      <!-- Status dot -->
+      <div class="flex items-center gap-2 mb-6 px-3 py-1 rounded-full bg-white/70 border border-[#eae5dd] shadow-xs">
+        <span class="w-2 h-2 rounded-full bg-[#91b38f] animate-pulse"></span>
+        <span class="text-xs text-[#8a8377] font-mono tracking-wide">存储卷状态正常</span>
+      </div>
+
+      <h1 class="text-3xl font-light tracking-tight text-[#2b2825] mb-2">系统快照存储库</h1>
+      <p class="text-xs text-[#9c958a] font-mono mb-10 leading-relaxed">
+        已自动建立 5 个增量镜像节点<br>上次快照生成于 11:30 AM
+      </p>
+
+      <button id="btn-enter-timeline" class="minimal-btn group flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-white/90 border border-[#dfdad0] text-[#3e3933] text-sm font-medium shadow-xs">
+        <span>浏览时间轴版本</span>
+        <svg class="w-4 h-4 text-[#8a8377] group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/>
+        </svg>
+      </button>
+    </div>
+  </section>
+
+  <!-- ========================================================= -->
+  <!-- 页面二：发丝缠绕极简时间轴核心页面                            -->
+  <!-- ========================================================= -->
+  <section id="view-timeline" class="view-container view-hidden-enter z-20">
+    <div class="absolute top-8 left-8 z-40">
+      <button id="btn-back-to-home" class="minimal-btn flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/80 border border-[#dfdad0] text-xs text-[#70685d] font-mono">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+        </svg>
+        <span>返回概览</span>
+      </button>
+    </div>
+
+    <!-- Canvas & Cards Stage -->
+    <div id="timelineViewport" class="relative w-full h-full max-w-[1440px] max-h-[820px] flex items-center justify-center">
+      <canvas id="timelineCanvas" class="absolute inset-0 w-full h-full block pointer-events-none"></canvas>
+      <div id="cardsLayer" class="absolute inset-0 pointer-events-none z-30"></div>
+    </div>
+  </section>
+
+  <!-- ========================================================= -->
+  <!-- 页面三：快照详情页 (以点击节点为起点放大)                      -->
+  <!-- ========================================================= -->
+  <section id="view-detail" class="view-container detail-collapsed z-30 px-6">
+    <div class="absolute top-8 left-8">
+      <button id="btn-back-to-timeline" class="minimal-btn flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/80 border border-[#dfdad0] text-xs text-[#70685d] font-mono">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+        </svg>
+        <span>返回时间轴</span>
+      </button>
+    </div>
+
+    <!-- Snapshot Details Card & Pager Container -->
+    <div class="relative w-full max-w-lg flex items-center justify-center">
+      <!-- Prev Button -->
+      <button id="btn-prev-snap" aria-label="上一个快照" class="minimal-btn absolute -left-12 sm:-left-16 md:-left-20 w-10 h-10 rounded-full bg-white/90 border border-[#dfdad0] flex items-center justify-center text-[#70685d] z-40">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+
+      <!-- Snapshot Card Slide Track -->
+      <div class="detail-card-track">
+        <div id="detailCardBox" class="detail-content-box slide-active bg-white/95 border border-[#dfdad0] rounded-3xl p-8 shadow-sm">
+          <div class="flex items-center justify-between pb-6 border-b border-[#f0ede6]">
+            <div>
+              <div class="text-xs text-[#9c958a] font-mono">SNAPSHOT IDENTIFIER</div>
+              <div id="detailId" class="text-2xl font-light text-[#2b2825] font-mono mt-0.5">#4102</div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs text-[#9c958a] font-mono">RECORDED TIME</div>
+              <div id="detailTime" class="text-sm text-[#575046] font-mono mt-0.5">10:24 AM</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-6 py-6 border-b border-[#f0ede6] text-left">
+            <div>
+              <div class="text-xs text-[#9c958a] font-mono">快照大小</div>
+              <div id="detailSize" class="text-base text-[#2b2825] font-mono mt-0.5">24.3 GB</div>
+            </div>
+            <div>
+              <div class="text-xs text-[#9c958a] font-mono">变动文件数</div>
+              <div id="detailFiles" class="text-base text-[#2b2825] font-mono mt-0.5">1,280 项</div>
+            </div>
+            <div>
+              <div class="text-xs text-[#9c958a] font-mono">状态完整度</div>
+              <div class="text-base text-[#529362] font-mono mt-0.5">已校验通过</div>
+            </div>
+            <div>
+              <div class="text-xs text-[#9c958a] font-mono">校验哈希</div>
+              <div id="detailHash" class="text-xs text-[#7d7569] font-mono mt-1 truncate">sha256:7f9a...04c1</div>
+            </div>
+          </div>
+
+          <div class="mt-8 flex items-center justify-between">
+            <div class="text-xs text-[#9c958a] font-mono">
+              快捷键: <kbd class="px-1.5 py-0.5 bg-[#f4f2ee] rounded border border-[#dfdcd5]">←</kbd> <kbd class="px-1.5 py-0.5 bg-[#f4f2ee] rounded border border-[#dfdcd5]">极简翻页</kbd> <kbd class="px-1.5 py-0.5 bg-[#f4f2ee] rounded border border-[#dfdcd5]">→</kbd>
+            </div>
+            <button id="btn-mock-restore" class="minimal-btn px-5 py-2.5 rounded-xl bg-[#2b2825] text-[#f7f6f3] text-xs font-mono">
+              从此快照复原
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Next Button -->
+      <button id="btn-next-snap" aria-label="下一个快照" class="minimal-btn absolute -right-12 sm:-right-16 md:-right-20 w-10 h-10 rounded-full bg-white/90 border border-[#dfdad0] flex items-center justify-center text-[#70685d] z-40">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+    </div>
+  </section>
+
+  <script>
+    // ==========================================
+    // 1. Global State, Configuration & DOM References
+    // ==========================================
+    const canvas = document.getElementById('timelineCanvas');
+    const ctx = canvas.getContext('2d');
+    const cardsLayer = document.getElementById('cardsLayer');
+
+    const viewHome = document.getElementById('view-home');
+    const viewTimeline = document.getElementById('view-timeline');
+    const viewDetail = document.getElementById('view-detail');
+
+    let isTransitioning = false;
+    let animTime = 0;
+    let hoveredIdx = -1;
+    let currentSnapshotIdx = 2; // Default to #4102
+
+    const LEADER_HEIGHT = 44; // Vertical leader line height in px
+
+    // Snapshot nodes specification
+    const SNAPSHOTS = [
+      {
+        id: '#4100',
+        xRatio: 0.16,
+        align: 'top',
+        time: '09:15 AM',
+        size: '18.4 GB',
+        files: '942 项',
+        hash: 'sha256:4a12...89ee'
+      },
+      {
+        id: '#4101',
+        xRatio: 0.32,
+        align: 'bottom',
+        time: '09:45 AM',
+        size: '21.0 GB',
+        files: '1,056 项',
+        hash: 'sha256:b8c1...904a'
+      },
+      {
+        id: '#4102',
+        xRatio: 0.50,
+        align: 'top',
+        time: '10:24 AM',
+        size: '24.3 GB',
+        files: '1,280 项',
+        hash: 'sha256:7f9a...04c1'
+      },
+      {
+        id: '#4103',
+        xRatio: 0.70,
+        align: 'bottom',
+        time: '11:00 AM',
+        size: '25.1 GB',
+        files: '1,315 项',
+        hash: 'sha256:3d2e...44ff'
+      },
+      {
+        id: '#4104',
+        xRatio: 0.86,
+        align: 'top',
+        time: '11:30 AM',
+        size: '26.8 GB',
+        files: '1,420 项',
+        hash: 'sha256:e019...55b2'
+      }
+    ];
+
+    // Ultra-fine hair strands tightly bound to the central bundle flow with gentle, staggered streaming
+    const HAIR_STRANDS = [];
+    const NUM_HAIRS = 32; // 稍微增加一点点发丝（24 -> 32）
+    for (let i = 0; i < NUM_HAIRS; i++) {
+      const length = 0.20 + Math.random() * 0.36; // Strand length as fraction of width
+      const startX = (i / NUM_HAIRS) * 1.5 - 0.35 + (Math.random() - 0.5) * 0.18; // 错落分布
+      HAIR_STRANDS.push({
+        bundleOffset: (Math.random() - 0.5) * 13,
+        weaveFreq: 0.004 + Math.random() * 0.003,
+        weaveAmp: 1.8 + Math.random() * 3.2,
+        phase: Math.random() * Math.PI * 2,
+        baseAlpha: 0.13 + Math.random() * 0.22,
+        strokeWidth: 0.45 + Math.random() * 0.45,
+        length: length,
+        xPos: startX,
+        // 流速大幅降低并增加离散度，与上下呼吸波动的微弱速率完全协调
+        flowSpeed: 0.00018 + Math.random() * 0.00028
+      });
+    }
+
+    // ==========================================
+    // 2. Mathematical Central Spine & Node Placement
+    // ==========================================
+    function getSpineY(x, t, width, height) {
+      const centerY = height * 0.5;
+      // Gentle, serene breathing wave: slightly slower and softer amplitude
+      const wave1 = Math.sin((x / width) * Math.PI * 2.1 + t * 0.55) * 24;
+      const wave2 = Math.cos((x / width) * Math.PI * 1.3 - t * 0.32) * 11;
+      return centerY + wave1 + wave2;
+    }
+
+    function getNodePosition(snap, t) {
+      const w = canvas.width || window.innerWidth;
+      const h = canvas.height || window.innerHeight;
+      const x = snap.xRatio * w;
+      const y = getSpineY(x, t, w, h);
+      return { x, y };
+    }
+
+    function resize() {
+      const container = document.getElementById('timelineViewport');
+      const rect = container.getBoundingClientRect();
+      // Guard against 0 dimensions when container is scaling or hidden during view transitions
+      const w = rect.width > 0 ? rect.width : window.innerWidth;
+      const h = rect.height > 0 ? rect.height : window.innerHeight;
+
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+    }
+    window.addEventListener('resize', () => {
+      resize();
+      updateDOMNodes();
+    });
+
+    // ==========================================
+    // 3. Pixel-Perfect DOM Assembly & Exact Anchor Alignment
+    // ==========================================
+    function createDOMCards() {
+      cardsLayer.innerHTML = '';
+      SNAPSHOTS.forEach((snap, idx) => {
+        const container = document.createElement('div');
+        container.id = `node-group-${idx}`;
+        container.className = 'snapshot-node-container';
+
+        // Precise vertical assembly:
+        // Top alignment:
+        // [Card] -> [Line] -> [Anchor Dot (center on origin)]
+        // Bottom alignment:
+        // [Anchor Dot (center on origin)] -> [Line] -> [Card]
+        if (snap.align === 'top') {
+          container.innerHTML = `
+            <div id="card-${idx}" class="snapshot-card px-4 py-2.5 rounded-2xl bg-white/95 text-left">
+              <div class="text-[13px] font-semibold tracking-tight text-[#2b2825] flex items-center gap-1.5 font-mono">
+                <span>快照</span>
+                <span class="text-[#877e71] font-normal">${snap.id}</span>
+              </div>
+              <div class="text-[11px] text-[#9c958a] mt-0.5 font-mono flex items-center justify-between gap-3">
+                <span>${snap.time}</span>
+              </div>
+            </div>
+            <!-- Vertical Line -->
+            <div id="line-${idx}" style="width: 1px; height: ${LEADER_HEIGHT}px; background-color: rgba(215, 206, 194, 0.7); transition: background-color 0.25s ease;"></div>
+            <!-- Pearl Anchor on Curve: 16x16 with 8px half-offset so center is strictly at bottom origin -->
+            <div id="dot-anchor-${idx}" class="relative flex items-center justify-center pointer-events-none" style="width: 16px; height: 16px; margin-bottom: -8px;">
+              <div id="ripple-${idx}" class="absolute inset-0 rounded-full border border-[rgba(195,180,159,0)] transition-all duration-300" style="transform: scale(2.4);"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-white shadow-xs border border-[#cfc4b5] flex items-center justify-center">
+                <div class="w-1 h-1 rounded-full bg-[#8c7e6c]"></div>
+              </div>
+            </div>
+          `;
+        } else {
+          container.innerHTML = `
+            <!-- Pearl Anchor on Curve: 16x16 with -8px half-offset so center is strictly at top origin -->
+            <div id="dot-anchor-${idx}" class="relative flex items-center justify-center pointer-events-none" style="width: 16px; height: 16px; margin-top: -8px;">
+              <div id="ripple-${idx}" class="absolute inset-0 rounded-full border border-[rgba(195,180,159,0)] transition-all duration-300" style="transform: scale(2.4);"></div>
+              <div class="w-2.5 h-2.5 rounded-full bg-white shadow-xs border border-[#cfc4b5] flex items-center justify-center">
+                <div class="w-1 h-1 rounded-full bg-[#8c7e6c]"></div>
+              </div>
+            </div>
+            <!-- Vertical Line -->
+            <div id="line-${idx}" style="width: 1px; height: ${LEADER_HEIGHT}px; background-color: rgba(215, 206, 194, 0.7); transition: background-color 0.25s ease;"></div>
+            <!-- Card -->
+            <div id="card-${idx}" class="snapshot-card px-4 py-2.5 rounded-2xl bg-white/95 text-left">
+              <div class="text-[13px] font-semibold tracking-tight text-[#2b2825] flex items-center gap-1.5 font-mono">
+                <span>快照</span>
+                <span class="text-[#877e71] font-normal">${snap.id}</span>
+              </div>
+              <div class="text-[11px] text-[#9c958a] mt-0.5 font-mono flex items-center justify-between gap-3">
+                <span>${snap.time}</span>
+              </div>
+            </div>
+          `;
+        }
+
+        // Hover handling
+        container.addEventListener('mouseenter', () => {
+          hoveredIdx = idx;
+          const line = document.getElementById(`line-${idx}`);
+          const ripple = document.getElementById(`ripple-${idx}`);
+          if (line) line.style.backgroundColor = 'rgba(165, 146, 122, 0.9)';
+          if (ripple) {
+            ripple.style.borderColor = 'rgba(195, 180, 159, 0.6)';
+            ripple.style.boxShadow = '0 0 12px rgba(210, 195, 175, 0.4)';
+          }
+        });
+
+        container.addEventListener('mouseleave', () => {
+          hoveredIdx = -1;
+          const line = document.getElementById(`line-${idx}`);
+          const ripple = document.getElementById(`ripple-${idx}`);
+          if (line) line.style.backgroundColor = 'rgba(215, 206, 194, 0.7)';
+          if (ripple) {
+            ripple.style.borderColor = 'rgba(195, 180, 159, 0)';
+            ripple.style.boxShadow = 'none';
+          }
+        });
+
+        container.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onSnapshotCardClick(idx);
+        });
+
+        cardsLayer.appendChild(container);
+      });
+    }
+
+    // Exact placement locking: Center of the pearl dot is mathematically coincident with (x, y) on central spine
+    function updateDOMNodes() {
+      SNAPSHOTS.forEach((snap, idx) => {
+        const container = document.getElementById(`node-group-${idx}`);
+        if (!container) return;
+
+        const { x, y } = getNodePosition(snap, animTime);
+
+        container.style.left = `${x}px`;
+        if (snap.align === 'top') {
+          // Bottom of container matches y so anchor dot center is directly at (x, y)
+          container.style.transform = 'translate(-50%, -100%)';
+          container.style.top = `${y}px`;
+        } else {
+          // Top of container matches y so anchor dot center is directly at (x, y)
+          container.style.transform = 'translate(-50%, 0)';
+          container.style.top = `${y}px`;
+        }
+      });
+    }
+
+    // ==========================================
+    // 4. Render Canvas & Animation
+    // ==========================================
+    function render() {
+      requestAnimationFrame(render);
+      // Gentle breathing wave cadence
+      animTime += 0.009;
+
+      // Ensure canvas always maintains valid dimensions
+      resize();
+
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // A. Draw fine hair strands streaming along the bundle flow
+      HAIR_STRANDS.forEach(hair => {
+        // 随时间微调流动速度，增加与呼吸波形的动态契合度，消除机械齐步走感
+        const dynamicSpeed = hair.flowSpeed * (1 + 0.25 * Math.sin(animTime * 0.5 + hair.phase));
+        hair.xPos += dynamicSpeed;
+        if (hair.xPos > 1.2) {
+          hair.xPos = -hair.length - 0.12 - Math.random() * 0.15;
+          hair.bundleOffset = (Math.random() - 0.5) * 13;
+          hair.weaveAmp = 1.8 + Math.random() * 3.2;
+        }
+
+        const strandStart = hair.xPos * w;
+        const strandEnd = (hair.xPos + hair.length) * w;
+
+        // Skip rendering if completely off screen
+        if (strandEnd < 0 || strandStart > w) return;
+
+        const drawStart = Math.max(0, strandStart);
+        const drawEnd = Math.min(w, strandEnd);
+        const totalSpan = strandEnd - strandStart;
+
+        ctx.save();
+        ctx.beginPath();
+        const step = 6;
+        let started = false;
+
+        for (let x = drawStart; x <= drawEnd; x += step) {
+          // Fade naturally at the tips of each strand
+          const progressAlongStrand = (x - strandStart) / (totalSpan || 1);
+          const tipFade = Math.sin(Math.PI * Math.max(0, Math.min(1, progressAlongStrand)));
+
+          const baseSpine = getSpineY(x, animTime, w, h);
+          const microWeave = Math.sin(x * hair.weaveFreq + animTime * 0.4 + hair.phase) * hair.weaveAmp;
+          const hairY = baseSpine + hair.bundleOffset + microWeave;
+
+          if (!started) {
+            ctx.moveTo(x, hairY);
+            started = true;
+          } else {
+            ctx.lineTo(x, hairY);
+          }
+        }
+
+        // Apply soft tip-faded alpha
+        ctx.strokeStyle = `rgba(188, 172, 150, ${hair.baseAlpha})`;
+        ctx.lineWidth = hair.strokeWidth;
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // B. Draw main continuous spine
+      ctx.save();
+      ctx.beginPath();
+      for (let x = 0; x <= w; x += 4) {
+        const y = getSpineY(x, animTime, w, h);
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = 'rgba(168, 150, 128, 0.85)';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.restore();
+
+      // C. Synchronize DOM nodes strictly with the spine
+      updateDOMNodes();
+    }
+
+    // ==========================================
+    // 5. Origin-Based Expand & Concurrent Fluid Flash
+    // ==========================================
+    function onSnapshotCardClick(idx) {
+      if (isTransitioning) return;
+      isTransitioning = true;
+      currentSnapshotIdx = idx;
+
+      const card = document.getElementById(`card-${idx}`);
+      const dotAnchor = document.getElementById(`dot-anchor-${idx}`);
+
+      // 1. Calculate the exact origin coordinate from the anchor pearl on the curve
+      let originX = window.innerWidth / 2;
+      let originY = window.innerHeight / 2;
+
+      if (dotAnchor) {
+        const rect = dotAnchor.getBoundingClientRect();
+        originX = rect.left + rect.width / 2;
+        originY = rect.top + rect.height / 2;
+      }
+
+      viewDetail.style.transformOrigin = `${originX}px ${originY}px`;
+
+      // 2. Trigger Galgame rapid shimmer (4 pulses total)
+      if (card) {
+        card.classList.remove('card-flashing');
+        void card.offsetWidth;
+        card.classList.add('card-flashing');
+      }
+
+      populateDetailsView(idx);
+
+      // 3. Galgame timing: Flash begins immediately, and right as it hits the 3rd pulse
+      // (~280ms into the 580ms sequence), the expansion begins smoothly while trailing flashes finish
+      setTimeout(() => {
+        viewTimeline.classList.remove('view-visible');
+        viewTimeline.classList.add('view-hidden-exit-zoom');
+
+        viewDetail.classList.remove('detail-collapsed');
+        viewDetail.classList.add('detail-expanded');
+
+        setTimeout(() => {
+          if (card) card.classList.remove('card-flashing');
+          isTransitioning = false;
+        }, 480);
+      }, 280);
+    }
+
+    // Home -> Timeline
+    document.getElementById('btn-enter-timeline').addEventListener('click', () => {
+      if (isTransitioning) return;
+      isTransitioning = true;
+
+      viewHome.classList.remove('view-visible');
+      viewHome.classList.add('view-hidden-exit-zoom');
+
+      viewTimeline.classList.remove('view-hidden-enter', 'view-hidden-exit-zoom');
+      viewTimeline.classList.add('view-visible');
+
+      setTimeout(() => { isTransitioning = false; }, 550);
+    });
+
+    // Timeline -> Home
+    document.getElementById('btn-back-to-home').addEventListener('click', () => {
+      if (isTransitioning) return;
+      isTransitioning = true;
+
+      viewTimeline.classList.remove('view-visible');
+      viewTimeline.classList.add('view-hidden-enter');
+
+      viewHome.classList.remove('view-hidden-exit-zoom');
+      viewHome.classList.add('view-visible');
+
+      setTimeout(() => { isTransitioning = false; }, 550);
+    });
+
+    // Detail -> Timeline (recedes back toward node)
+    document.getElementById('btn-back-to-timeline').addEventListener('click', () => {
+      if (isTransitioning) return;
+      isTransitioning = true;
+
+      viewDetail.classList.remove('detail-expanded');
+      viewDetail.classList.add('detail-collapsed');
+
+      viewTimeline.classList.remove('view-hidden-exit-zoom');
+      viewTimeline.classList.add('view-visible');
+
+      setTimeout(() => { isTransitioning = false; }, 550);
+    });
+
+    // ==========================================
+    // 6. Sliding Carousel
+    // ==========================================
+    const detailBox = document.getElementById('detailCardBox');
+    let isSliding = false;
+
+    function populateDetailsView(idx) {
+      const snap = SNAPSHOTS[idx];
+      document.getElementById('detailId').textContent = snap.id;
+      document.getElementById('detailTime').textContent = snap.time;
+      document.getElementById('detailSize').textContent = snap.size;
+      document.getElementById('detailFiles').textContent = snap.files;
+      document.getElementById('detailHash').textContent = snap.hash;
+    }
+
+    function switchDetailSnapshot(newIdx, direction = 'next') {
+      if (isSliding) return;
+      isSliding = true;
+
+      if (newIdx < 0) newIdx = SNAPSHOTS.length - 1;
+      if (newIdx >= SNAPSHOTS.length) newIdx = 0;
+      currentSnapshotIdx = newIdx;
+
+      const exitClass = direction === 'next' ? 'slide-exit-to-left' : 'slide-exit-to-right';
+      const enterPrepClass = direction === 'next' ? 'slide-enter-from-right' : 'slide-enter-from-left';
+
+      detailBox.classList.remove('slide-active');
+      detailBox.classList.add(exitClass);
+
+      setTimeout(() => {
+        populateDetailsView(currentSnapshotIdx);
+
+        detailBox.style.transition = 'none';
+        detailBox.classList.remove(exitClass);
+        detailBox.classList.add(enterPrepClass);
+
+        void detailBox.offsetWidth;
+
+        detailBox.style.transition = '';
+        detailBox.classList.remove(enterPrepClass);
+        detailBox.classList.add('slide-active');
+
+        setTimeout(() => {
+          isSliding = false;
+        }, 400);
+      }, 200);
+    }
+
+    document.getElementById('btn-prev-snap').addEventListener('click', () => {
+      switchDetailSnapshot(currentSnapshotIdx - 1, 'prev');
+    });
+
+    document.getElementById('btn-next-snap').addEventListener('click', () => {
+      switchDetailSnapshot(currentSnapshotIdx + 1, 'next');
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (viewDetail.classList.contains('detail-expanded')) {
+        if (e.key === 'ArrowLeft') switchDetailSnapshot(currentSnapshotIdx - 1, 'prev');
+        if (e.key === 'ArrowRight') switchDetailSnapshot(currentSnapshotIdx + 1, 'next');
+        if (e.key === 'Escape') document.getElementById('btn-back-to-timeline').click();
+      }
+    });
+
+    window.onload = function() {
+      resize();
+      createDOMCards();
+      populateDetailsView(currentSnapshotIdx);
+      render();
+    };
+  </script>
+</body>
+</html>
