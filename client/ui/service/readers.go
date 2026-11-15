@@ -28,10 +28,18 @@ func (s *Service) GetAgent(ctx context.Context, req AgentGetRequest) (AgentObser
 func (s *Service) timelineReader() *JourneyReader {
 	s.readersMu.Lock()
 	defer s.readersMu.Unlock()
-	b, _ := json.Marshal(s.Config.Repos)
+	servers, err := s.ServerList()
+	b, _ := json.Marshal(struct {
+		Repositories any
+		Clouds       any
+		Stations     any
+		Servers      any
+		ServerError  bool
+	}{s.Config.Repos, s.Config.Clouds, s.Stations(), servers, err != nil})
 	key := string(b)
 	if s.journeyReader == nil || s.journeyReposDigest != key {
 		s.journeyReader = NewJourneyReader(s.Config.Repos)
+		s.journeyReader.remote = s.readRemoteTimeline
 		s.journeyReposDigest = key
 	}
 	return s.journeyReader

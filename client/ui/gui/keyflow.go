@@ -193,7 +193,11 @@ func (a *App) folderField(c *ui.Context, kf *keyFlow) {
 				return
 			}
 			a.run(func() {
-				p, err := a.pickFolder()
+				title, message := T("picker.kit_export.title"), T("picker.kit_export.message")
+				if kf.step == kfImport {
+					title, message = T("picker.kit_import.title"), T("picker.kit_import.message")
+				}
+				p, err := a.pickFolder(title, message)
 				a.update(func() {
 					if err == nil && p != "" {
 						kf.dir = p

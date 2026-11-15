@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,7 +30,13 @@ type protState struct {
 	changeJ job
 	task    *service.ProtectionTask
 
-	backup *backupRun
+	backup           *backupRun
+	otherBackups     []*backupRun
+	backupReadErr    error
+	newBackupConfirm bool
+	oneOff           *oneOffBackup
+	oneOffSupported  bool
+	restoreMode      *restoreModeState
 }
 
 // schedEdit is the schedule being edited.
@@ -68,11 +75,24 @@ func (a *App) readProt(host string, ps *protState) {
 	}
 	ref := *ps.ref
 	var v protection.View
+	var tasks []service.BackupTask
+	var tasksErr error
+	var once bool
 	a.start(&ps.read, time.Minute, func(ctx context.Context) (err error) {
+		tasks, tasksErr = a.svc.ListBackupTasks(ctx)
 		v, err = a.svc.GetProtection(ctx, host, protection.GetParams{AgentRef: ref})
+		if err == nil {
+			caps, e := a.svc.BackupCapabilities(ctx, host)
+			once = e == nil && slices.Contains(caps, protection.BackupCapabilityV3)
+		}
 		return err
 	}, func(err error) {
 		ps.err = err
+		ps.oneOffSupported = once
+		ps.backupReadErr = tasksErr
+		if tasksErr == nil {
+			a.restoreBackupCards(ps, host, tasks)
+		}
 		if err == nil {
 			ps.view = &v
 		}
@@ -111,6 +131,8 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 		})
 		return
 	}
+	a.restoreModeCard(c, row, ps)
+	a.nativeCard(c, row)
 	if ps.read.busy && ps.view == nil {
 		a.jobLine(c, &ps.read)
 		return
@@ -118,11 +140,17 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 	if ps.err != nil {
 		errorBox(c, ps.err, a.fold("prot-err-"+row.Instance))
 	}
-	if ps.view == nil {
-		return
-	}
 	if ps.backup != nil {
 		a.backupProgress(c, row, ps)
+	}
+	for i, br := range ps.otherBackups {
+		a.backupCard(c.Key("previous-backup-"+br.task.TaskRef.TaskID), row, ps.otherBackups[i])
+	}
+	if ps.backupReadErr != nil {
+		errorBox(c, ps.backupReadErr, a.fold("backup-read-"+row.Instance))
+	}
+	if ps.view == nil {
+		return
 	}
 	a.missedCard(c, row, ps)
 	if ps.view.SupersededPlan != nil {
@@ -138,8 +166,15 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, T("protect.title")).FontSize(16).Bold().Grow(1)
 			a.planTag(c, ps)
-			if ps.view.ServerPlan != nil && (ps.backup == nil || !ps.backup.j.busy) {
-				ui.PrimaryButton(c, T("backup.now")).OnClick(func() { a.startBackupNow(row, ps) })
+			if ps.view.ServerPlan != nil && !ps.backupBlocked() {
+				if ps.oneOffSupported {
+					ui.Button(c, T("backup.once.title")).OnClick(func() { ps.oneOff = &oneOffBackup{tier: "full"} })
+				}
+				if ps.hasUnknownBackup() {
+					ui.Button(c, T("backup.new")).OnClick(func() { ps.newBackupConfirm = true })
+				} else {
+					ui.PrimaryButton(c, T("backup.now")).OnClick(func() { a.startBackupNow(row, ps) })
+				}
 			}
 		})
 		settingRow(c, T("protect.what"), T("protect.full"), "", nil)
@@ -163,6 +198,48 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 	if ps.copyTo != nil {
 		a.copyToDialog(c, row, ps)
 	}
+	if ps.oneOff != nil {
+		a.oneOffDialog(c, row, ps)
+	}
+	if ps.newBackupConfirm {
+		open := true
+		if ui.Modal(c, &open, func() {
+			ui.Column(c).Width(440).Padding(24).Gap(12).Children(func() {
+				ui.Text(c, T("backup.new")).FontSize(18).Bold()
+				ui.Text(c, T("backup.new_warning")).Wrap()
+				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+					ui.Button(c, T("common.cancel")).OnClick(func() { ps.newBackupConfirm = false })
+					ui.PrimaryButton(c, T("backup.new_confirm")).OnClick(func() {
+						ps.newBackupConfirm = false
+						a.startBackupNow(row, ps)
+					})
+				})
+			})
+		}).Dismissed() {
+			ps.newBackupConfirm = false
+		}
+	}
+}
+
+func (ps *protState) backupBlocked() bool {
+	if ps.backupReadErr != nil {
+		return true
+	}
+	for _, br := range append([]*backupRun{ps.backup}, ps.otherBackups...) {
+		if br != nil && (br.j.busy || br.task != nil && backupUnresolved(br.task.State) && br.task.State != "reconciling") {
+			return true
+		}
+	}
+	return false
+}
+
+func (ps *protState) hasUnknownBackup() bool {
+	for _, br := range append([]*backupRun{ps.backup}, ps.otherBackups...) {
+		if br != nil && br.task != nil && br.task.State == "reconciling" {
+			return true
+		}
+	}
+	return false
 }
 
 // planTag says where the plan stands: in force and checked, waiting to be

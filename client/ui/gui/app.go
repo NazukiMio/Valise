@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 
+	"valise/core/journey"
 	"valise/core/profile"
 	"valise/ui/service"
 )
@@ -37,9 +38,15 @@ type App struct {
 	point    string // snapshot id open in the journey, "" for the list
 	folds    map[string]*bool
 
-	glow        string    // point lit on the journey's line, opening next
-	glowAt      time.Time // when its glow started
-	journeyView int       // 0 points, 1 route
+	glow            string    // point lit on the journey's line, opening next
+	glowAt          time.Time // when its glow started
+	journeyView     int       // 0 points, 1 route
+	timelinePending []journey.LocationRef
+	timelineScanID  uint64
+	timelineCancel  context.CancelFunc
+	timelineScope   service.TimelineScanRequest
+	timelineScopeID string
+	scanTimeline    func(context.Context, service.TimelineScanRequest, func(service.TimelineUpdate)) error
 
 	entries     map[string]*entryState // admin page tunnels by server/instance
 	entryOpener func(context.Context, string, string, service.OpenOptions) error
@@ -51,17 +58,19 @@ type App struct {
 	logos  map[string]ui.ImageSource // official logos by profile id
 	query  string                    // the home page's search
 
-	focusSearch bool                    // ⌘F was pressed
-	iconErr     error                   // choosing an agent's picture failed
-	health      map[string]*healthState // by server/instance
-	loc         *locState               // the backup locations pages
-	locAdding   *locAdd                 // adding a location
-	cloudAdding *cloudAdd               // adding a cloud drive
-	asks        []*passPrompt           // secrets being asked for, first shown
+	focusSearch    bool                    // ⌘F was pressed
+	iconErr        error                   // choosing an agent's picture failed
+	health         map[string]*healthState // by server/instance
+	loc            *locState               // the backup locations pages
+	locAdding      *locAdd                 // adding a location
+	restoreTest    *restoreTestFlow
+	runRestoreTest func(context.Context, service.SelectedRestoreTest) (*service.RestoreTest, error)
+	cloudAdding    *cloudAdd     // adding a cloud drive
+	asks           []*passPrompt // secrets being asked for, first shown
 
-	pickFolder func() (string, error) // the system's folder dialog; "" when cancelled
-	themes     map[string]themeEntry  // imported themes by id, read at start and after an import
-	themeErr   error                  // the chosen theme could not be used, or an import failed
+	pickFolder func(title, message string) (string, error) // the system's folder dialog; "" when cancelled
+	themes     map[string]themeEntry                       // imported themes by id, read at start and after an import
+	themeErr   error                                       // the chosen theme could not be used, or an import failed
 	// vaultNames maps a connection to the folder its vault has in the
 	// repositories (the server's name, which may differ: “debian-vm” keeps
 	// its backups under “debian”). Read with the agents; kept when a read
@@ -73,7 +82,9 @@ type App struct {
 	pickFile    func(title, message string) (string, error)
 	scans       map[string]*serverScan // agents found by server
 	installs    map[string]*installRun // by server/profile
-	installable []installable          // harnesses with an official install plan
+	natives     map[string]*nativeState
+	native      *nativeRun
+	installable []installable // harnesses with an official install plan
 	newTerminal func(io.ReadWriteCloser) (*terminal.Terminal, error)
 	passes      map[string]*passState // admin pass actions by server
 	settings    map[string]*settingsState
@@ -90,8 +101,12 @@ type App struct {
 	forgetting  string                  // the removed server whose record is being forgotten
 	forgetErr   error
 
-	locales map[string]localeEntry // imported catalogs by id (docs/UI.md 7.6)
-	langErr error                  // the chosen language could not be used, or an import failed
+	locales         map[string]localeEntry // imported catalogs by id (docs/UI.md 7.6)
+	restoreLocation *restoreLocation
+	restore         *restoreFlow
+	restoreTasks    []service.RestoreTask
+	restoreTasksErr error
+	langErr         error // the chosen language could not be used, or an import failed
 }
 
 // load is one read and what came of it.
@@ -112,7 +127,11 @@ func New(svc *service.Service) *App {
 		health: map[string]*healthState{}, vaultNames: map[string]string{},
 		scans: map[string]*serverScan{}, installs: map[string]*installRun{}, passes: map[string]*passState{},
 		settings: map[string]*settingsState{}, prots: map[string]*protState{},
-		prefs: prefs{View: "cards", Dismissed: map[string]string{}}}
+		natives: map[string]*nativeState{},
+		prefs:   prefs{View: "cards", Dismissed: map[string]string{}}}
+	a.scanTimeline = svc.ScanTimelineInScope
+	a.runRestoreTest = svc.RunSelectedRestoreTest
+	a.timelineScope = service.TimelineScanRequest{LocalOnly: true}
 	a.installReviews()
 	return a
 }
@@ -124,7 +143,7 @@ func (a *App) SetClipboard(copy func(string) error) { a.copyText = copy }
 func (a *App) SetImagePicker(pick func() (string, error)) { a.pickImage = pick }
 
 // SetFolderPicker gives the system's folder dialog, for importing themes.
-func (a *App) SetFolderPicker(pick func() (string, error)) { a.pickFolder = pick }
+func (a *App) SetFolderPicker(pick func(title, message string) (string, error)) { a.pickFolder = pick }
 
 // SetFilePicker sets the system's dialog for choosing one file (a private
 // key, a porter build).
@@ -147,7 +166,11 @@ func (a *App) Start() {
 	a.chooseLocale()
 	a.loadHarness()
 	a.refreshAgents()
-	a.refreshTimeline()
+	a.refreshLocalTimeline()
+	a.run(func() {
+		tasks, err := a.svc.ListRestoreTasks()
+		a.update(func() { a.restoreTasks, a.restoreTasksErr = tasks, err })
+	})
 }
 
 func (a *App) loadHarness() {
@@ -231,43 +254,6 @@ func (a *App) readVaults(ctx context.Context, res service.AgentListResult) map[s
 	}
 	wg.Wait()
 	return out
-}
-
-// refreshTimeline reads the local repositories (no SSH, no key).
-func (a *App) refreshTimeline() {
-	if a.timeline.busy {
-		return
-	}
-	a.timeline.busy, a.timeline.started = true, true
-	a.run(func() {
-		page, err := a.allTimeline()
-		a.update(func() {
-			a.timeline = load[service.JourneyPage]{started: true, value: page, err: err, at: time.Now()}
-		})
-	})
-}
-
-// allTimeline follows the cursor to the end; the list is metadata only.
-func (a *App) allTimeline() (service.JourneyPage, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	var all service.JourneyPage
-	req := service.JourneyListRequest{Limit: 200}
-	for i := 0; i < 50; i++ {
-		page, err := a.svc.ListTimeline(ctx, req)
-		if err != nil {
-			return all, err
-		}
-		all.Items = append(all.Items, page.Items...)
-		all.Gaps = append(all.Gaps, page.Gaps...)
-		all.Observations = page.Observations
-		all.Partial = all.Partial || page.Partial
-		if page.NextCursor == "" {
-			break
-		}
-		req.Cursor = page.NextCursor
-	}
-	return all, nil
 }
 
 func (a *App) refreshServers() {

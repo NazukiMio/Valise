@@ -20,12 +20,16 @@ import (
 // JourneyReader owns disposable, process-local fixed query views. Replacing it
 // after repository configuration changes invalidates all its cursors.
 type JourneyReader struct {
-	mu           sync.Mutex
-	repos        []config.Repo
-	views        map[string]*journeyView
-	cursors      map[string]journeyCursor
-	now          func() time.Time
-	nextRevision uint64
+	mu              sync.Mutex
+	repos           []config.Repo
+	views           map[string]*journeyView
+	cursors         map[string]journeyCursor
+	now             func() time.Time
+	nextRevision    uint64
+	remote          func(context.Context) journey.Result
+	remoteCache     map[journey.LocationRef]journey.Result
+	locationTimeout time.Duration
+	generation      uint64
 }
 type journeyView struct {
 	query    string
@@ -43,6 +47,7 @@ func NewJourneyReader(repos []config.Repo) *JourneyReader {
 }
 
 type JourneyListRequest struct {
+	AllLocations bool `json:"all_locations,omitempty"`
 	// RepoNames selects registered local repositories. With no selection, all
 	// registered repositories are read. Vaults are explicit user local selections.
 	RepoNames []string         `json:"repo_names,omitempty"`
@@ -148,6 +153,22 @@ func (r *JourneyReader) ListTimeline(ctx context.Context, req JourneyListRequest
 		Sources []journey.Source
 		Roots   []string
 	}{queryReq, sources, sourceRoots(sources)})
+	var scanned journey.Result
+	r.mu.Lock()
+	generation := r.generation
+	r.mu.Unlock()
+	if req.Cursor == "" {
+		scanned, err = journey.Scan(ctx, sources)
+		if err != nil {
+			return JourneyPage{}, err
+		}
+		if req.AllLocations && r.remote != nil {
+			scanned = journey.Merge(scanned, r.remote(ctx))
+		}
+		if err := ctx.Err(); err != nil {
+			return JourneyPage{}, journeyError("location_timeout", "部分备份位置没有及时回应")
+		}
+	}
 	digest := vault.SHA256Hex(query)
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -166,10 +187,10 @@ func (r *JourneyReader) ListTimeline(ctx context.Context, req JourneyListRequest
 			return JourneyPage{}, journeyError("cursor_expired", "查询条件已变化或分页视图已失效")
 		}
 	} else {
-		result, err := journey.Scan(ctx, sources)
-		if err != nil {
-			return JourneyPage{}, err
+		if r.generation != generation {
+			return JourneyPage{}, journeyError("cursor_expired", "备份位置已变化，请重新读取")
 		}
+		result := r.retainRemote(scanned)
 		items := make([]journey.TimelinePoint, 0, len(result.Points))
 		for _, p := range result.Points {
 			// Conflicting variants may have different timestamps/scopes. Preserve the
@@ -247,7 +268,12 @@ func (r *JourneyReader) expireViews() {
 }
 
 // Invalidate discards views after a caller rebuilds or rebinds the collection.
-func (r *JourneyReader) Invalidate() { r.mu.Lock(); defer r.mu.Unlock(); r.clearViews() }
+func (r *JourneyReader) Invalidate() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.generation++
+	r.clearViews()
+}
 
 func (r *JourneyReader) GetTimelinePoint(ctx context.Context, req JourneyPointRequest) (journey.TimelinePoint, error) {
 	sources, err := r.sources(JourneyListRequest{RepoNames: req.RepoNames, Vaults: req.Vaults})

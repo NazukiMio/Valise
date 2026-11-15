@@ -12,15 +12,17 @@ import (
 // 10.2). An agent that migrated also has its route (docs/UI.md 7.1).
 func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoint) {
 	if a.point != "" {
+		a.journeyReadNotes(c)
 		for i, p := range points {
-			if p.SnapshotRef.SnapshotID == a.point {
-				a.pointDetail(c, points, i)
+			if pointKey(p) == a.point {
+				a.pointDetail(c, points, i, row.Server, row.Instance)
 				return
 			}
 		}
 		a.point = ""
 	}
 	pageHead(c, T("journey.title", "name", row.Name), T("journey.sub"))
+	a.journeyReadNotes(c)
 	stops := route(a.agents.value.Items, row.Server, row.Instance)
 	if len(stops) > 0 {
 		ui.Row(c).Children(func() { ui.Segmented(c, &a.journeyView, T("journey.view.points"), T("journey.view.route")) })
@@ -60,12 +62,13 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 			ui.Column(c).Gap(0).Children(func() {
 				list := byMonth[m]
 				for i, p := range list {
-					a.pointLine(c.Key(p.SnapshotRef.SnapshotID), p, i == 0, i == len(list)-1)
+					a.pointLine(c.Key(pointKey(p)), p, i == 0, i == len(list)-1)
 				}
 			})
 		})
 	}
-	muted(ui.Text(c, T("journey.local_only")))
+	muted(ui.Text(c, T("journey.all_locations")))
+	// Legacy catalog key "journey.local_only" remains for locale compatibility.
 }
 
 // pointLine is a node on the thin line and a one-line card.
@@ -87,18 +90,20 @@ func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool
 		if box.Hovered() {
 			box.Background(palette.Card).Border(1, palette.CardBorder)
 		}
-		box.OnClick(func() { a.point = p.SnapshotRef.SnapshotID }).Children(func() {
+		box.OnClick(func() { a.point = pointKey(p) }).Children(func() {
 			ui.Text(c, when(p.CreatedAt, c.Now())).FontSize(13).Bold().Width(120)
-			muted(ui.Text(c, tierText(p.Scope.Tier))).Grow(1)
+			ui.Column(c).Grow(1).Gap(2).Children(func() {
+				muted(ui.Text(c, tierText(p.Scope.Tier)))
+				muted(ui.Text(c, pointLocations(p))).FontSize(11).Wrap()
+			})
 			muted(ui.Text(c, T("point.files", "n", p.FileCount, "size", size(p.PlainBytes))))
 		})
 	})
 }
 
 // pointDetail shows one saved point; earlier and later ones are a step
-// away. It reads only what the local copies record: no restore action is
-// offered here until the restore segment (docs/UI.md 9 未实现不渲染).
-func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int) {
+// away. Recovery sources are resolved only from configured readers.
+func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int, origin, instance string) {
 	p := points[i]
 	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 		if ui.Button(c, "‹ "+T("point.back")).Clicked() {
@@ -106,10 +111,10 @@ func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int) 
 		}
 		ui.Spacer(c)
 		if i+1 < len(points) && ui.Button(c, T("point.earlier")).Clicked() {
-			a.point = points[i+1].SnapshotRef.SnapshotID
+			a.point = pointKey(points[i+1])
 		}
 		if i > 0 && ui.Button(c, T("point.later")).Clicked() {
-			a.point = points[i-1].SnapshotRef.SnapshotID
+			a.point = pointKey(points[i-1])
 		}
 	})
 	pageHead(c, when(p.CreatedAt, c.Now()), p.CreatedAt.Local().Format("2006-01-02 15:04:05"))
@@ -122,20 +127,36 @@ func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int) 
 		ui.Text(c, T("point.copies")).Bold()
 		for _, cp := range p.Copies {
 			ui.Column(c.Key(cp.LocationRef.ID + cp.SourceLocator)).Gap(2).Children(func() {
-				ui.Text(c, T("point.repo", "name", cp.LocationRef.ID)).FontSize(13)
+				ui.Text(c, journeyLocation(cp.LocationRef)).FontSize(13)
 				muted(ui.Text(c, T("point.records_only")))
 			})
 		}
 	})
+	if p.MetadataState == "conflict" {
+		ui.Text(c, T("point.conflict")).TextColor(palette.Warn).Wrap()
+	}
 	if len(p.Warnings) > 0 {
 		card(ui.Column(c)).Children(func() {
 			ui.Text(c, T("point.warn")).Bold().TextColor(palette.Warn)
 			for _, w := range p.Warnings {
+				if w == "snapshot_time_uses_source_clock" {
+					w = T("point.source_clock")
+				}
 				ui.Text(c, w).FontSize(13)
 			}
 		})
+	}
+	if p.MetadataState != "conflict" && len(a.svc.RestoreSources(p)) > 0 {
+		ui.PrimaryButton(c, T("restore.use_point")).OnClick(func() { a.openRestore(p, origin) })
+		if len(a.testSources(p)) > 0 {
+			ui.Button(c, T("restoretest.point_open")).OnClick(func() { a.openPointTest(p, origin, instance) })
+		}
+	} else if p.MetadataState != "conflict" {
+		muted(ui.Text(c, T("restore.source_unavailable"))).Wrap()
 	}
 	ui.Collapsible(c, T("error.tech_info"), a.fold("point-tech"), func() {
 		muted(ui.Text(c, T("point.ids", "snapshot", p.SnapshotRef.SnapshotID, "vault", p.SnapshotRef.VaultID))).Font(cur.Fonts.Mono)
 	})
 }
+
+// Legacy catalog key "point.repo" remains for locale compatibility.

@@ -131,7 +131,7 @@ func TestLocationShots(t *testing.T) {
 func TestRepoAddName(t *testing.T) {
 	a, tt := locWorld(t)
 	dir := filepath.Join(t.TempDir(), "My Disk")
-	a.pickFolder = func() (string, error) { return dir, nil }
+	a.pickFolder = func(_, _ string) (string, error) { return dir, nil }
 	a.openLocAdd()
 	tt.Advance(time.Second)
 	click(t, tt, "选择…")

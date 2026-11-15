@@ -39,6 +39,9 @@ func (c *cli) health(ctx context.Context, args []string) error {
 			fmt.Fprintf(c.out, "  · %s：%s\n", check.Title, check.Reason)
 		}
 	}
+	for _, line := range service.RuntimeHealthLines(r.Runtime) {
+		fmt.Fprintln(c.out, line)
+	}
 	group := ""
 	for _, it := range r.Items {
 		if it.Group != group {
@@ -87,7 +90,7 @@ func (c *cli) restoreTest(ctx context.Context, args []string) error {
 	fmt.Fprintf(c.out, "✓ 恢复测试通过：%s 的备份（%s），两边都解开并核对了 %d 个文件，没有切换，临时文件已删除。\n",
 		r.Created.Local().Format("01-02 15:04"), r.Tier, r.Files)
 	if r.Downtime != "" {
-		fmt.Fprintf(c.out, "  真正恢复时还要：%s\n", r.Downtime)
+		fmt.Fprintf(c.out, "  说明：%s\n", r.Downtime)
 	}
 	if l := transferLine(r.Transfer); l != "" {
 		fmt.Fprintln(c.out, "  "+l)

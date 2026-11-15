@@ -4,13 +4,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
+	"valise/core/environment"
+	"valise/core/identity"
+	"valise/core/journey"
 	"valise/core/revive"
 	"valise/core/valise"
 	"valise/core/vault"
@@ -25,13 +28,26 @@ const restoreTestsFile = "restore-tests.json"
 
 // RestoreTest is the outcome of one restore test.
 type RestoreTest struct {
-	At       time.Time `json:"at"`
-	Snapshot string    `json:"snapshot"`
-	Tier     string    `json:"tier"`
-	Created  time.Time `json:"created"`
-	Files    int       `json:"files"`
-	Bytes    int64     `json:"bytes"`
-	OK       bool      `json:"ok"`
+	Depth          string                  `json:"depth,omitempty"`
+	Materials      *TestMaterialReview     `json:"materials,omitempty"`
+	Environment    *environment.TestResult `json:"environment,omitempty"`
+	SourceLocation *journey.LocationRef    `json:"source_location,omitempty"`
+	HeaderDigest   string                  `json:"header_digest,omitempty"`
+	AgentRef       *identity.AgentRef      `json:"agent_ref,omitempty"`
+	LocalVerified  bool                    `json:"local_verified,omitempty"`
+	ServerVerified bool                    `json:"server_verified,omitempty"`
+	State          string                  `json:"state,omitempty"`
+	OpID           string                  `json:"op_id,omitempty"`
+	VaultID        string                  `json:"vault_id,omitempty"`
+	TrustDigest    string                  `json:"trust_digest,omitempty"`
+	Cleanup        string                  `json:"cleanup,omitempty"`
+	At             time.Time               `json:"at"`
+	Snapshot       string                  `json:"snapshot"`
+	Tier           string                  `json:"tier"`
+	Created        time.Time               `json:"created"`
+	Files          int                     `json:"files"`
+	Bytes          int64                   `json:"bytes"`
+	OK             bool                    `json:"ok"`
 	// Step names the step that failed, Problem says why.
 	Step    string `json:"step,omitempty"`
 	Problem string `json:"problem,omitempty"`
@@ -52,6 +68,18 @@ const (
 // instance on host. It needs the Valise passphrase (asked through
 // OwnerAuth when locked) and temporary space on both sides.
 func (s *Service) RunRestoreTest(ctx context.Context, host, instance, snapshot string) (*RestoreTest, error) {
+	return s.runRestoreTest(ctx, host, instance, snapshot, nil)
+}
+
+func (s *Service) runRestoreTest(ctx context.Context, host, instance, snapshot string, selected *SelectedRestoreTest) (*RestoreTest, error) {
+	unlock, err := s.restoreTestLock(host, instance)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if old, ok := s.LastRestoreTest(host, instance); ok && restoreTestPending(old) {
+		return &old, valise.New("restore_test_pending", "上次测试的暂存尚未核实", "先核实并清理原测试，再开始新的测试")
+	}
 	if snapshot == "" {
 		st, err := s.VaultStatus(ctx, host)
 		if err != nil {
@@ -70,38 +98,123 @@ func (s *Service) RunRestoreTest(ctx context.Context, host, instance, snapshot s
 	}
 	// Nothing is switched, so a profile whose restore is not verified yet
 	// can still be tested.
-	rp, err := s.planRevive(ctx, ReviveOptions{Target: host, SnapshotID: snapshot, Mode: revive.ModeRollback, AllowDraft: true}, "")
+	caps, err := s.BackupCapabilities(ctx, host)
 	if err != nil {
+		return nil, err
+	}
+	if selected != nil && selected.Depth == "isolated" && !slices.Contains(caps, environment.TestCapability) {
+		return nil, valise.New("unsupported_capability", "此服务器的 porter 尚不支持完整隔离测试", "在服务器设置中更新 porter，或先选择文件校验")
+	}
+	if !slices.Contains(caps, revive.ReviewCapability) {
+		return nil, valise.New("unsupported_capability", "此服务器的 porter 尚不支持测试结果核实", "在服务器设置中更新 porter 后再测试")
+	}
+	o := ReviveOptions{Target: host, SnapshotID: snapshot, Mode: revive.ModeRollback, AllowDraft: true, AllowSnapshotProfile: true, testOnly: true}
+	if selected != nil {
+		o.Source = selected.Source.Spec
+		if selected.Source.Copy.LocationRef.Kind == "server_vault" {
+			o.From = selected.Source.Copy.LocationRef.ID
+		}
+	}
+	if err := s.currentRestoreRoots(ctx, &o, instance); err != nil {
+		return nil, err
+	}
+	rp, err := s.planRevive(ctx, o, "")
+	if err != nil {
+		return nil, err
+	}
+	defer rp.Close()
+	if selected != nil {
+		if err := selected.verify(rp); err != nil {
+			return nil, err
+		}
+	}
+	if selected != nil && selected.Depth == "isolated" {
+		if err := s.prepareEnvironmentTest(ctx, rp, *selected); err != nil {
+			return nil, err
+		}
+	}
+	if err := currentRestorePlan(rp, instance, o.Roots); err != nil {
 		return nil, err
 	}
 	res := &RestoreTest{At: time.Now().UTC(), Snapshot: snapshot, Tier: rp.Snapshot.Tier, Created: rp.Snapshot.CreatedAt,
 		Files: rp.Files, Bytes: rp.Bytes, Downtime: rp.Downtime, Warnings: rp.Warnings, Transfer: rp.Transfer}
-	defer func() { s.recordRestoreTest(host, instance, res) }()
+	res.Materials = rp.testMaterials
+	res.State, res.Cleanup, res.OpID, res.VaultID = "running", "not_needed", rp.Plan.OpID, rp.vault.Desc.VaultID
+	if selected != nil {
+		res.Depth = selected.Depth
+		location := selected.Source.Copy.LocationRef
+		res.SourceLocation, res.HeaderDigest = &location, selected.Source.Copy.HeaderDigest
+	}
+	if slices.Contains(caps, identity.Capability) {
+		var binding identity.Binding
+		if err := s.call(ctx, host, identity.MethodGet, identity.GetParams{InstanceID: instance}, &binding); err != nil {
+			return nil, err
+		}
+		if binding.Agent != nil {
+			ref := binding.Agent.Ref
+			res.AgentRef = &ref
+		}
+	}
+	res.TrustDigest, err = s.restoreTrust(host)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.recordRestoreTest(host, instance, res); err != nil {
+		return nil, err
+	}
 	fail := func(step string, err error) (*RestoreTest, error) {
+		res.State = "failed"
+		if ctx.Err() == context.Canceled {
+			res.State = "cancelled"
+		}
+		if res.Cleanup == "pending" {
+			res.State = "needs_cleanup"
+		}
 		res.Step, res.Problem = step, errText1(err)
-		return res, nil
+		return res, s.recordRestoreTest(host, instance, res)
 	}
 	if len(rp.Blockers) > 0 {
 		return fail(TestServer, &rp.Blockers[0])
 	}
 	if err := s.unpackLocal(ctx, rp); err != nil {
+		if e, ok := valise.As(err); ok && e.Code == "restore_test_local_cleanup" {
+			res.Cleanup = "pending"
+		}
 		return fail(TestLocal, err)
 	}
-	if err := s.unpackServer(ctx, rp); err != nil {
+	res.LocalVerified = true
+	res.Cleanup = "pending"
+	if err := s.recordRestoreTest(host, instance, res); err != nil {
+		return res, err
+	}
+	if err := s.unpackServer(ctx, rp, res); err != nil {
 		return fail(TestServer, err)
 	}
-	res.OK = true
-	return res, nil
+	res.OK, res.State = true, "passed"
+	return res, s.recordRestoreTest(host, instance, res)
 }
 
 // unpackLocal writes every file into a private temporary folder, checks
 // its SHA-256, and removes the folder.
-func (s *Service) unpackLocal(ctx context.Context, rp *RevivePlan) error {
-	tmp, err := s.privateTemp()
+func (s *Service) unpackLocal(ctx context.Context, rp *RevivePlan) (err error) {
+	tmp, err := s.localRestoreTestDir(rp.Plan.OpID)
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmp)
+	if err := os.MkdirAll(filepath.Dir(tmp), 0700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(filepath.Dir(tmp)); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return valise.New("restore_test_local_cleanup", "本机测试暂存的位置不是私有目录", "检查缓存目录后再次测试")
+	}
+	if err := os.Mkdir(tmp, 0700); err != nil {
+		return err
+	}
+	defer func() {
+		if cleanup := s.cleanLocalRestoreTest(rp.Plan.OpID); cleanup != nil {
+			err = cleanup
+		}
+	}()
 	var done int64
 	report(ctx, TestLocal, 0, rp.Bytes)
 	for i, f := range rp.files {
@@ -114,7 +227,7 @@ func (s *Service) unpackLocal(ctx context.Context, rp *RevivePlan) error {
 			return err
 		}
 		h := sha256.New()
-		err = rp.vault.WriteFile(f, io.MultiWriter(out, h), rp.ident)
+		err = rp.writeRestoreFile(f, io.MultiWriter(out, h))
 		if cerr := out.Close(); err == nil {
 			err = cerr
 		}
@@ -133,16 +246,14 @@ func (s *Service) unpackLocal(ctx context.Context, rp *RevivePlan) error {
 // unpackServer stages the snapshot on the server, has porter check every
 // file (and SQLite database), then discards the stage: the operation never
 // reaches the swap.
-func (s *Service) unpackServer(ctx context.Context, rp *RevivePlan) error {
+func (s *Service) unpackServer(ctx context.Context, rp *RevivePlan, result *RestoreTest) error {
 	var begun struct {
 		Grant string `json:"grant"`
 	}
+	report(ctx, TestServer, 0, rp.Bytes)
 	if err := s.callOwner(ctx, rp.target, nil, revive.MethodStageBegin, revive.StageBeginParams{Plan: rp.Plan}, &begun); err != nil {
+		_ = s.discardRestoreTest(context.WithoutCancel(ctx), rp.Target, rp.Plan.InstanceID, result)
 		return err
-	}
-	discard := func() error {
-		var res revive.SwapResult
-		return s.callOwner(context.WithoutCancel(ctx), rp.target, nil, revive.MethodResume, revive.ResumeParams{OpID: rp.Plan.OpID, Action: "discard"}, &res)
 	}
 	err := s.streamStage(ctx, rp, begun.Grant)
 	if err == nil {
@@ -157,33 +268,16 @@ func (s *Service) unpackServer(ctx context.Context, rp *RevivePlan) error {
 			err = valise.New("stage_verify_failed", fmt.Sprintf("服务器上解开后有 %d 个问题", len(ver.Problems)), "换一个更早的备份再测试").
 				WithDetail(ver.Problems[0])
 		}
+		if err == nil {
+			result.ServerVerified = true
+		}
 	}
-	if derr := discard(); err == nil && derr != nil {
-		err = valise.New("discard_failed", "测试通过，但服务器上的临时目录没有删掉", "在空间清理里删除").WithDetail(errText1(derr))
+	if err == nil && rp.Plan.IsolatedTest != nil {
+		err = s.testEnvironment(ctx, rp, result)
+	}
+	report(ctx, "test_cleanup", 0, 0)
+	if derr := s.discardRestoreTest(context.WithoutCancel(ctx), rp.Target, rp.Plan.InstanceID, result); derr != nil {
+		err = valise.New("discard_failed", "测试暂存尚未完成清理", "检查连接后点“核实并清理”，不要重新发起测试")
 	}
 	return err
-}
-
-func (s *Service) loadRestoreTests() map[string]map[string]RestoreTest {
-	out := map[string]map[string]RestoreTest{}
-	if b, err := os.ReadFile(filepath.Join(s.Dirs.Data, restoreTestsFile)); err == nil {
-		json.Unmarshal(b, &out)
-	}
-	return out
-}
-
-func (s *Service) recordRestoreTest(host, instance string, t *RestoreTest) {
-	all := s.loadRestoreTests()
-	if all[host] == nil {
-		all[host] = map[string]RestoreTest{}
-	}
-	all[host][instance] = *t
-	b, _ := json.MarshalIndent(all, "", "  ")
-	_ = os.WriteFile(filepath.Join(s.Dirs.Data, restoreTestsFile), append(b, '\n'), 0o600)
-}
-
-// LastRestoreTest is the latest restore test of instance on host.
-func (s *Service) LastRestoreTest(host, instance string) (RestoreTest, bool) {
-	t, ok := s.loadRestoreTests()[host][instance]
-	return t, ok
 }

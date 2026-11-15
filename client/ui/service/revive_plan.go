@@ -22,6 +22,7 @@ import (
 
 // ReviveOptions are the user's choices for `valise revive`.
 type ReviveOptions struct {
+	testOnly   bool              // internal file/stage test; never accepted from a request
 	Target     string            `json:"target"`
 	From       string            `json:"from"` // server whose vault holds the snapshot (default: Target)
 	SnapshotID string            `json:"snapshot_id"`
@@ -78,16 +79,22 @@ type RevivePlan struct {
 	// SourceBackupFirst; set during execution.
 	PreRestoreBackup *vaultrpc.SealReport `json:"pre_restore_backup,omitempty"`
 
-	files  []vault.File
-	links  []vault.Symlink
-	sqlite map[string]bool
-	vault  *vault.Vault
-	ident  age.Identity
-	target *ownerPorter
+	snapshotHeader  *vault.Snapshot
+	testDataSources map[string]*RevivePlan
+	testSourceAgent *identity.AgentRef
+	testMaterials   *TestMaterialReview
+	files           []vault.File
+	links           []vault.Symlink
+	sqlite          map[string]bool
+	vault           *vault.Vault
+	ident           age.Identity
+	target          *ownerPorter
 	// sourceStatus: the source porter supports service_control "status"
 	// (identity/1). Older porters treat unknown actions as start.
 	sourceStatus bool
 	targetCaps   []string // the target porter's hello capabilities
+	targetFacts  revive.InspectResult
+	profileName  string
 	// sourceAgent is the source generation from a bound snapshot binding.
 	sourceAgent *identity.AgentRef
 }
@@ -180,7 +187,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if err != nil {
 		return nil, valise.New("snapshot_unreadable", "无法解密快照 "+o.SnapshotID, "确认快照 id 正确，且本机密钥是该快照的收件人").WithDetail(err.Error())
 	}
-	rp = &RevivePlan{Target: o.Target, From: o.From, vault: v, ident: id, sqlite: map[string]bool{}, Transfer: pull, Source: src, SourceLost: lost}
+	rp = &RevivePlan{snapshotHeader: head, Target: o.Target, From: o.From, vault: v, ident: id, sqlite: map[string]bool{}, Transfer: pull, Source: src, SourceLost: lost}
 	if lost {
 		rp.Warnings = append(rp.Warnings, "连不上 "+o.From+"：备份从"+src.Label()+"读取；不会停止、读取或写入 "+o.From+"，也无法确认它上面的实例已经停止")
 	}
@@ -211,6 +218,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	// A named instance's service and entries are not verified: never
 	// stopped, started or shown (profile.ForAgent).
 	prof = prof.ForAgent(head.Name)
+	rp.profileName = head.Name
 	if head.Name != "" && o.Mode != revive.ModeRollback && o.Roots[profile.StateRoot] == "" {
 		return nil, valise.New("named_needs_root", "这是命名实例 "+head.Name+" 的备份，迁移或克隆时 Valise 不猜目标目录（默认目录属于另一个 agent）",
 			"用 --root state=<路径> 指定目标目录")
@@ -253,9 +261,10 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		return nil, err
 	}
 	rp.TargetArch = facts.OS + "/" + facts.Arch
+	rp.targetFacts = facts
 	plan := revive.Plan{OpID: revive.NewOpID(time.Now()), Mode: o.Mode, InstanceID: instance, SnapshotID: o.SnapshotID,
 		Tier: head.Tier, Profile: prof, Roots: roots, Carry: o.Mode == revive.ModeRollback}
-	if len(facts.Busy) > 0 {
+	if len(facts.Busy) > 0 && !o.testOnly {
 		var desc []string
 		for _, b := range facts.Busy {
 			desc = append(desc, fmt.Sprintf("pid %d（%s）", b.PID, b.Command))
@@ -322,8 +331,14 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		rp.sqlite[sq.Root+":"+sq.Path] = true
 	}
 
-	planBody(rp, &plan, head, facts, prof, o.Mode)
-	planService(rp, &plan, facts, prof)
+	if !o.testOnly {
+		planBody(rp, &plan, head, facts, prof, o.Mode)
+		planService(rp, &plan, facts, prof)
+	} else {
+		plan.TestOnly = true
+		plan.Carry = false
+		plan.Body.Action = revive.BodyKeep
+	}
 	// Named instances of this profile nested inside the target run under
 	// the same service: stopped with it, their directories are carried
 	// into the new live directory (docs/PROFILES.md 1.3).
@@ -364,18 +379,25 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		plan.Record = &rec
 	}
 
-	if err := s.prepareRecoveryIdentity(ctx, rp, &plan); err != nil {
-		return nil, err
+	if !o.testOnly {
+		if err := s.prepareRecoveryIdentity(ctx, rp, &plan); err != nil {
+			return nil, err
+		}
+		planNestedBody(rp, &plan)
+		warnCredentialsReplaced(rp, &plan, facts, prof)
+		describeUnverifiedSource(rp, head, periodOf(st, leaf), facts, instance)
 	}
-	planNestedBody(rp, &plan)
-	warnCredentialsReplaced(rp, &plan, facts, prof)
-	describeUnverifiedSource(rp, head, periodOf(st, leaf), facts, instance)
 	rp.NeedBytes = rp.Bytes
 	if plan.Carry {
 		rp.Warnings = append(rp.Warnings, "回滚会把档位以外的现有内容（凭据、缓存、未分类文件等）复制进新状态，另需相应空间；身体目录只改名搬动，不复制")
 	}
 	if uint64(rp.NeedBytes) > rp.FreeBytes {
 		rp.block("space_low", fmt.Sprintf("目标服务器空间不足：需要约 %d MiB，可用 %d MiB", rp.NeedBytes>>20, rp.FreeBytes>>20), "释放空间后重试")
+	}
+	if o.testOnly {
+		rp.Plan = plan
+		rp.Downtime = "本次只测试文件与暂存，不估算实际恢复的停机时间"
+		return rp, nil
 	}
 	grace := 20
 	if prof.Health != nil && prof.Health.GraceSeconds > 0 {
@@ -445,17 +467,14 @@ func mapRoots(o ReviveOptions, head *vault.Snapshot, first revive.InspectResult,
 			return nil, valise.New("root_unmapped", "无法确定 root "+id+"（原路径 "+old+"）在目标服务器上的位置", "用 --root "+id+"=<路径> 指定")
 		}
 	}
-	var out []revive.RootPlan
 	for id, p := range paths {
-		rp := revive.RootPlan{ID: id, Path: filepath.Clean(p)}
-		for oid, op := range paths {
-			if oid != id && strings.HasPrefix(rp.Path, filepath.Clean(op)+"/") {
-				rp.SwapRoot, rp.Rel = oid, strings.TrimPrefix(rp.Path, filepath.Clean(op)+"/")
-			}
-		}
-		out = append(out, rp)
+		paths[id] = filepath.Clean(p)
 	}
-	return out, nil
+	roots, err := revive.CanonicalRoots(paths)
+	if err != nil {
+		return nil, valise.New("root_layout_invalid", "备份中的内容目录位置重复或不明确，无法准备恢复计划", "检查 Agent 接入时记录的保存位置，核实或重新接入后再准备恢复")
+	}
+	return roots, nil
 }
 
 // planBody decides how the body is handled.

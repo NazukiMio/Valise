@@ -24,6 +24,10 @@ func world(t *testing.T) (*App, *ui.Tester) {
 	svc := &service.Service{Dirs: config.Dirs{Data: t.TempDir(), Cache: t.TempDir()}}
 	a := New(svc)
 	a.run = func(f func()) { f() }
+	a.scanTimeline = func(_ context.Context, _ service.TimelineScanRequest, emit func(service.TimelineUpdate)) error {
+		emit(service.TimelineUpdate{Page: a.timeline.value, Done: true})
+		return nil
+	}
 	a.harness["openclaw"] = "OpenClaw"
 	// Today at 09:00, so that “今天” and “昨天” hold whenever tests run.
 	y, m, d := time.Now().Date()
@@ -253,14 +257,14 @@ func TestAgentOverviewAndJourney(t *testing.T) {
 		t.Fatalf("points %d", n)
 	}
 	click(t, tt, when(a.timeline.value.Items[1].CreatedAt, tt.Now()))
-	if a.point != "sb" || !tt.HasText("这次带上了什么") || !tt.HasText("仓库 usb") {
+	if a.point != "v1/sb" || !tt.HasText("这次带上了什么") || !tt.HasText("本机 · usb") {
 		t.Fatalf("detail %q: %q", a.point, tt.Texts())
 	}
-	// No restore button until the restore segment.
-	if tt.HasText("恢复") {
+	// The fixture has no configured recovery reader, so no execution entry.
+	if tt.HasText(T("restore.use_point")) {
 		t.Fatalf("restore offered: %q", tt.Texts())
 	}
-	if err := tt.Click("更早"); err != nil || a.point != "sc" {
+	if err := tt.Click("更早"); err != nil || a.point != "v1/sc" {
 		t.Fatalf("earlier: %v %s", err, a.point)
 	}
 	if err := tt.Click("‹ 返回旅程"); err != nil || a.point != "" {
@@ -336,11 +340,11 @@ func TestCurveGlowThenDetails(t *testing.T) {
 			t.Fatal(err)
 		}
 		tt.Advance(100 * time.Millisecond)
-		if !still && (a.glow != "sb" || a.point != "") {
+		if !still && (a.glow != "v1/sb" || a.point != "") {
 			t.Fatalf("glow %q point %q right after the click", a.glow, a.point)
 		}
 		tt.Advance(time.Second)
-		if a.point != "sb" || !tt.HasText("这次带上了什么") {
+		if a.point != "v1/sb" || !tt.HasText("这次带上了什么") {
 			t.Fatalf("still=%v: point %q %q", still, a.point, tt.Texts())
 		}
 	}

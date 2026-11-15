@@ -47,8 +47,12 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 	}
 	for _, r := range rows {
 		if !r.Retired() && r.HasService && r.ServiceTone != "ok" {
+			reason := T("attention.service.reason", "server", r.Server, "harness", r.Harness)
+			if r.Service == T("service.unknown") {
+				reason = T("attention.service_unknown.reason", "server", r.Server)
+			}
 			out = append(out, attention{Key: "svc-" + r.Server + "/" + r.Instance, Title: r.Name + " " + r.Service,
-				Reason: T("attention.service.reason", "server", r.Server, "harness", r.Harness),
+				Reason: reason,
 				State:  r.Service, Go: "/agents/" + r.Server + "/" + r.Instance, Tab: tabHealth})
 		}
 	}
@@ -60,7 +64,7 @@ func (a *App) attentionItems(rows []agentRow, now time.Time) []attention {
 		if r.Retired() || !a.hasRepos {
 			continue
 		}
-		points := a.pointsOf(r.Server, r.Instance)
+		points := a.localPointsOf(r.Server, r.Instance)
 		var local time.Time
 		if len(points) > 0 {
 			local = points[0].CreatedAt
@@ -141,6 +145,9 @@ func agentVerdict(r agentRow, newest *time.Time, now time.Time) (string, bool) {
 		return T("agent.verdict.moved", "note", r.Note), true
 	}
 	if r.HasService && r.ServiceTone != "ok" {
+		if r.Service == T("service.unknown") {
+			return T("agent.verdict.unknown"), true
+		}
 		return T("agent.verdict.down", "service", r.Service), true
 	}
 	s := quietLine(r, newest, now)

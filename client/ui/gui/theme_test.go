@@ -47,7 +47,7 @@ const immersive = `{
 // what the theme names, and puts back what must always show (UI.md 7.4).
 func TestImportImmersiveTheme(t *testing.T) {
 	a, tt := world(t)
-	a.pickFolder = func() (string, error) { return writeTheme(t, immersive), nil }
+	a.pickFolder = func(_, _ string) (string, error) { return writeTheme(t, immersive), nil }
 	a.importChosen()
 	if a.themeErr != nil || a.prefs.Theme != "my-immersive" {
 		t.Fatalf("import: %v %q", a.themeErr, a.prefs.Theme)
@@ -70,8 +70,7 @@ func TestImportImmersiveTheme(t *testing.T) {
 		t.Fatalf("copied %v", copied)
 	}
 	// The reminders and the theme menu were left out: they are put back.
-	for _, want := range []string{"nas 离线", "带我去处理", "主题 · 沉浸", "首页缺少“待处理提醒”，已按经典主题补上",
-		"外壳缺少“主题菜单”，已按经典主题补上", "2 个 Agent，2 件事需要你处理"} {
+	for _, want := range []string{"nas 离线", "带我去处理", "前往设置 → 个性化", "首页缺少“待处理提醒”，已按经典主题补上", "2 个 Agent，2 件事需要你处理"} {
 		if !tt.HasText(want) {
 			t.Errorf("missing %q in %q", want, tt.Texts())
 		}

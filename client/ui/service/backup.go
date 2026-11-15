@@ -28,34 +28,37 @@ type BackupControllerConfig struct {
 	Capabilities func(ctx context.Context, host string) ([]string, error)
 	// PollInterval spaces run status queries of asynchronous tasks.
 	PollInterval time.Duration
+	AllowOneOff  func(context.Context, string) error
 }
 type BackupPlan struct {
-	PlanID              string                `json:"plan_id"`
-	Kind                string                `json:"kind"`
-	CreatedAt           time.Time             `json:"created_at"`
-	ExpiresAt           time.Time             `json:"expires_at"`
-	ServerPlan          protection.ServerPlan `json:"server_plan"`
-	IncludesCredentials bool                  `json:"includes_credentials"`
-	PlanDigest          string                `json:"plan_digest"`
+	Selection           protection.BackupSelection `json:"selection,omitzero"`
+	PlanID              string                     `json:"plan_id"`
+	Kind                string                     `json:"kind"`
+	CreatedAt           time.Time                  `json:"created_at"`
+	ExpiresAt           time.Time                  `json:"expires_at"`
+	ServerPlan          protection.ServerPlan      `json:"server_plan"`
+	IncludesCredentials bool                       `json:"includes_credentials"`
+	PlanDigest          string                     `json:"plan_digest"`
 }
 type BackupTask struct {
-	Schema              string                `json:"schema"`
-	TaskRef             ProtectionTaskRef     `json:"task_ref"`
-	Kind                string                `json:"kind"`
-	Host                string                `json:"host"`
-	AgentRef            identity.AgentRef     `json:"agent_ref"`
-	PlanID              string                `json:"plan_id"`
-	PlanDigest          string                `json:"plan_digest"`
-	RequestDigest       string                `json:"request_digest"`
-	SubmissionKeyDigest string                `json:"submission_key_digest"`
-	RunID               string                `json:"run_id"`
-	ServerPlan          protection.ServerPlan `json:"server_plan"`
-	State               string                `json:"state"`
-	Wait                string                `json:"wait,omitempty"`
-	Revision            protection.Revision   `json:"revision"`
-	ObservedAt          time.Time             `json:"observed_at"`
-	Run                 *protection.BackupRun `json:"run,omitempty"`
-	Error               *ProtectionTaskError  `json:"error,omitempty"`
+	Selection           protection.BackupSelection `json:"selection,omitzero"`
+	Schema              string                     `json:"schema"`
+	TaskRef             ProtectionTaskRef          `json:"task_ref"`
+	Kind                string                     `json:"kind"`
+	Host                string                     `json:"host"`
+	AgentRef            identity.AgentRef          `json:"agent_ref"`
+	PlanID              string                     `json:"plan_id"`
+	PlanDigest          string                     `json:"plan_digest"`
+	RequestDigest       string                     `json:"request_digest"`
+	SubmissionKeyDigest string                     `json:"submission_key_digest"`
+	RunID               string                     `json:"run_id"`
+	ServerPlan          protection.ServerPlan      `json:"server_plan"`
+	State               string                     `json:"state"`
+	Wait                string                     `json:"wait,omitempty"`
+	Revision            protection.Revision        `json:"revision"`
+	ObservedAt          time.Time                  `json:"observed_at"`
+	Run                 *protection.BackupRun      `json:"run,omitempty"`
+	Error               *ProtectionTaskError       `json:"error,omitempty"`
 	// Hint is a quiet note for the person, not part of the task's record:
 	// with 分离模式 off, it says the backup could run in the background.
 	Hint string `json:"hint,omitempty"`
@@ -167,11 +170,17 @@ func (c *BackupController) PrepareBackup(ctx context.Context, host string, a ide
 	c.mu.Unlock()
 	return cloneProtection(plan), nil
 }
-func backupRequestDigest(host string, p protection.ServerPlan) string {
+func backupRequestDigest(host string, p protection.ServerPlan, selections ...protection.BackupSelection) string {
 	d, _ := protection.Digest(struct {
 		Host string
 		Plan protection.ServerPlan
 	}{host, p})
+	if len(selections) > 0 && selections[0] != (protection.BackupSelection{}) {
+		d, _ = protection.Digest(struct {
+			Base      string
+			Selection protection.BackupSelection
+		}{d, selections[0]})
+	}
 	return d
 }
 func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKey string) (BackupTask, error) {
@@ -190,7 +199,7 @@ func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKe
 	if !ok {
 		return BackupTask{}, protectionError("plan_stale", "计划不在当前进程中，请重新准备备份")
 	}
-	digest := backupRequestDigest(p.host, p.plan.ServerPlan)
+	digest := backupRequestDigest(p.host, p.plan.ServerPlan, p.plan.Selection)
 	keyDigest, _ := protection.Digest(submissionKey)
 	var task BackupTask
 	err := c.withStore(func() error {
@@ -221,7 +230,7 @@ func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKe
 		if err != nil {
 			return err
 		}
-		task = BackupTask{Schema: "valise-backup-task/1", Kind: "backup", TaskRef: ProtectionTaskRef{ExecutorID: c.config.ExecutorID, TaskID: taskID}, Host: p.host, AgentRef: p.plan.ServerPlan.AgentRef, PlanID: planID, PlanDigest: p.plan.PlanDigest, RequestDigest: digest, SubmissionKeyDigest: keyDigest, RunID: runID, ServerPlan: cloneProtection(p.plan.ServerPlan), State: "waiting", Wait: "confirmation", Revision: 1, ObservedAt: c.now().UTC()}
+		task = BackupTask{Selection: p.plan.Selection, Schema: "valise-backup-task/1", Kind: "backup", TaskRef: ProtectionTaskRef{ExecutorID: c.config.ExecutorID, TaskID: taskID}, Host: p.host, AgentRef: p.plan.ServerPlan.AgentRef, PlanID: planID, PlanDigest: p.plan.PlanDigest, RequestDigest: digest, SubmissionKeyDigest: keyDigest, RunID: runID, ServerPlan: cloneProtection(p.plan.ServerPlan), State: "waiting", Wait: "confirmation", Revision: 1, ObservedAt: c.now().UTC()}
 		return c.save(task)
 	})
 	if err != nil || task.State != "waiting" || c.config.Review == nil {
@@ -244,8 +253,13 @@ func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKe
 	if err != nil {
 		return task, err
 	}
-	if backupRequestDigest(p.host, fresh) != digest {
+	if backupRequestDigest(p.host, fresh, p.plan.Selection) != digest {
 		return task, protectionError("plan_stale", "确认后保护计划或实例身份已变化，请重新准备")
+	}
+	if p.plan.Selection.Tier != "" {
+		if err := c.allowOneOff(ctx, p.host); err != nil {
+			return task, err
+		}
 	}
 	async := c.supportsAsync(ctx, p.host)
 	c.mu.Lock()
@@ -283,7 +297,7 @@ func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKe
 	return c.finish(task, run, callErr)
 }
 func (t BackupTask) params() protection.BackupParams {
-	return protection.BackupParams{AgentRef: t.AgentRef, ExpectedRevision: t.ServerPlan.Revision, RunID: t.RunID, Reason: "manual", Detach: t.Async}
+	return protection.BackupParams{AgentRef: t.AgentRef, ExpectedRevision: t.ServerPlan.Revision, RunID: t.RunID, Reason: "manual", Detach: t.Async, Selection: t.Selection}
 }
 func (c *BackupController) updateWaiting(old BackupTask, update func(*BackupTask)) (BackupTask, error) {
 	t := old
@@ -433,7 +447,7 @@ func (c *BackupController) load(id string) (BackupTask, error) {
 		return t, protectionError("record_corrupt", "备份任务记录缺失或不可读")
 	}
 	b, err := os.ReadFile(path)
-	if err != nil || json.Unmarshal(b, &t) != nil || t.Schema != "valise-backup-task/1" || t.Kind != "backup" || t.TaskRef.TaskID != id || t.TaskRef.ExecutorID != c.config.ExecutorID || !protection.ValidID(t.RunID) || t.ServerPlan.Validate() != nil || t.AgentRef != t.ServerPlan.AgentRef || t.Host == "" || t.Revision == 0 || t.SubmissionKeyDigest == "" || t.RequestDigest != backupRequestDigest(t.Host, t.ServerPlan) {
+	if err != nil || json.Unmarshal(b, &t) != nil || t.Schema != "valise-backup-task/1" || t.Kind != "backup" || t.TaskRef.TaskID != id || t.TaskRef.ExecutorID != c.config.ExecutorID || !protection.ValidID(t.RunID) || t.ServerPlan.Validate() != nil || t.AgentRef != t.ServerPlan.AgentRef || t.Host == "" || t.Revision == 0 || t.SubmissionKeyDigest == "" || t.RequestDigest != backupRequestDigest(t.Host, t.ServerPlan, t.Selection) {
 		return BackupTask{}, protectionError("record_corrupt", "备份任务记录格式或请求绑定无效")
 	}
 	if !protection.ValidID(t.PlanID) || t.PlanDigest == "" || t.ObservedAt.IsZero() || (t.Run != nil && !backupRunMatches(t, *t.Run)) {

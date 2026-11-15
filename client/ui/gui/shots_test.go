@@ -40,7 +40,7 @@ func TestShots(t *testing.T) {
 	tt.Frame()
 	tt.Advance(time.Second)
 	shot(t, tt, "journey")
-	a.point = "sb"
+	a.point = "v1/sb"
 	tt.Frame()
 	tt.Advance(time.Second)
 	shot(t, tt, "point")
@@ -71,7 +71,7 @@ func TestShots(t *testing.T) {
 	tt.Frame()
 	tt.Advance(time.Second)
 	shot(t, tt, "journey-dark")
-	a.pickFolder = func() (string, error) { return writeTheme(t, immersive), nil }
+	a.pickFolder = func(_, _ string) (string, error) { return writeTheme(t, immersive), nil }
 	a.importChosen()
 	a.router.Push("/agents")
 	tt.Frame()

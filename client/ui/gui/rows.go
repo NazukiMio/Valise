@@ -22,6 +22,7 @@ type agentRow struct {
 	Note                                     string // migrated or superseded
 	Roots                                    []string
 	HasService                               bool
+	HasNative                                bool
 	Profile                                  string // profile id, for its display
 }
 
@@ -43,6 +44,19 @@ func (a *App) agentRows(res service.AgentListResult) []agentRow {
 		}
 		r.Service, r.ServiceTone = serviceText(in.Service)
 		r.HasService, r.Profile = len(in.Service) > 0, in.ProfileID
+		r.HasNative = in.NativeCLI
+		if current := in.Runtime; current != nil {
+			r.HasService = true
+			switch {
+			case !current.Known || !current.Running && !current.Stopped:
+				r.Service, r.ServiceTone = T("service.unknown"), "warn"
+				in.Entries = nil
+			case current.Running:
+				r.Service, r.ServiceTone = T("service.running"), "ok"
+			case current.Stopped:
+				r.Service, r.ServiceTone = T("service.stopped"), "stop"
+			}
+		}
 		if len(in.Entries) > 0 {
 			r.Entry = T("entry.closed")
 			for _, e := range in.Entries {
@@ -106,6 +120,19 @@ func (a *App) pointsOf(conn, instance string) []journey.TimelinePoint {
 	return pointsFor(a.timeline.value, name, instance)
 }
 
+func (a *App) localPointsOf(conn, instance string) []journey.TimelinePoint {
+	var out []journey.TimelinePoint
+	for _, p := range a.pointsOf(conn, instance) {
+		for _, cp := range p.Copies {
+			if cp.LocationRef.Kind == "local_repo" {
+				out = append(out, p)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // pointsFor is an agent's saved points, newest first; server is the
 // folder its server's vault has in the repositories.
 func pointsFor(page service.JourneyPage, server, instance string) []journey.TimelinePoint {
@@ -115,7 +142,7 @@ func pointsFor(page service.JourneyPage, server, instance string) []journey.Time
 			continue
 		}
 		for _, cp := range p.Copies {
-			if strings.HasPrefix(cp.SourceLocator, server+"/") {
+			if strings.HasPrefix(cp.SourceLocator, server+"/") || cp.LocationRef.Kind == "server_vault" && cp.LocationRef.ID == server {
 				out = append(out, p)
 				break
 			}

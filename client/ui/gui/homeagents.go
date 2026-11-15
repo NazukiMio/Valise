@@ -75,7 +75,7 @@ func (a *App) viewButton(c *ui.Context, view string, icon *ui.SVG, label string)
 
 // newest is the agent's latest local backup time, nil for none.
 func (a *App) newest(r agentRow) *time.Time {
-	if points := a.pointsOf(r.Server, r.Instance); len(points) > 0 {
+	if points := a.localPointsOf(r.Server, r.Instance); len(points) > 0 {
 		return &points[0].CreatedAt
 	}
 	return nil

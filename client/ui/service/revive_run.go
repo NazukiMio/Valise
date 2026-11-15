@@ -41,6 +41,9 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 // ExecuteReviveConfirmed is ExecuteRevive with every human confirmation
 // supplied by the in-process adapter (GUI, TUI or interactive CLI).
 func (s *Service) ExecuteReviveConfirmed(ctx context.Context, rp *RevivePlan, fault string, confirm ReviveConfirm) (*revive.SwapResult, error) {
+	if confirm.BackupCurrent && rp.Plan.Mode != revive.ModeRollback {
+		return nil, valise.New("backup_first_unavailable", "只有恢复当前实例可以选择先备份当前状态", "重新查看恢复计划")
+	}
 	if len(rp.Blockers) > 0 {
 		return nil, &rp.Blockers[0]
 	}
@@ -60,6 +63,11 @@ func (s *Service) ExecuteReviveConfirmed(ctx context.Context, rp *RevivePlan, fa
 	if err := s.settleUnverifiedSource(ctx, rp, confirm.UnverifiedSource); err != nil {
 		return nil, err
 	}
+	if confirm.BackupCurrent && rp.PreRestoreBackup == nil {
+		if err := s.backupBeforeRestore(ctx, rp, rp.Plan.InstanceID); err != nil {
+			return nil, err
+		}
+	}
 	// A daily key gets a one-time grant to run stage-write for this op.
 	var begun struct {
 		Grant string `json:"grant"`
@@ -69,7 +77,11 @@ func (s *Service) ExecuteReviveConfirmed(ctx context.Context, rp *RevivePlan, fa
 	}
 	back := func(why error) (*revive.SwapResult, error) {
 		var res revive.SwapResult
-		s.callOwner(ctx, rp.target, nil, revive.MethodResume, revive.ResumeParams{OpID: plan.OpID, Action: "back"}, &res)
+		settle, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		if err := s.callOwner(settle, rp.target, nil, revive.MethodResume, revive.ResumeParams{OpID: plan.OpID, Action: "back"}, &res); err != nil {
+			return &res, valise.New("recovery_pending", "停止请求尚未核实，原操作需要查询", "检查连接后核实原操作，不要重新发送恢复请求")
+		}
 		return &res, why
 	}
 	if err := s.streamStage(ctx, rp, begun.Grant); err != nil {
@@ -92,6 +104,18 @@ func (s *Service) ExecuteReviveConfirmed(ctx context.Context, rp *RevivePlan, fa
 	if !confirm.Swap(&ver) {
 		return back(valise.New("cancelled", "已取消，活动目录未改动", "暂存目录保留，可用 valise prev drop 清理"))
 	}
+	var checked revive.StageVerifyResult
+	if err := s.callOwner(ctx, rp.target, nil, revive.MethodStageVerify, revive.StageVerifyParams{OpID: plan.OpID, Manifest: man}, &checked); err != nil {
+		return back(err)
+	}
+	if len(checked.Problems) > 0 {
+		return back(valise.New("stage_verify_failed", "确认期间暂存材料发生变化，未交换活动目录", "重新准备恢复材料"))
+	}
+	operation, done, accessErr := s.restoreOperationPorter(ctx, rp.Target, plan)
+	if accessErr != nil {
+		return back(accessErr)
+	}
+	defer done()
 	// From here on nothing may interrupt the swap (docs/UI.md section 6):
 	// a cancelled caller (Ctrl-C, a closed window) no longer cancels it.
 	ctx = context.WithoutCancel(ctx)
@@ -126,9 +150,15 @@ func (s *Service) ExecuteReviveConfirmed(ctx context.Context, rp *RevivePlan, fa
 			}
 		}
 	}
+	if plan.Mode == revive.ModeMigrate && rp.StopSource != "" && disposition != identity.StoppedVerified {
+		if stopped {
+			s.callOwner(ctx, source, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "start"}, nil)
+		}
+		return back(valise.New("source_stop_unverified", "无法核实原实例已经停用，未启动目标实例", "检查原服务状态并重新准备迁移"))
+	}
 	report(ctx, StageSwap, 0, 0)
 	var res revive.SwapResult
-	err := s.callOwner(ctx, rp.target, faultEnv(fault), revive.MethodSwap, revive.OpParams{OpID: plan.OpID, SourceDisposition: disposition}, &res)
+	err := s.callOwner(ctx, operation, faultEnv(fault), revive.MethodSwap, revive.OpParams{OpID: plan.OpID, SourceDisposition: disposition}, &res)
 	if stopped && (err != nil || res.State == revive.StateRolledBack) {
 		if s.callOwner(ctx, source, nil, revive.MethodService, revive.ServiceParams{Unit: rp.StopSource, Action: "start"}, nil) == nil {
 			res.Message += "；已重新启动原服务器上的 " + rp.StopSource
@@ -170,7 +200,7 @@ func (s *Service) streamStage(ctx context.Context, rp *RevivePlan, grant string)
 			if err := tw.WriteHeader(h); err != nil {
 				return err
 			}
-			if err := rp.vault.WriteFile(f, tw, rp.ident); err != nil {
+			if err := rp.writeRestoreFile(f, tw); err != nil {
 				return err
 			}
 		}
@@ -196,7 +226,16 @@ func (s *Service) ReviveResume(ctx context.Context, host, op, action, fault stri
 		return nil, err
 	}
 	var res revive.SwapResult
-	err = s.callOwner(ctx, o, faultEnv(fault), revive.MethodResume, revive.ResumeParams{OpID: op, Action: action}, &res)
+	var j revive.Journal
+	if err = s.callOwner(ctx, o, nil, revive.MethodJournal, revive.OpParams{OpID: op}, &j); err != nil {
+		return nil, err
+	}
+	accessPlan := j.Plan
+	if action == "back" && (j.State == revive.StatePlanned || j.State == revive.StateStopped) && !j.NPMInstalled && !j.ServiceInstalled {
+		accessPlan.Body.Action = revive.BodyKeep
+		accessPlan.InstallService = false
+	}
+	err = s.callRestoreOperation(ctx, host, accessPlan, faultEnv(fault), revive.MethodResume, revive.ResumeParams{OpID: op, Action: action}, &res)
 	return &res, err
 }
 

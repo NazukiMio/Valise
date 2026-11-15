@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"errors"
 
 	"github.com/egoist/mygo/ui"
@@ -12,6 +13,9 @@ import (
 // (docs/UI.md 5). open keeps the fold's state between frames.
 func errorBox(c *ui.Context, err error, open *bool) {
 	reason, suggestion, detail := T("error.unexpected"), "", err.Error()
+	if errors.Is(err, context.DeadlineExceeded) {
+		reason, suggestion = T("error.timeout"), T("error.timeout_hint")
+	}
 	var ue *valise.UserError
 	if errors.As(err, &ue) {
 		reason, suggestion, detail = ue.Reason, ue.Suggestion, ue.Detail

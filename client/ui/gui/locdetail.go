@@ -160,6 +160,12 @@ func (a *App) periodLine(c *ui.Context, l location, host string, r periodRow) {
 		if r.here == nil {
 			return
 		}
+		if a.canRestoreLocation(l) {
+			ui.Button(c, T("restore.browse")).OnClick(func() {
+				a.restoreLocation = &restoreLocation{location: l.Name, host: host, leaf: r.leaf, snapshots: append([]string(nil), r.here...)}
+				a.navigate("/restore/points")
+			})
+		}
 		ui.Button(c, T("loc.verify_open")).OnClick(func() { a.startVerify(host, r.leaf, l.Name, false) })
 		if l.Kind != locRepo && (r.server == nil || !r.server.Current) {
 			ui.Button(c, T("loc.delete_open")).OnClick(func() { a.startVerify(host, r.leaf, l.Name, true) })

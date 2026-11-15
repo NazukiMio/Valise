@@ -203,6 +203,16 @@ func movePager(cursor, n, width, w int, key string) (int, bool) {
 }
 
 func runState(in enroll.InstanceSummary) string {
+	if current := in.Runtime; current != nil {
+		switch {
+		case !current.Known || !current.Running && !current.Stopped:
+			return warnStyle.Render("● 当前环境尚未核实")
+		case current.Running:
+			return okStyle.Render("● 运行中")
+		case current.Stopped:
+			return errStyle.Render("● 已停止")
+		}
+	}
 	if len(in.Service) == 0 {
 		return dimStyle.Render("● 没有服务（前台运行）")
 	}
@@ -216,7 +226,7 @@ func runState(in enroll.InstanceSummary) string {
 
 // runStateShort fits a compact card.
 func runStateShort(in enroll.InstanceSummary) string {
-	if len(in.Service) == 0 {
+	if len(in.Service) == 0 && in.Runtime == nil {
 		return dimStyle.Render("● 前台运行")
 	}
 	return runState(in)

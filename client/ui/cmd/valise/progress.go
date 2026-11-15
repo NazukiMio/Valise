@@ -20,6 +20,7 @@ var stageLabels = map[string]string{
 	service.StageStage: "写入服务器的暂存目录", service.StageVerify: "核对暂存的文件",
 	service.StageSwap: "停止服务 → 交换 → 启动 → 健康检查", service.TestLocal: "在这台电脑上解开并核对",
 	service.StageSealScan: "清点文件", service.StageSealPack: "读取、加密并写入", service.StageSealCommit: "写入备份目录",
+	service.TestServer: "准备服务器测试暂存", "test_cleanup": "清理测试暂存",
 }
 
 // withProgress prints each stage once, then its amount at most every two

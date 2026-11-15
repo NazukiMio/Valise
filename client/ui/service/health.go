@@ -11,6 +11,7 @@ import (
 	"valise/core/action"
 	"valise/core/agentkit"
 	"valise/core/enroll"
+	"valise/core/identity"
 	"valise/core/profile"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
@@ -57,10 +58,13 @@ type HealthItem struct {
 
 // HealthReport is one agent's health.
 type HealthReport struct {
-	Host     string        `json:"host"`
-	Instance string        `json:"instance"`
-	Items    []HealthItem  `json:"items"`
-	Checks   []HealthCheck `json:"checks,omitempty"`
+	Runtime                  *enroll.RuntimeState `json:"runtime,omitempty"`
+	EnvironmentTestSupported bool                 `json:"environment_test_supported,omitempty"`
+	AgentRef                 *identity.AgentRef   `json:"agent_ref,omitempty"`
+	Host                     string               `json:"host"`
+	Instance                 string               `json:"instance"`
+	Items                    []HealthItem         `json:"items"`
+	Checks                   []HealthCheck        `json:"checks,omitempty"`
 }
 
 // Rank orders levels for sorting: bad first.
@@ -143,17 +147,26 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 		add(s.backupItem(host, instance, st.ServerName, st.Snapshots, st.Targets, now))
 		vaultNow = st.Now
 	}
-	add(s.restoreTestItem(host, instance, now))
+	var currentAgent *identity.AgentRef
 	profileID := ""
 	insts, err := src.instances()
 	found := false
 	if err == nil {
 		for _, in := range insts {
 			if in.InstanceID == instance {
+				if in.Identity != nil && in.Identity.Agent != nil {
+					ref := in.Identity.Agent.Ref
+					currentAgent = &ref
+				}
 				it := serviceItem(in.Service, in.Entries)
+				if in.Runtime != nil {
+					r.Runtime = in.Runtime
+					it = runtimeServiceItem(in.Runtime)
+				}
 				s.bindServiceRepair(&it, in)
 				add(it)
 				profileID = in.ProfileID
+				r.EnvironmentTestSupported = s.environmentTestSupported(in)
 				found = true
 				break
 			}
@@ -163,6 +176,8 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 		}
 	}
 	r.read("service", "服务与管理页", err)
+	r.AgentRef = currentAgent
+	add(s.restoreTestItem(host, instance, now, currentAgent))
 	ts, err := src.timer()
 	r.read("timer", "定时备份", err)
 	legacyTimer, legacyLinger := false, false
@@ -288,20 +303,43 @@ func (s *Service) backupItem(host, instance, server string, metas []vault.Meta, 
 	return it
 }
 
-func (s *Service) restoreTestItem(host, instance string, now time.Time) HealthItem {
-	it := HealthItem{ID: "restore_test", Group: HealthPods, Title: "恢复测试", Key: "t"}
+func (s *Service) restoreTestItem(host, instance string, now time.Time, current *identity.AgentRef) HealthItem {
+	it := HealthItem{ID: "restore_test", Group: HealthPods, Title: "备份文件测试", Key: "t"}
 	t, ok := s.LastRestoreTest(host, instance)
 	switch {
 	case !ok:
 		it.Level, it.Text = HealthWarn, "还没有测试过"
-		it.Detail = "恢复测试在这台电脑和服务器上各解开一次最新的备份并逐个核对文件，不切换、不碰 agent，结束后删除临时文件。需要 Valise 口令。"
+		it.Detail = "选择要测试的备份和读取位置，在这台电脑和服务器上分别核对文件；不切换当前 Agent，结束后清理暂存。需要 Valise 口令。"
+	case restoreTestPending(t):
+		it.Level, it.Text = HealthWarn, "上次测试尚未收尾，结果未核实"
+		it.Detail = "先核实并清理原测试的暂存；不会重新测试或替换当前 Agent。"
+	case t.AgentRef != nil && (current == nil || *t.AgentRef != *current):
+		it.Level, it.Text = HealthWarn, "还没有当前实例世代的文件测试结果"
+		it.Detail = "已有测试属于另一个实例世代，或当前身份暂未读到；重新检查连接后再测试。"
+	case t.AgentRef == nil && current != nil:
+		it.Level, it.Text = HealthInfo, "有旧的文件测试记录，尚未核实与当前 Agent 的关联"
+		it.Detail = "可以重新测试当前备份。"
+	case t.State == "cancelled":
+		it.Level, it.Text = HealthWarn, "上次测试已停止，暂存已清理"
+	case t.Depth == "isolated":
+		it.Title = "备份重建测试"
+		if t.OK && t.Environment != nil && t.Environment.CandidateBuilt && t.Environment.Probe.Verified() {
+			it.Level, it.Text = HealthOK, "上次完整隔离重建测试通过；原 Agent 保持运行"
+			it.Detail = "测试到网关就绪，不代表外部渠道或实际对话已经验证。正式恢复后仍由你对话并确认可用。"
+		} else {
+			it.Level, it.Text = HealthWarn, "完整隔离重建尚未通过"
+			if t.LocalVerified && t.ServerVerified {
+				it.Text = "文件校验通过；完整隔离重建尚未通过"
+			}
+			it.Detail = t.Problem
+		}
 	case !t.OK:
 		it.Level = HealthBad
 		it.Text = "上次测试 " + agoPlain(now.Sub(t.At)) + "前，没有通过：" + t.Problem
 		it.Detail = "可以换一个更早的备份再测试；如果更早的也不行，请报告问题。"
 	default:
 		it.Level = HealthOK
-		it.Text = "上次测试 " + agoPlain(now.Sub(t.At)) + "前，通过（" + t.Created.Local().Format("01-02 15:04") + " 的备份，" + strconv.Itoa(t.Files) + " 个文件）"
+		it.Text = "上次文件与暂存校验 " + agoPlain(now.Sub(t.At)) + "前通过（" + t.Created.Local().Format("01-02 15:04") + " 的备份，" + strconv.Itoa(t.Files) + " 个文件）；未测试启动"
 	}
 	return it
 }

@@ -1,8 +1,6 @@
 package gui
 
 import (
-	"time"
-
 	"github.com/egoist/mygo/ui"
 
 	"valise/core/journey"
@@ -20,6 +18,7 @@ const (
 // agentPage is one agent: overview, journey and health (docs/UI.md 9.5,
 // 10.1, 7.3).
 func (a *App) agentPage(c *ui.Context, server, instance string) {
+	a.ensureTimelineScope(server, instance)
 	var row *agentRow
 	for _, r := range a.agentRows(a.agents.value) {
 		if r.Server == server && r.Instance == instance {
@@ -34,10 +33,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 		a.point = ""
 	}
 	points := a.pointsOf(server, instance)
-	var newest *time.Time
-	if len(points) > 0 {
-		newest = &points[0].CreatedAt
-	}
+	newest := a.newest(*row)
 	// Who it is, one sentence about it, and the page's one primary action.
 	ui.Row(c).Gap(18).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Gap(6).AlignItems(ui.Center).Children(func() {
@@ -83,13 +79,16 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 }
 
 func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePoint) {
+	if !row.Retired() {
+		a.nativeCard(c, row)
+	}
 	// The details: each fact in its own cell (docs/UI.md 7.2).
 	statusBoard(c, agentCells(*row, points, c), false)
 	ui.Row(c).Gap(18).AlignItems(ui.Start).Children(func() {
 		card(ui.Column(c)).Grow(1).Basis(0).Children(func() {
 			ui.Text(c, T("agent.recent")).Bold()
 			if len(points) == 0 {
-				muted(ui.Text(c, T("backup.no_local")))
+				muted(ui.Text(c, T("backup.no_points")))
 			}
 			for i, p := range points {
 				if i == 3 {
@@ -120,7 +119,7 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 			}
 		})
 	})
-	muted(ui.Text(c, T("backup.local_note"))).FontSize(11)
+	muted(ui.Text(c, T("backup.sources_note"))).FontSize(11)
 }
 
 // fact is one labelled line of a card.
@@ -132,3 +131,5 @@ func fact(c *ui.Context, label, value string) {
 		ui.Text(c, value).FontSize(13).Grow(1)
 	})
 }
+
+// Legacy catalog key "backup.no_local" is retained for locale compatibility.

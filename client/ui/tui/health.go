@@ -260,6 +260,9 @@ func (c *healthTab) view(m *Model, p *instancePage, height int) string {
 		}
 	}
 	var b strings.Builder
+	if p.health != nil && p.health.Runtime != nil {
+		b.WriteString(strings.Join(service.RuntimeHealthLines(p.health.Runtime), "\n") + "\n")
+	}
 	notices := p.healthNotices()
 	if len(notices) > 0 {
 		b.WriteString(warnStyle.Render("! 部分检查未完成，暂无法完整判断") + "\n")
@@ -341,6 +344,10 @@ func testStage(stage string) string {
 		return "在服务器上解开"
 	case service.StageVerify:
 		return "服务器核对文件"
+	case service.TestServer:
+		return "准备服务器测试暂存"
+	case "test_cleanup":
+		return "清理测试暂存"
 	}
 	return "准备中"
 }

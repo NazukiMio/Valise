@@ -55,6 +55,7 @@ func (a *App) stopJob(j *job) {
 // jobLine shows a running job: the sub-step, how long it has waited, and
 // a stop button.
 func (a *App) jobLine(c *ui.Context, j *job) {
+	c.After(time.Second)
 	ui.Row(c).Gap(10).Padding(10, 12).Radius(10).Background(palette.Board).AlignItems(ui.Center).Children(func() {
 		ui.Spinner(c)
 		text := a.doingText(j.doing, j.doingAt, c.Now())

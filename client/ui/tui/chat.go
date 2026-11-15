@@ -42,10 +42,9 @@ type chatEntry struct {
 func (c *chatTab) entries(p *instancePage) []chatEntry {
 	host, inst := p.host, p.inst.InstanceID
 	var out []chatEntry
-	if p.target != nil && len(p.target.Profile.NativeCLI) > 0 {
-		pid := p.target.Profile.ID
+	if p.inst.NativeCLI && p.target != nil && len(p.target.Profile.NativeCLI) > 0 {
 		out = append(out, chatEntry{"打开 harness 自己的对话（原生界面：" + strings.Join(p.target.Profile.NativeCLI, " ") + "）", func(m *Model, p *instancePage) tea.Cmd {
-			return gatedCLI(m, host, "native", host, "--profile", pid)
+			return gatedCLI(m, host, "native", host, "--instance", p.inst.InstanceID)
 		}})
 	}
 	if len(p.inst.Entries) > 0 {

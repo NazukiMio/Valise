@@ -18,8 +18,12 @@ func (a *App) View(c *ui.Context) {
 	}
 	root.Children(func() {
 		a.recoveryBanner(c)
+		a.nativeBanner(c)
+		a.restoreBanner(c)
+		a.restoreTestBanner(c)
+		a.appearanceWarnings(c)
 		render(c, &shell, map[string]func(*ui.Context, *Node){
-			"brand": a.brandSlot, "nav": a.navSlot, "tagline": taglineSlot, "theme": a.themeSlot, "page": a.pageSlot,
+			"brand": a.brandSlot, "nav": a.navSlot, "tagline": taglineSlot, "page": a.pageSlot,
 		})
 	})
 	a.keyDialog(c)
@@ -134,11 +138,19 @@ func (a *App) pageSlot(c *ui.Context, n *Node) {
 			a.router.View(c, func(r *ui.Route) {
 				r.Page().Gap(20)
 				switch {
+				case r.Match("/restore/tasks"):
+					a.restoreTaskList(c)
+				case r.Match("/restore/points"):
+					a.restoreLocationPoints(c)
+				case r.Match("/restore"):
+					a.restorePage(c)
 				case r.Match("/agents"):
 					r.Title(T("nav.agents"))
 					a.homePage(c)
 				case r.Match("/agents/{server}/{instance}"):
 					a.agentPage(c, r.Param("server"), r.Param("instance"))
+				case r.Match("/native/{server}/{instance}"):
+					a.nativePage(c, r.Param("server"), r.Param("instance"))
 				case r.Match("/servers"):
 					r.Title(T("nav.servers"))
 					a.serversPage(c)

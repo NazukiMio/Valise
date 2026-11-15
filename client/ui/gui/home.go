@@ -76,7 +76,7 @@ func (a *App) homePage(c *ui.Context) {
 		"toolbar":   func(c *ui.Context, n *Node) { a.toolbarSlot(c, n, d) },
 		"agents":    func(c *ui.Context, n *Node) { a.agentsSlot(c, n, d) },
 		"retired":   func(c *ui.Context, n *Node) { a.retiredSlot(c, n, d) },
-		"note":      func(c *ui.Context, n *Node) { muted(n.box(ui.Text(c, T("backup.local_note")))).FontSize(11) },
+		"note":      func(c *ui.Context, n *Node) { muted(n.box(ui.Text(c, T("backup.sources_note")))).FontSize(11) },
 	})
 }
 
@@ -86,7 +86,7 @@ func (a *App) headerSlot(c *ui.Context, n *Node) {
 		if a.agents.busy {
 			ui.Spinner(c)
 		} else {
-			ui.Button(c, T("common.refresh")).OnClick(func() { a.refreshAgents(); a.refreshTimeline() })
+			ui.Button(c, T("common.refresh")).OnClick(func() { a.refreshAgents(); a.refreshLocalTimeline() })
 		}
 		ui.Button(c, T("home.add_agent")).OnClick(func() { a.startWizard(true) })
 	})
@@ -198,11 +198,11 @@ func agentCells(r agentRow, points []journey.TimelinePoint, c *ui.Context) []cel
 	for _, cp := range points[0].Copies {
 		if !seen[cp.LocationRef.ID] {
 			seen[cp.LocationRef.ID] = true
-			repos = append(repos, cp.LocationRef.ID)
+			repos = append(repos, journeyLocation(cp.LocationRef))
 		}
 	}
 	return append(cells, cell{Label: T("board.recent"), Value: when(points[0].CreatedAt, c.Now())},
-		cell{Label: T("board.local_copies"), Value: strings.Join(repos, T("common.list_sep"))})
+		cell{Label: T("board.locations"), Value: strings.Join(repos, T("common.list_sep"))})
 }
 
 // shortService is a service state without the word the board's label
@@ -218,5 +218,8 @@ func shortService(s string) string {
 
 func (a *App) openAgent(server, instance string) {
 	a.agentTab, a.point = 0, ""
+	a.ensureTimelineScope(server, instance)
 	a.router.Push("/agents/" + server + "/" + instance)
 }
+
+// Legacy catalog keys "backup.local_note" and "board.local_copies" are retained.

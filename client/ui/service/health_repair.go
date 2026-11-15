@@ -18,6 +18,9 @@ func serviceRepair(p profile.Profile) *profile.Action {
 }
 
 func (s *Service) bindServiceRepair(it *HealthItem, in enroll.InstanceSummary) {
+	if in.Runtime != nil {
+		return // The old native service action cannot control a managed entry.
+	}
 	if it.Level != HealthBad && it.Level != HealthWarn {
 		return
 	}

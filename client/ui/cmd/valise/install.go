@@ -305,33 +305,49 @@ func (c *cli) saveScript(planID string, st service.PlanStep) (string, error) {
 	return p, os.WriteFile(p, st.Script, 0o600)
 }
 
-// native: valise native <服务器> --profile <id>
+// native: valise native <服务器> --instance <id> (or legacy --profile <id>)
 func (c *cli) native(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("native", flag.ContinueOnError)
 	prof := fs.String("profile", "", "")
+	instance := fs.String("instance", "", "")
 	pos, err := parseArgs(fs, args, 1)
-	if err != nil || *prof == "" {
+	if err != nil || (*prof == "") == (*instance == "") {
 		return errUsage
 	}
-	if err := c.gate(ctx, pos[0], "", false); err != nil {
+	if err := c.gate(ctx, pos[0], *instance, false); err != nil {
 		return err
 	}
 	if err := c.leftovers(ctx, pos[0]); err != nil {
 		return err
 	}
-	cmd, done, err := c.svc.NativeCommand(ctx, pos[0], *prof)
+	var cmd *exec.Cmd
+	var done func()
+	label := *prof
+	hints := c.svc.NativeHints(*prof)
+	if *instance != "" {
+		info, infoErr := c.svc.InstanceNativeInfo(ctx, pos[0], *instance)
+		if infoErr != nil {
+			return infoErr
+		}
+		label, hints = *instance, info.Hints
+		cmd, done, err = c.svc.InstanceNativeCommand(ctx, pos[0], *instance)
+	} else {
+		cmd, done, err = c.svc.NativeCommand(ctx, pos[0], *prof)
+	}
 	if err != nil {
 		return err
 	}
 	defer done()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	fmt.Fprintf(c.out, "正在打开 %s 在 %s 上的原生界面（独立的管理连接）。Valise 不读取、不保存这里输入的任何内容。\n", *prof, pos[0])
-	if hints := c.svc.NativeHints(*prof); len(hints) > 0 {
+	fmt.Fprintf(c.out, "正在打开 %s 在 %s 上的原生界面（独立的管理连接）。Valise 不读取、不保存这里输入的任何内容。\n", label, pos[0])
+	if len(hints) > 0 {
 		fmt.Fprintln(c.out, "提示：")
 		for _, h := range hints {
-			fmt.Fprintf(c.out, "  · %s\n", strings.NewReplacer("<服务器>", pos[0], "<实例>", *prof).Replace(h))
+			fmt.Fprintf(c.out, "  · %s\n", strings.NewReplacer("<服务器>", pos[0], "<实例>", label).Replace(h))
 		}
-		fmt.Fprintf(c.out, "  · 需要另开终端运行 %s 自己的命令时：valise shell %s --profile %s\n", *prof, pos[0], *prof)
+		if *instance == "" {
+			fmt.Fprintf(c.out, "  · 需要另开终端运行 %s 自己的命令时：valise shell %s --profile %s\n", *prof, pos[0], *prof)
+		}
 	}
 	return c.interactiveEnd(cmd.Run(), "原生界面")
 }

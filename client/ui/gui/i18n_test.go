@@ -30,10 +30,12 @@ func TestNoInterfaceWordsInCode(t *testing.T) {
 // Every key the code names is in the built-in catalog, and every key in
 // the catalog is named somewhere (a key built at run time is listed here).
 func TestCatalogMatchesCode(t *testing.T) {
-	built := []string{"service.short.", "leave.item.", "protect.period.", "lock.state.", "copyto.every.", "loc.check.", "loc.every.", "loc.kind.", "loc.kind_what.", "loc.remove_what.", "loc.remove_yours."} // shortService joins the state's name
+	built := []string{"environment.mode.", "environment.hint.", "restoretest.progress.", "restoretest.state.", "restore.rollback.", "restore.mode.", "restore.mode_hint.", "restore.step.", "restore.data.", "restore.body.", "restore.execute.", "restore.progress.", "restore.state.", "restore.journal.", "restore.recover.", "service.short.", "leave.item.", "protect.period.", "lock.state.", "copyto.every.", "loc.check.", "loc.every.", "loc.kind.", "loc.kind_what.", "loc.remove_what.", "loc.remove_yours."} // shortService joins the state's name
 	used := map[string]bool{}
 	keyLit := regexp.MustCompile(`"([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)"`)
 	files, _ := filepath.Glob("*.go")
+	entryFiles, _ := filepath.Glob("../cmd/valise-desktop/*.go")
+	files = append(files, entryFiles...)
 	var all strings.Builder
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {

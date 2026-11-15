@@ -55,6 +55,8 @@ const (
 
 // ReviveConfirm are the human confirmations of one revive, asked in order.
 type ReviveConfirm struct {
+	// BackupCurrent is an explicit human choice for current-instance restore.
+	BackupCurrent bool
 	// UnverifiedSource is asked before anything is staged, only when the
 	// plan's source is unverified. Nil refuses such a plan.
 	UnverifiedSource func(UnverifiedSource) SourceDecision
@@ -108,18 +110,22 @@ func (s *Service) settleUnverifiedSource(ctx context.Context, rp *RevivePlan, as
 			return valise.New("backup_first_unavailable", "目标上没有正在使用的同一实例，没有当前状态可以先备份",
 				"确认快照信息后选择“我清楚，继续”，或取消")
 		}
-		rep, err := s.Seal(ctx, rp.Target, vaultrpc.SealParams{InstanceID: u.BackupInstance, Tier: vault.TierFull,
-			Reason: "恢复来源无法核实的快照 " + rp.Plan.SnapshotID + " 之前，先备份当前状态（操作 " + rp.Plan.OpID + "）"})
-		if err != nil {
-			e := valise.New("pre_restore_backup_failed", "恢复前的 full 备份没有完成，恢复没有开始，目标未改动",
-				"检查服务器与备份库后重试；也可以改选“我清楚，继续”")
-			if ue, ok := valise.As(err); ok {
-				return e.WithDetail(ue.Code + "：" + ue.Reason)
-			}
-			return e
-		}
-		rp.PreRestoreBackup = rep
-		return nil
+		return s.backupBeforeRestore(ctx, rp, u.BackupInstance)
 	}
 	return valise.New("cancelled", "已取消，没有做任何改动", "")
+}
+
+func (s *Service) backupBeforeRestore(ctx context.Context, rp *RevivePlan, instance string) error {
+	rep, err := s.Seal(ctx, rp.Target, vaultrpc.SealParams{InstanceID: instance, Tier: vault.TierFull,
+		Reason: "恢复时间点 " + rp.Plan.SnapshotID + " 之前，先备份当前状态（操作 " + rp.Plan.OpID + "）"})
+	if err != nil {
+		e := valise.New("pre_restore_backup_failed", "恢复前的完整备份没有完成，恢复尚未开始",
+			"检查服务器与备份库后重试；或重新查看计划，取消先备份的选择")
+		if ue, ok := valise.As(err); ok {
+			return e.WithDetail(ue.Code)
+		}
+		return e
+	}
+	rp.PreRestoreBackup = rep
+	return ctx.Err()
 }

@@ -47,18 +47,28 @@ func main() {
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "Valise", Width: 1180, Height: 780, MinWidth: 860, MinHeight: 560,
 			Content: ui.View(app.View)})
 		app.SetUpdate(win.Update)
+		win.OnClose(func(e *mygo.CloseEvent) {
+			if !app.RequestClose(win.Close) {
+				e.PreventDefault()
+			}
+		})
+		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+			if !app.RequestClose(mygo.App.Quit) {
+				e.PreventDefault()
+			}
+		})
 		app.SetClipboard(func(text string) error { return mygo.Clipboard.Write(transfer.TextData(text)) })
 		app.SetImagePicker(func() (string, error) {
-			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: win, Title: "为 Agent 选择图标",
-				Filters: []mygo.FileFilter{{Name: "图片", Extensions: []string{"png", "jpg", "jpeg", "webp", "svg"}}}})
+			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: win, Title: gui.T("picker.image.title"), Message: gui.T("picker.image.message"),
+				Filters: []mygo.FileFilter{{Name: gui.T("picker.image.filter"), Extensions: []string{"png", "jpg", "jpeg", "webp", "svg"}}}})
 			if err != nil || len(paths) == 0 {
 				return "", err
 			}
 			return paths[0], nil
 		})
-		app.SetFolderPicker(func() (string, error) {
-			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: win, Title: "导入主题",
-				Message: "选择含有 theme.json 的主题文件夹", Directory: true})
+		app.SetFolderPicker(func(title, message string) (string, error) {
+			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: win, Title: title,
+				Message: message, Directory: true})
 			if err != nil || len(paths) == 0 {
 				return "", err
 			}

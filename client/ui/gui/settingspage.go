@@ -14,15 +14,20 @@ import (
 
 func (a *App) settingsPage(c *ui.Context) {
 	pageHead(c, T("nav.settings"), "")
-	ui.Tabs(c, &a.setTab, T("settings.tab.keys"), T("settings.tab.backup"))
+	ui.Tabs(c, &a.setTab, T("settings.tab.keys"), T("settings.tab.backup"), T("settings.tab.personalization"))
 	if a.keyNote != "" {
 		ui.Row(c).Gap(10).Padding(10, 14).Radius(10).Background(palette.Board).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, a.keyNote).TextColor(palette.Ok).Grow(1).Wrap()
 			ui.Button(c, T("common.close")).OnClick(func() { a.keyNote = "" })
 		})
 	}
+	if a.setTab == 2 {
+		a.personalization(c)
+		return
+	}
 	if a.setTab == 1 {
 		a.backupSettings(c)
+		ui.Button(c, T("restore.history")).OnClick(func() { a.readRestoreTasks(); a.navigate("/restore/tasks") })
 		return
 	}
 	a.keySettings(c)

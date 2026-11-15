@@ -2,8 +2,8 @@ package gui
 
 import (
 	"context"
-	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,8 +19,14 @@ import (
 // said apart: written to the server's backup library, copied elsewhere.
 
 type backupRun struct {
-	j    job
-	task *service.BackupTask
+	j                 job
+	task              *service.BackupTask
+	started, ended    time.Time
+	hidden            bool
+	cancelJ           job
+	localCopies       *service.AutoCopyResult
+	localBusy         bool
+	localAt, localEnd time.Time
 }
 
 // confirmations are the plans the person confirmed in this window; the
@@ -68,7 +74,14 @@ func (a *App) startBackupNow(row *agentRow, ps *protState) {
 }
 
 func (a *App) runBackup(row *agentRow, ps *protState) {
-	br := &backupRun{}
+	a.runSelectedBackup(row, ps, protection.BackupSelection{})
+}
+
+func (a *App) runSelectedBackup(row *agentRow, ps *protState, selection protection.BackupSelection) {
+	if ps.backup != nil && ps.backup.task != nil && backupUnresolved(ps.backup.task.State) {
+		ps.otherBackups = append(ps.otherBackups, ps.backup)
+	}
+	br := &backupRun{started: time.Now()}
 	ps.backup = br
 	host, ref := row.Server, *ps.ref
 	a.start(&br.j, 6*time.Hour, func(ctx context.Context) error {
@@ -78,29 +91,26 @@ func (a *App) runBackup(row *agentRow, ps *protState) {
 			return err
 		}
 		say(T("backup.preparing"))
-		plan, err := a.svc.PrepareBackup(ctx, host, ref)
+		var plan service.BackupPlan
+		var err error
+		if selection.Tier != "" {
+			plan, err = a.svc.PrepareOneOffBackup(ctx, host, ref, selection)
+		} else {
+			plan, err = a.svc.PrepareBackup(ctx, host, ref)
+		}
 		if err != nil {
 			return err
 		}
 		a.confirm(plan.PlanID)
-		t, err := a.svc.StartBackup(ctx, plan.PlanID, "desktop-"+plan.PlanID)
-		if err != nil {
+		say(T("backup.starting"))
+		if err := a.followStartedBackup(ctx, br, plan.PlanID); err != nil {
 			return err
 		}
-		a.update(func() { br.task = &t })
-		ch, stop, err := a.svc.WatchBackupTask(ctx, t.TaskRef)
-		if err != nil {
-			return err
-		}
-		defer stop()
-		for t := range ch {
-			a.update(func() { br.task = &t })
-			if t.Error != nil && (t.State == "failed" || t.State == "cancelled") {
-				return taskErr(t.Error)
-			}
+		if !selection.SkipCopies {
+			return a.copyAfterBackup(ctx, br, plan.PlanID, host, row.Instance)
 		}
 		return nil
-	}, func(error) { a.readProt(host, ps) })
+	}, func(error) { br.ended = time.Now(); a.readProt(host, ps); a.refreshTimeline() })
 }
 
 // ensureRegistered registers this computer's key on host before the first
@@ -125,67 +135,88 @@ func (a *App) ensureRegistered(ctx context.Context, host string) error {
 }
 
 func (a *App) backupProgress(c *ui.Context, row *agentRow, ps *protState) {
-	br := ps.backup
+	a.backupCard(c, row, ps.backup)
+}
+
+func (a *App) backupCard(c *ui.Context, row *agentRow, br *backupRun) {
+	if br.hidden {
+		return
+	}
+	if br.j.busy {
+		c.After(time.Second)
+	}
 	card(ui.Column(c)).Gap(8).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, T("backup.title", "name", row.Name)).FontSize(16).Bold().Grow(1)
-			if !br.j.busy {
-				ui.Button(c, T("common.close")).OnClick(func() { ps.backup = nil })
+			if !br.j.busy && !br.cancelJ.busy && (br.task == nil || !backupUnresolved(br.task.State)) {
+				ui.Button(c, T("common.close")).OnClick(func() { br.hidden = true })
 			}
 		})
+		if text := backupClock(br, c.Now()); text != "" {
+			if br.task != nil && br.task.Run != nil {
+				text = T("backup.server_clock", "clock", text)
+			}
+			muted(ui.Text(c, text)).Wrap()
+		}
+		if br.task != nil {
+			if br.task.Selection.Tier != "" {
+				muted(ui.Text(c, T("backup.once.result", "tier", tierText(br.task.Selection.Tier)))).Wrap()
+			}
+			switch br.task.State {
+			case "succeeded":
+				ui.Text(c, T("backup.result.done")).Wrap()
+			case "partial":
+				ui.Text(c, T("backup.result.partial")).TextColor(palette.Warn).Wrap()
+			case "cancelled":
+				ui.Text(c, T("backup.result.cancelled")).Wrap()
+			case "cancelling":
+				ui.Text(c, T("backup.result.cancelling")).Wrap()
+			}
+		}
 		var run *protection.BackupRun
 		if br.task != nil {
 			run = br.task.Run
 		}
 		if run == nil {
 			if br.j.busy {
-				a.jobLine(c, &br.j)
+				if br.task == nil {
+					a.jobLine(c, &br.j)
+				} else {
+					// Once accepted, stopping a local status query must not
+					// pretend to cancel the server's execution.
+					ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+						ui.Spinner(c)
+						muted(ui.Text(c, a.doingText(br.j.doing, br.j.doingAt, c.Now()))).Wrap()
+					})
+				}
 			}
 		} else {
 			for i, comp := range run.Components {
-				componentLine(c.Key(fmt.Sprint("comp-", i)), comp, run, br.j.busy)
+				backupComponentLine(c.Key(strconv.Itoa(i)), comp, c.Now(), backupIsRunning(br))
 			}
-			if br.j.busy {
+			if backupIsRunning(br) {
 				ui.Row(c).Justify(ui.End).Children(func() {
-					ui.Button(c, T("common.stop")).OnClick(func() { a.cancelBackup(br) })
+					if !br.cancelJ.busy {
+						ui.Button(c, T("common.stop")).OnClick(func() { a.cancelBackup(br) })
+					}
 				})
 			}
 		}
 		if br.j.err != nil {
 			errorBox(c, br.j.err, a.fold("bk-err-"+row.Instance))
+		} else if br.task != nil && br.task.Error != nil {
+			errorBox(c, taskErr(br.task.Error), a.fold("bk-err-"+row.Instance))
 		}
-		if br.task != nil && br.task.Hint != "" && br.j.busy {
+		if br.cancelJ.err != nil {
+			errorBox(c, br.cancelJ.err, a.fold("bk-cancel-"+row.Instance))
+		}
+		a.clientCopyLines(c, br)
+		if br.task != nil && br.task.Hint != "" && backupIsRunning(br) {
 			muted(ui.Text(c, T("backup.detach_hint"))).Wrap()
 		}
-	})
-}
-
-// componentLine is one part of a backup: the server's own copy, or a copy
-// to one location; each says its own state.
-func componentLine(c *ui.Context, comp protection.BackupComponent, run *protection.BackupRun, busy bool) {
-	name := T("backup.part.server")
-	if comp.Kind == "server_copy" && comp.TargetRef != nil {
-		name = T("backup.part.copy", "name", comp.TargetRef.ID)
-	}
-	mark, ink, state := "○", palette.TextSub, T("backup.state.waiting")
-	switch comp.State {
-	case "succeeded":
-		mark, ink, state = "✓", palette.Ok, T("backup.state.done")
-	case "failed":
-		mark, ink, state = "✗", palette.Warn, T("backup.state.failed")
-	case "unknown":
-		mark, ink, state = "?", palette.Warn, T("backup.state.unknown")
-	case "skipped":
-		state = T("backup.state.skipped")
-	case "running":
-		mark, ink, state = "▸", palette.Text, T("backup.state.running")
-	}
-	ui.Row(c).Gap(12).Padding(8, 12).Radius(8).Background(palette.Board).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, mark).Bold().TextColor(ink).Width(16)
-		ui.Text(c, name).Bold().Width(200)
-		muted(ui.Text(c, state)).Grow(1)
-		if mark == "▸" && busy {
-			ui.Spinner(c)
+		if br.task != nil && !br.j.busy && backupUnresolved(br.task.State) {
+			muted(ui.Text(c, T("backup.reconcile_hint"))).Wrap()
+			ui.Button(c, T("backup.reconcile")).OnClick(func() { a.reconcileBackup(br) })
 		}
 	})
 }
@@ -196,11 +227,13 @@ func (a *App) cancelBackup(br *backupRun) {
 		return
 	}
 	ref := br.task.TaskRef
-	a.run(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
-		_, _ = a.svc.CancelBackupTask(ctx, ref)
-	})
+	a.start(&br.cancelJ, time.Minute, func(ctx context.Context) error {
+		task, err := a.svc.CancelBackupTask(ctx, ref)
+		if task.TaskRef.TaskID != "" {
+			a.showBackupTask(br, task)
+		}
+		return err
+	}, nil)
 }
 
 // missedCard says which scheduled backups were missed; 标记已读 is kept on

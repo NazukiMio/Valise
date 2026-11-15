@@ -8,18 +8,25 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"slices"
+	"valise/core/environment"
 	"valise/core/profile"
+	"valise/core/revive"
 	"valise/core/valise"
 	"valise/ui/service"
 )
 
 // healthState is one agent's health page while this window lives.
 type healthState struct {
-	busy   bool
-	report *service.HealthReport
-	err    error
-	at     time.Time
-	fix    *fixState
+	busy                   bool
+	report                 *service.HealthReport
+	err                    error
+	at                     time.Time
+	fix                    *fixState
+	canTest                bool
+	canEnvironmentTest     bool
+	environmentUnavailable bool
+	testReadFailed         bool
 }
 
 // fixState is one repair action from its confirmation to its result: the
@@ -51,7 +58,26 @@ func (a *App) readHealth(server, instance string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		r, err := a.svc.Health(ctx, server, instance)
-		a.update(func() { st.busy, st.report, st.err, st.at = false, r, err, time.Now() })
+		caps, capErr := a.svc.BackupCapabilities(ctx, server)
+		last, hasLast := a.svc.LastRestoreTest(server, instance)
+		a.update(func() {
+			st.busy, st.report, st.err, st.at = false, r, err, time.Now()
+			st.canTest = slices.Contains(caps, revive.ReviewCapability)
+			transport := slices.Contains(caps, environment.TestCapability)
+			st.canEnvironmentTest = transport && r != nil && r.EnvironmentTestSupported
+			st.environmentUnavailable = transport && r != nil && !r.EnvironmentTestSupported
+			st.testReadFailed = capErr != nil
+			if last.AgentRef != nil && last.State != "running" && last.State != "needs_cleanup" {
+				matched := r != nil && r.AgentRef != nil && *r.AgentRef == *last.AgentRef
+				hasLast = hasLast && matched
+				if !matched && a.restoreTest != nil && !a.restoreTest.j.busy && a.restoreTest.server == server && a.restoreTest.instance == instance {
+					a.restoreTest = nil
+				}
+			}
+			if hasLast && (a.restoreTest == nil || !a.restoreTest.j.busy && (a.restoreTest.server != server || a.restoreTest.instance != instance)) {
+				a.restoreTest = &restoreTestFlow{server: server, instance: instance, result: &last}
+			}
+		})
 	})
 }
 
@@ -82,19 +108,29 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 	if st.fix != nil {
 		a.fixReport(c, row, st)
 	}
+	if t := a.restoreTest; t != nil && t.server == row.Server && t.instance == row.Instance {
+		a.restoreTestReport(c, t)
+	}
 	if st.report == nil {
 		return
 	}
+	a.currentRuntime(c, st.report.Runtime, st.at, st.busy)
 	items := append([]service.HealthItem(nil), st.report.Items...)
+	if t := a.restoreTest; t != nil && t.server == row.Server && t.instance == row.Instance && (t.j.busy || t.result != nil || t.j.err != nil) {
+		items = slices.DeleteFunc(items, func(it service.HealthItem) bool { return it.ID == "restore_test" })
+	}
 	sort.SliceStable(items, func(i, j int) bool { return service.Rank(items[i].Level) < service.Rank(items[j].Level) })
-	card(ui.Column(c)).Padding(4, 0).Gap(0).Children(func() {
-		for i, it := range items {
-			if i > 0 {
-				ui.Divider(c)
+	if len(items) > 0 {
+		card(ui.Column(c)).Padding(4, 0).Gap(0).Children(func() {
+			for i, it := range items {
+				if i > 0 {
+					ui.Divider(c)
+				}
+				a.healthLine(c.Key(it.ID), row, st, it)
 			}
-			a.healthLine(c.Key(it.ID), row, st, it)
-		}
-	})
+		})
+	}
+	a.actualRestoreEvidence(c, row)
 	muted(ui.Text(c, T("health.scope_note"))).FontSize(11)
 }
 
@@ -113,7 +149,21 @@ func (a *App) healthLine(c *ui.Context, row *agentRow, st *healthState, it servi
 		})
 		// Only a declared repair action is offered here; built-in system
 		// fixes are not in the desktop yet, so they are not drawn.
-		if it.ActionID != "" && (st.fix == nil || !st.fix.running) {
+		if it.ID == "restore_test" {
+			if st.canTest {
+				ui.Button(c, T("restoretest.open")).OnClick(func() { a.openRestoreTest(row) })
+			} else {
+				ui.Column(c).Gap(6).MaxWidth(240).Children(func() {
+					if st.testReadFailed {
+						muted(ui.Text(c, T("restoretest.connection_unread"))).Wrap()
+						ui.Button(c, T("health.recheck")).OnClick(func() { a.readHealth(row.Server, row.Instance) })
+					} else {
+						muted(ui.Text(c, T("restoretest.needs_update"))).Wrap()
+						ui.Button(c, T("restoretest.server_settings")).OnClick(func() { a.navigate("/servers/" + row.Server) })
+					}
+				})
+			}
+		} else if it.ActionID != "" && (st.fix == nil || !st.fix.running) {
 			ui.PrimaryButton(c, it.ActionName).OnClick(func() { a.prepareFix(row, st, it) })
 		}
 	})

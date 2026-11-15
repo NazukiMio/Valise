@@ -173,7 +173,7 @@ func (a *App) pickLocFolder(f *locAdd) {
 		return
 	}
 	a.run(func() {
-		p, err := a.pickFolder()
+		p, err := a.pickFolder(T("picker.repo.title"), T("picker.repo.message"))
 		a.update(func() {
 			if err == nil && p != "" {
 				f.path = p

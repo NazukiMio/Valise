@@ -47,7 +47,7 @@ type slotSpec struct {
 
 var shellSlots = slotSpec{page: "layout.page.shell",
 	styles: map[string][]string{"brand": {"icon"}, "nav": {"sidebar", "rail", "top"}, "tagline": nil, "theme": {"icon"}, "page": nil},
-	always: []string{"page", "theme"}, after: map[string]string{"theme": "nav"}}
+	always: []string{"page", "nav"}, after: map[string]string{"nav": "brand"}}
 
 var homeSlots = slotSpec{page: "layout.page.home",
 	styles: map[string][]string{"header": nil, "verdict": nil, "reminders": nil, "known": nil, "toolbar": nil,
@@ -188,7 +188,7 @@ func (n *Node) insertAfter(anchor string, add Node) bool {
 	return false
 }
 
-var slotNames = map[string]string{"page": "layout.slot.page", "theme": "layout.slot.theme", "verdict": "layout.slot.verdict", "reminders": "layout.slot.reminders"}
+var slotNames = map[string]string{"page": "layout.slot.page", "theme": "layout.slot.theme", "nav": "layout.slot.nav", "verdict": "layout.slot.verdict", "reminders": "layout.slot.reminders"}
 
 func contains(list []string, s string) bool {
 	for _, x := range list {
@@ -277,7 +277,7 @@ func gap(v float32) *float32 { return &v }
 // left, the page beside it.
 func classicShell() *Node {
 	return &Node{Row: []Node{
-		{Column: []Node{{Slot: "brand"}, {Slot: "nav", Style: "sidebar", Grow: 1}, {Slot: "theme"}, {Slot: "tagline"}},
+		{Column: []Node{{Slot: "brand"}, {Slot: "nav", Style: "sidebar", Grow: 1}, {Slot: "tagline"}},
 			Width: 212, Padding: []float32{22, 12}, Gap: gap(18), Background: "side"},
 		{Slot: "page", Grow: 1, MaxWidth: 980, Padding: []float32{36, 44}},
 	}, Align: "stretch"}

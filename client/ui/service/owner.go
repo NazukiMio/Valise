@@ -11,6 +11,8 @@ import (
 	"filippo.io/age"
 
 	"valise/client/ssh"
+	"valise/core/environment"
+	"valise/core/revive"
 	"valise/core/rpc"
 	"valise/core/valise"
 )
@@ -140,11 +142,16 @@ func (s *Service) ownerPorter(ctx context.Context, host string) (*ownerPorter, e
 // call runs one method in its own porter session, proving the owner first
 // on the daily key.
 func (s *Service) callOwner(ctx context.Context, o *ownerPorter, env []string, method string, params, result any) error {
-	c, _, err := ssh.DialEnv(ctx, o.t, o.path, s.Version, env)
+	c, hello, err := ssh.DialEnv(ctx, o.t, o.path, s.Version, env)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
+	if method == revive.MethodStageBegin || method == environment.MethodSettingsSet {
+		if err := n2Compatibility(hello, method, params); err != nil {
+			return err
+		}
+	}
 	if o.tiered {
 		if err := s.proveOwner(ctx, c, o.host); err != nil {
 			return err

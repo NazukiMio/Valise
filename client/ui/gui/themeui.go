@@ -146,7 +146,7 @@ func (a *App) themeSlot(c *ui.Context, n *Node) {
 
 // importChosen asks for a theme folder, checks and copies it, and uses it.
 func (a *App) importChosen() {
-	dir, err := a.pickFolder()
+	dir, err := a.pickFolder(T("picker.theme.title"), T("picker.theme.message"))
 	if err != nil || dir == "" {
 		a.themeErr = err
 		return

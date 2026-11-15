@@ -202,6 +202,7 @@ func TestHomeServerInstanceAndSeal(t *testing.T) {
 
 func TestLandingRollback(t *testing.T) {
 	m, home := world(t)
+	selectDirectForTUITest(t, m)
 	openInstance(t, m)
 	os.WriteFile(filepath.Join(home, ".demo/memory/a.md"), []byte("changed after the seal"), 0o644)
 	key(t, m, "5")
@@ -269,7 +270,7 @@ func TestHealthTab(t *testing.T) {
 	}
 	m.svc.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
 	key(t, m, "t")
-	wantText(t, m, "上次测试", "通过")
+	wantText(t, m, "上次文件与暂存校验", "通过", "未测试启动")
 	for _, k := range []string{"a", "x", "down", "up", "esc"} {
 		key(t, m, k)
 	}

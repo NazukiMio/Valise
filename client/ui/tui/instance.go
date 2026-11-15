@@ -250,10 +250,9 @@ func (o *overviewTab) quicks(p *instancePage) []quick {
 	if len(p.inst.Entries) > 0 {
 		qs = append(qs, quick{"打开管理页（浏览器，需要令牌时自动带上）", func(m *Model, p *instancePage) tea.Cmd { return m.runCLI("open", host, inst) }})
 	}
-	if p.target != nil && len(p.target.Profile.NativeCLI) > 0 {
-		pid := p.target.Profile.ID
+	if p.inst.NativeCLI && p.target != nil && len(p.target.Profile.NativeCLI) > 0 {
 		qs = append(qs, quick{"原生界面（" + strings.Join(p.target.Profile.NativeCLI, " ") + "，高级）", func(m *Model, p *instancePage) tea.Cmd {
-			return gatedCLI(m, host, "native", host, "--profile", pid)
+			return gatedCLI(m, host, "native", host, "--instance", p.inst.InstanceID)
 		}})
 	}
 	return append(qs, quick{"建立备份", func(m *Model, p *instancePage) tea.Cmd { return startSeal(m, p) }})

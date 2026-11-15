@@ -131,7 +131,7 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 				stem = r.Y + r.H - curveBand
 			}
 			p.Line(x, y, x, stem, 1, palette.Strand.Alpha(0.6))
-			if pt.SnapshotRef.SnapshotID == a.glow {
+			if pointKey(pt) == a.glow {
 				k := min(float32(p.Now().Sub(a.glowAt))/float32(glowDelay), 1)
 				for j, rad := range []float32{30, 20, 12} {
 					p.FillPath((&ui.Path{}).Circle(x, y, rad*(0.5+0.5*k)), palette.Gold.Alpha(0.18*float32(j+1)*k))
@@ -145,7 +145,7 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 	box.Children(func() {
 		ui.Row(c).Fill().Children(func() {
 			for i, pt := range shown {
-				col := ui.Column(c.Key(pt.SnapshotRef.SnapshotID)).Grow(1).Basis(0).FillHeight().AlignItems(ui.Center).Padding(12, 6)
+				col := ui.Column(c.Key(pointKey(pt))).Grow(1).Basis(0).FillHeight().AlignItems(ui.Center).Padding(12, 6)
 				if i%2 == 0 {
 					col.Justify(ui.Start)
 				} else {
@@ -158,7 +158,7 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 }
 
 func (a *App) curveCard(c *ui.Context, pt journey.TimelinePoint) {
-	id := pt.SnapshotRef.SnapshotID
+	id := pointKey(pt)
 	card := ui.Column(c).Gap(2).Padding(7, 11).Radius(10).Background(palette.Card).Border(1, palette.CardBorder).
 		Shadow(0, 4, 14, 0, palette.Shadow.Alpha(0.06)).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(when(pt.CreatedAt, c.Now()))
 	if card.Hovered() || a.glow == id {
@@ -167,6 +167,7 @@ func (a *App) curveCard(c *ui.Context, pt journey.TimelinePoint) {
 	card.OnClick(func() { a.lightPoint(id) }).Children(func() {
 		ui.Text(c, when(pt.CreatedAt, c.Now())).FontSize(12).Bold().MaxLines(1)
 		muted(ui.Text(c, tierShort(pt.Scope.Tier))).FontSize(11).MaxLines(1)
+		muted(ui.Text(c, pointLocations(pt))).FontSize(10).MaxLines(2)
 	})
 }
 

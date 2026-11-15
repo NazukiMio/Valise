@@ -283,6 +283,7 @@ type asyncBoundary struct {
 	caps      []string
 	execution string
 	gate      chan struct{}
+	entered   chan struct{}
 	cancels   int
 	status    func(*protection.BackupRun)
 }
@@ -317,6 +318,9 @@ func (a *asyncBoundary) rpc(ctx context.Context, host, method string, p, out any
 			a.run.State = "running"
 			a.run.Stage = protection.StageSealing
 			a.mu.Unlock()
+			if a.entered != nil {
+				close(a.entered)
+			}
 			select {
 			case <-gate:
 			case <-ctx.Done():
@@ -604,16 +608,36 @@ func TestBackupAsyncLostCallIsUnknownAndNotResent(t *testing.T) {
 func TestBackupShutdownWaitsForAttachedCall(t *testing.T) {
 	a := newAsyncBoundary(protection.ExecutionAttached)
 	a.gate = make(chan struct{})
+	a.entered = make(chan struct{})
 	c := makeAsyncController(t, a, "")
+	release := sync.OnceFunc(func() { close(a.gate) })
+	t.Cleanup(release) // Release first if an assertion fails before Shutdown.
 	p := prepareBackup(t, c, a.backupBoundary)
 	tsk, err := c.StartBackup(context.Background(), p.PlanID, "key")
 	if err != nil {
 		t.Fatal(err)
 	}
-	short, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	go func() { time.Sleep(20 * time.Millisecond); close(a.gate) }()
-	if err := c.Shutdown(short); err != nil {
+	select {
+	case <-a.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("attached call was not started")
+	}
+	bounded, cancelWait := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelWait()
+	shutdown := make(chan error, 1)
+	go func() { shutdown <- c.Shutdown(bounded) }()
+	select {
+	case <-c.follow.closing:
+	case <-bounded.Done():
+		t.Fatal("shutdown did not begin")
+	}
+	select {
+	case err := <-shutdown:
+		t.Fatal("shutdown returned while the attached call was blocked", err)
+	default:
+	}
+	release()
+	if err := <-shutdown; err != nil {
 		t.Fatalf("shutdown did not wait: %v", err)
 	}
 	done, err := c.load(tsk.TaskRef.TaskID)
