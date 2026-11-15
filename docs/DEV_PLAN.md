@@ -75,10 +75,13 @@
 
 ## 工程改进与架构减负计划（2026-11-15）
 
-1. **分阶段剥离 A/B 槽位冗余代码**：先清理 `client/ui/gui` 与 `client/ui/service` 的并行环境与三模式页面/状态机（Stage 2），再剥离 `porter` 的 `bwrap`/受管运行模块与 `core/environment`（Stage 3），解除 `direct_policy` 对普通直通恢复的拦截，每阶段通过自检并写入 `STATUS.md` 提交。
+1. **分阶段剥离 A/B 槽位冗余代码（已完成，2026-11-16）**：已在分支 `refactor/revoke-ab-slots-and-doc-audit` 完成 Stage 1（文档重整，`bc3d917`）、Stage 2（`core`/`profiles`/`porter`，`c9de8b9`）与 Stage 3（`client/ui`，`8ef594d`），通过全仓自检。
 2. **治理高耗时测试套件**：当前完整 `selfcheck` 中 `client/ui/service`（~260–300s）与 `client/ui/tui`（~140–160s）耗时偏高，影响局部修改后的快速回归；剥离 A/B 冗余测试后，进一步审查剩余慢测试（减少无谓休眠等待与重复伪造 SSH 进程拉起），将常规回归耗时降至分钟级以内。
 3. **补齐实机未核实项**：在真实靶机上完成 `profiles/hermes.yaml` 与 `kit/tools.yaml`（含 `rclone` 核实信息）的 `verify: pending` 消除，并完成 OpenClaw 真实 GUI 端到端链路验收。
 4. **文档规范化维护**：坚持 `AGENTS.md` 第四总原则——设计定稿即覆盖正式规范，验证流水统一放入 `docs/acceptance/`，不再向正文追加施工日志。
+5. **前端审计整固与模板化底座（2026-11-16 新增，分两阶段交付）**：
+   - **Phase F1（v0.1 缺陷修复与能力打通）**：消除 `gui` 包级全局并发竞态（`i18n.go` `words` 加读写锁/原子指针、`backupnow.go` `confirmations` 收归 `App` 字段）；修复 `restoresetup.go` 创建副本在单服务器下无法选择本机的问题（允许并默认选中原服务器，同机创建副本直接展开目录映射输入框）；打通 `gui/health.go` 修复动作的无管理钥匙路径（复用 `ServerPassword` askpass 弹窗，不再退回 CLI）并接入 `linger` 一键开启。
+   - **Phase F2（内容/排版分离底座与工程收敛）**：落地 `docs/UI.md` 7.4.3 三层分离约定（通用粗粒度区块渲染与默认流式回退、`card`/`subPanel`/`cardTitle`/`fact` 语义样式函数、`Sizes` 弹性宽度令牌供后续多语言与独立面板模板使用）；限制 `installpage.go` 降级文本缓冲长度（如尾部 64 KiB）并逐步收敛 `App` 平铺字段。
 
 ### N5：管理方 MCP、结构化 CLI、自定义范围与可选扩展
 

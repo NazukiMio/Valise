@@ -27,8 +27,16 @@
 
 ### 下一步待办
 
-1. **真机端到端闭环验证与新测试包**：旧 `stage-test-20261114/Valise Test.app` 构建于撤销 A/B 前；需基于当前干净主线重新构建测试包，并在 macOS 桌面 + Linux 靶机上实测「添加服务器 → 接入 → 保护计划 → 手动备份 → 文件/暂存恢复测试 → 原生界面 → 直通恢复/迁移/克隆」。
-2. **合并与后续演进**：真机闭环通过后，将分支 `refactor/revoke-ab-slots-and-doc-audit` 整理合并，并按 `docs/DEV_PLAN.md` 推进 MVP `v0.1` 收口与 5 项用户痛点规划。
+1. **前端审计整固（Phase F1 → Phase F2，由 Claude 分阶段执行后交回审批）**：
+   - **2026-11-16 前端审计已确认的 4 项设计决定**（详见 [UI.md](UI.md) 第 4、7.4.3、7.10/7.11、9.5 与 11 节及 [DEV_PLAN.md](DEV_PLAN.md)）：
+     1. 保持「现在备份 / 备份一次 / 保存保护计划」在 GUI 中的一键确认体验，同时将全局 `confirmations` 收归 `App` 字段，并消除 `i18n.go` 全局 `words` 的并发读/写竞态；
+     2. GUI 健康页修复动作在无管理钥匙时直接复用 `ServerPassword` askpass 弹窗（不再提示去终端执行 `valise action`），并接入内置 `linger` 一键开启；时钟修复与健康项“忽略（Dismiss）”状态机在 GUI 中归入 `v0.2`；
+     3. GUI“创建副本”目标服务器允许选择并默认选中原服务器（解锁单服务器同机克隆），在自动布局核实前（`v0.2+`）同机直接展开目录映射输入框；
+     4. 遵循“内容语义与视觉排版分离”的三层权宜之计（`docs/UI.md` 7.4.3）：`shell`/`home` 维持现有 `theme.json` 布局校验，其余页面采用“粗粒度区块插槽 + 默认流式回退”、CSS Class 式语义样式函数（`card`/`subPanel`/`cardTitle`/`fact`）与面向 i18n 的弹性宽度令牌。
+   - **Phase F1（优先，v0.1 缺陷修复与功能打通）**：修改 `i18n.go`、`backupnow.go`、`app.go`、`restoresetup.go`、`health.go` 及对应测试；遵守单文件 `<= 400` 行与 `TestNoInterfaceWordsInCode` / `TestCatalogMatchesCode`。
+   - **Phase F2（Phase F1 验收通过后推进，模板化底座与性能收敛）**：修改 `theme.go`、`layout.go`、`themefile.go`、`agent.go`、`journey.go`（弹性宽度令牌、粗粒度区块流式辅助与常用面板语义样式函数），并限制 `installpage.go` 降级文本缓冲上限、按业务域逐步收敛 `App` 字段。
+2. **真机端到端闭环验证与新测试包**：旧 `stage-test-20261114/Valise Test.app` 构建于撤销 A/B 前；需在 Phase F1 落地后重新构建测试包，并在 macOS 桌面 + Linux 靶机上实测「添加服务器 → 接入 → 保护计划 → 手动备份 → 文件/暂存恢复测试 → 原生界面 → 直通恢复/迁移/克隆」。
+3. **合并与后续演进**：真机闭环通过后，将分支 `refactor/revoke-ab-slots-and-doc-audit` 整理合并，并按 `docs/DEV_PLAN.md` 推进 MVP `v0.1` 收口与 5 项用户痛点规划。
 
 ### 必须保留的环境与基线事实
 
