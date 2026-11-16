@@ -119,10 +119,13 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		if o.From != o.Target {
 			return nil, valise.New("mode_mismatch", "回滚只能在快照所在的服务器上进行", "跨服务器请用 --mode migrate 或 clone")
 		}
-	case revive.ModeMigrate, revive.ModeClone:
+	case revive.ModeMigrate:
 		if o.From == o.Target {
-			return nil, valise.New("mode_mismatch", "v0.1 的迁移与克隆只支持到另一台服务器", "在同一台服务器上请用 --mode rollback")
+			return nil, valise.New("mode_mismatch", "迁移要去另一台服务器", "在同一台服务器上：恢复当前实例用 --mode rollback，另建一个副本用 --mode clone")
 		}
+	case revive.ModeClone:
+		// A copy may stay on the snapshot's server, in directories of its
+		// own that the user names (docs/UI.md 7.11); see sameServerCopy.
 	default:
 		return nil, valise.New("mode_invalid", "未知的复活模式："+o.Mode, "可选 rollback、migrate、clone")
 	}
@@ -237,6 +240,19 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if enroll.ValidInstanceID(instance) != nil {
 		return nil, valise.New("instance_id_invalid", "实例 id 无效："+instance, "用 --id 指定")
 	}
+	// A copy beside the original: Valise places no directory for it and
+	// leaves the service alone, since the original runs under that unit.
+	beside := o.Mode == revive.ModeClone && o.From == o.Target
+	if beside {
+		switch {
+		case instance == head.InstanceID:
+			return nil, valise.New("copy_same_id", "副本不能和原实例用同一个标识 "+instance, "给副本起另一个标识（--id）")
+		case o.Roots[profile.StateRoot] == "":
+			return nil, valise.New("copy_needs_root", "副本和原实例在同一台服务器上，Valise 不替你猜它的目录（默认目录属于原实例）",
+				"给副本指定不与原实例重合的目录：--root state=<路径>")
+		}
+		prof.Service, prof.Entries = nil, nil
+	}
 
 	// Target facts, first to resolve the state dir on the target. Landing
 	// is an owner operation: the daily key plus the owner proof.
@@ -288,7 +304,9 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		rp.block("root_inside_other", "目标目录位于已接入的实例 "+strings.Join(facts.Inside, "、")+" 的目录之内，不能把一个实例放进另一个实例的目录里",
 			"换一个不在其他实例目录里的目标目录（--root）；如果是这个 harness 的命名实例，放到它声明的命名实例位置")
 	}
-	if o.Mode != revive.ModeRollback && len(facts.Overlapping) > 0 {
+	if beside {
+		sameServerCopy(rp, instance, facts, prof)
+	} else if o.Mode != revive.ModeRollback && len(facts.Overlapping) > 0 {
 		plan.Supersedes = facts.Overlapping
 		rp.Warnings = append(rp.Warnings, "目标上已接入的实例 "+strings.Join(facts.Overlapping, "、")+
 			" 使用同一目录：交换成功后它的旧目录保留为 prev，记录标记为\"已被取代\"，不再能封存；用 valise old list 查看，valise old cleanup 清理")
@@ -330,7 +348,15 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 
 	if !o.testOnly {
 		planBody(rp, &plan, head, facts, prof, o.Mode)
-		planService(rp, &plan, facts, prof)
+		if beside {
+			how := ""
+			if prof.Relocation != nil {
+				how = "；要运行副本，启动时把 " + prof.Relocation.Env + " 指向它的目录"
+			}
+			rp.Warnings = append(rp.Warnings, "副本和原实例在同一台服务器上：Valise 只把文件放进你指定的目录，不启动、不停止任何服务；副本要用的服务、端口与登录由你另行配置"+how)
+		} else {
+			planService(rp, &plan, facts, prof)
+		}
 	} else {
 		plan.TestOnly = true
 		plan.Carry = false
@@ -414,6 +440,30 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	}
 	rp.Plan = plan
 	return rp, nil
+}
+
+// sameServerCopy refuses a copy on the snapshot's own server that would
+// touch another instance there, or that its harness could not use: its
+// directories may not be, hold or sit inside an enrolled instance's, and
+// its id may not be taken. Elsewhere a copy over an instance supersedes it;
+// beside the original it never does.
+func sameServerCopy(rp *RevivePlan, instance string, facts revive.InspectResult, prof profile.Profile) {
+	// A harness whose state directory cannot be moved would never use a
+	// copy placed elsewhere under the same account (docs/PROFILES.md).
+	if prof.Relocation == nil {
+		rp.block("copy_not_relocatable", "harness 资料 "+prof.ID+" 没有声明状态目录可以改到别处，同一台服务器上的副本无法被它使用",
+			"把副本建到另一台服务器；或等这个 harness 的资料声明 relocation")
+	}
+	if facts.Record != nil {
+		rp.block("copy_id_taken", "这台服务器上已经有实例 "+instance, "给副本起另一个标识（--id）")
+	}
+	if len(facts.Overlapping) > 0 {
+		rp.block("copy_overlaps", "副本的目录和已接入的实例 "+strings.Join(facts.Overlapping, "、")+" 的目录重合",
+			"给副本的每个目录另指定位置（--root <名称>=<路径>），不与原实例共用")
+	}
+	if len(facts.Nested) > 0 {
+		rp.block("copy_contains_other", "副本的目录里包含已接入实例的目录："+strings.Join(facts.Nested, "、"), "换一个里面没有其他实例的目录（--root）")
+	}
 }
 
 func matchAny(refs []profile.PathRef, root, path string) bool {
