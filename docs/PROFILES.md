@@ -155,7 +155,8 @@ install:                         # 可选：官方方案（INSTALL.md 第 3 节�
         skip_effect: "以后自己 ssh 登录时直接输入 example 会提示找不到命令，需要写完整路径或用 valise shell <服务器> --profile example" }
     # 任何步骤都可以 optional: true（必须同时写 id 与 skip_effect），可选步骤默认不执行（INSTALL.md 第 3 节）
 
-native_cli: [example, onboard]   # 可选：原生界面的命令（INSTALL.md 第 2 节）
+native_cli: [example, onboard]   # 可选：原生引导命令，用于首次初始化与配置向导（INSTALL.md 第 2 节）
+native_session_cli: [example, tui]   # 可选：原生会话命令，用于日常连接运行中的实例交互（INSTALL.md 第 2 节）
 native_hints:                    # 可选：打开原生界面前显示的提示（INSTALL.md 第 2 节），只是文字
   - "引导最后会等待控制台登录：另开终端运行 valise open <服务器> <实例>"
 

@@ -82,9 +82,15 @@
 5. **前端审计整固与模板化底座（2026-11-16 已完成，Phase F1 `d43f228` / Phase F2 `2177be0`）**：
    - **Phase F1**：消除 `gui` 包级全局并发竞态、`confirmations` 收归 `App`、解锁 GUI 单机创建副本、打通健康页无管理钥匙 askpass 与 `linger` 一键开启（`9e46fd1`/`65d2eb6`/`b63c764` 补齐服务层同机副本与集成测试）。
    - **Phase F2**：落地 `docs/UI.md` 7.4.3 三层分离约定（`renderSections`、`card`/`subPanel` 语义样式函数、`Sizes` 弹性宽度令牌）、`installpage` 64 KiB 尾部文本缓冲与 `App` 字段分组（`appstate.go`）。
-6. **真机首轮实测修复与口令体验简化（2026-11-16 新增，分 Phase B1 / Phase B2 两阶段交付）**：
-   - **Phase B1（`debian-vm` 真机首轮实测 5 项阻塞修复）**：修复 `gui/protect.go` `desired()` 过滤 `SupersededPlan.ServerCopies` 产生 `nil` 切片导致重新接入后“按原设置重新生效”报 `request_invalid`；新增 `porter` `target_remove`（主人操作，引用保护计划时拒绝、否则清除服务器 `targets.json` 记录）并在 `gui/locdetail.go` 对 `station`/`ssh` 统一开放“移除…”；优化 `service/gate.go` `RequireGate` 先查本机仓库满足即放行（避免阻塞在失效远程目标），并为 `porter native --instance` 增加 `--shell` 实例交互终端及 GUI `gui/native.go` 断联/退出顶部“重新连接”入口；调整 `gui/onserver.go`，在服务器上已有 Agent 时仍保留官方安装方案区块。
-   - **Phase B2（单一 Valise 主口令统管与联动解锁）**：默认解锁时间窗口从 15 分钟延长至 60 分钟；`gate.go` 对 `repo-trial.json` 已验证过的仓库后续快照仅做免私钥 `vault.VerifyNoKey` 放行；实施“单一 Valise 口令同时保护加密钥匙与默认管理钥匙 + 添加服务器默认用 Valise 口令创建管理钥匙 + 一次输入联动解锁 `ownerIdentity` 与 `ssh-agent`”（兼容并支持一键迁移历史独立管理口令钥匙）。
+6. **真机首轮实测修复与口令体验简化（2026-11-16 新增，拆分为 Phase B1 / Phase B1.1 / Phase B2 交付）**：
+   - **Phase B1（已完成，`cc13a31`：`debian-vm` 真机首轮实测 5 项阻塞修复）**：修复 `gui/protect.go` `desired()` 过滤 `SupersededPlan.ServerCopies` 产生 `nil` 切片导致“按原设置重新生效”报 `request_invalid`；新增 `porter` `target_remove` 并在 `gui/locdetail.go` 对 `station`/`ssh` 统一开放“移除…”；优化 `service/gate.go` `RequireGate` 先查本机仓库满足即放行；为 `porter native --instance` 增加 `--shell` 与 `gui/native.go` 断联重连入口；在服务器上已有 Agent 时仍保留官方安装方案区块。
+   - **Phase B1.1（B1 真机测试反馈 5 项收口）**：
+     1. 移除备份位置时一次性汇总列出全部服务器上引用该位置的全部 Agent 实例，并在移除弹窗提供“一键从受影响保护计划中移除该位置并继续删除”；
+     2. 拆分原生入口为“原生会话（`native_session_cli`）”“实例交互终端（`--shell`）”“原生引导（`native_cli`，如 `openclaw onboard`）”，并在进入原生引导前提示/可选暂停受管后台服务（退出后一键恢复）以避免状态目录独占冲突断线；
+     3. 官方安装脚本 SHA-256 随上游更新变化时改为静态检查 + 新旧哈希与全文展示确认放行，并提前落地“粘贴官方安装地址或安装指令”（客户端解析下载、疑点检查、展示全文确认后再上传暂存目录执行，绝不在服务器直跑 `curl | bash`）；
+     4. 健康页 `linger` 一键修复保持默认不跑 `sudo`，仅当普通执行失败后在结果卡片直接提供“使用 sudo 重试”按钮完成提权修复；
+     5. 修复从 `~/.ssh/config` 导入服务器的 `userTransport`（`service/access.go`）在 GUI 可弹窗时未挂载 `SSH_ASKPASS` 转交环境并被 `BatchMode=yes` 吞掉私钥口令/密码提示的问题，并用真实加密私钥（`ssh-keygen -N`）集成测试验证弹窗唤起。
+   - **Phase B2（延后与修订：单一 Valise 主口令统管 + 30 分钟免输/本机 6 位 PIN 码快捷解锁）**：在未启用快捷解锁时，默认解锁时间窗口设定为 **30 分钟**（设置 1–240 分钟可调）；`service/gate.go` 对 `repo-trial.json` 已验证过的本机仓库后续新快照仅做免私钥 `vault.VerifyNoKey` 放行；实施“单一 Valise 口令同时保护加密钥匙与默认管理钥匙 + 添加服务器默认勾选创建 + 一次输入联动解锁 `ownerIdentity` 与 `ssh-agent`”（兼容历史独立管理口令钥匙）；同时允许用户在设置页可选开启**本机 6 位 PIN 码**快捷解锁（默认关闭，开启后每次触发主人/管理操作直接请求 6 位 PIN，不再留长免输窗口，连续输错 5 次自动销毁包裹退回完整 Valise 口令；系统钥匙串/生物识别与 1Password CLI 留待后续扩展）。
 
 ### N5：管理方 MCP、结构化 CLI、自定义范围与可选扩展
 
