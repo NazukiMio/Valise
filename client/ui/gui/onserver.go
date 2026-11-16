@@ -276,10 +276,11 @@ func idOf(label string) string {
 
 // installTiles offer the harnesses with an official install plan: as the
 // way to a first agent on an empty server, or under the agents found as a
-// way to another one.
+// way to another one, together with pasting a custom official URL/command.
 func (a *App) installTiles(c *ui.Context, host string, first bool) {
 	if !first && len(a.installable) == 0 {
-		return // nothing to offer beside the agents
+		a.customInstallTile(c, host)
+		return
 	}
 	title, sub := T("onserver.more_title"), T("onserver.more_sub")
 	if first {
@@ -289,6 +290,7 @@ func (a *App) installTiles(c *ui.Context, host string, first bool) {
 	muted(ui.Text(c, sub)).FontSize(13).Wrap()
 	if len(a.installable) == 0 {
 		muted(ui.Text(c, T("onserver.no_plans")))
+		a.customInstallTile(c, host)
 		return
 	}
 	ui.Grid(c).Columns(3).Gap(12).Children(func() {
@@ -313,4 +315,5 @@ func (a *App) installTiles(c *ui.Context, host string, first bool) {
 			})
 		}
 	})
+	a.customInstallTile(c, host)
 }

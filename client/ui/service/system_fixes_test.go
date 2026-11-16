@@ -330,3 +330,87 @@ func TestAdminLoginAvailableNeedsAPrompt(t *testing.T) {
 		t.Fatal("the relay can ask for the password")
 	}
 }
+
+func TestLingerFixSudoRetryDirect(t *testing.T) {
+	s, home := systemWorld(t)
+	ctx := context.Background()
+	bin := filepath.Join(home, ".local/bin")
+	write(t, filepath.Join(home, "deny"), "")
+	write(t, filepath.Join(home, "sudo-need-pw"), "")
+	write(t, filepath.Join(bin, "loginctl"), `#!/bin/sh
+case "$1" in
+ show-user) cat "$HOME/linger" 2>/dev/null || echo no ;;
+ enable-linger)
+  echo "$*" >> "$HOME/ran"
+  if test -e "$HOME/deny" && test -z "$SUDO_OK"; then echo 'Could not enable linger: Access denied' >&2; exit 1; fi
+  printf yes > "$HOME/linger" ;;
+esac
+`)
+	write(t, filepath.Join(bin, "sudo"), `#!/bin/sh
+if [ "$1" = "-n" ] && [ "$2" = "true" ]; then
+ if test -e "$HOME/sudo-need-pw"; then exit 1; fi
+ exit 0
+fi
+if [ "$1" = "-S" ]; then
+ shift
+ if test -e "$HOME/sudo-need-pw"; then
+  IFS= read -r pw || exit 1
+  if [ "$pw" != "sudo-pass-99" ]; then echo 'Sorry, try again.' >&2; exit 1; fi
+ fi
+fi
+echo sudo >> "$HOME/ran"
+export SUDO_OK=1
+exec "$@"
+`)
+	os.Chmod(filepath.Join(bin, "loginctl"), 0o755)
+	os.Chmod(filepath.Join(bin, "sudo"), 0o755)
+
+	// 1. Default fix runs without sudo and reports remaining.
+	f1, err := s.PlanSystemFix(ctx, "box", "demo", FixLinger, SystemFixOptions{})
+	if err != nil || f1.Mode != FixDirect || strings.HasPrefix(strings.Join(f1.Steps[0].Command, " "), "sudo") {
+		t.Fatalf("unexpected non-sudo plan: %+v %v", f1, err)
+	}
+	res1, err := s.RunSystemFix(ctx, "box", "demo", FixLinger, f1.Digest, SystemFixOptions{}, InstallIO{})
+	if err != nil || res1.Steps[0].Exit != 1 || res1.Verification.State != "remaining" {
+		t.Fatalf("unexpected non-sudo result: %+v %v", res1, err)
+	}
+	if !strings.Contains(res1.Next, "sudo") {
+		t.Fatalf("expected sudo guidance in Next: %q", res1.Next)
+	}
+
+	// 2. Sudo retry works even on ~/.ssh/config servers without advanced mode.
+	f2, err := s.PlanSystemFix(ctx, "box", "demo", FixLinger, SystemFixOptions{Sudo: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := strings.Join(f2.Steps[0].Command, " ")
+	if f2.Mode != FixDirect || !strings.HasPrefix(cmd, "sudo -S loginctl enable-linger ") {
+		t.Fatalf("unexpected sudo plan: %+v", f2)
+	}
+
+	// Cancelling the sudo password prompt runs nothing.
+	s.NoTerminalLogin = true
+	s.PasswordAuth.Prompt = func(string) (string, error) { return "", valise.New("cancelled", "cancelled", "") }
+	resCancel, err := s.RunSystemFix(ctx, "box", "demo", FixLinger, f2.Digest, SystemFixOptions{Sudo: true}, InstallIO{})
+	if err == nil || resCancel == nil || resCancel.Steps[0].Ran {
+		t.Fatalf("expected cancel to skip running sudo: %+v %v", resCancel, err)
+	}
+
+	// Supplying the sudo password via askpass relay completes and verifies.
+	var seenPrompt string
+	s.PasswordAuth.Prompt = func(p string) (string, error) {
+		seenPrompt = p
+		return "sudo-pass-99", nil
+	}
+	res2, err := s.RunSystemFix(ctx, "box", "demo", FixLinger, f2.Digest, SystemFixOptions{Sudo: true}, InstallIO{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(seenPrompt, "sudo") || !res2.Steps[0].Ran || res2.Steps[0].Exit != 0 ||
+		res2.Verification.State != "resolved" || !res2.Audited {
+		t.Fatalf("prompt=%q res=%+v ver=%+v", seenPrompt, res2, res2.Verification)
+	}
+	if strings.Contains(audit(t, home), "sudo-pass-99") || strings.Contains(ran(t, home), "sudo-pass-99") {
+		t.Fatal("sudo password leaked to audit or ran log")
+	}
+}

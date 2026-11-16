@@ -71,8 +71,7 @@ func (a *App) passDialog(c *ui.Context) {
 		title, why, field = T("ask.owner.title"), T("ask.owner.why", "what", p.host), T("ask.owner.field")
 		cancelled = T("ask.cancel.owner")
 	case askServer:
-		title, why, field = serverPromptTitle(p.host), T("ask.server.why", "prompt", p.host), T("wizard.login.password")
-		cancelled = T("ask.cancel.server")
+		title, why, field, cancelled = serverPromptMeta(p.host)
 	}
 	cancel := func() {
 		answer(passReply{err: valise.New("cancelled", cancelled, "")})
@@ -99,13 +98,22 @@ func (a *App) passDialog(c *ui.Context) {
 	}
 }
 
-// serverPromptTitle turns OpenSSH's “agent@host's password:” into a title.
-func serverPromptTitle(prompt string) string {
-	if who, ok := strings.CutSuffix(strings.TrimSpace(prompt), "'s password:"); ok {
-		return T("ask.server.title", "who", who)
+// serverPromptMeta maps OpenSSH and sudo prompts to the dialog's copy.
+func serverPromptMeta(prompt string) (title, why, field, cancelled string) {
+	trimmed := strings.TrimSpace(prompt)
+	if strings.Contains(strings.ToLower(trimmed), "sudo") {
+		who := strings.TrimSuffix(strings.TrimPrefix(trimmed, "[sudo] password for "), ":")
+		title = T("ask.sudo.generic")
+		if who != trimmed && who != "" {
+			title = T("ask.sudo.title", "who", who)
+		}
+		return title, T("ask.sudo.why", "prompt", prompt), T("ask.sudo.field"), T("ask.cancel.sudo")
+	}
+	if who, ok := strings.CutSuffix(trimmed, "'s password:"); ok {
+		return T("ask.server.title", "who", who), T("ask.server.why", "prompt", prompt), T("wizard.login.password"), T("ask.cancel.server")
 	}
 	if strings.Contains(strings.ToLower(prompt), "passphrase") {
-		return T("ask.key_passphrase")
+		return T("ask.key_passphrase"), T("ask.server.why", "prompt", prompt), T("ask.key_passphrase_field"), T("ask.cancel.server")
 	}
-	return T("ask.generic")
+	return T("ask.generic"), T("ask.server.why", "prompt", prompt), T("wizard.login.password"), T("ask.cancel.server")
 }

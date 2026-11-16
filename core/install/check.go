@@ -84,6 +84,12 @@ func CheckCommand(argv []string, home string) []Finding {
 	}
 
 	// Peel elevation and env wrappers to find the command itself.
+	checkArgv(argv, home, add)
+	return out
+}
+
+// checkArgv peels elevation and env wrappers and inspects the underlying tool.
+func checkArgv(argv []string, home string, add func(bool, string, string)) {
 	rest := argv
 	for len(rest) > 0 {
 		name := path.Base(rest[0])
@@ -100,10 +106,9 @@ func CheckCommand(argv []string, home string) []Finding {
 			rest = rest[1:]
 		default:
 			checkTool(name, rest[1:], home, add)
-			return out
+			return
 		}
 	}
-	return out
 }
 
 // skipOptions drops sudo-style options (and the values of -u/-g).
@@ -137,6 +142,12 @@ func checkTool(name string, args []string, home string, add func(bool, string, s
 		c := strings.TrimRight(a, "/")
 		if c == "" {
 			c = "/"
+		}
+		if strings.HasSuffix(c, "/*") {
+			c = strings.TrimSuffix(c, "/*")
+			if c == "" {
+				return true
+			}
 		}
 		for _, d := range systemDirs {
 			if a == d || c == strings.TrimRight(d, "/") {
@@ -232,6 +243,13 @@ func NeedsRiskSentence(fs []Finding) bool {
 		}
 	}
 	return false
+}
+
+// NeedsCustomConfirm reports whether any non-refused finding (including
+// privilege) requires the section 7 confirmation sentence for custom
+// install commands and scripts.
+func NeedsCustomConfirm(fs []Finding) bool {
+	return !Refused(fs) && len(fs) > 0
 }
 
 // RiskSentence is the section 7 confirmation sentence.

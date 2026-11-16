@@ -47,6 +47,17 @@ func TestUsage(t *testing.T) {
 	if code := run([]string{"serve"}, nil, &out, &errb); code != 2 || !strings.Contains(errb.String(), "用法") {
 		t.Fatalf("code %d %q", code, errb.String())
 	}
+	for _, args := range [][]string{
+		{"native", "--instance", "demo", "--bad"},
+		{"native", "--instance", "demo", "--shell", "--session"},
+		{"native", "--bad", "demo"},
+	} {
+		out.Reset()
+		errb.Reset()
+		if code := run(args, nil, &out, &errb); code != 2 || !strings.Contains(errb.String(), "--session") {
+			t.Fatalf("%q: code %d %q", args, code, errb.String())
+		}
+	}
 }
 
 func TestRPCOverStdio(t *testing.T) {

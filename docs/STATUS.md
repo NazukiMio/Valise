@@ -2,7 +2,7 @@
 
 > 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-16。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前工作与交接（2026-11-16 Phase B1 `cc13a31` 已完成真机反馈收拢，规范已同步为 Phase B1.1 与修订后的 Phase B2）
+## 0. 当前工作与交接（2026-11-16 Phase B1.1 已完成并打包 `stage-test-20261116-b1.1`，下一步进入 Phase B2）
 
 **架构收敛与三阶段剥离完成状态**：
 经 2026-11-15 代码审计与产品复盘，用户已确认**撤销** A/B 双槽位并行运行环境（`linux-bwrap` 容器接管、三档恢复保护模式、独立程序树采集与父子切换状态机）。分支 `refactor/revoke-ab-slots-and-doc-audit` 上三个阶段均已完成、验证并提交：
@@ -48,20 +48,21 @@
 
 ### 下一步待办
 
-1. **真机首轮实测修复与口令体验简化（Phase B1 已完成，接下来 Phase B1.1 → Phase B2，2026-11-16 规范已定稿）**：
+1. **真机首轮实测修复与口令体验简化（Phase B1 & Phase B1.1 已完成，接下来进入 Phase B2，2026-11-16）**：
    - 用户在真实 `debian-vm` 靶机（`openclaw`）使用 `stage-test-20261116-b1`（`cc13a31`）验收后，确认“按原设置重新生效”通过，同时发现 4 项阻断/体验问题及 1 项 SSH 口令通道遗漏，相关规范已更新至 `AGENTS.md`（3、7.1）、`ARCHITECTURE.md`（2.1、2.2、3、3.1、3.3）、`PROFILES.md`（第 2 节 `native_session_cli`）、`INSTALL.md`（2、3、7）、`UI.md`（7.5、7.9、8、9.5、9.6、9.7）与 `DEV_PLAN.md`（第 6 项）：
      - **Phase B1（已完成，2026-11-16，`cc13a31`；实测包 `stage-test-20261116-b1`；“按原设置重新生效”真机通过）**：
        1. **按原设置重新生效**：`gui/protectdesired.go` 非 nil 空切片 + `sayCopies` 兜底。真机验收通过。
-       2. **移除远程备份目标**：`core/vaultrpc` `target_remove` + `porter` `WithTargetRemove`/`RemoveTarget` + 客户端移除入口（待 B1.1 补充全量阻碍汇总与一键清理计划）。
-       3. **原生界面**：`gate.go` 本地库优先 + `native --instance <id> --shell` + `gui/native.go` 断联重连（待 B1.1 拆分为“原生会话 / 实例交互终端 / 原生引导”与引导前可选停服）。
-       4. **已有 Agent 时保留安装入口**：`gui/onserver.go` `installTiles` 在已有 Agent 下方展示“安装新的 Agent”（待 B1.1 解决上游脚本更新 SHA-256 变更死锁与自定义粘贴指令）。
-       5. **真机记录说明**：`debian-vm` 地址变更为 `10.211.55.7`（DHCP），未改动 `LAB.md` 表格基线；`linger` 在真机 `debian-vm` 实测暴露无 sudo 退 1 且 GUI 无高级模式入口，纳入 B1.1 修复。
-     - **Phase B1.1（下一开发 Goal：B1 真机测试反馈 5 项收口，优先级高于 B2）**：
-       1. **移除备份位置一次性列出全部阻碍并一键解除**：`WithTargetRemove` 返回全部引用该位置的活动实例 ID；客户端跨所有已读服务器汇总全部阻碍的 `服务器 / Agent`，并在移除弹窗提供“一键从受影响保护计划中移除此位置并继续删除”。
-       2. **原生界面正名拆分与引导停服选项**：`PROFILES.md` 新增可选 `native_session_cli`（`openclaw.yaml` 补配 `[openclaw, tui]` 并实机验证）；GUI 将 `native_cli`（`openclaw onboard`）改名为“原生引导”，并列“原生会话”“实例交互终端”作为主入口；若受管后台服务正在运行，进原生引导前提示独占状态冲突并提供“暂停后台服务进入引导（退出后可一键恢复启动服务）”。
-       3. **安装脚本上游更新与粘贴官方指令**：profile 的 `script` 实际 SHA-256 与记录不符时不再死锁，改为 `install.CheckCommand` 静态疑点检查 + 展示新旧哈希与完整脚本预览，未命中禁令规则时允许用户确认继续；同时提前落地 `INSTALL.md` 第 7 节“粘贴官方安装地址或指令”（客户端解析 URL 并本地下载、计算哈希、静态检查、展示全文确认后再上传暂存目录执行，绝不在服务器跑 `curl | bash`）。
-       4. **`linger` 修复失败后支持 GUI 内使用 `sudo` 重试**：保持默认先无 `sudo` 执行 `loginctl enable-linger <user>`；仅当无 sudo 失败（退出码非 0 且问题仍在）时，结果卡片直接提供“使用 sudo 重试”按钮，经 askpass 或内嵌终端完成提权修复。
-       5. **补齐 `~/.ssh/config` 导入服务器 `userTransport` 私钥口令/密码 GUI 弹窗**：修复 `service/access.go` 中 `userTransport` 在 GUI 可弹窗（`canPrompt`）时关闭 `BatchMode` 并挂载 `relayEnv()`（`SSH_ASKPASS`），并用 `ssh-keygen -N` 真实加密私钥测试验证弹窗可正常唤起。
+       2. **移除远程备份目标**：`core/vaultrpc` `target_remove` + `porter` `WithTargetRemove`/`RemoveTarget` + 客户端移除入口（B1.1 已补充全量阻碍汇总与一键清理计划）。
+       3. **原生界面**：`gate.go` 本地库优先 + `native --instance <id> --shell` + `gui/native.go` 断联重连（B1.1 已拆分为“原生会话 / 实例交互终端 / 原生引导”与引导前可选停服）。
+       4. **已有 Agent 时保留安装入口**：`gui/onserver.go` `installTiles` 在已有 Agent 下方展示“安装新的 Agent”（B1.1 已解决上游脚本更新 SHA-256 变更死锁与自定义粘贴指令）。
+       5. **真机记录说明**：`debian-vm` 地址变更为 `10.211.55.7`（DHCP），未改动 `LAB.md` 表格基线；`linger` 在真机 `debian-vm` 实测暴露无 sudo 退 1 且 GUI 无高级模式入口，已纳入 B1.1 修复。
+     - **Phase B1.1（已完成，2026-11-16；测试包 `stage-test-20261116-b1.1` 待用户真机验收）**：
+       1. **移除备份位置一次性列出全部阻碍并一键解除**：`porter/internal/protection/reconcile.go` (`WithTargetRemove`) 收集全部生效的阻碍实例 ID 并返回 `target_in_use`（含结构化 JSON `target`/`blocking_instances`）；`client/ui/service/target_remove.go` (`ScanTargetRemoval` / `UnblockTarget`) 跨全部可读服务器汇总阻碍并依次移除 `ServerCopies`；`client/ui/gui/locremove.go`（与 `locverify.go`/`locations.go`/`locdetail.go`）在移除弹窗列出全部「服务器 / Agent」并提供「从上述 Agent 的保护计划中移除此位置并继续删除」，任一步失败立即停下如实报错、不删本地记录。新增测试 `TestTargetRemoveListsAllBlockingInstances`、`TestScanAndUnblockTargetAcrossServersAndInstances`、`TestRemoveLocationListsAllBlockersAndUnblocksOneClick`、`TestRemoveLocationStopsOnPartialFailureWithoutDeletingLocal`。
+       2. **原生界面正名拆分与引导停服选项**：`core/profile/` 新增可选 `native_session_cli`；在真实 `debian-vm`（`10.211.55.7`）实测确认 `OpenClaw 2026.11.4 (d843d6a)` 的 `openclaw tui --help`（连接运行中 Gateway）后，将 `profiles/openclaw.yaml` 升至 `profile_version: 24` 并补配 `native_session_cli: [openclaw, tui]`（实时交互会话本身仍标 `verify: pending`），`profilelint` 通过。`porter/internal/install/native.go`、`core/install/native.go`、`cmd/valise` 与 `service/native_instance.go` 新增 `--session` / `NativeSession` / `SessionArgv` / `PauseInstanceServices` / `RestoreInstanceServices`（`RunInstanceNative` 对非文件管道改用 `StdinPipe` 避免退出阻塞）；`gui/native.go` 与 `gui/native_service.go` 改名为「原生引导（初始化配置）」，在「日常使用」并列「原生会话」与「实例交互终端（Shell）」，在引导准备区检测到运行中受管服务时醒目提示独占冲突并提供「暂时停止后台服务并进入原生引导」（先验门禁再停服），退出后顶栏及准备页提供「一键恢复启动后台服务」且严格分离退出码、服务启动与健康复核结果（含 fake-ssh 集成测试 `TestNativePauseServiceOnboardAndRestoreFlow`）。
+       3. **安装脚本上游更新容错与粘贴官方安装地址/指令**：`core/install/`（`check.go`、`script.go`、`custom.go`）新增 `CheckScript`、`NeedsCustomConfirm` 与 `ParseCustomInstall`（支持 `https://` 地址、`curl/wget | [sudo] sh/bash...`、`bash <(curl...)`、`npm install`，拒绝 `http://`、命令替换、解码混淆、多条命令与 `-k/--insecure`）；`service/install.go`、`service/install_custom.go` 与 `cmd/valise/install.go` 在 profile `script` SHA-256 变更时执行 `CheckScript`：命中禁令直接拦截无绕过，未命中则返回新旧 SHA-256、检查结论与脚本全文，勾选确认绑定 `AcceptedSHA256` 后上传暂存执行；同时落地 `PlanCustomInstall` / `RunCustomInstall`（客户端本地 HTTPS 下载并防 HTTP 重定向降级、算 SHA-256、静态检查、高风险确认句、暂存上传与终端执行，并修复 `runLineTTY` 管道 EOF 卡死）；`gui/installpage.go`、`gui/installcustom.go`、`gui/onserver.go` 接入更新脚本核对及 `/servers/{name}/install-custom` 入口。已用离线 `httptest.NewTLSServer` + `fake-ssh` 测试覆盖哈希一致、变更核对放行、危险脚本拦截与 `curl|bash` 拆解执行。
+       4. **`linger` 修复失败后 GUI 支持「使用 sudo 重试」**：保持默认先无 `sudo` 执行 `loginctl enable-linger <user>`；`service/system_fixes_run.go` 允许 `FixLinger` 传入 `SystemFixOptions{Sudo: true}` 规划并执行固定单条命令 `sudo -S loginctl enable-linger <user>`（先探 `sudo -n true`，需密码时经 `PasswordAuth.Prompt` / `gui/adminpass.go` 弹窗仅经内存 stdin 转交；CLI `--advanced` 保留原高级模式）；`gui/healthsysfix.go` 在普通执行未解决时直接显示「使用 sudo 重试」按钮，确认后执行并立即复核刷新。新增 `TestLingerFixSudoRetryDirect` 与 `TestHealthLingerSudoRetryInWindow`。
+       5. **补齐 `~/.ssh/config` 导入服务器 `userTransport` 私钥口令/密码 GUI 弹窗**：`service/access.go` 的 `userTransport` 在 `s.canPrompt()` 为真时将 `BatchMode` 设为 `s.NoTerminalLogin && !s.canPrompt()` 并挂载 `s.relayEnv()`，`gui/adminpass.go` 完善私钥口令与 sudo 密码提示文案。新增真实 OpenSSH（`/usr/bin/ssh` + `ssh-keygen -N` + `127.0.0.1` `golang.org/x/crypto/ssh` 服务端，不动系统 `~/.ssh`）集成测试 `TestUserTransportEncryptedKeyAskpass`（覆盖无 prompt 阻断、加密私钥口令、取消与密码认证）。
+       6. **验证与真机边界**：补齐 `ScanTargetRemoval` 并发 `mu.Lock()` 后全仓跑通 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`：`core` 含 `profilelint` 3 份资料 OK、`porter` 22 包及 `linux/arm64`/`linux/amd64` 静态交叉编译、`client`、`testbed`、`client/ui` 全模块、`go tool mygo vet`、`gofmt` 全净）、`go test -race -count=1 ./service -run 'TestScanAndUnblock|TestTarget|TestNative|TestCustom|TestPlanInstall|TestLingerFixSudoRetryDirect|TestUserTransportEncryptedKeyAskpass'`（`21.633s`）、`go test -race -count=1 ./gui -run 'TestRemoveLocation'`（`16.627s`）及 `go test -race ./gui/...`；`gui/*.go`（最大 370 行）与 `tui/*.go`（最大 395 行）全部 `<= 400` 行。在 `debian-vm`（`10.211.55.7`）用临时 `/tmp/valise-porter-b11-check`（用完已删，未替换 `~/.local/bin/valise-porter`）完成只读核对：`version --json`、`hello`（`target-remove/1` / `instance-native/1` / `system-fix/1`）、`system_status`（`user=parallels, linger=no`）与 `instance_native_info(openclaw-test)`；确认 `debian-vm` 为 `NOPASSWD` sudo 后恢复 `Linger=no`。**未做**：GUI 5 项界面交互流程、`openclaw tui` 实机交互会话、`ubuntu-vm-x86` 有密码 `sudo -S` 及真实 `~/.ssh/config` 加密私钥连接窗口交互均未在真机窗口实操，留待用户使用 `stage-test-20261116-b1.1` 验收（注：在不覆盖默认 `2026.11.10` 签名包的前提下，测试包另附 `profiles/openclaw.yaml` v24，因 `client/profiles` 不允许本地 profile 与已安装资料包同 `id` 重复，需用独立 `--config-dir` 放入其 `profiles/` 或自行重打签名资料包后再重新接入复测「原生会话」）。
      - **Phase B2（延后与修订：单一 Valise 主口令统管 + 30 分钟免输/本机 6 位 PIN 码快捷解锁）**：
        1. 未启用快捷解锁时，默认解锁时间窗口设为 **30 分钟**（设置 1–240 分钟可调）；
        2. `service/gate.go` 对 `repo-trial.json` 中已有试解验证记录的本机仓库，后续新快照只需通过免私钥 `vault.VerifyNoKey` 即可放行，不再反复弹 Valise 口令；
@@ -79,7 +80,7 @@
 
 ### 必须保留的环境与基线事实
 
-- **当前用户构建**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116-b1/Valise Test.app`（`0.0.0-dev+stage-test-20261116-b1`，构建自 Phase B1 提交，哈希见同目录 `BUILD.json`；2026-11-16 用户决定由自己验收）。验收步骤在同目录 `TESTING.md`：先在服务器设置里把靶机 porter 更新为同目录的 `valise-porter_linux_arm64`（`debian-vm`；x86 用 `_amd64`），再依次验收 B1 四项。上一个包 `stage-test-20261116`（`65d2eb6`）原样保留，不含 B1。
+- **当前用户构建**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116-b1.1/Valise Test.app`（`0.0.0-dev+stage-test-20261116-b1.1`，构建自 Phase B1.1 提交，具体 commit 与 SHA-256 见同目录 `BUILD.json` 与 `SHA256SUMS`）。验收步骤在同目录 `TESTING.md`：先在服务器设置里把靶机 porter 更新为同目录的 `valise-porter_linux_arm64`（`debian-vm`；x86 用 `_amd64`），再依次验收 B1.1 五项；可选在独立 `--config-dir` 的 `profiles/` 中放入包内 `profiles/openclaw.yaml`（v24）并重新接入 `openclaw-test` 以实测 `openclaw tui` 原生会话。先前测试包 `stage-test-20261116`（`65d2eb6`）与 `stage-test-20261116-b1`（`cc13a31`）均原样保留。
 - **默认资料包与演练公钥**：默认资料包为 `2026.11.10`（OpenClaw 22、Hermes 11）；默认配置公钥 `~/.cache/valise-drill/devpack/key.pub`，演练配置公钥 `~/.cache/valise-drill/drillpack/key.pub`，不得混用或覆盖。
 - **构建环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；禁止执行 `rm -f`（用 `git rm` 或 `t.TempDir()`）；禁止自动 `git push`。
 - **原基线**：分叉前分支 `n2-agent-protection-journey` 位于 `f243bcf`（含 `07d7952`、`4bdd0fb`、`3e9f124`、`4d890c2`、`f243bcf`）；工作树中的 `references/` 与 `.DS_Store` 保留不提交。

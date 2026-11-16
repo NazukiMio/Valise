@@ -318,6 +318,7 @@ func TestLintInstallCapabilities(t *testing.T) {
     - { kind: argv, argv: [example, setup] }
     - { kind: path_add, dir: "${HOME}/.example/bin", optional: true, id: path, skip_effect: "ssh 里要写完整路径" }
 native_cli: [example, onboard]
+native_session_cli: [example, tui]
 native_hints: ["另开终端运行 valise open"]
 actions: []
 capabilities:
@@ -344,6 +345,7 @@ capabilities:
 		"install.steps[3].id":                strings.Replace(ok, "optional: true, id: path,", "optional: true,", 1),
 		"install.steps[2].optional":          strings.Replace(ok, "{ kind: argv, argv: [example, setup] }", "{ kind: argv, argv: [example, setup], id: x }", 1),
 		"native_hints[0]":                    strings.Replace(ok, `native_hints: ["另开终端运行 valise open"]`, `native_hints: [" "]`, 1),
+		"native_session_cli":                 strings.Replace(ok, `native_session_cli: [example, tui]`, `native_session_cli: [example, "${PORT}"]`, 1),
 		"capabilities.install":               strings.Replace(ok, `, versions: ["1.2.3"], env: "Debian 13 x86_64"`, "", 1),
 		"capabilities.fly":                   strings.Replace(ok, "restore: { status: untested }", "fly: { status: untested }", 1),
 		"entries[0].port_change.steps": strings.Replace(ok, `  - { id: main, kind: web, host: 127.0.0.1, port: 8080, path: "/" }`,

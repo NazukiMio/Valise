@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+	"valise/core/enroll"
 	"valise/core/install"
 	"valise/core/valise"
 	"valise/ui/service"
@@ -14,7 +15,11 @@ import (
 func nativeViewWorld(t *testing.T) (*App, *ui.Tester) {
 	t.Helper()
 	a, tt := world(t)
-	a.natives["home/xiaoman"] = &nativeState{started: true, info: &install.NativeInfo{InstanceID: "xiaoman", ProfileID: "fixture", Argv: []string{"fixture", "setup"}, Hints: []string{"native fixture hint"}}}
+	a.natives["home/xiaoman"] = &nativeState{started: true, info: &install.NativeInfo{
+		InstanceID: "xiaoman", ProfileID: "fixture",
+		Argv:  []string{"fixture", "onboard"},
+		Hints: []string{"native fixture hint"},
+	}}
 	a.agents.value.Items[0].Instance.NativeCLI = true
 	a.openAgent("home", "xiaoman")
 	tt.Frame()
@@ -25,12 +30,12 @@ func nativeViewWorld(t *testing.T) (*App, *ui.Tester) {
 func TestNativeViewShowsAcceptedPlanWithoutStartingAndRefusesMissingTerminal(t *testing.T) {
 	a, tt := nativeViewWorld(t)
 	click(t, tt, T("native.open"))
-	hasAll(t, tt.Texts(), T("native.title"), T("native.connect"), T("native.privacy"), "native fixture hint")
+	hasAll(t, tt.Texts(), T("native.title"), T("native.onboard_title"), T("native.stop_and_onboard"), T("native.connect_direct"), T("native.privacy"), "native fixture hint")
 	if a.native != nil {
 		t.Fatal("navigation started remote programme")
 	}
 	shot(t, tt, "native-before-connect")
-	click(t, tt, T("native.connect"))
+	click(t, tt, T("native.connect_direct"))
 	if a.native == nil || a.native.running || a.native.err == nil || !tt.HasText(T("native.terminal_unavailable")) {
 		t.Fatal("missing terminal started programme", a.native, tt.Texts())
 	}
@@ -77,7 +82,7 @@ func TestNativeExitIsSeparateFromGatewayAndCloseWaitsForCancellation(t *testing.
 
 func TestNativeBackupRiskNeedsAnExplicitClickAndIsNotSaved(t *testing.T) {
 	a, tt := nativeViewWorld(t)
-	r := &nativeRun{server: "home", instance: "xiaoman", code: -1, err: valise.New("offsite_pod_required", "fixture gate", "fixture next")}
+	r := &nativeRun{server: "home", instance: "xiaoman", stopService: true, code: -1, err: valise.New("offsite_pod_required", "fixture gate", "fixture next")}
 	a.native = r
 	a.navigate("/native/home/xiaoman")
 	tt.Frame()
@@ -91,8 +96,8 @@ func TestNativeBackupRiskNeedsAnExplicitClickAndIsNotSaved(t *testing.T) {
 	}
 	shot(t, tt, "native-backup-choice")
 	click(t, tt, T("native.continue_once"))
-	if a.native == r || a.native.running || a.svc.RiskAccepted {
-		t.Fatal("one-operation choice persisted or bypassed terminal availability")
+	if a.native == r || a.native.running || !a.native.stopService || a.svc.RiskAccepted {
+		t.Fatal("one-operation choice persisted, lost stopService, or bypassed terminal availability")
 	}
 }
 
@@ -108,74 +113,92 @@ func TestUnsupportedNativeTransportDoesNotRenderFutureEntry(t *testing.T) {
 	}
 }
 
-// The prepare page offers the native CLI and, where the server's porter
-// can open it, the instance's interactive shell. Once a session ended (the
-// program exited, as an onboarding does, or the connection dropped) its
-// top bar offers to reconnect, to switch to the shell and to go back; the
-// ended terminal does not block the page.
-func TestNativeEntriesAndReconnectAfterExit(t *testing.T) {
+func TestNativeEntriesSessionShellOnboardAndReconnectAfterExit(t *testing.T) {
 	a, tt := nativeViewWorld(t)
 	info := a.natives["home/xiaoman"].info
+	// When no service is running, direct onboard shows native.connect without service warning.
+	info.Service = []enroll.ServiceState{{Unit: "openclaw-gateway.service", LoadState: "loaded", Active: "inactive"}}
 	show := func() {
 		a.navigate("/native/home/xiaoman")
 		tt.Frame()
 		tt.Advance(time.Second)
 	}
-	// An older porter: the native CLI only, no entry it cannot serve.
+	// An older porter: only onboarding CLI, no session or shell entries.
 	show()
-	if !tt.HasText(T("native.connect")) || tt.HasText(T("native.shell")) {
+	if !tt.HasText(T("native.connect")) || tt.HasText(T("native.shell")) || tt.HasText(T("native.session")) || tt.HasText(T("native.stop_and_onboard")) {
 		t.Fatalf("old porter: %q", tt.Texts())
 	}
 	info.Shell = true
+	info.Session = true
+	info.SessionArgv = []string{"fixture", "tui"}
 	show()
-	hasAll(t, tt.Texts(), T("native.connect"), T("native.shell"), T("native.shell_hint"))
+	hasAll(t, tt.Texts(), T("native.daily_title"), T("native.session"), T("native.shell"), T("native.shell_hint"), T("native.onboard_title"), T("native.connect"))
 
-	// The native CLI exited by itself with code 0.
+	// Onboarding exited with code 0.
 	ended := &nativeRun{server: "home", instance: "xiaoman", mode: service.NativeCLI, code: 0}
 	a.native = ended
 	show()
-	hasAll(t, tt.Texts(), T("native.exited", "code", 0), T("native.reconnect"), T("native.use_shell"), T("native.to_prepare"), T("native.result_hint"))
-	if tt.HasText(T("native.connect")) || tt.HasText(T("native.disconnect")) {
-		t.Fatalf("an ended session still shows the entries or a live control: %q", tt.Texts())
+	hasAll(t, tt.Texts(), T("native.exited", "code", 0), T("native.reconnect"), T("native.use_session"), T("native.use_shell"), T("native.to_prepare"), T("native.result_hint"))
+	if tt.HasText(T("native.connect")) || tt.HasText(T("native.disconnect")) || tt.HasText(T("native.use_cli")) {
+		t.Fatalf("ended onboarding still shows prepare entries or self-switch: %q", tt.Texts())
 	}
 	shot(t, tt, "native-exited-actions")
-	// Switch to the shell: a new session in shell mode (no terminal
-	// component in tests, so nothing is started remotely).
+
+	// Switch to daily session.
+	click(t, tt, T("native.use_session"))
+	if a.native == ended || a.native.mode != service.NativeSession || a.native.running {
+		t.Fatalf("switch to session: %+v", a.native)
+	}
+	a.native = &nativeRun{server: "home", instance: "xiaoman", mode: service.NativeSession, code: 0}
+	show()
+	hasAll(t, tt.Texts(), T("native.session_exited", "code", 0), T("native.reconnect"), T("native.use_shell"), T("native.use_cli"), T("native.to_prepare"))
+	if tt.HasText(T("native.use_session")) {
+		t.Fatalf("ended session offered self-switch: %q", tt.Texts())
+	}
+
+	// Switch to shell.
 	click(t, tt, T("native.use_shell"))
-	if a.native == ended || a.native.mode != service.NativeShell || a.native.running {
+	if a.native.mode != service.NativeShell || a.native.running {
 		t.Fatalf("switch to shell: %+v", a.native)
 	}
-	// A shell session that ended offers to reconnect the shell, not to
-	// switch to itself.
 	a.native = &nativeRun{server: "home", instance: "xiaoman", mode: service.NativeShell, code: 130}
 	show()
-	if !tt.HasText(T("native.reconnect")) || tt.HasText(T("native.use_shell")) || !tt.HasText(T("native.use_cli")) || !tt.HasText(T("native.to_prepare")) {
-		t.Fatalf("ended shell: %q", tt.Texts())
+	hasAll(t, tt.Texts(), T("native.shell_exited", "code", 130), T("native.reconnect"), T("native.use_session"), T("native.use_cli"), T("native.to_prepare"))
+	if tt.HasText(T("native.use_shell")) {
+		t.Fatalf("ended shell offered self-switch: %q", tt.Texts())
 	}
 	click(t, tt, T("native.reconnect"))
 	if a.native.mode != service.NativeShell {
-		t.Fatalf("reconnect changed the mode: %+v", a.native)
+		t.Fatalf("reconnect changed mode: %+v", a.native)
 	}
-	// From an ended shell the native CLI is one click away too.
+
+	// Switch back to onboarding.
 	a.native = &nativeRun{server: "home", instance: "xiaoman", mode: service.NativeShell, code: 0}
 	show()
 	click(t, tt, T("native.use_cli"))
 	if a.native.mode != service.NativeCLI {
-		t.Fatalf("switch to the native CLI: %+v", a.native)
+		t.Fatalf("switch to onboarding: %+v", a.native)
 	}
-	// A dropped connection: the same bar; going back shows the entries.
+
+	// Dropped connection: back to prepare restores entries.
 	a.native = &nativeRun{server: "home", instance: "xiaoman", code: 255, err: valise.New("terminal_conn_failed", "连接已断开", "检查网络后重新打开")}
 	show()
-	hasAll(t, tt.Texts(), T("native.reconnect"), T("native.use_shell"), T("native.to_prepare"), "连接已断开")
+	hasAll(t, tt.Texts(), T("native.reconnect"), T("native.use_session"), T("native.use_shell"), T("native.to_prepare"), "连接已断开")
 	click(t, tt, T("native.to_prepare"))
-	if a.native != nil || !tt.HasText(T("native.connect")) || !tt.HasText(T("native.shell")) {
-		t.Fatalf("back to the prepare page: %+v %q", a.native, tt.Texts())
+	if a.native != nil || !tt.HasText(T("native.session")) || !tt.HasText(T("native.shell")) || !tt.HasText(T("native.connect")) {
+		t.Fatalf("back to prepare: %+v %q", a.native, tt.Texts())
 	}
+
+	// Active service warning appears when unit becomes active.
+	info.Service = []enroll.ServiceState{{Unit: "openclaw-gateway.service", LoadState: "loaded", Active: "active"}}
+	tt.Frame()
+	hasAll(t, tt.Texts(), T("native.onboard_service_warn", "units", "openclaw-gateway.service"), T("native.stop_and_onboard"), T("native.connect_direct"))
+
 	// While a session runs there is only its own control.
 	_, cancel := context.WithCancel(context.Background())
-	a.native = &nativeRun{server: "home", instance: "xiaoman", running: true, cancel: cancel, conn: newInstallConn()}
+	a.native = &nativeRun{server: "home", instance: "xiaoman", mode: service.NativeSession, running: true, cancel: cancel, conn: newInstallConn()}
 	show()
-	if !tt.HasText(T("native.disconnect")) || tt.HasText(T("native.reconnect")) || tt.HasText(T("native.to_prepare")) {
+	if !tt.HasText(T("native.session_running")) || !tt.HasText(T("native.disconnect")) || tt.HasText(T("native.reconnect")) || tt.HasText(T("native.to_prepare")) {
 		t.Fatalf("running: %q", tt.Texts())
 	}
 	a.stopNative(a.native)

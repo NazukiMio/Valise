@@ -5,15 +5,14 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
-	"net/http"
+	"os"
 	"os/exec"
-	"path"
 	"slices"
 	"strings"
 
-	"errors"
 	"valise/client/porter"
 	"valise/client/ssh"
 	"valise/core/enroll"
@@ -40,10 +39,16 @@ type PlanStep struct {
 	Command []string `json:"command"`
 	Note    string   `json:"note,omitempty"`
 	// Script steps: where it came from, its hash and full text.
-	URL              string `json:"url,omitempty"`
-	SHA256           string `json:"sha256,omitempty"`
-	Script           []byte `json:"-"`
-	RuntimeDownloads string `json:"runtime_downloads,omitempty"`
+	URL              string            `json:"url,omitempty"`
+	SHA256           string            `json:"sha256,omitempty"`
+	ExpectedSHA256   string            `json:"expected_sha256,omitempty"`
+	ScriptChanged    bool              `json:"script_changed,omitempty"`
+	ScriptFindings   []install.Finding `json:"script_findings,omitempty"`
+	ScriptRefused    bool              `json:"script_refused,omitempty"`
+	ScriptAccepted   bool              `json:"script_accepted,omitempty"`
+	AcceptedSHA256   string            `json:"accepted_sha256,omitempty"`
+	Script           []byte            `json:"-"`
+	RuntimeDownloads string            `json:"runtime_downloads,omitempty"`
 	// npm_global steps: the integrity the registry must report.
 	Integrity string `json:"integrity,omitempty"`
 	// Optional steps run only when Selected (docs/INSTALL.md section 3).
@@ -87,6 +92,51 @@ type InstallPlan struct {
 	// Existing is this harness's default agent already on the server: the
 	// install would take over its data, so the user decides first.
 	Existing *DetectedInstance `json:"existing,omitempty"`
+}
+
+// AcceptScript binds user confirmation to step i's downloaded SHA-256.
+func (p *InstallPlan) AcceptScript(i int, accepted bool) {
+	if p == nil || i < 0 || i >= len(p.Steps) {
+		return
+	}
+	st := &p.Steps[i]
+	if !st.ScriptChanged || st.ScriptRefused {
+		return
+	}
+	st.ScriptAccepted = accepted
+	if accepted {
+		st.AcceptedSHA256 = st.SHA256
+	} else {
+		st.AcceptedSHA256 = ""
+	}
+}
+
+// HasRefusedScript reports whether any step's updated script hit a
+// never-run rule in static checks.
+func (p *InstallPlan) HasRefusedScript() bool {
+	if p == nil {
+		return false
+	}
+	for _, st := range p.Steps {
+		if st.ScriptRefused {
+			return true
+		}
+	}
+	return false
+}
+
+// HasUnconfirmedScript reports whether any step has an updated script
+// that has not yet been confirmed for its current SHA-256.
+func (p *InstallPlan) HasUnconfirmedScript() bool {
+	if p == nil {
+		return false
+	}
+	for _, st := range p.Steps {
+		if st.ScriptChanged && (!st.ScriptAccepted || st.AcceptedSHA256 == "" || st.AcceptedSHA256 != st.SHA256) {
+			return true
+		}
+	}
+	return false
 }
 
 // PlanInstall checks profileID's official plan against host and downloads
@@ -168,26 +218,31 @@ func (s *Service) planStep(ctx context.Context, planID, profileID string, st pro
 		ps.Summary = "用 npm 把 " + spec + " 装到你的用户目录（~/.local）"
 		ps.Command = []string{"npm", "install", "-g", "--prefix", "${HOME}/.local", spec}
 	case profile.StepScript:
-		h := s.Release.HTTP
-		if h == nil {
-			h = http.DefaultClient
-		}
-		body, err := s.download(ctx, h, st.URL, maxScriptBytes)
+		body, err := s.downloadHTTPS(ctx, s.Release.HTTP, st.URL, maxScriptBytes)
 		if err != nil {
 			return ps, err
 		}
 		sum := sha256.Sum256(body)
-		if got := hex.EncodeToString(sum[:]); got != st.SHA256 {
-			return ps, valise.New("install_script_changed", "官方安装脚本已经变了，这个版本的方案不再适用",
-				"等 harness 资料包更新，或用原生方式按官方文档自己安装").WithDetail(fmt.Sprintf("%s\n期望 %s\n实际 %s", st.URL, st.SHA256, got))
-		}
-		name := path.Base(st.URL)
-		ps.URL, ps.SHA256, ps.Script = st.URL, st.SHA256, body
+		got := hex.EncodeToString(sum[:])
+		name := install.SafeScriptFilename(st.URL)
+		ps.URL, ps.ExpectedSHA256, ps.SHA256, ps.Script = st.URL, st.SHA256, got, body
 		if st.RuntimeDownloads != nil {
 			ps.RuntimeDownloads = *st.RuntimeDownloads
 		}
-		ps.Summary = fmt.Sprintf("运行官方安装脚本 %s（%d 字节，SHA-256 已核对）", name, len(body))
 		ps.Command = append(append(append([]string{}, st.Interpreter...), "${HOME}/"+installDir(planID)+"/"+name), st.Args...)
+		if got != st.SHA256 {
+			fs := install.CheckScript(body, "")
+			ps.ScriptChanged = true
+			ps.ScriptFindings = fs
+			ps.ScriptRefused = install.Refused(fs)
+			if ps.ScriptRefused {
+				ps.Summary = fmt.Sprintf("官方安装脚本 %s 已更新，但包含 Valise 一律不执行的内容（%d 字节）", name, len(body))
+			} else {
+				ps.Summary = fmt.Sprintf("运行官方安装脚本 %s（%d 字节，官方脚本已更新，等待核对确认）", name, len(body))
+			}
+			return ps, nil
+		}
+		ps.Summary = fmt.Sprintf("运行官方安装脚本 %s（%d 字节，SHA-256 已核对）", name, len(body))
 	case profile.StepArgv:
 		ps.Summary = "运行 " + strings.Join(st.Argv, " ")
 		ps.Command = st.Argv
@@ -223,6 +278,9 @@ func (s *Service) RunInstall(ctx context.Context, plan *InstallPlan, tio Install
 		return nil, valise.New("install_requirements", "服务器还缺少方案需要的程序："+plan.Missing[0].Reason,
 			"先装好这些程序（自己在原生界面里装、交给服务器管理员，或开启高级模式）")
 	}
+	if err := validatePlanScripts(plan); err != nil {
+		return nil, err
+	}
 	if err := s.RequireGate(ctx, plan.Host, ""); err != nil {
 		return nil, err
 	}
@@ -237,7 +295,7 @@ func (s *Service) RunInstall(ctx context.Context, plan *InstallPlan, tio Install
 	}
 	for _, st := range plan.Steps {
 		if st.Kind == profile.StepScript {
-			if err := uploadScript(ctx, t, plan.ID, path.Base(st.URL), st.Script); err != nil {
+			if err := uploadScript(ctx, t, plan.ID, install.SafeScriptFilename(st.URL), st.Script); err != nil {
 				return nil, err
 			}
 		}
@@ -316,8 +374,29 @@ func runTTY(ctx context.Context, t *ssh.Transport, porterPath string, dirs, argv
 // runLineTTY runs one remote command line under a remote terminal.
 func runLineTTY(ctx context.Context, t *ssh.Transport, line string, tio InstallIO) (int, error) {
 	cmd := t.TTYCommand(ctx, line)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = tio.Stdin, tio.Stdout, tio.Stderr
-	err := cmd.Run()
+	cmd.Stdout, cmd.Stderr = tio.Stdout, tio.Stderr
+	var err error
+	if _, isFile := tio.Stdin.(*os.File); isFile || tio.Stdin == nil {
+		cmd.Stdin = tio.Stdin
+		err = cmd.Run()
+	} else {
+		// Non-file Readers (such as GUI's io.PipeReader) must not be
+		// assigned to cmd.Stdin directly, or exec.Cmd.Wait blocks waiting
+		// for Stdin EOF even after the remote command has exited.
+		var inW io.WriteCloser
+		inW, err = cmd.StdinPipe()
+		if err == nil {
+			if err = cmd.Start(); err != nil {
+				inW.Close()
+			} else {
+				go func() {
+					defer inW.Close()
+					_, _ = io.Copy(inW, tio.Stdin)
+				}()
+				err = cmd.Wait()
+			}
+		}
+	}
 	if cmd.ProcessState == nil {
 		return -1, err
 	}

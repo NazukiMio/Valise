@@ -122,12 +122,18 @@ func TestCLITargetRemoveAndNativeShellUsage(t *testing.T) {
 	if _, _, code := runCLI(t, cfg, "", "target", "remove", "box"); code == 0 {
 		t.Fatal("target remove without a name was accepted")
 	}
-	// --shell belongs to an instance; a profile-wide native has no shell.
-	if _, _, code := runCLI(t, cfg, "", "native", "box", "--profile", "demo", "--shell"); code == 0 {
-		t.Fatal("--shell without --instance was accepted")
+	// --shell and --session belong to an instance; they cannot combine.
+	for _, bad := range [][]string{
+		{"native", "box", "--profile", "demo", "--shell"},
+		{"native", "box", "--profile", "demo", "--session"},
+		{"native", "box", "--instance", "demo", "--shell", "--session"},
+	} {
+		if _, _, code := runCLI(t, cfg, "", bad...); code == 0 {
+			t.Fatalf("%v was accepted", bad)
+		}
 	}
 	out, _, _ = runCLI(t, cfg, "", "help")
-	for _, want := range []string{"native <服务器> --instance <id> [--shell]", "target remove <服务器> <名称>"} {
+	for _, want := range []string{"native <服务器> --instance <id> [--session|--shell]", "target remove <服务器> <名称>"} {
 		if !strings.Contains(out, want) {
 			_, errOut, _ := runCLI(t, cfg, "")
 			if !strings.Contains(errOut+out, want) {

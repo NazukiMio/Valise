@@ -31,16 +31,18 @@ type location struct {
 
 // locState is what the locations pages read and are doing.
 type locState struct {
-	read     bool
-	reading  int
-	statuses map[string]*vaultrpc.StatusResult // by server
-	errs     map[string]error
-	syncs    map[string]*locSync // by location
-	lists    map[string]*listRead
-	auto     *autoEdit
-	verify   *verifyRun
-	remove   string // the location whose removal is being confirmed
-	removeJ  job
+	read        bool
+	reading     int
+	statuses    map[string]*vaultrpc.StatusResult // by server
+	errs        map[string]error
+	syncs       map[string]*locSync // by location
+	lists       map[string]*listRead
+	auto        *autoEdit
+	verify      *verifyRun
+	remove      string // the location whose removal is being confirmed
+	removeJ     job
+	removeScan  *service.TargetRemovalScan
+	removeScanJ job
 }
 
 // listRead is what one location holds for one server.

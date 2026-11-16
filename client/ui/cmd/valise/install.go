@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"valise/client/ssh"
+	"valise/core/install"
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
@@ -43,6 +44,9 @@ func (c *cli) install(ctx context.Context, args []string) error {
 		c.printInstallPlan(plan, true)
 	}
 	if err := c.existingAgent(ctx, plan, *yes); err != nil {
+		return err
+	}
+	if err := c.reviewChangedScripts(plan, *show, *yes); err != nil {
 		return err
 	}
 	if !*yes {
@@ -283,6 +287,20 @@ func (c *cli) printInstallPlan(plan *service.InstallPlan, show bool) {
 			continue
 		}
 		fmt.Fprintf(c.out, "     来源：%s\n     SHA-256：%s\n", st.URL, st.SHA256)
+		if st.ScriptChanged {
+			fmt.Fprintf(c.out, "     ⚠ 官方脚本已更新（profile 原 SHA-256：%s）\n", st.ExpectedSHA256)
+			if len(st.ScriptFindings) == 0 {
+				fmt.Fprintf(c.out, "     静态检查：%s\n", install.NoFindings)
+			} else {
+				for _, f := range st.ScriptFindings {
+					mark := "疑点"
+					if f.Refuse {
+						mark = "一律不执行"
+					}
+					fmt.Fprintf(c.out, "     %s：%s\n", mark, f.Reason)
+				}
+			}
+		}
 		if st.RuntimeDownloads != "" {
 			fmt.Fprintf(c.out, "     ⚠ 运行时还会下载：%s（Valise 无法预先检查这些内容）\n", st.RuntimeDownloads)
 		}
@@ -295,6 +313,50 @@ func (c *cli) printInstallPlan(plan *service.InstallPlan, show bool) {
 	}
 }
 
+// reviewChangedScripts handles official floating scripts whose SHA-256 changed
+// upstream (docs/INSTALL.md section 3).
+func (c *cli) reviewChangedScripts(plan *service.InstallPlan, shown, yes bool) error {
+	if !plan.HasUnconfirmedScript() && !plan.HasRefusedScript() {
+		return nil
+	}
+	for _, st := range plan.Steps {
+		if !st.ScriptChanged {
+			continue
+		}
+		fmt.Fprintf(c.out, "\n⚠ 官方安装脚本已更新：%s\n", st.URL)
+		fmt.Fprintf(c.out, "  profile 原 SHA-256：%s\n  本次实际 SHA-256：%s\n", st.ExpectedSHA256, st.SHA256)
+		if len(st.ScriptFindings) == 0 {
+			fmt.Fprintf(c.out, "  静态检查：%s（不代表安全）\n", install.NoFindings)
+		} else {
+			for _, f := range st.ScriptFindings {
+				mark := "疑点"
+				if f.Refuse {
+					mark = "一律不执行"
+				}
+				fmt.Fprintf(c.out, "  %s：%s\n", mark, f.Reason)
+			}
+		}
+	}
+	if plan.HasRefusedScript() {
+		return valise.New("install_script_refused", "官方更新后的安装脚本命中了 Valise 一律不执行的规则，已拦截",
+			"Valise 不会执行它，也没有绕过开关；可以改用原生方式按官方文档处理")
+	}
+	if yes {
+		return valise.New("install_script_changed", "官方安装脚本已经更新，--yes 模式下不会自动确认新脚本",
+			"不带 --yes 运行以核对新旧 SHA-256、静态检查与脚本全文")
+	}
+	if !shown {
+		c.printInstallPlan(plan, true)
+	}
+	if !c.confirm("我已核对最新官方脚本内容并确认使用当前版本继续？") {
+		return valise.New("cancelled", "已取消，服务器上没有任何改动", "")
+	}
+	for i := range plan.Steps {
+		plan.AcceptScript(i, true)
+	}
+	return nil
+}
+
 // saveScript keeps a copy of a verified script for the user to read.
 func (c *cli) saveScript(planID string, st service.PlanStep) (string, error) {
 	dir := filepath.Join(c.svc.Dirs.Cache, "install", planID)
@@ -305,19 +367,23 @@ func (c *cli) saveScript(planID string, st service.PlanStep) (string, error) {
 	return p, os.WriteFile(p, st.Script, 0o600)
 }
 
-// native: valise native <服务器> --instance <id> (or legacy --profile <id>)
+// native: valise native <服务器> --instance <id> [--session|--shell] (or legacy --profile <id>)
 func (c *cli) native(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("native", flag.ContinueOnError)
 	prof := fs.String("profile", "", "")
 	instance := fs.String("instance", "", "")
 	shell := fs.Bool("shell", false, "")
+	session := fs.Bool("session", false, "")
 	pos, err := parseArgs(fs, args, 1)
-	if err != nil || (*prof == "") == (*instance == "") || (*shell && *instance == "") {
+	if err != nil || (*prof == "") == (*instance == "") || ((*shell || *session) && *instance == "") || (*shell && *session) {
 		return errUsage
 	}
-	mode, what := service.NativeCLI, "原生界面"
-	if *shell {
+	mode, what := service.NativeCLI, "原生引导"
+	switch {
+	case *shell:
 		mode, what = service.NativeShell, "交互终端"
+	case *session:
+		mode, what = service.NativeSession, "原生会话"
 	}
 	if err := c.gate(ctx, pos[0], *instance, false); err != nil {
 		return err
@@ -345,8 +411,11 @@ func (c *cli) native(ctx context.Context, args []string) error {
 	defer done()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	fmt.Fprintf(c.out, "正在打开 %s 在 %s 上的%s（独立的管理连接）。Valise 不读取、不保存这里输入的任何内容。\n", label, pos[0], what)
-	if *shell {
+	switch {
+	case *shell:
 		fmt.Fprintln(c.out, "这是你自己的 shell，已带上这个 Agent 的环境与命令路径；输入 exit 结束。")
+		hints = nil
+	case *session:
 		hints = nil
 	}
 	if len(hints) > 0 {

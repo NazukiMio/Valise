@@ -421,6 +421,7 @@ func (c *checker) checkTop(p *Profile) {
 		}
 	}
 	c.argvVars("native_cli", p.NativeCLI, false, VarHome)
+	c.argvVars("native_session_cli", p.NativeSessionCLI, false, VarHome)
 	for i, h := range p.NativeHints {
 		if strings.TrimSpace(h) == "" {
 			c.add(fmt.Sprintf("native_hints[%d]", i), "不能为空")

@@ -2,9 +2,11 @@ package protection
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"valise/core/enroll"
@@ -44,10 +46,11 @@ func (s Store) WithLegacyTargetsWrite(name string, run func() error) error {
 }
 
 // WithTargetRemove holds the same lock while a copy location is forgotten.
-// A location a plan in force copies to stays: forgetting it would silently
-// change that plan. A plan of an earlier generation (the agent was enrolled
-// again) is not in force and does not keep its locations. While any plan
-// transaction is unfinished nothing is removed.
+// Locations referenced by any plan in force stay: forgetting them would
+// silently change those plans. A plan of an earlier generation (the agent
+// was enrolled again) is not in force and does not keep its locations. While
+// any plan transaction is unfinished nothing is removed. All blocking active
+// instance IDs are collected and returned together in target_in_use.
 func (s Store) WithTargetRemove(ctx context.Context, name string, run func() error) error {
 	unlock, err := s.lock()
 	if err != nil {
@@ -64,6 +67,8 @@ func (s Store) WithTargetRemove(ctx context.Context, name string, run func() err
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	var blockers []string
+	seen := map[string]bool{}
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
@@ -75,21 +80,42 @@ func (s Store) WithTargetRemove(ctx context.Context, name string, run func() err
 		if plan == nil {
 			continue
 		}
+		referenced := false
 		for _, c := range plan.ServerCopies {
-			if c.TargetRef.ID != name {
-				continue
+			if c.TargetRef.ID == name {
+				referenced = true
+				break
 			}
-			// Only a plan known to be an earlier generation's lets go.
-			verr := s.validate(ctx, plan.AgentRef)
-			if ue, ok := valise.As(verr); ok && ue.Code == "identity_conflict" {
-				continue
-			}
-			if verr != nil {
-				return verr
-			}
-			return valise.New("target_in_use", "备份位置 "+name+" 正被 "+plan.AgentRef.InstanceID+" 的保护计划使用，没有移除",
-				"先在这个 Agent 的保护计划里取消这个位置，再移除")
 		}
+		if !referenced {
+			continue
+		}
+		// Only a plan known to be an earlier generation's lets go.
+		verr := s.validate(ctx, plan.AgentRef)
+		if ue, ok := valise.As(verr); ok && ue.Code == "identity_conflict" {
+			continue
+		}
+		if verr != nil {
+			return verr
+		}
+		if !seen[plan.AgentRef.InstanceID] {
+			seen[plan.AgentRef.InstanceID] = true
+			blockers = append(blockers, plan.AgentRef.InstanceID)
+		}
+	}
+	if len(blockers) > 0 {
+		sort.Strings(blockers)
+		detail, _ := json.Marshal(struct {
+			Target            string   `json:"target"`
+			BlockingInstances []string `json:"blocking_instances"`
+		}{Target: name, BlockingInstances: blockers})
+		suggestion := "先在这个 Agent 的保护计划里取消这个位置，再移除"
+		if len(blockers) > 1 {
+			suggestion = "先在这些 Agent 的保护计划里取消这个位置，再移除"
+		}
+		return valise.New("target_in_use",
+			"备份位置 "+name+" 正被 "+strings.Join(blockers, "、")+" 的保护计划使用，没有移除",
+			suggestion).WithDetail(string(detail))
 	}
 	return run()
 }

@@ -52,7 +52,8 @@ func main() {
 const usage = `用法：
   valise-porter version [--json]
   valise-porter rpc
-  valise-porter native --instance <实例>（运行已接受资料中的原生界面）
+  valise-porter native --instance <实例>（运行已接受资料中的原生引导命令）
+  valise-porter native --instance <实例> --session（运行已接受资料中的原生会话命令）
   valise-porter native --instance <实例> --shell（按该实例的环境与命令路径打开你自己的登录交互 shell）
   valise-porter exec [--path <目录>]... -- <命令>...（用登录环境执行原生界面、安装步骤）
   valise-porter exec [--path <目录>]... --shell（打开用户自己的交互 shell，PATH 中加入这些目录）
@@ -84,9 +85,20 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "serve":
 		return serveForced(args[1:], stdin, stdout, stderr)
 	case "native":
-		// native --instance <id> [--shell]: nothing else is taken.
-		shell := len(args) == 4 && args[3] == "--shell"
-		if (len(args) != 3 && !shell) || args[1] != "--instance" {
+		// native --instance <id> [--shell|--session]: nothing else is taken.
+		mode := porterinstall.ModeOnboard
+		if len(args) == 4 {
+			switch args[3] {
+			case "--shell":
+				mode = porterinstall.ModeShell
+			case "--session":
+				mode = porterinstall.ModeSession
+			default:
+				fmt.Fprintln(stderr, usage)
+				return 2
+			}
+		}
+		if (len(args) != 3 && mode == porterinstall.ModeOnboard) || args[1] != "--instance" {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
@@ -101,7 +113,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		defer unlock()
-		cmd, display, err := porterinstall.NativeCommand(context.Background(), home, args[2], shell, lock)
+		cmd, display, err := porterinstall.NativeCommand(context.Background(), home, args[2], mode, lock)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1

@@ -192,23 +192,31 @@ func (w *fixWorld) click(t *testing.T, label string) {
 // answer waits for the window's password dialog and answers it the way a
 // person does; "" cancels. It returns once done holds.
 func (w *fixWorld) answer(t *testing.T, password string, done func() bool) (asked int) {
+	return w.answerWith(t, func(string) string { return password }, done)
+}
+
+func (w *fixWorld) answerWith(t *testing.T, respond func(prompt string) string, done func() bool) (asked int) {
 	t.Helper()
 	w.wait(t, "the fix to end", func() bool {
 		if len(w.a.asks) == 0 {
 			return done()
 		}
 		w.tt.Frame()
-		if !w.tt.HasText(T("ask.server.title", "who", "me@203.0.113.9")) {
-			t.Fatalf("OpenSSH's question is not in the window: %q", w.tt.Texts())
+		p := w.a.asks[0]
+		if !w.tt.HasText(T("ask.server.title", "who", "me@203.0.113.9")) &&
+			!w.tt.HasText(T("ask.sudo.title", "who", "vps")) &&
+			!w.tt.HasText(T("ask.sudo.generic")) {
+			t.Fatalf("OpenSSH/sudo question is not in the window: %q", w.tt.Texts())
 		}
 		asked++
-		if password == "" {
+		pw := respond(p.host)
+		if pw == "" {
 			if err := w.tt.Click(T("common.cancel")); err != nil {
 				t.Fatal(err)
 			}
 			return false
 		}
-		w.tt.Type(password)
+		w.tt.Type(pw)
 		if err := w.tt.Click(T("common.ok")); err != nil {
 			t.Fatal(err)
 		}

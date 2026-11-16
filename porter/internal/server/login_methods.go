@@ -21,7 +21,12 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		return porterinstall.NativeInfo(s.cfg.Home, p.InstanceID)
+		info, err := porterinstall.NativeInfo(s.cfg.Home, p.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		info.Service = porterinstall.NativeServices(ctx, s.loginEnv(ctx), s.cfg.Home, p.InstanceID)
+		return info, nil
 	}
 	methods[login.MethodPrepare] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[login.PrepareParams](raw)

@@ -53,8 +53,11 @@ type Profile struct {
 	// Install is the official install plan (docs/INSTALL.md section 3).
 	Install *Install `yaml:"install" json:"install,omitempty"`
 	// NativeCLI is the harness's own interactive CLI (docs/INSTALL.md
-	// section 2).
+	// section 2), used for onboarding / initial setup.
 	NativeCLI Argv `yaml:"native_cli" json:"native_cli,omitempty"`
+	// NativeSessionCLI is the harness's interactive session CLI for daily
+	// conversation against a running instance (docs/INSTALL.md section 2).
+	NativeSessionCLI Argv `yaml:"native_session_cli" json:"native_session_cli,omitempty"`
 	// NativeHints are shown before the native CLI opens.
 	NativeHints []string `yaml:"native_hints" json:"native_hints,omitempty"`
 	// Actions are managed actions (docs/INSTALL.md section 5).

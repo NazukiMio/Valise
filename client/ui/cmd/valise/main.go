@@ -28,7 +28,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
 开始使用与日常管理
   install <服务器> --profile <id> [--show-script] [--yes] [--advanced] [--with <可选步骤 id>]...
                                                  按官方方案安装 harness：先检测依赖、核对脚本哈希并展示，确认后在交互终端里执行
-  native <服务器> --instance <id> [--shell]         打开 harness 自己的原生界面（独立的管理连接）；--shell 改为按这个 Agent 的环境打开你自己的交互终端
+  native <服务器> --instance <id> [--session|--shell]  打开原生引导（默认）、原生会话（--session）或实例交互终端（--shell，独立的管理连接）
   enroll <服务器> [--profile id] [--name 命名实例] [--id 实例] [--assign root:glob=类别]... [--report-json] [--accept]
                                                  登记 agent：展示登记报告，加 --accept 才写入实例记录
   tui                                            终端界面：服务器、agent、备份、健康、管理页、登录授权、设置

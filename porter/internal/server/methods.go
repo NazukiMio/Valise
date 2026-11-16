@@ -86,7 +86,7 @@ var methods = map[string]handler{
 				Service: []enroll.ServiceState{}, Entries: []enroll.EntryState{}}
 			if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
 				sum.ProfileStatus = p.Status
-				if len(p.NativeCLI) > 0 {
+				if len(p.NativeCLI) > 0 || len(p.NativeSessionCLI) > 0 {
 					// The dedicated native executor consumes committed metadata only.
 					// Reading an old pair must not advertise or implicitly accept it.
 					d, _, err := porterenroll.ReadInstallation(s.cfg.Home, r.InstanceID)

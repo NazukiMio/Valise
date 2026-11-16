@@ -13,6 +13,12 @@ import (
 	porterenroll "valise/porter/internal/enroll"
 )
 
+const (
+	ModeOnboard = ""
+	ModeShell   = "shell"
+	ModeSession = "session"
+)
+
 func nativeUnavailable() error {
 	return valise.New("native_current_unverified", "无法核实这个 Agent 当前使用的程序，没有启动命令", "重新检查这个 Agent；若正在恢复，请先查看原恢复操作的结果")
 }
@@ -28,22 +34,39 @@ func NativeInfo(home, id string) (*install.NativeInfo, error) {
 	}
 	r := d.Record(id)
 	effective := p.ForAgent(r.Name)
+	hasNative := len(effective.NativeCLI) > 0 || len(effective.NativeSessionCLI) > 0
 	return &install.NativeInfo{
-		InstanceID: id,
-		ProfileID:  effective.ID,
-		Argv:       effective.NativeCLI,
-		Hints:      effective.NativeHints,
-		Shell:      len(effective.NativeCLI) > 0,
+		InstanceID:  id,
+		ProfileID:   effective.ID,
+		Argv:        effective.NativeCLI,
+		SessionArgv: effective.NativeSessionCLI,
+		Hints:       effective.NativeHints,
+		Shell:       hasNative,
+		Session:     len(effective.NativeSessionCLI) > 0,
 	}, nil
 }
 
+// NativeServices reads the current systemd state of an enrolled instance's
+// accepted service candidates.
+func NativeServices(ctx context.Context, env *porterenroll.Env, home, id string) []enroll.ServiceState {
+	d, p, err := porterenroll.ReadInstallation(home, id)
+	if err != nil || d == nil || p == nil || d.Record(id) == nil {
+		return nil
+	}
+	r := d.Record(id)
+	effective := p.ForAgent(r.Name)
+	r.ApplyEntryPorts(&effective)
+	svc, _ := porterenroll.Live(ctx, env, &effective)
+	return svc
+}
+
 // NativeCommand resolves what `native --instance` runs for one enrolled
-// instance: its accepted native CLI, or with shell the user's own
-// interactive login shell. Both get the instance's environment (its state
-// directory variable and the profile's command directories on PATH). The
-// instance must be enrolled, current and declare a native interface; no
-// command comes from the request.
-func NativeCommand(ctx context.Context, home, id string, shell bool, lock *os.File) (*exec.Cmd, []string, error) {
+// instance: its accepted native onboarding CLI, native session CLI (--session),
+// or the user's own interactive login shell (--shell). All get the instance's
+// environment (its state directory variable and the profile's command
+// directories on PATH). The instance must be enrolled, current and declare a
+// matching native interface; no command comes from the request.
+func NativeCommand(ctx context.Context, home, id, mode string, lock *os.File) (*exec.Cmd, []string, error) {
 	if enroll.ValidInstanceID(id) != nil || lock == nil {
 		return nil, nil, nativeUnavailable()
 	}
@@ -54,13 +77,34 @@ func NativeCommand(ctx context.Context, home, id string, shell bool, lock *os.Fi
 	r := d.Record(id)
 	selected := p.ForAgent(r.Name)
 	r.ApplyEntryPorts(&selected)
-	if len(selected.NativeCLI) == 0 {
-		return nil, nil, valise.New("native_cli_none", "这个 Agent 的接入资料没有声明原生界面", "使用它已支持的管理页或登录方式")
-	}
 	env := porterenroll.LoadEnv(ctx, home).ForInstance(&selected, r)
-	display := selected.NativeCLI
+	var display []string
 	var cmd *exec.Cmd
-	if shell {
+	switch mode {
+	case ModeOnboard:
+		if len(selected.NativeCLI) == 0 {
+			return nil, nil, valise.New("native_cli_none", "这个 Agent 的接入资料没有声明原生引导", "改用原生会话或实例交互终端")
+		}
+		display = selected.NativeCLI
+		bin, out, err := resolve(env, selected.NativeCLI)
+		if err != nil {
+			return nil, nil, err
+		}
+		cmd = exec.Command(bin, out[1:]...)
+	case ModeSession:
+		if len(selected.NativeSessionCLI) == 0 {
+			return nil, nil, valise.New("native_session_none", "这个 Agent 的接入资料没有声明原生会话", "改用实例交互终端")
+		}
+		display = selected.NativeSessionCLI
+		bin, out, err := resolve(env, selected.NativeSessionCLI)
+		if err != nil {
+			return nil, nil, err
+		}
+		cmd = exec.Command(bin, out[1:]...)
+	case ModeShell:
+		if len(selected.NativeCLI) == 0 && len(selected.NativeSessionCLI) == 0 {
+			return nil, nil, valise.New("native_cli_none", "这个 Agent 的接入资料没有声明原生界面", "使用它已支持的管理页或登录方式")
+		}
 		sh := os.Getenv("SHELL")
 		if sh == "" {
 			sh = "/bin/sh"
@@ -74,12 +118,8 @@ func NativeCommand(ctx context.Context, home, id string, shell bool, lock *os.Fi
 				env.Vars = append(env.Vars, instancePathVar+"="+v)
 			}
 		}
-	} else {
-		bin, out, err := resolve(env, selected.NativeCLI)
-		if err != nil {
-			return nil, nil, err
-		}
-		cmd = exec.Command(bin, out[1:]...)
+	default:
+		return nil, nil, valise.New("native_mode_invalid", "不认识的原生界面方式", "")
 	}
 	cmd.Env, cmd.Dir, cmd.ExtraFiles = env.Vars, env.Home, []*os.File{lock}
 	return cmd, display, nil

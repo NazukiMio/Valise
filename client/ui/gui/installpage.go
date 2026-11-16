@@ -80,6 +80,9 @@ func (a *App) installPage(c *ui.Context, host, id string) {
 		return
 	case ir.planErr != nil:
 		errorBox(c, ir.planErr, a.fold("plan-err-"+key))
+		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+			ui.Button(c, T("install.use_custom")).OnClick(func() { a.router.Push("/servers/" + host + "/install-custom") })
+		})
 		return
 	}
 	p := ir.plan
@@ -111,7 +114,7 @@ func (a *App) planCard(c *ui.Context, key, host string, ir *installRun, name str
 			}
 		})
 		for i := range p.Steps {
-			a.planStep(c.Key(i), key, i, &p.Steps[i])
+			a.planStep(c.Key(i), key, p, i, &p.Steps[i])
 		}
 		var facts []string
 		if p.Where != "" {
@@ -121,7 +124,11 @@ func (a *App) planCard(c *ui.Context, key, host string, ir *installRun, name str
 			facts = append(facts, T("install.takes", "takes", p.Takes))
 		}
 		facts = append(facts, T("install.needs_admin"))
-		muted(ui.Text(c, T("install.facts", "facts", strings.Join(facts, T("common.dot_sep"))))).Wrap()
+		factsKey := "install.facts"
+		if planHasFindings(p) {
+			factsKey = "install.facts_plain"
+		}
+		muted(ui.Text(c, T(factsKey, "facts", strings.Join(facts, T("common.dot_sep"))))).Wrap()
 		for _, n := range p.Notes {
 			ui.Text(c, n).FontSize(12).Wrap()
 		}
@@ -138,13 +145,28 @@ func (a *App) planCard(c *ui.Context, key, host string, ir *installRun, name str
 				ui.Text(c, T("install.missing_how")).FontSize(12).TextColor(palette.AlertText).Wrap()
 			})
 		}
+		if len(missing) == 0 && !p.HasRefusedScript() && p.HasUnconfirmedScript() {
+			muted(ui.Text(c, T("install.script_confirm_needed"))).Wrap()
+		}
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			ui.Button(c, T("common.cancel")).OnClick(func() { a.closeInstall(key); a.router.Push("/servers/" + host + "/agents") })
-			if len(missing) == 0 {
+			if p.HasRefusedScript() || p.HasUnconfirmedScript() {
+				ui.Button(c, T("install.use_custom")).OnClick(func() { a.router.Push("/servers/" + host + "/install-custom") })
+			}
+			if len(missing) == 0 && !p.HasRefusedScript() && !p.HasUnconfirmedScript() {
 				ui.PrimaryButton(c, T("install.start")).OnClick(func() { a.startInstall(host, ir) })
 			}
 		})
 	})
+}
+
+func planHasFindings(p *service.InstallPlan) bool {
+	for _, st := range p.Steps {
+		if len(st.ScriptFindings) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // reasons are the requirements not met, in plain words.
@@ -156,7 +178,7 @@ func reasons(rs []install.Requirement) []string {
 	return out
 }
 
-func (a *App) planStep(c *ui.Context, key string, i int, st *service.PlanStep) {
+func (a *App) planStep(c *ui.Context, key string, p *service.InstallPlan, i int, st *service.PlanStep) {
 	subPanel(ui.Column(c)).Gap(6).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			if st.Optional {
@@ -168,7 +190,9 @@ func (a *App) planStep(c *ui.Context, key string, i int, st *service.PlanStep) {
 		if st.URL != "" {
 			mono(muted(ui.Text(c, st.URL))).Wrap()
 		}
-		if st.SHA256 != "" {
+		if st.ScriptChanged {
+			a.changedScriptBox(c, p, i, st)
+		} else if st.SHA256 != "" {
 			muted(ui.Text(c, T("install.sha_checked", "sha", st.SHA256))).Wrap()
 		}
 		if len(st.Command) > 0 && st.Kind != profile.StepScript {
@@ -178,10 +202,32 @@ func (a *App) planStep(c *ui.Context, key string, i int, st *service.PlanStep) {
 			muted(ui.Text(c, T("install.skip_effect", "what", st.SkipEffect))).Wrap()
 		}
 		if len(st.Script) > 0 {
-			lines := strings.Count(string(st.Script), "\n") + 1
-			ui.Collapsible(c, T("install.script", "n", lines), a.fold("script-"+key+itoa(i)), func() {
-				mono(ui.Text(c, string(st.Script))).FontSize(11).Wrap()
-			})
+			a.scriptPreview(c, "script-"+key+itoa(i), st.Script, st.ScriptChanged)
+		}
+	})
+}
+
+func (a *App) changedScriptBox(c *ui.Context, p *service.InstallPlan, i int, st *service.PlanStep) {
+	bg, border := palette.AlertBg, palette.AlertBorder
+	if st.ScriptRefused {
+		bg, border = palette.ErrorBg, palette.ErrorBorder
+	}
+	ui.Column(c).Gap(6).Padding(12, 14).Radius(10).Background(bg).Border(1, border).Children(func() {
+		if st.ScriptRefused {
+			ui.Text(c, T("install.script_refused_title")).Bold().TextColor(palette.Warn).Wrap()
+		} else {
+			ui.Text(c, T("install.script_updated")).Bold().TextColor(palette.Warn).Wrap()
+		}
+		mono(ui.Text(c, T("install.sha_expected", "sha", st.ExpectedSHA256))).FontSize(11).Wrap()
+		mono(ui.Text(c, T("install.sha_actual", "sha", st.SHA256))).FontSize(11).Wrap()
+		a.renderScriptFindings(c, st.ScriptFindings)
+		if st.ScriptRefused {
+			ui.Text(c, T("install.script_refused_hint")).FontSize(12).TextColor(palette.Warn).Wrap()
+		} else {
+			checked := st.ScriptAccepted
+			if ui.Checkbox(c, &checked, T("install.script_accept_updated")).Changed() {
+				p.AcceptScript(i, checked)
+			}
 		}
 	})
 }
@@ -189,26 +235,7 @@ func (a *App) planStep(c *ui.Context, key string, i int, st *service.PlanStep) {
 func (a *App) startInstall(host string, ir *installRun) {
 	conn := newInstallConn()
 	ir.conn, ir.running, ir.err, ir.res, ir.text = conn, true, nil, nil, tailText{}
-	if a.newTerminal != nil {
-		if t, err := a.newTerminal(conn); err == nil {
-			ir.term = t
-		}
-	}
-	if ir.term == nil { // no terminal: show the output as text
-		a.run(func() {
-			buf := make([]byte, 4096)
-			for {
-				n, err := conn.out.Read(buf)
-				if n > 0 {
-					s := string(buf[:n])
-					a.update(func() { ir.text.add(s) })
-				}
-				if err != nil {
-					return
-				}
-			}
-		})
-	}
+	ir.term = a.openInstallTerminal(conn, &ir.text)
 	plan := ir.plan
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
@@ -217,37 +244,13 @@ func (a *App) startInstall(host string, ir *installRun) {
 			Step: func(i int, st service.PlanStep) {
 				a.update(func() { ir.step = T("install.step", "n", i+1, "what", st.Summary) })
 			}})
-		conn.outW.Close()
+		conn.Close()
 		a.update(func() { ir.running, ir.res, ir.err = false, res, err })
 	})
 }
 
 func (a *App) runView(c *ui.Context, key, host string, ir *installRun, name string) {
-	card(ui.Column(c)).Gap(10).Children(func() {
-		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, orText(ir.step, T("install.connecting"))).Bold().Grow(1)
-			if ir.running {
-				ui.Spinner(c)
-			}
-		})
-		muted(ui.Text(c, T("install.type_here_hint")))
-		if ir.term != nil {
-			terminal.View(c, ir.term).Height(320).AutoFocus()
-		} else {
-			if ir.text.cut {
-				muted(ui.Text(c, T("install.text_cut", "n", maxFallbackText>>10)))
-			}
-			codeBox(mono(ui.Text(c, orText(ir.text.s, T("install.no_output")))).FontSize(12).Wrap()).Padding(10)
-			if ir.running {
-				in := ui.TextInput(c, &ir.input).Placeholder(T("install.input"))
-				if in.Submitted() {
-					line := ir.input + "\n"
-					ir.input = ""
-					go ir.conn.inW.Write([]byte(line))
-				}
-			}
-		}
-	})
+	a.renderTerminalPane(c, ir.step, ir.running, ir.term, &ir.text, &ir.input, ir.conn)
 	if ir.running {
 		return
 	}
@@ -275,6 +278,9 @@ func (a *App) installResult(c *ui.Context, key, host string, ir *installRun, nam
 			errorBox(c, ir.err, a.fold("install-err-"+key))
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+			if r == nil || r.Found == nil {
+				ui.Button(c, T("install.use_custom")).OnClick(func() { a.closeInstall(key); a.router.Push("/servers/" + host + "/install-custom") })
+			}
 			ui.Button(c, T("install.back_server")).OnClick(func() { a.closeInstall(key); a.rescanAndGo(host) })
 			if r != nil && r.Found != nil {
 				ui.PrimaryButton(c, T("install.adopt")).OnClick(func() { a.closeInstall(key); a.rescanAndGo(host) })

@@ -19,15 +19,16 @@ import (
 // hooks are what the window borrows from the system and the service; tests
 // replace them.
 type hooks struct {
-	scanTimeline   func(context.Context, service.TimelineScanRequest, func(service.TimelineUpdate)) error
-	runRestoreTest func(context.Context, service.SelectedRestoreTest) (*service.RestoreTest, error)
-	entryOpener    func(context.Context, string, string, service.OpenOptions) error
-	openURL        func(string) error
-	pickImage      func() (string, error)                               // the system's open dialog; "" when cancelled
-	pickFolder     func(title, message string) (string, error)          // the system's folder dialog; "" when cancelled
-	pickFile       func(title, message string) (string, error)          // one file (a private key, a porter build)
-	newTerminal    func(io.ReadWriteCloser) (*terminal.Terminal, error) // nil: output shows as text
-	copyText       func(string) error                                   // the system clipboard; nil hides 复制
+	scanTimeline          func(context.Context, service.TimelineScanRequest, func(service.TimelineUpdate)) error
+	runRestoreTest        func(context.Context, service.SelectedRestoreTest) (*service.RestoreTest, error)
+	entryOpener           func(context.Context, string, string, service.OpenOptions) error
+	openURL               func(string) error
+	pickImage             func() (string, error)                               // the system's open dialog; "" when cancelled
+	pickFolder            func(title, message string) (string, error)          // the system's folder dialog; "" when cancelled
+	pickFile              func(title, message string) (string, error)          // one file (a private key, a porter build)
+	newTerminal           func(io.ReadWriteCloser) (*terminal.Terminal, error) // nil: output shows as text
+	newNativeTestTerminal func(io.ReadWriteCloser) (io.Closer, error)          // tests only
+	copyText              func(string) error                                   // the system clipboard; nil hides 复制
 }
 
 // agentData is what was read about the agents, shared by every page.
@@ -113,17 +114,18 @@ func (v *locationsView) closeAdding() { v.locAdding, v.cloudAdding = nil, nil }
 
 // serversView is the servers pages: the list, adding, installing, settings.
 type serversView struct {
-	servers    load[[]serverRow]
-	removed    []service.RemovedServer // removed servers, read with the list
-	wiz        *wizard                 // the add-server wizard, nil when closed
-	scans      map[string]*serverScan  // agents found by server
-	installs   map[string]*installRun  // by server/profile
-	passes     map[string]*passState   // admin pass actions by server
-	settings   map[string]*settingsState
-	serverTab  int           // the server detail's tab: 0 overview, 1 settings
-	rebuild    *rebuildState // rebuilding the admin passes
-	forgetting string        // the removed server whose record is being forgotten
-	forgetErr  error
+	servers        load[[]serverRow]
+	removed        []service.RemovedServer      // removed servers, read with the list
+	wiz            *wizard                      // the add-server wizard, nil when closed
+	scans          map[string]*serverScan       // agents found by server
+	installs       map[string]*installRun       // by server/profile
+	customInstalls map[string]*customInstallRun // by server
+	passes         map[string]*passState        // admin pass actions by server
+	settings       map[string]*settingsState
+	serverTab      int           // the server detail's tab: 0 overview, 1 settings
+	rebuild        *rebuildState // rebuilding the admin passes
+	forgetting     string        // the removed server whose record is being forgotten
+	forgetErr      error
 }
 
 // closeInstall lets go of one install screen's plan, output and result.

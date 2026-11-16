@@ -19,6 +19,7 @@ import (
 
 type sysFixState struct {
 	item    service.HealthItem
+	sudo    bool // retrying with sudo after the non-sudo run failed
 	loading bool // reading the server and planning
 	fix     *service.SystemFix
 	confirm bool // the confirmation is open
@@ -31,13 +32,21 @@ func (f *sysFixState) busy() bool { return f.loading || f.running }
 
 // prepareSysFix plans the fix; nothing runs before the confirmation.
 func (a *App) prepareSysFix(row *agentRow, st *healthState, it service.HealthItem) {
-	f := &sysFixState{item: it, loading: true}
+	a.prepareSysFixMode(row, st, it, false)
+}
+
+func (a *App) prepareSysFixSudo(row *agentRow, st *healthState, it service.HealthItem) {
+	a.prepareSysFixMode(row, st, it, true)
+}
+
+func (a *App) prepareSysFixMode(row *agentRow, st *healthState, it service.HealthItem, sudo bool) {
+	f := &sysFixState{item: it, sudo: sudo, loading: true}
 	st.sys = f
 	server, instance := row.Server, row.Instance
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		fix, err := a.svc.PlanSystemFix(ctx, server, instance, it.SystemFix, service.SystemFixOptions{})
+		fix, err := a.svc.PlanSystemFix(ctx, server, instance, it.SystemFix, service.SystemFixOptions{Sudo: sudo})
 		a.update(func() {
 			f.loading, f.fix, f.err = false, fix, err
 			f.confirm = err == nil && fix.Mode == service.FixDirect
@@ -50,11 +59,11 @@ func (a *App) prepareSysFix(row *agentRow, st *healthState, it service.HealthIte
 func (a *App) runSysFix(st *healthState) {
 	f := st.sys
 	f.confirm, f.running = false, true
-	fix := f.fix
+	fix, sudo := f.fix, f.sudo
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		res, err := a.svc.RunSystemFix(ctx, fix.Host, fix.Instance, fix.ID, fix.Digest, service.SystemFixOptions{}, service.InstallIO{})
+		res, err := a.svc.RunSystemFix(ctx, fix.Host, fix.Instance, fix.ID, fix.Digest, service.SystemFixOptions{Sudo: sudo}, service.InstallIO{})
 		a.update(func() {
 			f.running, f.result, f.err = false, res, err
 			a.readHealth(fix.Host, fix.Instance)
@@ -94,8 +103,11 @@ func (a *App) sysFixReport(c *ui.Context, row *agentRow, st *healthState) {
 		}
 		if !f.busy() {
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+				if canSudoRetry(f) {
+					ui.PrimaryButton(c, T("health.sysfix.retry_sudo")).OnClick(func() { a.prepareSysFixSudo(row, st, f.item) })
+				}
 				if f.err != nil || f.result != nil && (f.result.Verification == nil || f.result.Verification.State != "resolved") {
-					ui.Button(c, T("common.retry")).OnClick(func() { a.prepareSysFix(row, st, f.item) })
+					ui.Button(c, T("common.retry")).OnClick(func() { a.prepareSysFixMode(row, st, f.item, f.sudo) })
 				}
 				ui.Button(c, T("common.close")).OnClick(func() { st.sys = nil })
 			})
@@ -125,6 +137,9 @@ func (a *App) sysFixConfirm(c *ui.Context, st *healthState) {
 				}
 			})
 			muted(ui.Text(c, fix.Access)).Wrap()
+			if f.sudo {
+				muted(ui.Text(c, T("health.sysfix.sudo_note"))).Wrap()
+			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).OnClick(func() { st.sys = nil })
 				ui.PrimaryButton(c, T("health.run")).OnClick(func() { a.runSysFix(st) })
@@ -143,6 +158,13 @@ func sysFixManual(c *ui.Context, fix *service.SystemFix) {
 	for i, cmd := range fix.Manual {
 		ui.Text(c.Key(i), strings.Join(cmd, " ")).FontSize(12).Font(cur.Fonts.Mono).Selectable()
 	}
+}
+
+func canSudoRetry(f *sysFixState) bool {
+	if f.sudo || f.item.SystemFix != service.FixLinger || f.result == nil {
+		return false
+	}
+	return f.result.Verification == nil || f.result.Verification.State != "resolved"
 }
 
 // sysFixResult tells each command's exit and the re-check apart: a command

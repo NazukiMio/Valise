@@ -31,7 +31,7 @@ func (c *cli) healthFix(ctx context.Context, args []string) error {
 		return err
 	}
 	host, inst, id := pos[0], pos[1], pos[2]
-	opts := service.SystemFixOptions{Sudo: *advanced}
+	opts := service.SystemFixOptions{Sudo: *advanced, Advanced: *advanced}
 	f, err := c.svc.PlanSystemFix(ctx, host, inst, id, opts)
 	if err != nil {
 		return err

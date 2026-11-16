@@ -100,7 +100,18 @@ func (s *Service) userTransport(host string) (*ssh.Transport, ssh.HostConfig, er
 		return nil, ssh.HostConfig{}, err
 	}
 	hc := c.Lookup(host)
-	t, err := ssh.New(host, ssh.Options{Binary: s.Config.SSHBinary, ControlDir: s.Dirs.Cache, HostConfig: &hc, BatchMode: s.NoTerminalLogin})
+	o := ssh.Options{
+		Binary:     s.Config.SSHBinary,
+		ControlDir: s.Dirs.Cache,
+		HostConfig: &hc,
+		BatchMode:  s.NoTerminalLogin && !s.canPrompt(),
+	}
+	if s.canPrompt() && !o.BatchMode {
+		if o.Env, err = s.relayEnv(); err != nil {
+			return nil, hc, err
+		}
+	}
+	t, err := ssh.New(host, o)
 	if err != nil {
 		return nil, hc, valise.New("bad_host", "服务器别名无效："+host, "使用 ~/.ssh/config 中的 Host 别名，或 user@host")
 	}

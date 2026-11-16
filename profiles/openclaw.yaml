@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: openclaw
 display_name: OpenClaw
-profile_version: 23
+profile_version: 24
 status: draft
 harness_versions_tested: ["2026.10.9"]
 docs: https://docs.openclaw.ai
@@ -214,6 +214,10 @@ install:
 
 # The harness's own guided setup: models, channels, skills (DOC: cli/onboard).
 native_cli: [openclaw, onboard]
+# Daily terminal session connected to the running Gateway (OBS 2026-11-16,
+# debian-vm, OpenClaw 2026.11.4 `openclaw tui --help`: "Open a terminal UI
+# connected to the Gateway"; live interactive session: verify: pending).
+native_session_cli: [openclaw, tui]
 # OBS (2026-11-01, debian-vm): onboard ends waiting for the Control UI to log
 # in; the UI asks for the gateway token.
 native_hints:

@@ -5,11 +5,15 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"valise/client/config"
 	"valise/core/install"
 	"valise/core/rpc"
+	"valise/testbed/fakesshenv"
 )
 
 func TestInstanceNativeUsesAcceptedCommandOverFreshManagementFakeSSH(t *testing.T) {
@@ -130,5 +134,181 @@ func TestInstanceShellCarriesTheInstanceEnvironment(t *testing.T) {
 	// An old porter (no shell in its info) is not asked for one.
 	if _, _, err := (&Service{}).InstanceNativeCommand(ctx, "box", "demo", NativeShell); err == nil {
 		t.Fatal("no service state and still a command")
+	}
+}
+
+func TestInstanceSessionRunsAcceptedSessionCLIAndAllowsSessionOnly(t *testing.T) {
+	if got := nativeLine("/h/.local/bin/valise-porter", "demo", NativeSession); got != "/h/.local/bin/valise-porter native --instance demo --session" {
+		t.Fatalf("session line: %q", got)
+	}
+	s, _ := enrollWorld(t)
+	p := filepath.Join(s.Dirs.Data, "profiles", "demo.yaml")
+	prof := demoProfile + "native_cli: [/bin/cat]\nnative_session_cli: [/bin/echo, session-ready]\n"
+	if err := os.WriteFile(p, []byte(prof), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := WithRiskAccepted(context.Background())
+	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := s.InstanceNativeInfo(ctx, "box", "demo")
+	if err != nil || !info.Session || !slices.Equal(info.SessionArgv, []string{"/bin/echo", "session-ready"}) {
+		t.Fatalf("unexpected info: %+v %v", info, err)
+	}
+	// Changing local profile cannot hijack the server's accepted session command.
+	if err := os.WriteFile(p, []byte(demoProfile+"native_session_cli: [/bin/echo, hijacked]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd, done, err := s.InstanceNativeCommand(ctx, "box", "demo", NativeSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.Join(cmd.Args, " ")
+	done()
+	if !strings.Contains(line, "native --instance demo --session") || strings.Contains(line, "hijacked") {
+		t.Fatalf("unexpected session cmd: %s", line)
+	}
+	var out, errb bytes.Buffer
+	code, err := s.RunInstanceNative(ctx, "box", "demo", NativeSession, NativeIO{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errb})
+	if err != nil || code != 0 || strings.TrimSpace(out.String()) != "session-ready" {
+		t.Fatalf("session run: code=%d err=%v out=%q err=%q", code, err, out.String(), errb.String())
+	}
+
+	// A profile declaring only native_session_cli still advertises native availability
+	// and supports session + shell while refusing onboarding.
+	s2, _ := enrollWorld(t)
+	p2 := filepath.Join(s2.Dirs.Data, "profiles", "demo.yaml")
+	if err := os.WriteFile(p2, []byte(demoProfile+"native_session_cli: [/bin/echo, only-session]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s2.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s2.Instances(ctx, "box")
+	if err != nil || len(list) != 1 || !list[0].NativeCLI {
+		t.Fatalf("session-only instance summary: %+v %v", list, err)
+	}
+	if _, _, err := s2.InstanceNativeCommand(ctx, "box", "demo", NativeCLI); err == nil {
+		t.Fatal("onboard allowed without native_cli")
+	}
+	out.Reset()
+	if code, err := s2.RunInstanceNative(ctx, "box", "demo", NativeSession, NativeIO{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errb}); err != nil || code != 0 || strings.TrimSpace(out.String()) != "only-session" {
+		t.Fatalf("session-only run: code=%d err=%v out=%q", code, err, out.String())
+	}
+}
+
+func TestPauseAndRestoreInstanceServicesRequiresOwnerAndSeparatesHealth(t *testing.T) {
+	e := fakesshenv.New(t)
+	home := e.AddHost("vps")
+	e.InstallPorter("vps")
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(home, ".demo/demo.json"), "{}")
+	write(filepath.Join(home, ".local/bin/demo"), "#!/bin/sh\necho demo 1.0\n")
+	write(filepath.Join(home, ".local/bin/loginctl"), "#!/bin/sh\necho yes\n")
+	write(filepath.Join(home, ".local/bin/systemctl"), `#!/bin/sh
+f="$HOME/unit-state"
+[ -f "$f" ] || echo active > "$f"
+shift # --user
+case "$1" in
+show)
+  st=$(cat "$f")
+  printf 'LoadState=loaded\nActiveState=%s\nUnitFileState=enabled\n' "$st"
+  ;;
+is-active) cat "$f" ;;
+stop) echo inactive > "$f" ;;
+reset-failed) ;;
+start)
+  if [ -f "$HOME/unit-broken" ]; then
+    echo failed > "$f"
+  else
+    echo active > "$f"
+  fi
+  ;;
+esac
+`)
+	s := newService(t, e.SSH)
+	dir := s.Dirs.Data
+	write(filepath.Join(home, "unit-state"), "active\n")
+	// Configure vps as a tiered server (Valise daily key) so owner proof is enforced.
+	if err := config.SaveServerList(dir, []config.Server{{Name: "vps", Source: config.SourceValise, HostName: "127.0.0.1", Port: 22, User: "me"}}); err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(config.KeyDir(dir, "vps"), "daily")
+	write(keyPath, "fake-private-key")
+	write(keyPath+".pub", "ssh-ed25519 AAAATEST daily")
+	write(filepath.Join(home, ".ssh/authorized_keys"), `restrict,pty,command="$HOME/.local/bin/valise-porter serve --tier daily" ssh-ed25519 AAAATEST daily`+"\n")
+
+	prof := demoProfile + `service:
+  candidates: [ { scope: user, unit: demo.service } ]
+health:
+  checks:
+    - { kind: systemd_active }
+native_cli: [/bin/echo, onboard-ran]
+native_session_cli: [/bin/echo, session-ran]
+`
+	write(filepath.Join(dir, "profiles/demo.yaml"), prof)
+	const pass = "test-passphrase-1234"
+	if _, err := s.KeyInit(pass); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, _, err := s.KeyRegister(ctx, "vps", "laptop"); err != nil {
+		t.Fatal(err)
+	}
+	s.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
+	if _, err := s.Enroll(ctx, "vps", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without offsite backup or risk acceptance, PauseInstanceServices must refuse BEFORE stopping service.
+	_, err := s.PauseInstanceServices(ctx, "vps", "demo")
+	wantCode(t, err, GateCode)
+	if got := strings.TrimSpace(readFile(t, filepath.Join(home, "unit-state"))); got != "active" {
+		t.Fatalf("gate did not protect service: %q", got)
+	}
+
+	// Without owner proof, pausing must fail with owner_locked.
+	s.ForgetOwner()
+	origAuth := s.OwnerAuth
+	s.OwnerAuth = OwnerAuth{}
+	_, err = s.PauseInstanceServices(WithRiskAccepted(ctx), "vps", "demo")
+	wantCode(t, err, "owner_locked")
+	s.OwnerAuth = origAuth
+
+	// With owner proof, pausing stops demo.service.
+	stopped, err := s.PauseInstanceServices(WithRiskAccepted(ctx), "vps", "demo")
+	if err != nil || !slices.Equal(stopped, []string{"demo.service"}) {
+		t.Fatalf("pause: stopped=%v err=%v", stopped, err)
+	}
+	if got := strings.TrimSpace(readFile(t, filepath.Join(home, "unit-state"))); got != "inactive" {
+		t.Fatalf("service not stopped: %q", got)
+	}
+
+	// Restoring when unit comes back active verifies resolved.
+	res, err := s.RestoreInstanceServices(ctx, "vps", "demo", stopped)
+	if err != nil || !slices.Equal(res.StartedUnits, []string{"demo.service"}) || !res.Checked ||
+		len(res.Service) != 1 || res.Service[0].Active != "active" ||
+		res.Verification == nil || res.Verification.State != "resolved" {
+		t.Fatalf("restore healthy: %+v err=%v", res, err)
+	}
+
+	// When unit starts then goes failed, StartedUnits still records the start call
+	// while Verification honestly reports remaining (never falsely green).
+	origSettle := nativeServiceSettle
+	nativeServiceSettle = 30 * time.Millisecond
+	t.Cleanup(func() { nativeServiceSettle = origSettle })
+	write(filepath.Join(home, "unit-broken"), "1")
+	resBad, err := s.RestoreInstanceServices(ctx, "vps", "demo", stopped)
+	if err != nil || !slices.Equal(resBad.StartedUnits, []string{"demo.service"}) ||
+		resBad.Verification == nil || resBad.Verification.State != "remaining" {
+		t.Fatalf("restore broken: %+v err=%v", resBad, err)
 	}
 }

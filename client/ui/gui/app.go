@@ -74,7 +74,8 @@ func New(svc *service.Service) *App {
 	a.timelineScope = service.TimelineScanRequest{LocalOnly: true}
 	a.health = map[string]*healthState{}
 	a.prots = map[string]*protState{}
-	a.serversView = serversView{scans: map[string]*serverScan{}, installs: map[string]*installRun{}, passes: map[string]*passState{},
+	a.serversView = serversView{scans: map[string]*serverScan{}, installs: map[string]*installRun{},
+		customInstalls: map[string]*customInstallRun{}, passes: map[string]*passState{},
 		settings: map[string]*settingsState{}}
 	a.installReviews()
 	return a

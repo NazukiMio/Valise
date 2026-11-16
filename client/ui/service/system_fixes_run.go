@@ -58,10 +58,10 @@ type SystemFix struct {
 	Digest         string          `json:"digest"`
 }
 
-// SystemFixOptions: Sudo asks for the advanced-mode plan even when a
-// direct one exists (linger after the system asked for administrator).
+// SystemFixOptions: Sudo asks for a sudo command on FixLinger (or the
+// advanced-mode plan when Advanced is set by CLI `--advanced`).
 // NonInteractive plans the advanced steps with sudo -n, for takeover mode.
-type SystemFixOptions struct{ Sudo, NonInteractive bool }
+type SystemFixOptions struct{ Sudo, NonInteractive, Advanced bool }
 
 // SystemStepResult is one command's outcome; Ran is false for a step that
 // was not needed or not reached.
@@ -104,10 +104,11 @@ func (s *Service) adminLoginAvailable(host string) bool {
 	return !srv.Valise() || s.HasAdminKey(host) || srv.Login == config.LoginKey || !s.NoTerminalLogin || s.canPrompt()
 }
 
-// Command prefixes: none (direct), sudo, or sudo -n (takeover mode).
+// Command prefixes: none (direct), sudo, sudo -S (direct sudo with stdin), or sudo -n (takeover mode).
 var (
 	asUser  []string
 	asSudo  = []string{"sudo"}
+	asSudoS = []string{"sudo", "-S"}
 	asSudoN = []string{"sudo", "-n"}
 )
 
@@ -219,7 +220,8 @@ func (s *Service) PlanSystemFix(ctx context.Context, host, instance, id string, 
 			f.Manual = append(f.Manual, step.Command)
 		}
 	}
-	root := o.Sudo || id == FixClock || s.advancedOn(host)
+	root := o.Advanced || id == FixClock || s.advancedOn(host)
+	lingerSudo := id == FixLinger && o.Sudo && !root
 	switch {
 	case root && s.advancedOn(host):
 		f.Mode, f.Ready = FixAdvanced, true
@@ -244,6 +246,8 @@ func (s *Service) PlanSystemFix(ctx context.Context, host, instance, id string, 
 		switch {
 		case f.Mode == FixAdvanced && o.NonInteractive && s.Takeover(host):
 			pre, f.NonInteractive = asSudoN, true
+		case f.Mode == FixDirect && lingerSudo:
+			pre = asSudoS
 		case f.Mode == FixDirect && id == FixLinger:
 			pre = asUser
 		}
@@ -256,7 +260,7 @@ func (s *Service) PlanSystemFix(ctx context.Context, host, instance, id string, 
 			f.Mode, f.Why = FixManual, clockManual(st)[0]
 		}
 	}
-	f.Access = s.systemFixAccess(host, f.Mode)
+	f.Access = s.systemFixAccess(host, f.Mode, lingerSudo)
 	if f.NonInteractive {
 		f.Access = takeoverAccess
 	}
@@ -274,7 +278,7 @@ func systemFixDigest(f *SystemFix) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *Service) systemFixAccess(host, mode string) string {
+func (s *Service) systemFixAccess(host, mode string, sudoPrompt bool) string {
 	switch mode {
 	case FixManual:
 		return "Valise 不会执行；请自己登录服务器执行上面的命令"
@@ -289,7 +293,11 @@ func (s *Service) systemFixAccess(host, mode string) string {
 	default:
 		login = "要输入服务器密码（临时管理登录）"
 	}
-	return "新开一次管理登录执行，不复用日常连接 · " + login
+	out := "新开一次管理登录执行，不复用日常连接 · " + login
+	if sudoPrompt {
+		out += "；sudo 需要密码时会在窗口里按需询问（只在内存中转交，不保存）"
+	}
+	return out
 }
 
 // SystemFixSteps is the confirmed plan as a checked batch, for the
@@ -366,6 +374,10 @@ func (s *Service) RunSystemFix(ctx context.Context, host, instance, id, digest s
 			} else {
 				sr.Exit, runErr = s.runSystemStep(ctx, host, f.Mode, step.Command, tio)
 			}
+			if runErr != nil && sr.Exit < 0 {
+				sr.Ran = false
+				sr.Note = "没有执行"
+			}
 			stopped = runErr != nil || sr.Exit != 0
 		}
 		res.Steps = append(res.Steps, sr)
@@ -376,7 +388,7 @@ func (s *Service) RunSystemFix(ctx context.Context, host, instance, id, digest s
 	}
 	res.Verification = s.verifySystem(ctx, host, id, settle)
 	if !res.SudoPassword {
-		res.Next = systemNext(f, res)
+		res.Next = s.systemNext(f, res)
 	}
 	s.auditSystemFix(ctx, host, f, res, runErr)
 	return res, runErr
@@ -422,7 +434,24 @@ func (s *Service) runSystemStep(ctx context.Context, host, mode string, argv []s
 	if mode == FixAdvanced {
 		return runTTY(ctx, t, found.Path, nil, argv, tio)
 	}
-	r, err := t.Run(ctx, execLine(found.Path, nil, argv), nil)
+	stdin := tio.Stdin
+	if stdin == nil && len(argv) >= 2 && argv[0] == "sudo" && argv[1] == "-S" && s.canPrompt() {
+		chk, err := t.Run(ctx, execLine(found.Path, nil, []string{"sudo", "-n", "true"}), nil)
+		if err != nil {
+			return -1, err
+		}
+		if chk.ExitCode != 0 {
+			pw, err := s.PasswordAuth.Prompt("[sudo] password for " + host + ":")
+			if err != nil {
+				return -1, err
+			}
+			if strings.ContainsAny(pw, "\r\n") {
+				return -1, valise.New("sudo_password_invalid", "sudo 密码格式无效", "重新输入")
+			}
+			stdin = strings.NewReader(pw + "\n")
+		}
+	}
+	r, err := t.Run(ctx, execLine(found.Path, nil, argv), stdin)
 	if err != nil {
 		return -1, err
 	}
@@ -471,7 +500,7 @@ func clockText(st *SystemStatus) string {
 }
 
 // systemNext is the next step when the fix did not verify.
-func systemNext(f *SystemFix, r *SystemFixResult) string {
+func (s *Service) systemNext(f *SystemFix, r *SystemFixResult) string {
 	if r.Verification.State == "resolved" {
 		return ""
 	}
@@ -483,8 +512,13 @@ func systemNext(f *SystemFix, r *SystemFixResult) string {
 	switch {
 	case r.Verification.State == "unknown":
 		return "稍后刷新健康页复核；若问题仍在，" + manual
+	case f.ID == FixLinger && failed && f.Mode == FixDirect && len(f.Steps) > 0 && IsSudo(f.Steps[0].Command):
+		return "sudo 执行没有成功：确认输入的密码或服务器上的 sudo 权限；" + manual
 	case f.ID == FixLinger && failed && f.Mode == FixDirect:
-		return "系统可能要求管理员权限：开启高级模式后再修复一次（会用 sudo），或" + manual
+		if s.NoTerminalLogin {
+			return "系统可能要求管理员权限：请点击「使用 sudo 重试」，或" + manual
+		}
+		return "系统可能要求管理员权限：可使用 sudo 重试或开启高级模式后再修复一次（会用 sudo），或" + manual
 	case f.ID == FixClock && !failed:
 		return "命令已执行但时间还没对上：可能是服务器连不上时间服务器（例如防火墙挡住了 UDP 123 端口）。几分钟后刷新健康页；仍不行请联系服务器管理员或云厂商"
 	}
