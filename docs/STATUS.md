@@ -2,7 +2,7 @@
 
 > 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-16。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前工作与交接（2026-11-16 A/B 槽位剥离 Stage 1–3 与前端整固 Phase F1、F2 完成；F2 待用户审批）
+## 0. 当前工作与交接（2026-11-16 A/B 剥离与前端整固 F1、F2 完成并经审批；v0.1 测试包已构建，待用户真机验收）
 
 **架构收敛与三阶段剥离完成状态**：
 经 2026-11-15 代码审计与产品复盘，用户已确认**撤销** A/B 双槽位并行运行环境（`linux-bwrap` 容器接管、三档恢复保护模式、独立程序树采集与父子切换状态机）。分支 `refactor/revoke-ab-slots-and-doc-audit` 上三个阶段均已完成、验证并提交：
@@ -35,7 +35,7 @@
 4. **linger 一键开启**：新文件 `gui/healthsysfix.go`：点击后先 `PlanSystemFix`，确认框直接列出命令、改变的系统设置、撤销办法与需要的管理登录；确认后 `RunSystemFix`（摘要绑定计划），结果分别显示每条命令的退出码与复核结论，未通过时可重试；服务层判为不能代为执行时只说明原因并列出命令。时钟修复与“忽略”不在 GUI 里（v0.2）。
 5. **验证（均为实际运行）**：`gui/healthfix_test.go` 经 fake-ssh（ssh 替身按 OpenSSH 的方式通过 `SSH_ASKPASS` 询问密码）跑通“无管理钥匙 → 窗口弹出服务器密码 → linger 修复 / 需管理登录的 profile 动作执行”，含取消密码后不执行、可重试；撤掉服务层修复后该测试与 `TestAdminLoginAvailableNeedsAPrompt` 均失败。`go test -race ./gui/...`、`go tool mygo vet`、AGENTS.md 第 6 节 5 步自检全部通过；`gui/*.go` 最大 381 行。**未做**：真实 OpenSSH + sshd 靶机上的 askpass 与 `loginctl`（polkit）行为，fake-ssh 不能代替，留给下面的真机闭环。
 
-### 前端整固 Phase F2（已完成，2026-11-16，待用户审批）
+### 前端整固 Phase F2（已完成并经用户审批，2026-11-16，`2177be0`）
 
 依据 [UI.md](UI.md) 7.4.3，只改 `client/ui/gui`：
 
@@ -48,13 +48,19 @@
 
 ### 下一步待办
 
-1. **Phase F2 等用户审批**；之后可按页继续把其余内联面板与写死列宽换成语义函数与令牌（非阻塞）。
-2. **真机端到端闭环验证与新测试包**：旧 `stage-test-20261114/Valise Test.app` 构建于撤销 A/B 前；Phase F1 已落地，需重新构建测试包，并在 macOS 桌面 + Linux 靶机上实测「添加服务器 → 接入 → 保护计划 → 手动备份 → 文件/暂存恢复测试 → 原生界面 → 直通恢复/迁移/克隆」。
+1. **用户真机端到端验收（阶段 A 测试包已构建，2026-11-16）**：测试包在 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/`，构建自 `2177be0`，内含 `Valise Test.app`、CLI `valise`、`valise-porter_linux_arm64` / `_amd64`、`standalone-restore/`、`SHA256SUMS`、`BUILD.json` 与验收步骤 `TESTING.md`。
+   - **打包方式**（没有 `mygo.json`，沿用 11-14 包的做法）：`go build -trimpath -ldflags "-X main.version=… -X valise/client/porter.ReleasePublicKey=$(cat ~/.cache/valise-drill/devpack/key.pub)"` 编出桌面程序与 CLI，放进 `.app` 骨架（`Info.plist`、`PkgInfo`、mygo 终端插件声明的 `libghostty-vt.dylib`，SHA-256 与插件清单一致），整个 `.app` 做 ad hoc 签名；porter 用 `CGO_ENABLED=0` 交叉编译。没有重新生成资料包或钥匙。
+   - **已核对（实际运行）**：两个 porter 为静态 ELF（aarch64 / x86-64，`CGO_ENABLED=0`）；四个二进制都带 `stage-test-20261116` 版本号且不含旧版本号；`valise version` 输出新版本；`valise profiles status` 报 2026.11.10 已验签；`codesign --verify --deep --strict` 通过；桌面程序 `-h` 可执行；`SHA256SUMS` 复核全部 OK。
+   - **A/B 入口**：四个二进制里搜不到 `linux-bwrap`、`environment-restore`、`valise/core/environment`、`restore.policy` 等（11-14 包里有 18 处）；CLI 帮助里没有环境相关命令。**残留**：`porter/internal/server/action_conflicts.go` 的加锁名单里还有 `environment_test`、`environment_settings_set` 两个名字，没有处理函数、调用不到，不是入口，待清理（本阶段按要求不改代码）。
+   - **F1/F2 是否在包里**：桌面程序里能找到 `restore.same_server_hint`、`health.sysfix.*`、`install.text_cut` 词条与 `runSysFix`、`tailText.add`、`renderSections`、`restoreTargets` 符号，且找不到已删除的 `health.need_password`；这只说明代码在包里，**没有在真实窗口里操作过**。
+   - **没做**：没有启动窗口、没有部署任何服务器；上一级目录 `valise-porter-test/` 里的同名 porter 仍是 11-14 的版本，没有覆盖（LAB.md 约定那里放最新 porter，是否覆盖等用户决定）。
+   - 之后可按页继续把其余内联面板与写死列宽换成语义函数与令牌（非阻塞）。
+2. **真机闭环范围**：在 macOS 桌面 + Linux 靶机上实测「添加服务器 → 接入 → 保护计划 → 手动备份 → 文件/暂存恢复测试 → 健康页 linger 一键开启（密码登录、无管理钥匙）→ 原生界面 → 恢复当前实例 / 迁移 / 同机创建副本」；真实 OpenSSH + sshd 的 askpass 与 `loginctl`（polkit）行为此前只在 fake-ssh 上验证过。
 3. **合并与后续演进**：真机闭环通过后，将分支 `refactor/revoke-ab-slots-and-doc-audit` 整理合并，并按 `docs/DEV_PLAN.md` 推进 MVP `v0.1` 收口与 5 项用户痛点规划。
 
 ### 必须保留的环境与基线事实
 
-- **当前用户构建**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261114/Valise Test.app`（`0.0.0-dev+stage-test-20261114`）。A/B 剥离完成后应重新打出干净 `v0.1` 测试包交用户验证。
+- **当前用户构建**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/Valise Test.app`（`0.0.0-dev+stage-test-20261116`，构建自 `2177be0`，A/B 已剥离，含 Phase F1/F2）。更新测试服务器的 porter 时选同目录的 `valise-porter_linux_arm64`（ubuntu-vm / debian-vm）或 `valise-porter_linux_amd64`（ubuntu-vm-x86）。上一个包 `stage-test-20261114` 构建于撤销 A/B 之前，不再使用。
 - **默认资料包与演练公钥**：默认资料包为 `2026.11.10`（OpenClaw 22、Hermes 11）；默认配置公钥 `~/.cache/valise-drill/devpack/key.pub`，演练配置公钥 `~/.cache/valise-drill/drillpack/key.pub`，不得混用或覆盖。
 - **构建环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；禁止执行 `rm -f`（用 `git rm` 或 `t.TempDir()`）；禁止自动 `git push`。
 - **原基线**：分叉前分支 `n2-agent-protection-journey` 位于 `f243bcf`（含 `07d7952`、`4bdd0fb`、`3e9f124`、`4d890c2`、`f243bcf`）；工作树中的 `references/` 与 `.DS_Store` 保留不提交。
