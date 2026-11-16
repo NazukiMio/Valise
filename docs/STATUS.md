@@ -2,7 +2,7 @@
 
 > 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-16。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前工作与交接（2026-11-16 A/B 剥离与前端整固 F1、F2 完成并经审批；v0.1 测试包已构建，待用户真机验收）
+## 0. 当前工作与交接（2026-11-16 v0.1 测试包已构建并做过窗口内验收：linger/密码弹窗与文本截断通过，同机创建副本在服务层被拒，待用户决定）
 
 **架构收敛与三阶段剥离完成状态**：
 经 2026-11-15 代码审计与产品复盘，用户已确认**撤销** A/B 双槽位并行运行环境（`linux-bwrap` 容器接管、三档恢复保护模式、独立程序树采集与父子切换状态机）。分支 `refactor/revoke-ab-slots-and-doc-audit` 上三个阶段均已完成、验证并提交：
@@ -30,7 +30,7 @@
 依据 [UI.md](UI.md) 第 4、7.10/7.11、9.5、11 节与 [DEV_PLAN.md](DEV_PLAN.md) 第 5 项，只改 `client/ui/gui` 与 `client/ui/service` 的一处判断：
 
 1. **全局状态**：`gui/i18n.go` 的当前词表 `words` 改为 `atomic.Pointer[catalog]`（后台 goroutine 调 `T()` 与主线程 `chooseLocale()` 不再竞态）；包级 `confirmations` 收进 `App.confirms`（带锁的实例字段），“现在备份 / 备份一次 / 保存保护计划”仍是一键确认。测试：`gui/concurrency_test.go`（`-race` 下并发 `T()` + `chooseLocale()`；两个 `App` 的确认互不可见、各只生效一次）。
-2. **创建副本**：`gui/restoresetup.go` 只在“迁移”时把原服务器排除出目标列表；切到“创建副本”默认选中原服务器，同机时直接展开目录映射输入区并给一句提示（新词条 `restore.same_server_hint`）。测试：`restore_test.go` `TestCloneOnTheOnlyServer`（单服务器可选中原服务器并发起副本计划）。
+2. **创建副本**：`gui/restoresetup.go` 只在“迁移”时把原服务器排除出目标列表；切到“创建副本”默认选中原服务器，同机时直接展开目录映射输入区并给一句提示（新词条 `restore.same_server_hint`）。测试：`restore_test.go` `TestCloneOnTheOnlyServer`（单服务器可选中原服务器并发起副本计划）。**更正（2026-11-16 窗口内验收）**：这一项只打通了界面，服务层 `planRevive` 仍拒绝同机副本，见下面“窗口内验收”。
 3. **健康页修复的服务器密码**：根因在服务层——`adminTransport` 早已支持 askpass 转交，但 `service/system_fixes_run.go` 的 `adminLoginAvailable` 只看 `NoTerminalLogin`、没看 `canPrompt()`，桌面上没有管理钥匙的密码登录服务器因此拿不到 linger 一键修复（被判成只能手动）。已补 `|| s.canPrompt()`（本阶段唯一的 `service` 改动）。GUI 删除 `fixError` 里“去终端执行 `valise action …`”的退回与 3 个词条 `health.need_password*`；`health.admin_login` 改为同时说明管理口令与服务器密码；UI.md 7.3 一处旧表述同步。
 4. **linger 一键开启**：新文件 `gui/healthsysfix.go`：点击后先 `PlanSystemFix`，确认框直接列出命令、改变的系统设置、撤销办法与需要的管理登录；确认后 `RunSystemFix`（摘要绑定计划），结果分别显示每条命令的退出码与复核结论，未通过时可重试；服务层判为不能代为执行时只说明原因并列出命令。时钟修复与“忽略”不在 GUI 里（v0.2）。
 5. **验证（均为实际运行）**：`gui/healthfix_test.go` 经 fake-ssh（ssh 替身按 OpenSSH 的方式通过 `SSH_ASKPASS` 询问密码）跑通“无管理钥匙 → 窗口弹出服务器密码 → linger 修复 / 需管理登录的 profile 动作执行”，含取消密码后不执行、可重试；撤掉服务层修复后该测试与 `TestAdminLoginAvailableNeedsAPrompt` 均失败。`go test -race ./gui/...`、`go tool mygo vet`、AGENTS.md 第 6 节 5 步自检全部通过；`gui/*.go` 最大 381 行。**未做**：真实 OpenSSH + sshd 靶机上的 askpass 与 `loginctl`（polkit）行为，fake-ssh 不能代替，留给下面的真机闭环。
@@ -59,7 +59,12 @@
      - 打包 app 程序的 askpass 转交助手单独运行通过（取回答案；被拒绝时失败退出）。
      - 打包的 CLI 在同一 fake-ssh 目录上跑通 linger 修复（Valise 接入、无管理钥匙、密码登录）：密码错不执行，密码对则 `loginctl enable-linger` 退出码 0、复核通过。
      - 同一份界面代码（`2177be0` 之后只改过文档与 porter 的加锁名单）上重跑并通过：`TestCloneOnTheOnlyServer`、`TestHealthLingerFixAsksServerPasswordInWindow`、`TestHealthActionAsksServerPasswordInWindow`、`TestTailTextKeepsTheNewestOutput`、`TestInstallTextFallbackSaysWhenCut` 等。
-   - **没做**：没有在真实窗口里点过界面（用户 2026-11-16 决定自己验收），所以“创建副本”页、健康页 linger 确认框与密码弹窗、安装页文本截断在这个包的窗口里没有操作过，依据是来源戳加同一提交上的界面测试；没有部署任何服务器；上一级目录 `valise-porter-test/` 里的同名 porter 仍是 11-14 的版本，没有覆盖（LAB.md 约定那里放最新 porter，是否覆盖等用户决定）。
+   - **窗口内验收（2026-11-16，用户授权后在打包的 `Valise Test.app` 真实窗口里操作；数据目录是隔离的 fake-ssh 测试世界：一台 Valise 接入、无管理钥匙、密码登录的服务器）**：
+     - **健康页 linger + 服务器密码弹窗：通过。**“开启 linger”→ 确认框列出命令、改变的系统设置、撤销办法与“要输入服务器密码”，此时服务器上没有执行任何命令 → “执行”后窗口弹出“输入 me@203.0.113.9 的服务器密码”→ 取消：退出码 -1、复核“问题仍在”、未执行、给出“重试”→ 重试并输入密码：“退出码 0”“复核结果：本次检查通过：linger 已开启”，该项从列表消失。
+     - **安装页文本截断：通过。**用无效的终端库路径启动（`MYGO_GHOSTTY_VT`）使终端加载失败，测试资料的安装方案打印 5000 行约 315 KiB；页面显示“只显示最近约 64 KiB 的输出，更早的已省略”，文字从第 3961 行开始。
+     - **同机创建副本：界面通过，计划生成失败（缺陷）。**只有一台服务器时目标默认选中原服务器、直接展开目录映射与同机提示；但填好目录点“查看计划”后服务层报 `mode_mismatch`“v0.1 的迁移与克隆只支持到另一台服务器”（`client/ui/service/revive_plan.go` `planRevive` 拒绝 `From == Target` 的迁移与副本）。Phase F1 第 2 项只打通了界面：当时的测试把后台执行替换掉了，只断言请求发出，没有走到服务层。UI.md 7.11 写的是同机副本由服务层拦截路径重合与嵌套，代码则整体拒绝——规范与代码冲突，放开它涉及同机实例标识、共用服务与目录重合的检查，**等用户决定**后再改。
+     - 顺带看到的（未改）：取消密码后的错误文字来自服务层，提到 `valise server rekey` 与“终端界面按 K”，还提示“开启高级模式”，对桌面用户不合适；本地未审核资料在安装入口卡片上写“官方安装方案”（方案页里有“未经审核”提示）；服务器页“用户通行证 · 能用”标签折成两行；窗口在后台时不重绘。
+   - **没做**：真实 OpenSSH + sshd 与真实 `loginctl`（polkit）；没有部署任何服务器；上一级目录 `valise-porter-test/` 里的同名 porter 仍是 11-14 的版本，没有覆盖（LAB.md 约定那里放最新 porter，是否覆盖等用户决定）。
    - 之后可按页继续把其余内联面板与写死列宽换成语义函数与令牌（非阻塞）。
 2. **真机闭环范围**：在 macOS 桌面 + Linux 靶机上实测「添加服务器 → 接入 → 保护计划 → 手动备份 → 文件/暂存恢复测试 → 健康页 linger 一键开启（密码登录、无管理钥匙）→ 原生界面 → 恢复当前实例 / 迁移 / 同机创建副本」；真实 OpenSSH + sshd 的 askpass 与 `loginctl`（polkit）行为此前只在 fake-ssh 上验证过。
 3. **合并与后续演进**：真机闭环通过后，将分支 `refactor/revoke-ab-slots-and-doc-audit` 整理合并，并按 `docs/DEV_PLAN.md` 推进 MVP `v0.1` 收口与 5 项用户痛点规划。
