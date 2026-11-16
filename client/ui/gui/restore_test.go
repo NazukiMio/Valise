@@ -137,3 +137,42 @@ func TestRestoreRootMappingRejectsAmbiguity(t *testing.T) {
 		t.Fatal(roots, err)
 	}
 }
+
+// With one server, a copy can still be made: it stays on the agent's own
+// server, which is offered and chosen, and asks for its directories
+// outright (docs/UI.md 7.11). Only a migration leaves the origin out.
+func TestCloneOnTheOnlyServer(t *testing.T) {
+	a, tt, r := restoreWorld(t)
+	a.agents.value.Items = a.agents.value.Items[:1]
+	a.agents.value.Observations = a.agents.value.Observations[:1]
+	if hosts := a.hosts(); len(hosts) != 1 || hosts[0] != "home" || r.origin != "home" {
+		t.Fatalf("not a one-server world: %q, origin %q", hosts, r.origin)
+	}
+	if got := restoreTargets(a.hosts(), "home", revive.ModeClone); len(got) != 1 || got[0] != "home" {
+		t.Fatalf("a copy cannot stay on its server: %q", got)
+	}
+	if got := restoreTargets(a.hosts(), "home", revive.ModeMigrate); len(got) != 0 {
+		t.Fatalf("a migration offered its own origin: %q", got)
+	}
+	click(t, tt, T("restore.mode.migrate"))
+	if r.target != "" || tt.HasText(T("restore.same_server_hint")) {
+		t.Fatalf("migration kept the origin as its target: %q", r.target)
+	}
+	click(t, tt, T("restore.mode.clone"))
+	if r.mode != revive.ModeClone || r.target != "home" {
+		t.Fatalf("clone did not choose the origin: mode %q target %q", r.mode, r.target)
+	}
+	if !tt.HasText(T("restore.same_server_hint")) || !tt.HasText(T("restore.copy_id")) || tt.HasText(T("restore.path_hint")) {
+		t.Fatalf("same-server copy does not ask for directories outright: %q", tt.Texts())
+	}
+	shot(t, tt, "restore-clone-same-server")
+	// The plan request goes out with the origin as its target.
+	var started int
+	a.run = func(func()) { started++ }
+	r.id, r.roots = "xiaoman-copy", "state=/home/me/.openclaw-copy"
+	a.prepareRestore(r)
+	if r.j.err != nil || !r.j.busy || started != 1 || r.target != r.origin {
+		t.Fatalf("copy plan not started: err %v busy %v started %d", r.j.err, r.j.busy, started)
+	}
+	r.j.cancel()
+}

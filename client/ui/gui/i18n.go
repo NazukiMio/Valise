@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
 )
@@ -70,9 +71,12 @@ type localeFile struct {
 	Messages map[string]message `json:"messages"`
 }
 
+// baseCatalog is set once at init and never changed. words is the current
+// catalog: T reads it from any goroutine while chooseLocale swaps it on the
+// main thread, so it is only loaded and stored atomically.
 var (
 	baseCatalog *catalog
-	words       *catalog // the current catalog, read on the main thread
+	words       atomic.Pointer[catalog]
 )
 
 func init() {
@@ -81,7 +85,8 @@ func init() {
 		panic("built-in catalog: " + err.Error())
 	}
 	c.ID = c.Lang
-	baseCatalog, words = c, c
+	baseCatalog = c
+	words.Store(c)
 }
 
 var (
@@ -94,10 +99,11 @@ var (
 // placeholders filled from args given as name, value pairs. A key the
 // catalog lacks shows as itself, so a missing word is seen, not hidden.
 func T(key string, args ...any) string {
-	if words == nil { // still reading the built-in catalog
+	w := words.Load()
+	if w == nil { // still reading the built-in catalog
 		return key
 	}
-	m, ok := words.Msgs[key]
+	m, ok := w.Msgs[key]
 	if !ok && baseCatalog != nil {
 		if m, ok = baseCatalog.Msgs[key]; !ok {
 			return key
@@ -225,19 +231,19 @@ func (a *App) chooseLocale() {
 	a.langErr = nil
 	id := a.prefs.Lang
 	if id == "" || id == baseCatalog.ID {
-		words = baseCatalog
+		words.Store(baseCatalog)
 		return
 	}
 	e, ok := a.locales[id]
 	switch {
 	case !ok:
 		a.langErr = errors.New(T("lang.err.missing"))
-		words = baseCatalog
+		words.Store(baseCatalog)
 	case e.err != nil:
 		a.langErr = errors.New(T("lang.err.unusable", "id", id, "reason", e.err.Error()))
-		words = baseCatalog
+		words.Store(baseCatalog)
 	default:
-		words = e.cat
+		words.Store(e.cat)
 	}
 }
 

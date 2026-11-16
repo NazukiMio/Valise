@@ -76,8 +76,8 @@ func TestPlaceholdersAndPlural(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	words = c
-	defer func() { words = baseCatalog }()
+	words.Store(c)
+	defer func() { words.Store(baseCatalog) }()
 	if T("servers.agents", "n", 1) != "1 agent" || T("servers.agents", "n", 2) != "2 agents" || T("verdict.none") != "No agents yet" {
 		t.Fatalf("plural or text wrong: %q %q", T("servers.agents", "n", 1), T("servers.agents", "n", 2))
 	}
@@ -117,7 +117,7 @@ func TestImportLocale(t *testing.T) {
 	a.pickFile = func(string, string) (string, error) { return src, nil }
 	a.importLocaleChosen()
 	tt.Frame()
-	defer func() { words = baseCatalog }()
+	defer func() { words.Store(baseCatalog) }()
 	if a.prefs.Lang != "en" || !tt.HasText("2 agents, 2 to look at") || !tt.HasText("正在使用非官方翻译「English」：Valise 没有审核它的措辞 · "+
 		T("lang.missing", "n", len(baseCatalog.Msgs)-1)) {
 		t.Fatalf("not in use: %q %v %q", a.prefs.Lang, a.langErr, tt.Texts())
@@ -126,7 +126,7 @@ func TestImportLocale(t *testing.T) {
 	a.loadLocales()
 	a.chooseLocale()
 	tt.Frame()
-	if words != baseCatalog || !tt.HasText("2 个 Agent，2 件事需要你处理") || a.langErr == nil {
+	if words.Load() != baseCatalog || !tt.HasText("2 个 Agent，2 件事需要你处理") || a.langErr == nil {
 		t.Fatalf("no fallback: %v %q", a.langErr, tt.Texts())
 	}
 }

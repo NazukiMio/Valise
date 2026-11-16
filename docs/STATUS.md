@@ -2,7 +2,7 @@
 
 > 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-16。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前工作与交接（2026-11-16 A/B 槽位剥离 Stage 1–3 全部完成，待真机端到端回归测试）
+## 0. 当前工作与交接（2026-11-16 A/B 槽位剥离 Stage 1–3 与前端整固 Phase F1 完成；Phase F2 待用户审批后开始）
 
 **架构收敛与三阶段剥离完成状态**：
 经 2026-11-15 代码审计与产品复盘，用户已确认**撤销** A/B 双槽位并行运行环境（`linux-bwrap` 容器接管、三档恢复保护模式、独立程序树采集与父子切换状态机）。分支 `refactor/revoke-ab-slots-and-doc-audit` 上三个阶段均已完成、验证并提交：
@@ -25,17 +25,20 @@
 5. **按实例原生终端**（`native.go`、`native_instance.go` 及 `porter` `native --instance <id>`）：保留 `--instance` 直接按 dossier/profile 解析 `native_cli`，去掉 A/B 运行环境守卫。
 6. **快照与档案兼容**：`core/vault/` 与 `tools/standalone-restore/restore.py` 永久保持 `valise-snapshot/1` 与 `/2` 读取兼容；保留旧档案只读兼容逻辑（非 A/B 部分）。
 
+### 前端整固 Phase F1（已完成，2026-11-16，待用户审批）
+
+依据 [UI.md](UI.md) 第 4、7.10/7.11、9.5、11 节与 [DEV_PLAN.md](DEV_PLAN.md) 第 5 项，只改 `client/ui/gui` 与 `client/ui/service` 的一处判断：
+
+1. **全局状态**：`gui/i18n.go` 的当前词表 `words` 改为 `atomic.Pointer[catalog]`（后台 goroutine 调 `T()` 与主线程 `chooseLocale()` 不再竞态）；包级 `confirmations` 收进 `App.confirms`（带锁的实例字段），“现在备份 / 备份一次 / 保存保护计划”仍是一键确认。测试：`gui/concurrency_test.go`（`-race` 下并发 `T()` + `chooseLocale()`；两个 `App` 的确认互不可见、各只生效一次）。
+2. **创建副本**：`gui/restoresetup.go` 只在“迁移”时把原服务器排除出目标列表；切到“创建副本”默认选中原服务器，同机时直接展开目录映射输入区并给一句提示（新词条 `restore.same_server_hint`）。测试：`restore_test.go` `TestCloneOnTheOnlyServer`（单服务器可选中原服务器并发起副本计划）。
+3. **健康页修复的服务器密码**：根因在服务层——`adminTransport` 早已支持 askpass 转交，但 `service/system_fixes_run.go` 的 `adminLoginAvailable` 只看 `NoTerminalLogin`、没看 `canPrompt()`，桌面上没有管理钥匙的密码登录服务器因此拿不到 linger 一键修复（被判成只能手动）。已补 `|| s.canPrompt()`（本阶段唯一的 `service` 改动）。GUI 删除 `fixError` 里“去终端执行 `valise action …`”的退回与 3 个词条 `health.need_password*`；`health.admin_login` 改为同时说明管理口令与服务器密码；UI.md 7.3 一处旧表述同步。
+4. **linger 一键开启**：新文件 `gui/healthsysfix.go`：点击后先 `PlanSystemFix`，确认框直接列出命令、改变的系统设置、撤销办法与需要的管理登录；确认后 `RunSystemFix`（摘要绑定计划），结果分别显示每条命令的退出码与复核结论，未通过时可重试；服务层判为不能代为执行时只说明原因并列出命令。时钟修复与“忽略”不在 GUI 里（v0.2）。
+5. **验证（均为实际运行）**：`gui/healthfix_test.go` 经 fake-ssh（ssh 替身按 OpenSSH 的方式通过 `SSH_ASKPASS` 询问密码）跑通“无管理钥匙 → 窗口弹出服务器密码 → linger 修复 / 需管理登录的 profile 动作执行”，含取消密码后不执行、可重试；撤掉服务层修复后该测试与 `TestAdminLoginAvailableNeedsAPrompt` 均失败。`go test -race ./gui/...`、`go tool mygo vet`、AGENTS.md 第 6 节 5 步自检全部通过；`gui/*.go` 最大 381 行。**未做**：真实 OpenSSH + sshd 靶机上的 askpass 与 `loginctl`（polkit）行为，fake-ssh 不能代替，留给下面的真机闭环。
+
 ### 下一步待办
 
-1. **前端审计整固（Phase F1 → Phase F2，由 Claude 分阶段执行后交回审批）**：
-   - **2026-11-16 前端审计已确认的 4 项设计决定**（详见 [UI.md](UI.md) 第 4、7.4.3、7.10/7.11、9.5 与 11 节及 [DEV_PLAN.md](DEV_PLAN.md)）：
-     1. 保持「现在备份 / 备份一次 / 保存保护计划」在 GUI 中的一键确认体验，同时将全局 `confirmations` 收归 `App` 字段，并消除 `i18n.go` 全局 `words` 的并发读/写竞态；
-     2. GUI 健康页修复动作在无管理钥匙时直接复用 `ServerPassword` askpass 弹窗（不再提示去终端执行 `valise action`），并接入内置 `linger` 一键开启；时钟修复与健康项“忽略（Dismiss）”状态机在 GUI 中归入 `v0.2`；
-     3. GUI“创建副本”目标服务器允许选择并默认选中原服务器（解锁单服务器同机克隆），在自动布局核实前（`v0.2+`）同机直接展开目录映射输入框；
-     4. 遵循“内容语义与视觉排版分离”的三层权宜之计（`docs/UI.md` 7.4.3）：`shell`/`home` 维持现有 `theme.json` 布局校验，其余页面采用“粗粒度区块插槽 + 默认流式回退”、CSS Class 式语义样式函数（`card`/`subPanel`/`cardTitle`/`fact`）与面向 i18n 的弹性宽度令牌。
-   - **Phase F1（优先，v0.1 缺陷修复与功能打通）**：修改 `i18n.go`、`backupnow.go`、`app.go`、`restoresetup.go`、`health.go` 及对应测试；遵守单文件 `<= 400` 行与 `TestNoInterfaceWordsInCode` / `TestCatalogMatchesCode`。
-   - **Phase F2（Phase F1 验收通过后推进，模板化底座与性能收敛）**：修改 `theme.go`、`layout.go`、`themefile.go`、`agent.go`、`journey.go`（弹性宽度令牌、粗粒度区块流式辅助与常用面板语义样式函数），并限制 `installpage.go` 降级文本缓冲上限、按业务域逐步收敛 `App` 字段。
-2. **真机端到端闭环验证与新测试包**：旧 `stage-test-20261114/Valise Test.app` 构建于撤销 A/B 前；需在 Phase F1 落地后重新构建测试包，并在 macOS 桌面 + Linux 靶机上实测「添加服务器 → 接入 → 保护计划 → 手动备份 → 文件/暂存恢复测试 → 原生界面 → 直通恢复/迁移/克隆」。
+1. **Phase F2（等用户审批 Phase F1 后开始；模板化底座与性能收敛）**：修改 `theme.go`、`layout.go`、`themefile.go`、`agent.go`、`journey.go`（弹性宽度令牌、粗粒度区块流式辅助与常用面板语义样式函数），并限制 `installpage.go` 降级文本缓冲上限、按业务域逐步收敛 `App` 字段。2026-11-16 前端审计确认的 4 项设计决定见 [UI.md](UI.md) 第 4、7.4.3、7.10/7.11、9.5 与 11 节。
+2. **真机端到端闭环验证与新测试包**：旧 `stage-test-20261114/Valise Test.app` 构建于撤销 A/B 前；Phase F1 已落地，需重新构建测试包，并在 macOS 桌面 + Linux 靶机上实测「添加服务器 → 接入 → 保护计划 → 手动备份 → 文件/暂存恢复测试 → 原生界面 → 直通恢复/迁移/克隆」。
 3. **合并与后续演进**：真机闭环通过后，将分支 `refactor/revoke-ab-slots-and-doc-audit` 整理合并，并按 `docs/DEV_PLAN.md` 推进 MVP `v0.1` 收口与 5 项用户痛点规划。
 
 ### 必须保留的环境与基线事实

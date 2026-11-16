@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -29,37 +28,34 @@ type backupRun struct {
 	localAt, localEnd time.Time
 }
 
-// confirmations are the plans the person confirmed in this window; the
-// service's review hooks ask here before anything runs.
-var confirmations struct {
-	sync.Mutex
-	ids map[string]bool
-}
-
+// confirm records that the person confirmed planID in this window; the
+// service's review hooks ask confirmed before anything runs.
 func (a *App) confirm(planID string) {
-	confirmations.Lock()
-	defer confirmations.Unlock()
-	if confirmations.ids == nil {
-		confirmations.ids = map[string]bool{}
+	a.confirms.Lock()
+	defer a.confirms.Unlock()
+	if a.confirms.ids == nil {
+		a.confirms.ids = map[string]bool{}
 	}
-	confirmations.ids[planID] = true
+	a.confirms.ids[planID] = true
 }
 
 // confirmed takes a plan's confirmation once.
-func confirmed(planID string) bool {
-	confirmations.Lock()
-	defer confirmations.Unlock()
-	ok := confirmations.ids[planID]
-	delete(confirmations.ids, planID)
+func (a *App) confirmed(planID string) bool {
+	a.confirms.Lock()
+	defer a.confirms.Unlock()
+	ok := a.confirms.ids[planID]
+	delete(a.confirms.ids, planID)
 	return ok
 }
 
 // installReviews makes the window the person who confirms plan changes and
 // backups: only a plan confirmed here goes on.
 func (a *App) installReviews() {
-	a.svc.BackupReview = func(_ context.Context, _ string, p service.BackupPlan) (bool, error) { return confirmed(p.PlanID), nil }
+	a.svc.BackupReview = func(_ context.Context, _ string, p service.BackupPlan) (bool, error) {
+		return a.confirmed(p.PlanID), nil
+	}
 	a.svc.ProtectionReview = func(_ context.Context, _ string, p protection.FrozenChange) (bool, error) {
-		return confirmed(p.PlanID), nil
+		return a.confirmed(p.PlanID), nil
 	}
 }
 

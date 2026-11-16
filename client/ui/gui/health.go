@@ -22,6 +22,7 @@ type healthState struct {
 	err            error
 	at             time.Time
 	fix            *fixState
+	sys            *sysFixState // a fix built into Valise (healthsysfix.go)
 	canTest        bool
 	testReadFailed bool
 }
@@ -102,6 +103,9 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 	if st.fix != nil {
 		a.fixReport(c, row, st)
 	}
+	if st.sys != nil {
+		a.sysFixReport(c, row, st)
+	}
 	if t := a.restoreTest; t != nil && t.server == row.Server && t.instance == row.Instance {
 		a.restoreTestReport(c, t)
 	}
@@ -140,8 +144,8 @@ func (a *App) healthLine(c *ui.Context, row *agentRow, st *healthState, it servi
 				muted(ui.Text(c, it.Text)).FontSize(13).Wrap()
 			}
 		})
-		// Only a declared repair action is offered here; built-in system
-		// fixes are not in the desktop yet, so they are not drawn.
+		// A declared repair action, or the built-in linger fix; the clock
+		// fix is not in the desktop yet, so it is not drawn (docs/UI.md 9.5).
 		if it.ID == "restore_test" {
 			if st.canTest {
 				ui.Button(c, T("restoretest.open")).OnClick(func() { a.openRestoreTest(row) })
@@ -158,6 +162,8 @@ func (a *App) healthLine(c *ui.Context, row *agentRow, st *healthState, it servi
 			}
 		} else if it.ActionID != "" && (st.fix == nil || !st.fix.running) {
 			ui.PrimaryButton(c, it.ActionName).OnClick(func() { a.prepareFix(row, st, it) })
+		} else if it.SystemFix == service.FixLinger && (st.sys == nil || !st.sys.busy()) {
+			ui.PrimaryButton(c, it.ActionName).OnClick(func() { a.prepareSysFix(row, st, it) })
 		}
 	})
 }
@@ -273,15 +279,9 @@ func fixResult(c *ui.Context, f *fixState) {
 	}
 }
 
-// fixError explains a failure; a server-password admin login cannot be
-// passed through the desktop yet (askpass, docs/UI.md 7.3).
+// fixError explains a failure. A login with the server password is asked
+// for in this window (askpass, docs/UI.md 9.5), so nothing sends the person
+// to a terminal.
 func (a *App) fixError(c *ui.Context, row *agentRow, f *fixState) {
-	if ue, ok := valise.As(f.err); ok && ue.Code == "admin_needs_password" {
-		ui.Text(c, T("health.need_password")).Bold().TextColor(palette.Warn)
-		ui.Text(c, T("health.need_password.why")).FontSize(13).Wrap()
-		ui.Text(c, "valise action "+row.Server+" "+row.Instance+" "+f.item.ActionID).FontSize(12).Font(cur.Fonts.Mono).Selectable()
-		muted(ui.Text(c, T("health.need_password.alt", "server", row.Server))).Wrap()
-		return
-	}
 	errorBox(c, f.err, a.fold("fix-err-"+row.Server+row.Instance))
 }

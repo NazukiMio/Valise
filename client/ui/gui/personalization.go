@@ -12,7 +12,7 @@ func (a *App) personalization(c *ui.Context) {
 // Errors stay outside the theme's layout so moving its controls does not
 // let a broken or incomplete theme hide its own diagnostics.
 func (a *App) appearanceWarnings(c *ui.Context) {
-	if a.themeErr == nil && a.langErr == nil && len(cur.Notes) == 0 && !words.Imported {
+	if a.themeErr == nil && a.langErr == nil && len(cur.Notes) == 0 && !words.Load().Imported {
 		return
 	}
 	ui.Column(c).Gap(4).Padding(8, 16).Children(func() {

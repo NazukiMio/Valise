@@ -12,7 +12,7 @@ import (
 
 func (a *App) languageItems(m *ui.Menu) {
 	m.Separator()
-	chosen := words.ID
+	chosen := words.Load().ID
 	if m.Item(T("lang.item", "name", baseCatalog.Name)).Checked(chosen == baseCatalog.ID).Chosen() {
 		a.setLocale("")
 	}
@@ -42,10 +42,10 @@ func (a *App) languageNotes(c *ui.Context) {
 	if a.langErr != nil {
 		ui.Text(c, a.langErr.Error()).FontSize(11).TextColor(palette.Warn).Wrap()
 	}
-	if words.Imported {
-		note := T("lang.unofficial", "name", words.Name)
-		if words.Missing > 0 {
-			note += T("common.dot_sep") + T("lang.missing", "n", words.Missing)
+	if w := words.Load(); w.Imported {
+		note := T("lang.unofficial", "name", w.Name)
+		if w.Missing > 0 {
+			note += T("common.dot_sep") + T("lang.missing", "n", w.Missing)
 		}
 		muted(ui.Text(c, note)).FontSize(11).Wrap()
 	}

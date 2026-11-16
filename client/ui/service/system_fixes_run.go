@@ -97,10 +97,11 @@ func (s *Service) advancedOn(host string) bool { return host != "" && s.Advanced
 
 // adminLoginAvailable mirrors adminTransport: can a fresh admin connection
 // be opened from this frontend without a terminal password prompt it
-// cannot show?
+// cannot show? A frontend that relays OpenSSH's prompt (the desktop's
+// askpass) can show it.
 func (s *Service) adminLoginAvailable(host string) bool {
 	srv := s.server(host)
-	return !srv.Valise() || s.HasAdminKey(host) || srv.Login == config.LoginKey || !s.NoTerminalLogin
+	return !srv.Valise() || s.HasAdminKey(host) || srv.Login == config.LoginKey || !s.NoTerminalLogin || s.canPrompt()
 }
 
 // Command prefixes: none (direct), sudo, or sudo -n (takeover mode).

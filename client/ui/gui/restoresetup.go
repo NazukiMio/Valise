@@ -17,9 +17,12 @@ func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 		ui.RadioGroup(c, func() {
 			for _, m := range []string{revive.ModeRollback, revive.ModeMigrate, revive.ModeClone} {
 				if ui.Radio(c.Key(m), &r.mode, m, T("restore.mode."+m)).Changed() {
-					if m == revive.ModeRollback {
+					// A copy starts on the agent's own server (docs/UI.md
+					// 7.11); only a migration needs another one.
+					switch {
+					case m != revive.ModeMigrate:
 						r.target = r.origin
-					} else if r.target == r.origin {
+					case r.target == r.origin:
 						r.target = ""
 					}
 				}
@@ -48,23 +51,29 @@ func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 		if r.mode == revive.ModeRollback {
 			fact(c, T("restore.target"), r.origin)
 		} else {
-			var hosts []string
-			for _, h := range a.hosts() {
-				if h != r.origin {
-					hosts = append(hosts, h)
-				}
-			}
+			hosts := restoreTargets(a.hosts(), r.origin, r.mode)
 			labeled(c, T("restore.target"), func() { ui.Select(c, &r.target, hosts).Label(T("restore.target")) })
 		}
 		if r.mode == revive.ModeClone {
 			labeled(c, T("restore.copy_id"), func() { ui.TextInput(c, &r.id).Label(T("restore.copy_id")) })
 		}
-		if r.mode != revive.ModeRollback {
+		roots := func() {
+			labeled(c, T("restore.root"), func() {
+				ui.TextArea(c, &r.roots).Height(90).Label(T("restore.root")).Placeholder(T("restore.root_example"))
+			})
+		}
+		switch {
+		case r.mode == revive.ModeRollback:
+		case r.mode == revive.ModeClone && r.target == r.origin:
+			// A copy beside the original needs its own directories, so
+			// the mapping is asked for outright (docs/UI.md 7.11).
+			ui.Text(c, T("restore.path_mapping")).Bold()
+			muted(ui.Text(c, T("restore.same_server_hint"))).Wrap()
+			roots()
+		default:
 			ui.Collapsible(c, T("restore.path_mapping"), a.fold("restore-roots"), func() {
 				muted(ui.Text(c, T("restore.path_hint"))).Wrap()
-				labeled(c, T("restore.root"), func() {
-					ui.TextArea(c, &r.roots).Height(90).Label(T("restore.root")).Placeholder(T("restore.root_example"))
-				})
+				roots()
 			})
 		}
 	})
@@ -72,6 +81,18 @@ func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 	ui.Row(c).Justify(ui.End).Children(func() {
 		ui.PrimaryButton(c, T("restore.view_plan")).OnClick(func() { a.needKey(func() { a.prepareRestore(r) }) })
 	})
+}
+
+// restoreTargets are the servers a restore may go to: a migration leaves
+// the origin, a copy may stay on it.
+func restoreTargets(all []string, origin, mode string) []string {
+	var hosts []string
+	for _, h := range all {
+		if h != origin || mode != revive.ModeMigrate {
+			hosts = append(hosts, h)
+		}
+	}
+	return hosts
 }
 
 func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {

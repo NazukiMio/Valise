@@ -312,3 +312,21 @@ func TestClockFixSkipsRestart(t *testing.T) {
 		t.Fatal(ran(t, home))
 	}
 }
+
+// A frontend without a terminal can open a password management login only
+// when it relays OpenSSH's question (the desktop's askpass); the linger fix
+// is offered there and not where the password cannot be typed.
+func TestAdminLoginAvailableNeedsAPrompt(t *testing.T) {
+	s, _, _ := addVPS(t, "")
+	if !s.adminLoginAvailable("vps") {
+		t.Fatal("a terminal can always ask for the password")
+	}
+	s.NoTerminalLogin = true
+	if s.adminLoginAvailable("vps") {
+		t.Fatal("no terminal and no relay: the password cannot be asked for")
+	}
+	s.PasswordAuth.Prompt = func(string) (string, error) { return "", nil }
+	if !s.adminLoginAvailable("vps") {
+		t.Fatal("the relay can ask for the password")
+	}
+}

@@ -107,6 +107,14 @@ type App struct {
 	restoreTasks    []service.RestoreTask
 	restoreTasksErr error
 	langErr         error // the chosen language could not be used, or an import failed
+
+	// confirms are the plans the person confirmed in this window, taken
+	// once by the service's review hooks (backupnow.go). They belong to
+	// this window only; the hooks read them off the main thread.
+	confirms struct {
+		sync.Mutex
+		ids map[string]bool
+	}
 }
 
 // load is one read and what came of it.
