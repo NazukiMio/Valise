@@ -436,7 +436,11 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if head.Tier == vault.TierRaw {
 		rp.Warnings = append(rp.Warnings, "这是 raw 快照：会带回过期的 pid、锁和心跳文件；服务启动后由健康检查确认是否正常")
 	} else if rp.Files > 0 {
-		rp.Warnings = append(rp.Warnings, "未分类文件（如锁文件）会随凭据层一起恢复；复活前会先停止服务")
+		note := "未分类文件（如锁文件）会随凭据层一起恢复"
+		if plan.Unit != "" { // only a service Valise controls is stopped
+			note += "；复活前会先停止服务"
+		}
+		rp.Warnings = append(rp.Warnings, note)
 	}
 	rp.Plan = plan
 	return rp, nil

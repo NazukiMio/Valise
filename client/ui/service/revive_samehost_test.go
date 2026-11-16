@@ -58,7 +58,7 @@ func TestCloneOnTheSameServer(t *testing.T) {
 		len(p.Roots) != 1 || p.Roots[0].Path != copyDir {
 		t.Fatalf("plan %+v stop %q", p, rp.StopSource)
 	}
-	if w := strings.Join(rp.Warnings, "\n"); !strings.Contains(w, "不启动、不停止任何服务") || !strings.Contains(w, "DEMO_HOME") {
+	if w := strings.Join(rp.Warnings, "\n"); !strings.Contains(w, "不启动、不停止任何服务") || !strings.Contains(w, "DEMO_HOME") || strings.Contains(w, "会先停止服务") {
 		t.Fatalf("the plan does not say the service is left alone: %q", rp.Warnings)
 	}
 	res, err := s.ExecuteReviveConfirmed(ctx, rp, "", proceedConfirm())
