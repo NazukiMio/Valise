@@ -51,9 +51,15 @@
 1. **用户真机端到端验收（阶段 A 测试包已构建，2026-11-16）**：测试包在 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/`，构建自 `2177be0`，内含 `Valise Test.app`、CLI `valise`、`valise-porter_linux_arm64` / `_amd64`、`standalone-restore/`、`SHA256SUMS`、`BUILD.json` 与验收步骤 `TESTING.md`。
    - **打包方式**（没有 `mygo.json`，沿用 11-14 包的做法）：`go build -trimpath -ldflags "-X main.version=… -X valise/client/porter.ReleasePublicKey=$(cat ~/.cache/valise-drill/devpack/key.pub)"` 编出桌面程序与 CLI，放进 `.app` 骨架（`Info.plist`、`PkgInfo`、mygo 终端插件声明的 `libghostty-vt.dylib`，SHA-256 与插件清单一致），整个 `.app` 做 ad hoc 签名；porter 用 `CGO_ENABLED=0` 交叉编译。没有重新生成资料包或钥匙。
    - **已核对（实际运行）**：两个 porter 为静态 ELF（aarch64 / x86-64，`CGO_ENABLED=0`）；四个二进制都带 `stage-test-20261116` 版本号且不含旧版本号；`valise version` 输出新版本；`valise profiles status` 报 2026.11.10 已验签；`codesign --verify --deep --strict` 通过；桌面程序 `-h` 可执行；`SHA256SUMS` 复核全部 OK。
-   - **A/B 入口**：四个二进制里搜不到 `linux-bwrap`、`environment-restore`、`valise/core/environment`、`restore.policy` 等（11-14 包里有 18 处）；CLI 帮助里没有环境相关命令。**残留**：`porter/internal/server/action_conflicts.go` 的加锁名单里还有 `environment_test`、`environment_settings_set` 两个名字，没有处理函数、调用不到，不是入口，待清理（本阶段按要求不改代码）。
-   - **F1/F2 是否在包里**：桌面程序里能找到 `restore.same_server_hint`、`health.sysfix.*`、`install.text_cut` 词条与 `runSysFix`、`tailText.add`、`renderSections`、`restoreTargets` 符号，且找不到已删除的 `health.need_password`；这只说明代码在包里，**没有在真实窗口里操作过**。
-   - **没做**：没有启动窗口、没有部署任何服务器；上一级目录 `valise-porter-test/` 里的同名 porter 仍是 11-14 的版本，没有覆盖（LAB.md 约定那里放最新 porter，是否覆盖等用户决定）。
+   - **A/B 入口**：四个二进制里搜不到 `linux-bwrap`、`environment-restore`、`valise/core/environment`、`restore.policy` 等（11-14 包里有 18 处）；CLI 帮助里没有环境相关命令。**残留**：`porter/internal/server/action_conflicts.go` 的加锁名单里还有 `environment_test`、`environment_settings_set` 两个名字，没有处理函数，实测调用返回 `method not found`，不是入口，待清理（本阶段按要求不改代码）。
+   - **真实运行补证（2026-11-16）**：
+     - 四个二进制的构建来源戳都是 `vcs.revision=2177be0…`、`vcs.modified=false`。
+     - 两个 porter 在真实 Linux 上从临时目录运行（`ubuntu-vm` ARM64、InstaBox x86_64；用完即删，未部署）：`version` 为本版本号、非动态链接、SHA-256 与清单一致、`hello` 握手正常；`environment_settings_set`、`environment_test`、`environment_status`、`environment_restore_prepare` 实测均返回 `method not found`。`ubuntu-vm-x86` 当时连不上。
+     - 打包的 `Valise Test.app` 指向隔离的 fake-ssh 数据目录启动并运行 5 分钟以上，无报错输出，没有自行发起管理登录。
+     - 打包 app 程序的 askpass 转交助手单独运行通过（取回答案；被拒绝时失败退出）。
+     - 打包的 CLI 在同一 fake-ssh 目录上跑通 linger 修复（Valise 接入、无管理钥匙、密码登录）：密码错不执行，密码对则 `loginctl enable-linger` 退出码 0、复核通过。
+     - 同一份代码（`2177be0` 之后只改过 `docs/STATUS.md`）上重跑并通过：`TestCloneOnTheOnlyServer`、`TestHealthLingerFixAsksServerPasswordInWindow`、`TestHealthActionAsksServerPasswordInWindow`、`TestTailTextKeepsTheNewestOutput`、`TestInstallTextFallbackSaysWhenCut` 等。
+   - **没做**：没有在真实窗口里点过界面（操控窗口的授权被用户拒绝），所以“创建副本”页、健康页 linger 确认框与密码弹窗、安装页文本截断在这个包的窗口里没有操作过，依据是来源戳加同一提交上的界面测试；没有部署任何服务器；上一级目录 `valise-porter-test/` 里的同名 porter 仍是 11-14 的版本，没有覆盖（LAB.md 约定那里放最新 porter，是否覆盖等用户决定）。
    - 之后可按页继续把其余内联面板与写死列宽换成语义函数与令牌（非阻塞）。
 2. **真机闭环范围**：在 macOS 桌面 + Linux 靶机上实测「添加服务器 → 接入 → 保护计划 → 手动备份 → 文件/暂存恢复测试 → 健康页 linger 一键开启（密码登录、无管理钥匙）→ 原生界面 → 恢复当前实例 / 迁移 / 同机创建副本」；真实 OpenSSH + sshd 的 askpass 与 `loginctl`（polkit）行为此前只在 fake-ssh 上验证过。
 3. **合并与后续演进**：真机闭环通过后，将分支 `refactor/revoke-ab-slots-and-doc-audit` 整理合并，并按 `docs/DEV_PLAN.md` 推进 MVP `v0.1` 收口与 5 项用户痛点规划。
