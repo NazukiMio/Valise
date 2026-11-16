@@ -114,6 +114,7 @@ var ownerMethods = map[string]bool{
 	"server_rename":         true,
 	"agent_label_set":       true,
 	"target_set":            true,
+	"target_remove":         true,
 	"period_set":            true,
 	"timer_set":             true,
 	"protection_apply":      true,

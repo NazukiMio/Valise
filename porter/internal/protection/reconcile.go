@@ -9,6 +9,7 @@ import (
 
 	"valise/core/enroll"
 	cp "valise/core/protection"
+	"valise/core/valise"
 	"valise/porter/internal/seal"
 )
 
@@ -38,6 +39,57 @@ func (s Store) WithLegacyTargetsWrite(name string, run func() error) error {
 	defer unlock()
 	if err = s.CheckLegacyTargetsWrite(name); err != nil {
 		return err
+	}
+	return run()
+}
+
+// WithTargetRemove holds the same lock while a copy location is forgotten.
+// A location a plan in force copies to stays: forgetting it would silently
+// change that plan. A plan of an earlier generation (the agent was enrolled
+// again) is not in force and does not keep its locations. While any plan
+// transaction is unfinished nothing is removed.
+func (s Store) WithTargetRemove(ctx context.Context, name string, run func() error) error {
+	unlock, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := s.CheckPending(""); err != nil {
+		return err
+	}
+	if err := s.checkUnfinished(); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(filepath.Join(s.config(), "protection"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		plan, err := s.load(strings.TrimSuffix(e.Name(), ".json"))
+		if err != nil {
+			return err
+		}
+		if plan == nil {
+			continue
+		}
+		for _, c := range plan.ServerCopies {
+			if c.TargetRef.ID != name {
+				continue
+			}
+			// Only a plan known to be an earlier generation's lets go.
+			verr := s.validate(ctx, plan.AgentRef)
+			if ue, ok := valise.As(verr); ok && ue.Code == "identity_conflict" {
+				continue
+			}
+			if verr != nil {
+				return verr
+			}
+			return valise.New("target_in_use", "备份位置 "+name+" 正被 "+plan.AgentRef.InstanceID+" 的保护计划使用，没有移除",
+				"先在这个 Agent 的保护计划里取消这个位置，再移除")
+		}
 	}
 	return run()
 }

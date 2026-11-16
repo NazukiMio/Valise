@@ -119,9 +119,32 @@ func TestAgentsOnServer(t *testing.T) {
 	tt.Frame()
 	hasAll(t, tt.Texts(), "这台服务器上的 Agent", "找到了认识的 Agent", "OpenClaw", "找到 4 个文件，已按资料归类；2 个文件用途尚未识别，默认按敏感内容保留",
 		"逐项改归类", "确认接入", "怎么为它写一份资料 ›", "重新扫描")
+	// Installing stays offered under the agents found, as another one,
+	// never as "there is no agent here".
+	hasAll(t, tt.Texts(), T("onserver.more_title"), T("onserver.more_sub"), "安装 OpenClaw", "官方安装方案 · 约 3 分钟 · 需要 node >=22")
 	if tt.HasText("这台服务器上还没有 Agent") {
-		t.Error("install offered although an agent was found")
+		t.Error("an agent was found and the page says there is none")
 	}
+	found, _ := tt.Find("找到了认识的 Agent")
+	more, _ := tt.Find(T("onserver.more_title"))
+	if more.Y <= found.Y {
+		t.Errorf("the install block is not under the agents: %v above %v", more.Y, found.Y)
+	}
+	// With nothing installable there is no empty block beside the agents.
+	plans := a.installable
+	a.installable = nil
+	tt.Frame()
+	if tt.HasText(T("onserver.more_title")) || tt.HasText(T("onserver.no_plans")) {
+		t.Error("an empty install block beside found agents")
+	}
+	a.installable = plans
+	tt.Frame()
+	click(t, tt, "安装 OpenClaw")
+	if a.router.Path() != "/servers/lab/install/openclaw" {
+		t.Fatalf("install beside a found agent went to %s", a.router.Path())
+	}
+	a.router.Push("/servers/lab/agents")
+	tt.Frame()
 	if got := assignRule("state:plugins/", "config"); got != "state:plugins/**=config" {
 		t.Errorf("assign %q", got)
 	}

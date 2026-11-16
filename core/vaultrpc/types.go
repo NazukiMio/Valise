@@ -17,6 +17,11 @@ const (
 	MethodVerify       = "vault_verify"
 	MethodFiles        = "vault_files"
 	MethodTargetSet    = "target_set"
+	// MethodTargetRemove forgets a copy location on the server: its line
+	// in targets.json and its sync state, never the files saved there
+	// (docs/ARCHITECTURE.md section 7; capability TargetRemoveCapability).
+	// A location a plan in force copies to is refused.
+	MethodTargetRemove = "target_remove"
 	// MethodTargetCheck tests a copy location from the server, read-only
 	// (contracts 16.G3; capability CopyCheckCapability).
 	MethodTargetCheck = "target_check"
@@ -408,6 +413,14 @@ const (
 	SealStagePack   = "pack"
 	SealStageCommit = "commit"
 )
+
+// TargetRemoveCapability marks a porter with MethodTargetRemove.
+const TargetRemoveCapability = "target-remove/1"
+
+// TargetRemoveParams names the copy location to forget.
+type TargetRemoveParams struct {
+	Name string `json:"name"`
+}
 
 // Cloud drives (docs/ARCHITECTURE.md 7.3; capability CloudCapability).
 const (

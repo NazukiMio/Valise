@@ -250,6 +250,16 @@ func (c *cli) target(ctx context.Context, args []string) error {
 		return c.targetDelete(ctx, args[1:])
 	case "auto":
 		return c.targetAuto(ctx, args[1:])
+	case "remove":
+		pos, err := parseArgs(flag.NewFlagSet("target remove", flag.ContinueOnError), args[1:], 2)
+		if err != nil {
+			return errUsage
+		}
+		if err := c.svc.TargetRemove(ctx, pos[0], pos[1]); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.out, "已从 %s 上移除备份位置 %s 的记录；它上面已有的备份没有删除。\n", pos[0], pos[1])
+		return nil
 	case "add":
 	default:
 		return errUsage

@@ -2,7 +2,7 @@
 
 > 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-16。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前工作与交接（2026-11-16 `debian-vm` 真机首轮实测反馈已定稿并更新规范；待分 Phase B1 / B2 修复后重打测试包闭环）
+## 0. 当前工作与交接（2026-11-16 Phase B1 已完成并重打测试包 `stage-test-20261116-b1`，待用户真机验收与审批；之后 Phase B2）
 
 **架构收敛与三阶段剥离完成状态**：
 经 2026-11-15 代码审计与产品复盘，用户已确认**撤销** A/B 双槽位并行运行环境（`linux-bwrap` 容器接管、三档恢复保护模式、独立程序树采集与父子切换状态机）。分支 `refactor/revoke-ab-slots-and-doc-audit` 上三个阶段均已完成、验证并提交：
@@ -50,12 +50,30 @@
 
 1. **真机首轮实测修复与口令体验简化（Phase B1 → Phase B2，2026-11-16 用户已在规范层面确认并定稿）**：
    - 用户在真实 `debian-vm` 靶机（`openclaw`）使用 `stage-test-20261116` 包实测发现 5 个阻塞/体验问题，相关规范已同步至 `AGENTS.md`（3、7.1）、`ARCHITECTURE.md`（2.1、2.2、3、3.3、7）、`INSTALL.md`（2、4.1、4.2）、`UI.md`（7.5、7.8、7.9、8、9.3、9.7、13）与 `DEV_PLAN.md`（第 6 项）：
-     - **Phase B1（5 项真机 Bug 修复）**：
-       1. `gui/protect.go` `desired()` 过滤 `SupersededPlan.ServerCopies` 时 `var keep []protection.ServerCopy` 为 `nil` 切片，导致无副本时“按原设置重新生效”或改计划报 `request_invalid（缺少服务器副本完整设置）`；改用非 nil 空切片并兜底；
-       2. 服务器残留失效远程目标无法清除：`porter` 新增 `target_remove`（主人操作，`WithLegacyTargetsWrite` 检查未被当前生效计划引用后从 `targets.json` 删除，不删远端文件），并在 `gui/locdetail.go` 对 `station` 与 `ssh` 统一开放“移除…”（`StationRemove` / `TargetRemove`）；
-       3. 原生界面慢/断联与仅引导命令退出：`service/gate.go` `RequireGate` 优先检查本机仓库（满足即放行，不连带卡在失效远程目标上）；`porter/internal/install/native.go` 与 `service/native_instance.go` 支持 `native --instance <id> --shell` 实例交互终端；`gui/native.go` 提供“引导/默认命令”和“打开实例交互终端”并列入口，并在退出/断开后于终端卡片顶部直接提供“重新连接”、“改用交互终端”与“返回准备页”；
-       4. `gui/onserver.go` 去掉 `if len(sc.found) == 0` 限制，服务器上已有 Agent 时下方仍保留“安装新的 Agent / 官方安装方案”区块；
-       5. 注：实测机已有 linger 时如需验证“开启 linger”，可在服务器执行 `sudo loginctl disable-linger $USER` 后在健康页点重新检查复现。
+     - **Phase B1（已完成，2026-11-16，单个提交，待用户审批；porter 一侧已在 `debian-vm` 实测；测试包已重打为 `stage-test-20261116-b1`，界面的真机验收由用户进行，尚无结果）**：
+       1. **按原设置重新生效**：`gui/protectdesired.go`（从 `protect.go` 拆出 `desired()`）里过滤旧世代计划的副本改用非 nil 空切片，新增 `sayCopies` 在 `desired()` 的生效计划分支与 `applyDesired()` 提交前兜底，请求里始终是 `"server_copies":[]`。测试：`gui/protectdesired_test.go`（副本全属其他服务器 / 为空 / 缺失三种情况下，原样与改过时间的计划都通过 `Validate()`）。
+       2. **移除远程备份目标**：
+          - `core/vaultrpc` 新增 `target_remove`（`TargetRemoveParams`、能力 `target-remove/1`），`core/rpc/tier.go` 归入主人操作。
+          - porter：`protection.Store.WithTargetRemove` 持同一把锁；有未完成的计划事务时不动；目标被**生效中**的计划引用时以 `target_in_use` 拒绝并提示先在保护计划里取消；只被旧世代计划引用（身份核实返回 `identity_conflict`）或无引用时放行；世代判断不了时保守拒绝。`seal.RemoveTarget` 只删 `targets.json` 里的记录与同步状态并写审计，不碰远端文件，也不删云盘登录（那是 `cloud_forget`）；目标已不存在视为完成。
+          - 客户端：`service.TargetRemove`；`gui/locverify.go` 的 `removeLocation` 对 `station` 与 `ssh` 先逐台服务器 `target_remove`、再删本机记录（服务器拒绝则整体停下，本机记录不动）；`gui/locdetail.go` 对所有位置开放“移除…”（新词条 `loc.remove_what.ssh`，`loc.remove_what.station` 补一句）。
+          - 测试：`porter/internal/protection/targetremove_test.go`、`service/target_remove_test.go`（fake-ssh）、`gui/locremove_test.go`（弹窗 + fake-ssh 全链路：移除后服务器状态里不再出现，被计划引用的保留并显示服务器给的原因）。
+          - CLI 与 TUI：`valise target remove <服务器> <名称>`（`station remove` 的提示改为指向它）；TUI 备份位置页按 `x` 移除当前位置（`tui/cloud_remove.go`：确认页写明删什么、留什么；云盘走 `cloud_forget`，其余走 `target_remove`，Valise 管理的位置再删本机记录）。测试：`cmd/valise` `TestCLITargetRemoveAndNativeShellUsage`、`tui/cloud_remove_test.go`（fake-ssh）。
+          - **限制**：GUI 与 TUI 都只对本次已读到状态、且状态里有这个位置的服务器调用 `target_remove`（TUI 先当前服务器、再其余已读到的）；这次没读到的服务器上的记录会留着，确认页写明了这一点。旧 porter 没有 `target-remove/1` 时客户端报“尚不支持这项能力”。
+       3. **原生界面**：
+          - `service/gate.go`：`AdvancedGate` 先只看本机仓库（不建连接）；每个受检实例在本机仓库里都有可恢复的备份时直接放行，不再让服务器列出远程目标（备份偏旧也一样放行，只是照常给出“偏旧”提醒，提醒的措辞改为只说被核对的那个位置，不再说“放在别处的最新备份”）。只有本机仓库不满足时才去列远程目标。测试：`TestGateDoesNotAskCopyLocationsWhenARepositoryHasThePod`（不可达目标 + 本机有备份 → 没有去列目标，备份偏旧时同样）。
+          - `native --instance <id> --shell`：`porter/internal/install/native.go` 的 `NativeCommand` 增加 shell 方式，仍要求实例已接入、未被取代且资料声明了原生界面；按 `ForInstance` 的环境把用户自己的 `$SHELL` 作为**登录交互 shell** 启动：POSIX shell（sh/bash/zsh/dash/ksh/ash）先跑登录 profile，再把实例的命令目录放回 PATH 最前（`/etc/profile` 会重置 PATH），然后进入交互；fish 用 `-l -i`；其他 shell 用 `-i`。命令是固定的，不接受请求传入的命令。`NativeInfo` 新增 `shell` 字段由新 porter 置真；`service.InstanceNativeCommand` / `RunInstanceNative` 增加 `NativeMode`，命令行由 `nativeLine` 固定拼出。测试：`porter/internal/install/native_shell_test.go`（各 shell 的固定命令）、`TestInstanceShellCarriesTheInstanceEnvironment`（命令行构建、实例名加引号；fake-ssh 下用真实 `/bin/sh` 跑：登录 profile 之后资料的命令目录仍在 PATH 最前，且是交互模式）。
+          - `gui/native.go`：准备页并列“连接原生界面（引导 / 默认命令）”与“打开实例交互终端（Shell）”（后者只在 porter 声明支持时画）；会话结束或断开后页面显示该会话，顶部状态栏给“重新连接”、另一种入口（原生界面结束后是“改用交互终端”，交互终端结束后是“改用原生界面”）与“返回准备页”，两种入口在准备页和结束后的视图里都够得着（需要先备份的情况仍走原来的确认）。测试：`TestNativeEntriesAndReconnectAfterExit`。
+          - CLI：`valise native <服务器> --instance <id> --shell`（只能与 `--instance` 同用）。**未验证**：真实 PTY 与真实 shell 的行为。
+       4. **已有 Agent 时保留安装入口**：`gui/onserver.go` 的 `installTiles` 在找到 Agent 时改以“安装新的 Agent”区块排在列表下方（新词条 `onserver.more_title` / `onserver.more_sub`；没有可装的 harness 时不画空区块）。测试：`TestAgentsOnServer` 更新。
+       5. **验证（均为实际运行）**：AGENTS.md 第 6 节 5 步自检、`go tool mygo vet`、`go test -race ./gui/...` 全部通过；`gui/*.go` 与 `tui/*.go` 没有超过 400 行的文件。
+       6. **`debian-vm` 真机实测（2026-11-16，只测 porter 一侧）**：把当前代码编出的 `linux/arm64` porter 放进靶机 `/tmp` 临时目录运行，用完即删，没有部署、没有改动 `~/.local/bin` 与用户的 `targets.json`。
+          - 靶机地址已从 LAB.md 记的 `10.211.55.6` 变为 `10.211.55.7`（DHCP）；连接时用原已信任的主机密钥核对身份（`HostKeyAlias`），没有接受新密钥。LAB.md 与 `~/.ssh/config` 没有改，等用户决定。
+          - `version --json` 声明了 `target-remove/1`。
+          - `target_remove`：在一次性的空 HOME 里 `target_set` 两个位置后移除其一，`targets.json` 只剩另一个；再移除一次返回成功；非法名字返回 `target_name_invalid`；审计写了 1 条。“被生效计划引用时拒绝”没有在真机上测（只在单元与 fake-ssh 测试里）。
+          - `native --instance openclaw-test --shell`（真实接入的命名实例，登录 shell 为 `/bin/bash`，用标准输入代替键盘）：`OPENCLAW_STATE_DIR=/home/parallels/.openclaw-test`，`openclaw` 解析到 `~/.openclaw/bin/openclaw`，PATH 最前是 `~/.openclaw/bin` 与 `~/.openclaw/tools/node/bin`，是交互模式，交接用的环境变量没有漏进 shell，退出码 0；多给一个参数时按用法拒绝（退出码 2）。
+          - **如实说明**：这个 shell 是“先以登录方式载入 profile，再进入交互 shell”，所以最终的 bash 进程自身不带登录标志（`shopt login_shell` 为 off），`~/.bash_logout` 不会执行；这样做是为了登录 profile 重置 PATH 之后仍能把实例的命令目录放回最前。
+          - **没在真机上测的**：GUI/TUI 的任何界面（重新生效、位置移除弹窗、原生界面两个入口与重连、安装入口）、真实 PTY、门槛提速、保护计划对移除的拦截。测试包已重打（见“当前用户构建”），界面由用户在真机上验收。
+       7. 注：实测机已有 linger 时如需验证“开启 linger”，可在服务器执行 `sudo loginctl disable-linger $USER` 后在健康页点重新检查复现。
      - **Phase B2（单一 Valise 主口令统管与联动解锁）**：
        1. 默认解锁窗口从 15 分钟延长至 **60 分钟**（设置 1–240 分钟可调）；
        2. `service/gate.go` 对 `repo-trial.json` 中已有试解验证记录的本机仓库，后续新快照只需通过免私钥 `vault.VerifyNoKey` 即可放行，不再反复弹 Valise 口令；
@@ -72,7 +90,7 @@
 
 ### 必须保留的环境与基线事实
 
-- **当前用户构建**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/Valise Test.app`（`0.0.0-dev+stage-test-20261116`，构建自 `65d2eb6`，A/B 已剥离，含 Phase F1/F2 与同机创建副本支持）。更新测试服务器的 porter 时选同目录的 `valise-porter_linux_arm64`（ubuntu-vm / debian-vm）或 `valise-porter_linux_amd64`（ubuntu-vm-x86）。上一个包 `stage-test-20261114` 构建于撤销 A/B 之前，不再使用。
+- **当前用户构建**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116-b1/Valise Test.app`（`0.0.0-dev+stage-test-20261116-b1`，构建自 Phase B1 提交，哈希见同目录 `BUILD.json`；2026-11-16 用户决定由自己验收）。验收步骤在同目录 `TESTING.md`：先在服务器设置里把靶机 porter 更新为同目录的 `valise-porter_linux_arm64`（`debian-vm`；x86 用 `_amd64`），再依次验收 B1 四项。上一个包 `stage-test-20261116`（`65d2eb6`）原样保留，不含 B1。
 - **默认资料包与演练公钥**：默认资料包为 `2026.11.10`（OpenClaw 22、Hermes 11）；默认配置公钥 `~/.cache/valise-drill/devpack/key.pub`，演练配置公钥 `~/.cache/valise-drill/drillpack/key.pub`，不得混用或覆盖。
 - **构建环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；禁止执行 `rm -f`（用 `git rm` 或 `t.TempDir()`）；禁止自动 `git push`。
 - **原基线**：分叉前分支 `n2-agent-protection-journey` 位于 `f243bcf`（含 `07d7952`、`4bdd0fb`、`3e9f124`、`4d890c2`、`f243bcf`）；工作树中的 `references/` 与 `.DS_Store` 保留不提交。

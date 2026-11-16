@@ -98,29 +98,6 @@ func (a *App) readProt(host string, ps *protState) {
 	})
 }
 
-// desired is the plan in force, or a starting point when there is none.
-func (ps *protState) desired() protection.Desired {
-	if ps.view != nil && ps.view.ServerPlan != nil {
-		return ps.view.ServerPlan.Desired
-	}
-	if ps.view != nil && ps.view.SupersededPlan != nil && ps.ref != nil {
-		// The earlier generation's plan is the starting point; copies to
-		// another server's targets are left for the person to add again.
-		d := ps.view.SupersededPlan.Desired
-		var keep []protection.ServerCopy
-		for _, cp := range d.ServerCopies {
-			if cp.TargetRef.AuthorityID == ps.ref.ServerUID {
-				keep = append(keep, cp)
-			}
-		}
-		d.ServerCopies = keep
-		return d
-	}
-	d := protection.NewDefault()
-	d.Period = protection.Period{Unit: "month", Timezone: localZone()}
-	return d
-}
-
 func (a *App) manageTab(c *ui.Context, row *agentRow) {
 	ps := a.protOf(row)
 	if ps.ref == nil {
@@ -346,6 +323,7 @@ func (a *App) applyDesired(row *agentRow, ps *protState, d protection.Desired) {
 	case ps.view.SupersededPlan != nil:
 		rev = ps.view.SupersededPlan.Revision
 	}
+	d = sayCopies(d)
 	host, ref := row.Server, *ps.ref
 	a.start(&ps.changeJ, 5*time.Minute, func(ctx context.Context) error {
 		a.says(&ps.changeJ)(T("protect.preparing"))

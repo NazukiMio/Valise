@@ -29,7 +29,7 @@ func (c *cli) station(ctx context.Context, args []string) error {
 		if err := c.svc.StationRemove(args[1]); err != nil {
 			return err
 		}
-		fmt.Fprintf(c.out, "已从这台电脑上移除远程备份位置 %s；远程备份位置上的备份、服务器上的记录都没有删除。\n", args[1])
+		fmt.Fprintf(c.out, "已从这台电脑上移除远程备份位置 %s；远程备份位置上的备份没有删除。服务器上指向它的记录还在，用 valise target remove <服务器> %s 移除。\n", args[1], args[1])
 		return nil
 	}
 	return errUsage

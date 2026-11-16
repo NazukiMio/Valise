@@ -219,6 +219,32 @@ func SetTarget(p Paths, t vaultrpc.Target) error {
 	return writeAtomic(p.Targets(), append(b, '\n'), 0o600)
 }
 
+// RemoveTarget forgets a copy location: its line in targets.json and its
+// sync state. The files saved there are not touched, and a cloud drive's
+// login stays (CloudForget removes that). A location already gone is done.
+// The caller holds the plans' lock (protection.Store.WithTargetRemove).
+func RemoveTarget(p Paths, name, initiator string) error {
+	if !targetNameRe.MatchString(name) {
+		return valise.New("target_name_invalid", "备份位置名无效："+name, "")
+	}
+	ts, err := readTargets(p)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, t := range ts {
+		found = found || t.Name == name
+	}
+	if !found {
+		return nil
+	}
+	if err := removeTargetEntry(p, name); err != nil {
+		return err
+	}
+	p.AppendAudit(AuditEntry{Time: time.Now().UTC(), Op: "target_remove", Initiator: initiator, Target: name, Result: "ok"})
+	return nil
+}
+
 // CheckTarget logs in to a copy location from this server and lists its
 // folder without recursing or writing (contracts 16.G3). A failed login is a result,
 // not an error. Valise-managed locations keep their own certificate probe.

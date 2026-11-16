@@ -14,4 +14,8 @@ type NativeInfo struct {
 	ProfileID  string   `json:"profile_id"`
 	Argv       []string `json:"argv"`
 	Hints      []string `json:"hints,omitempty"`
+	// Shell: this porter can also open the instance's interactive shell
+	// (`native --instance <id> --shell`): the user's own shell with the
+	// instance's environment and command path, no command from a request.
+	Shell bool `json:"shell,omitempty"`
 }

@@ -49,9 +49,7 @@ func (a *App) locationPage(c *ui.Context, name string) {
 			muted(ui.Text(c, a.locLine(l, c.Now()))).Wrap()
 		})
 		a.syncButton(c, l)
-		if l.Kind != locSSH { // the server's own SSH hosts are removed on the server
-			ui.Button(c, T("loc.remove_open")).OnClick(func() { ls.remove, ls.removeJ = l.Name, job{} })
-		}
+		ui.Button(c, T("loc.remove_open")).OnClick(func() { ls.remove, ls.removeJ = l.Name, job{} })
 	})
 	card(ui.Column(c)).Gap(8).Children(func() { a.syncResult(c, l) })
 	hosts := a.locHosts(l)

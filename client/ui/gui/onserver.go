@@ -94,9 +94,9 @@ func (a *App) onServerPage(c *ui.Context, host string) {
 		})
 		ui.Link(c, T("onserver.guide"), guideURL)
 	})
-	if len(sc.found) == 0 {
-		a.installTiles(c, host)
-	}
+	// Installing stays offered beside agents already found: another
+	// harness can be installed, or the first one (docs/UI.md 7.5).
+	a.installTiles(c, host, len(sc.found) == 0)
 }
 
 func section(c *ui.Context, title string) {
@@ -274,10 +274,19 @@ func idOf(label string) string {
 	return ""
 }
 
-// installTiles offer the harnesses with an official install plan.
-func (a *App) installTiles(c *ui.Context, host string) {
-	section(c, T("onserver.none_title"))
-	muted(ui.Text(c, T("onserver.none_sub"))).FontSize(13).Wrap()
+// installTiles offer the harnesses with an official install plan: as the
+// way to a first agent on an empty server, or under the agents found as a
+// way to another one.
+func (a *App) installTiles(c *ui.Context, host string, first bool) {
+	if !first && len(a.installable) == 0 {
+		return // nothing to offer beside the agents
+	}
+	title, sub := T("onserver.more_title"), T("onserver.more_sub")
+	if first {
+		title, sub = T("onserver.none_title"), T("onserver.none_sub")
+	}
+	section(c, title)
+	muted(ui.Text(c, sub)).FontSize(13).Wrap()
 	if len(a.installable) == 0 {
 		muted(ui.Text(c, T("onserver.no_plans")))
 		return

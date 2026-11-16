@@ -24,6 +24,7 @@ type nativeRun struct {
 	server, instance string
 	term             *terminal.Terminal
 	conn             *installConn
+	mode             service.NativeMode // the native CLI, or the instance's shell
 	running, stopped bool
 	acceptRisk       bool
 	cancel           context.CancelFunc
@@ -98,13 +99,10 @@ func (a *App) nativePage(c *ui.Context, server, instance string) {
 		return
 	}
 	if r != nil && r.server == server && r.instance == instance {
-		a.nativeRunView(c, r)
-		if r.running {
-			return
-		}
-		if e, ok := valise.As(r.err); ok && e.Code == service.GateCode {
-			return
-		}
+		// A session, live or ended, is the page; the way back to the
+		// entries is in its top bar.
+		a.nativeRunView(c, r, n.info)
+		return
 	}
 	if n.info == nil || len(n.info.Argv) == 0 {
 		return
@@ -115,22 +113,30 @@ func (a *App) nativePage(c *ui.Context, server, instance string) {
 			ui.Text(c, hint).Wrap()
 		}
 		ui.Collapsible(c, T("native.command"), a.fold("native-command"), func() { mono(ui.Text(c, strings.Join(n.info.Argv, " "))).Wrap() })
-		ui.Row(c).Children(func() { ui.PrimaryButton(c, T("native.connect")).OnClick(func() { a.startNative(server, instance) }) })
+		ui.Row(c).Gap(8).Children(func() {
+			ui.PrimaryButton(c, T("native.connect")).OnClick(func() { a.startNative(server, instance, service.NativeCLI) })
+			if n.info.Shell { // only a porter that can open it
+				ui.Button(c, T("native.shell")).OnClick(func() { a.startNative(server, instance, service.NativeShell) })
+			}
+		})
+		if n.info.Shell {
+			muted(ui.Text(c, T("native.shell_hint"))).Wrap()
+		}
 	})
 }
 
-func (a *App) startNative(server, instance string) {
-	a.startNativeAccepted(server, instance, false)
+func (a *App) startNative(server, instance string, mode service.NativeMode) {
+	a.startNativeAccepted(server, instance, mode, false)
 }
 
-func (a *App) startNativeAccepted(server, instance string, acceptRisk bool) {
+func (a *App) startNativeAccepted(server, instance string, mode service.NativeMode, acceptRisk bool) {
 	if a.native != nil && a.native.running {
 		return
 	}
 	if a.native != nil && a.native.term != nil {
 		_ = a.native.term.Close()
 	}
-	r := &nativeRun{server: server, instance: instance, code: -1}
+	r := &nativeRun{server: server, instance: instance, mode: mode, code: -1}
 	a.native = r
 	conn := newInstallConn()
 	r.conn = conn
@@ -148,7 +154,7 @@ func (a *App) startNativeAccepted(server, instance string, acceptRisk bool) {
 	}
 	r.cancel, r.running = cancel, true
 	a.run(func() {
-		code, err := a.svc.RunInstanceNative(ctx, server, instance, service.NativeIO{Stdin: conn.in, Stdout: conn.outW, Stderr: conn.outW})
+		code, err := a.svc.RunInstanceNative(ctx, server, instance, mode, service.NativeIO{Stdin: conn.in, Stdout: conn.outW, Stderr: conn.outW})
 		conn.Close()
 		cancel()
 		a.update(func() {
@@ -173,28 +179,51 @@ func (a *App) stopNative(r *nativeRun) {
 	}
 }
 
-func (a *App) nativeRunView(c *ui.Context, r *nativeRun) {
+// nativeRunView is one session. While it runs the top bar ends it; once
+// the remote program exited or the connection dropped, the bar itself
+// offers what comes next, so an ended terminal never blocks the page.
+func (a *App) nativeRunView(c *ui.Context, r *nativeRun, info *install.NativeInfo) {
+	gated := false
+	if e, ok := valise.As(r.err); ok && e.Code == service.GateCode {
+		gated = true
+	}
 	card(ui.Column(c)).Gap(10).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			if r.running {
+			switch {
+			case r.running:
 				ui.Text(c, T("native.running")).Grow(1)
 				ui.Button(c, T("native.disconnect")).OnClick(func() { a.stopNative(r) })
-			} else if r.stopped {
-				ui.Text(c, T("native.disconnected"))
-			} else if r.code >= 0 {
-				ui.Text(c, T("native.exited", "code", r.code))
+				return
+			case r.stopped:
+				ui.Text(c, T("native.disconnected")).Grow(1)
+			case r.code >= 0:
+				ui.Text(c, T("native.exited", "code", r.code)).Grow(1)
+			default:
+				ui.Text(c, T("native.not_started")).Grow(1)
 			}
+			if !gated { // the backup choice below is that case's way on
+				ui.PrimaryButton(c, T("native.reconnect")).OnClick(func() { a.startNative(r.server, r.instance, r.mode) })
+				// The other entry, so both are at hand here as on the
+				// prepare page.
+				switch {
+				case r.mode == service.NativeShell:
+					ui.Button(c, T("native.use_cli")).OnClick(func() { a.startNative(r.server, r.instance, service.NativeCLI) })
+				case info != nil && info.Shell:
+					ui.Button(c, T("native.use_shell")).OnClick(func() { a.startNative(r.server, r.instance, service.NativeShell) })
+				}
+			}
+			ui.Button(c, T("native.to_prepare")).OnClick(func() { a.closeNative(r) })
 		})
 		if r.term != nil {
 			terminal.View(c, r.term).Height(360).AutoFocus()
 		}
 		if r.err != nil {
-			if e, ok := valise.As(r.err); ok && e.Code == service.GateCode {
+			if gated {
 				ui.Text(c, T("native.backup_needed")).Wrap()
 				ui.Button(c, T("native.go_backup")).OnClick(func() { a.openAgent(r.server, r.instance); a.agentTab = tabManage })
 				ui.Checkbox(c, &r.acceptRisk, T("native.accept_risk"))
 				if r.acceptRisk {
-					ui.Button(c, T("native.continue_once")).OnClick(func() { a.startNativeAccepted(r.server, r.instance, true) })
+					ui.Button(c, T("native.continue_once")).OnClick(func() { a.startNativeAccepted(r.server, r.instance, r.mode, true) })
 				}
 			} else {
 				errorBox(c, r.err, a.fold("native-run-error"))
@@ -204,6 +233,17 @@ func (a *App) nativeRunView(c *ui.Context, r *nativeRun) {
 			muted(ui.Text(c, T("native.result_hint"))).Wrap()
 		}
 	})
+}
+
+// closeNative lets go of an ended session and shows the entries again.
+func (a *App) closeNative(r *nativeRun) {
+	if r.running || a.native != r {
+		return
+	}
+	if r.term != nil {
+		_ = r.term.Close()
+	}
+	a.native = nil
 }
 
 func (a *App) nativeBanner(c *ui.Context) {

@@ -67,6 +67,15 @@ func (s *Service) TargetSet(ctx context.Context, host string, t vaultrpc.Target)
 	})
 }
 
+// TargetRemove forgets a copy location on host: the server's record of it
+// and its sync state. What is saved there stays. The server refuses while
+// a protection plan in force copies to it (docs/ARCHITECTURE.md section 7).
+func (s *Service) TargetRemove(ctx context.Context, host, name string) error {
+	return s.withSession(ctx, host, func(c caller) error {
+		return c.Call(ctx, vaultrpc.MethodTargetRemove, vaultrpc.TargetRemoveParams{Name: name}, nil)
+	})
+}
+
 // Sync copies host's vault to one of its targets, then compares the copied
 // periods with the server's lists (recorded; see CopyEvidenceFor).
 func (s *Service) Sync(ctx context.Context, host, target string) (*TargetSyncResult, error) {

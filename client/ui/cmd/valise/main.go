@@ -28,7 +28,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
 开始使用与日常管理
   install <服务器> --profile <id> [--show-script] [--yes] [--advanced] [--with <可选步骤 id>]...
                                                  按官方方案安装 harness：先检测依赖、核对脚本哈希并展示，确认后在交互终端里执行
-  native <服务器> --instance <id>                   打开 harness 自己的原生界面（独立的管理连接）
+  native <服务器> --instance <id> [--shell]         打开 harness 自己的原生界面（独立的管理连接）；--shell 改为按这个 Agent 的环境打开你自己的交互终端
   enroll <服务器> [--profile id] [--name 命名实例] [--id 实例] [--assign root:glob=类别]... [--report-json] [--accept]
                                                  登记 agent：展示登记报告，加 --accept 才写入实例记录
   tui                                            终端界面：服务器、agent、备份、健康、管理页、登录授权、设置
@@ -66,6 +66,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
                                                  核对一个周期在服务器、备份位置与本机仓库的副本（--packs 连数据包内容一起核对）
   vault delete <服务器> <周期> [--skip 位置,…] [--yes]  删除服务器上一整个已结束的周期（先核对其他各处副本；--skip 跳过的位置按未核对处理）
   target add <服务器> <名称> --rsync <主机:路径> [--auto 1d] [--force]
+  target remove <服务器> <名称>                     移除服务器上不再使用的备份位置记录（不删除那里已有的备份；被保护计划使用时拒绝）
                                                  添加复制位置：先从服务器测试能否登录，连不上时不保存（--force 仍然保存；--auto：备份后顺带复制的最短间隔）
   target auto <服务器> <名称> <间隔|off>            开关自动同步
   target list <服务器> <名称> [--json]              列出备份位置上的周期，并与服务器对照

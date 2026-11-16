@@ -98,3 +98,41 @@ func TestCLIUsage(t *testing.T) {
 		}
 	}
 }
+
+// `target remove` forgets a copy location on the server; `native
+// --instance … --shell` is accepted only with an instance.
+func TestCLITargetRemoveAndNativeShellUsage(t *testing.T) {
+	e := fakesshenv.New(t)
+	home := e.AddHost("box")
+	e.InstallPorter("box")
+	cfg := t.TempDir()
+	os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"ssh_binary":"`+e.SSH+`"}`), 0o600)
+	targets := filepath.Join(home, ".config/valise/targets.json")
+	os.MkdirAll(filepath.Dir(targets), 0o700)
+	os.WriteFile(targets, []byte(`{"targets":[{"name":"old","kind":"rsync","dest":"sink:/backup/old"},{"name":"keep","kind":"rsync","dest":"sink:/backup/keep"}]}`), 0o600)
+
+	out, errOut, code := runCLI(t, cfg, "", "target", "remove", "box", "old")
+	if code != 0 || !strings.Contains(out, "已从 box 上移除备份位置 old") || !strings.Contains(out, "没有删除") {
+		t.Fatalf("code=%d\n%s\n%s", code, out, errOut)
+	}
+	b, _ := os.ReadFile(targets)
+	if strings.Contains(string(b), `"old"`) || !strings.Contains(string(b), `"keep"`) {
+		t.Fatalf("targets.json: %s", b)
+	}
+	if _, _, code := runCLI(t, cfg, "", "target", "remove", "box"); code == 0 {
+		t.Fatal("target remove without a name was accepted")
+	}
+	// --shell belongs to an instance; a profile-wide native has no shell.
+	if _, _, code := runCLI(t, cfg, "", "native", "box", "--profile", "demo", "--shell"); code == 0 {
+		t.Fatal("--shell without --instance was accepted")
+	}
+	out, _, _ = runCLI(t, cfg, "", "help")
+	for _, want := range []string{"native <服务器> --instance <id> [--shell]", "target remove <服务器> <名称>"} {
+		if !strings.Contains(out, want) {
+			_, errOut, _ := runCLI(t, cfg, "")
+			if !strings.Contains(errOut+out, want) {
+				t.Errorf("usage lacks %q", want)
+			}
+		}
+	}
+}

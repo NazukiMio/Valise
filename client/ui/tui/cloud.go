@@ -42,7 +42,7 @@ func (c *cloudScreen) help() string {
 	if c.current(c.m).repo {
 		return menu("s", "立即同步", "x", "从列表移除仓库", "+", "添加", "tab", "换位置", "r", "刷新")
 	}
-	return menu("s", "立即同步", "a", "自动同步", "d", "删除这个周期（远程备份位置）", "+", "添加", "tab", "换位置", "r", "刷新")
+	return menu("s", "立即同步", "a", "自动同步", "d", "删除这个周期（远程备份位置）", "x", "移除这个位置", "+", "添加", "tab", "换位置", "r", "刷新")
 }
 
 // current is the place shown.
@@ -198,7 +198,7 @@ func (c *cloudScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			}, true
 		case "x":
 			if !p.repo {
-				return nil, false
+				return m.push(c.confirmRemove(m, p)), true
 			}
 			return m.push(confirm("从列表中移除仓库 "+p.name+"？", []string{"只是不再往这里复制；文件夹里已有的备份不会删除。"},
 				func(m *Model) tea.Cmd {

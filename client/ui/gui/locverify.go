@@ -206,23 +206,37 @@ func (a *App) removeDialog(c *ui.Context) {
 	}
 }
 
-// removeLocation forgets the location here and, for a cloud, the servers'
-// authorizations; nothing it holds is deleted.
+// removeLocation forgets the location: here, and on every server that has
+// a record of it (for a cloud, the servers' authorizations too), so that a
+// server does not list it again. The servers go first: one that refuses,
+// because a plan in force copies there, stops the removal. Nothing the
+// location holds is deleted.
 func (a *App) removeLocation(l location) {
 	ls := a.locs()
 	hosts := a.locHosts(l)
+	var onServers []string // read on the main thread
+	for _, h := range hosts {
+		if a.target(h, l.Name) != nil {
+			onServers = append(onServers, h)
+		}
+	}
 	a.start(&ls.removeJ, 5*time.Minute, func(ctx context.Context) error {
 		switch l.Kind {
 		case locRepo:
 			return a.svc.RepoRemove(l.Name)
-		case locStation:
-			return a.svc.StationRemove(l.Name)
+		case locStation, locSSH:
+			for _, h := range onServers {
+				if err := a.svc.TargetRemove(ctx, h, l.Name); err != nil {
+					return err
+				}
+			}
+			if l.Kind == locStation {
+				return a.svc.StationRemove(l.Name)
+			}
 		case locCloud:
-			for _, h := range hosts {
-				if a.target(h, l.Name) != nil {
-					if err := a.svc.CloudRemove(ctx, h, l.Name); err != nil {
-						return err
-					}
+			for _, h := range onServers {
+				if err := a.svc.CloudRemove(ctx, h, l.Name); err != nil {
+					return err
 				}
 			}
 			if a.svc.IsCloudHere(l.Name) {

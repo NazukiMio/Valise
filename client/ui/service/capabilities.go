@@ -37,6 +37,8 @@ func n2Compatibility(hello *rpc.HelloResult, method string, params any) error {
 		capability = vaultrpc.CopyCheckCapability
 	case vaultrpc.MethodLeafMaterials, vaultrpc.MethodTargetVerify:
 		capability = vaultrpc.CopyVerifyCapability
+	case vaultrpc.MethodTargetRemove:
+		capability = vaultrpc.TargetRemoveCapability
 	case vaultrpc.MethodCloudPrepare, vaultrpc.MethodCloudForget:
 		capability = vaultrpc.CloudCapability
 	case protection.MethodRunCancel:

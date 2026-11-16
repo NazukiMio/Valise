@@ -26,15 +26,41 @@ func (s *Service) InstanceNativeInfo(ctx context.Context, host, instance string)
 	return &info, nil
 }
 
+// NativeMode is what a native session runs: the accepted native CLI, or the
+// instance's interactive shell.
+type NativeMode string
+
+const (
+	NativeCLI   NativeMode = ""
+	NativeShell NativeMode = "shell"
+)
+
+// nativeLine is the remote command of a native session. It names the
+// porter, the instance and at most the fixed --shell switch: there is no
+// place for a command of the caller's.
+func nativeLine(porterPath, instance string, mode NativeMode) string {
+	line := ssh.Quote(porterPath) + " native --instance " + ssh.Quote(instance)
+	if mode == NativeShell {
+		line += " --shell"
+	}
+	return line
+}
+
 // InstanceNativeCommand uses a new management connection. Neither a local
 // profile command nor a request-supplied argv can override the server's entry.
-func (s *Service) InstanceNativeCommand(ctx context.Context, host, instance string) (*exec.Cmd, func(), error) {
+func (s *Service) InstanceNativeCommand(ctx context.Context, host, instance string, mode NativeMode) (*exec.Cmd, func(), error) {
 	info, err := s.InstanceNativeInfo(ctx, host, instance)
 	if err != nil {
 		return nil, nil, err
 	}
 	if len(info.Argv) == 0 {
 		return nil, nil, valise.New("native_cli_none", "这个 Agent 没有声明原生界面", "使用它已支持的管理页或登录方式")
+	}
+	if mode != NativeCLI && mode != NativeShell {
+		return nil, nil, valise.New("native_mode_invalid", "不认识的原生界面方式", "")
+	}
+	if mode == NativeShell && !info.Shell {
+		return nil, nil, valise.New("unsupported_capability", "服务器上的 porter 尚不能打开这个 Agent 的交互终端", "在当前服务器的设置中更新 porter 后再试")
 	}
 	if err := s.RequireGate(ctx, host, instance); err != nil {
 		return nil, nil, err
@@ -52,8 +78,7 @@ func (s *Service) InstanceNativeCommand(ctx context.Context, host, instance stri
 		done()
 		return nil, nil, valise.New("unsupported_capability", "服务器上的 porter 尚不能按 Agent 打开原生界面", "在当前服务器的设置中更新 porter 后再试")
 	}
-	line := ssh.Quote(found.Path) + " native --instance " + ssh.Quote(instance)
-	return t.TTYCommand(ctx, line), done, nil
+	return t.TTYCommand(ctx, nativeLine(found.Path, instance, mode)), done, nil
 }
 
 type NativeIO struct {
@@ -63,8 +88,8 @@ type NativeIO struct {
 
 // RunInstanceNative only connects streams. No recording, output parser,
 // credential detection or chat inspection is installed on this path.
-func (s *Service) RunInstanceNative(ctx context.Context, host, instance string, streams NativeIO) (int, error) {
-	cmd, done, err := s.InstanceNativeCommand(ctx, host, instance)
+func (s *Service) RunInstanceNative(ctx context.Context, host, instance string, mode NativeMode, streams NativeIO) (int, error) {
+	cmd, done, err := s.InstanceNativeCommand(ctx, host, instance, mode)
 	if err != nil {
 		return -1, err
 	}

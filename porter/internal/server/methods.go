@@ -284,6 +284,16 @@ func init() {
 			return seal.SetTarget(paths(s), p.Target)
 		})
 	}
+	methods[vaultrpc.MethodTargetRemove] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.TargetRemoveParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		// A location a plan in force copies to cannot just disappear.
+		return struct{}{}, s.protectionStore(ctx).WithTargetRemove(ctx, p.Name, func() error {
+			return seal.RemoveTarget(paths(s), p.Name, vaultrpc.InitiatorClient)
+		})
+	}
 	methods[vaultrpc.MethodTargetCheck] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p vaultrpc.TargetCheckParams
 		if err := json.Unmarshal(raw, &p); err != nil {

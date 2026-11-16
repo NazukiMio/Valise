@@ -310,9 +310,14 @@ func (c *cli) native(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("native", flag.ContinueOnError)
 	prof := fs.String("profile", "", "")
 	instance := fs.String("instance", "", "")
+	shell := fs.Bool("shell", false, "")
 	pos, err := parseArgs(fs, args, 1)
-	if err != nil || (*prof == "") == (*instance == "") {
+	if err != nil || (*prof == "") == (*instance == "") || (*shell && *instance == "") {
 		return errUsage
+	}
+	mode, what := service.NativeCLI, "原生界面"
+	if *shell {
+		mode, what = service.NativeShell, "交互终端"
 	}
 	if err := c.gate(ctx, pos[0], *instance, false); err != nil {
 		return err
@@ -330,7 +335,7 @@ func (c *cli) native(ctx context.Context, args []string) error {
 			return infoErr
 		}
 		label, hints = *instance, info.Hints
-		cmd, done, err = c.svc.InstanceNativeCommand(ctx, pos[0], *instance)
+		cmd, done, err = c.svc.InstanceNativeCommand(ctx, pos[0], *instance, mode)
 	} else {
 		cmd, done, err = c.svc.NativeCommand(ctx, pos[0], *prof)
 	}
@@ -339,7 +344,11 @@ func (c *cli) native(ctx context.Context, args []string) error {
 	}
 	defer done()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	fmt.Fprintf(c.out, "正在打开 %s 在 %s 上的原生界面（独立的管理连接）。Valise 不读取、不保存这里输入的任何内容。\n", label, pos[0])
+	fmt.Fprintf(c.out, "正在打开 %s 在 %s 上的%s（独立的管理连接）。Valise 不读取、不保存这里输入的任何内容。\n", label, pos[0], what)
+	if *shell {
+		fmt.Fprintln(c.out, "这是你自己的 shell，已带上这个 Agent 的环境与命令路径；输入 exit 结束。")
+		hints = nil
+	}
 	if len(hints) > 0 {
 		fmt.Fprintln(c.out, "提示：")
 		for _, h := range hints {
@@ -349,7 +358,7 @@ func (c *cli) native(ctx context.Context, args []string) error {
 			fmt.Fprintf(c.out, "  · 需要另开终端运行 %s 自己的命令时：valise shell %s --profile %s\n", *prof, pos[0], *prof)
 		}
 	}
-	return c.interactiveEnd(cmd.Run(), "原生界面")
+	return c.interactiveEnd(cmd.Run(), what)
 }
 
 // interactiveEnd reports how a terminal session on the server ended. The

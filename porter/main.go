@@ -53,6 +53,7 @@ const usage = `用法：
   valise-porter version [--json]
   valise-porter rpc
   valise-porter native --instance <实例>（运行已接受资料中的原生界面）
+  valise-porter native --instance <实例> --shell（按该实例的环境与命令路径打开你自己的登录交互 shell）
   valise-porter exec [--path <目录>]... -- <命令>...（用登录环境执行原生界面、安装步骤）
   valise-porter exec [--path <目录>]... --shell（打开用户自己的交互 shell，PATH 中加入这些目录）
   valise-porter path-add --dir <目录> --label <标签>（把家目录下的目录加入登录 shell 的 PATH）
@@ -83,7 +84,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "serve":
 		return serveForced(args[1:], stdin, stdout, stderr)
 	case "native":
-		if len(args) != 3 || args[1] != "--instance" {
+		// native --instance <id> [--shell]: nothing else is taken.
+		shell := len(args) == 4 && args[3] == "--shell"
+		if (len(args) != 3 && !shell) || args[1] != "--instance" {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
@@ -98,7 +101,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		defer unlock()
-		cmd, display, err := porterinstall.NativeCommand(context.Background(), home, args[2], lock)
+		cmd, display, err := porterinstall.NativeCommand(context.Background(), home, args[2], shell, lock)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
@@ -299,7 +302,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		return code
 	case "mcp":
-		if len(args) != 3 || args[1] != "--instance" {
+		// native --instance <id> [--shell]: nothing else is taken.
+		shell := len(args) == 4 && args[3] == "--shell"
+		if (len(args) != 3 && !shell) || args[1] != "--instance" {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
@@ -328,7 +333,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		return 0
 	case "protection-timer":
-		if len(args) != 3 || args[1] != "--instance" {
+		// native --instance <id> [--shell]: nothing else is taken.
+		shell := len(args) == 4 && args[3] == "--shell"
+		if (len(args) != 3 && !shell) || args[1] != "--instance" {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
@@ -392,7 +399,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "备份运行尚未全部完成，请查询运行记录核实")
 		return 1
 	case "seal-timer":
-		if len(args) != 3 || args[1] != "--instance" {
+		// native --instance <id> [--shell]: nothing else is taken.
+		shell := len(args) == 4 && args[3] == "--shell"
+		if (len(args) != 3 && !shell) || args[1] != "--instance" {
 			fmt.Fprintln(stderr, usage)
 			return 2
 		}
@@ -507,7 +516,7 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 	info := rpc.VersionInfo{
 		Name: "valise-porter", Version: version, Protocol: rpc.ProtocolVersion,
 		OS: runtime.GOOS, Arch: runtime.GOARCH, SelfSHA256: sum,
-		Capabilities: []string{identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.BackupCapability, protection.BackupCapabilityV2, protection.BackupCapabilityV3, sysfix.Capability, vaultrpc.JourneyCapability, vaultrpc.CopyCheckCapability, vaultrpc.CopyVerifyCapability, vaultrpc.CloudCapability, vaultrpc.CloudFormCapability, identity.LostSourceCapability, corerevive.BodyDirsCapability, corerevive.ReviewCapability, coreinstall.NativeCapability},
+		Capabilities: []string{identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.BackupCapability, protection.BackupCapabilityV2, protection.BackupCapabilityV3, sysfix.Capability, vaultrpc.JourneyCapability, vaultrpc.CopyCheckCapability, vaultrpc.CopyVerifyCapability, vaultrpc.CloudCapability, vaultrpc.CloudFormCapability, vaultrpc.TargetRemoveCapability, identity.LostSourceCapability, corerevive.BodyDirsCapability, corerevive.ReviewCapability, coreinstall.NativeCapability},
 	}
 	if err := json.NewEncoder(stdout).Encode(info); err != nil {
 		return 1

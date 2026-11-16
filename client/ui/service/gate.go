@@ -37,8 +37,8 @@ const RiskWarning = "如果没有充足的备份，数据丢失将是永久性�
 const GateCode = "offsite_pod_required"
 
 // staleAfter: an offsite pod older than this is warned about (the warning
-// can be dismissed).
-const staleAfter = 7 * 24 * time.Hour
+// can be dismissed). A variable for tests.
+var staleAfter = 7 * 24 * time.Hour
 
 const repoTrialFile = "repo-trial.json"
 
@@ -91,7 +91,10 @@ func (g *GateResult) Warning() string {
 	var lines []string
 	for _, a := range g.Agents {
 		if a.Pod != nil && a.Stale {
-			lines = append(lines, a.Instance+" 放在别处的最新备份是 "+agoText(a.Age)+"前的（"+a.Where+"）；出了问题恢复时，会丢失这段时间的内容")
+			// Said of the place that was checked: when a repository
+			// settled it, the server's copy locations were not asked, so
+			// nothing is claimed about a newer copy there.
+			lines = append(lines, a.Instance+" 在"+a.Where+"里的备份是 "+agoText(a.Age)+"前的；出了问题从这里恢复时，会丢失这段时间的内容")
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -129,9 +132,25 @@ func (s *Service) AdvancedGate(ctx context.Context, host, instance string) (*Gat
 	if err != nil {
 		return nil, err
 	}
-	places := s.offsitePlaces(ctx, host, st)
-	for _, id := range want {
-		res.Agents = append(res.Agents, s.gateAgent(host, id, st.ServerName, st.Snapshots, places))
+	// This computer's repositories first: they are read here, with no
+	// connection. When they hold a pod of every agent that is the answer,
+	// and the server's copy locations are not asked at all: a slow or dead
+	// one must not hold up what the person is doing (INSTALL.md 4.2). Only
+	// when a repository does not settle it are the copy locations listed.
+	places := s.repoPlaces(host, st)
+	check := func() bool {
+		res.Agents = res.Agents[:0]
+		settled := true
+		for _, id := range want {
+			a := s.gateAgent(host, id, st.ServerName, st.Snapshots, places)
+			settled = settled && a.Pod != nil
+			res.Agents = append(res.Agents, a)
+		}
+		return settled
+	}
+	if !check() && len(st.Targets) > 0 {
+		places = append(places, s.targetPlaces(ctx, host, st)...)
+		check()
 	}
 	return res, nil
 }
@@ -166,8 +185,9 @@ type offsitePlace struct {
 	err   string
 }
 
-// offsitePlaces lists the snapshots each repository and station holds.
-func (s *Service) offsitePlaces(ctx context.Context, host string, st *vaultrpc.StatusResult) []offsitePlace {
+// repoPlaces lists the snapshots each repository on this computer holds;
+// nothing is connected to.
+func (s *Service) repoPlaces(host string, st *vaultrpc.StatusResult) []offsitePlace {
 	var out []offsitePlace
 	for _, rs := range s.RepoStatuses(host, st.ServerName) {
 		p := offsitePlace{label: "仓库 " + rs.Name, repo: rs.Path, leaf: map[string]string{}}
@@ -181,6 +201,13 @@ func (s *Service) offsitePlaces(ctx context.Context, host string, st *vaultrpc.S
 		}
 		out = append(out, p)
 	}
+	return out
+}
+
+// targetPlaces lists the snapshots each of the server's copy locations
+// holds, asking the server to list every one of them.
+func (s *Service) targetPlaces(ctx context.Context, host string, st *vaultrpc.StatusResult) []offsitePlace {
+	var out []offsitePlace
 	for _, t := range st.Targets {
 		p := offsitePlace{label: "备份位置 " + t.Name, leaf: map[string]string{}}
 		list, err := s.TargetList(ctx, host, t.Name)
