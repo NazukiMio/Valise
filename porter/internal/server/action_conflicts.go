@@ -11,9 +11,7 @@ import (
 // These handlers mutate an installation without taking the vault lock themselves.
 // Seal/sync/deletions already use Paths.Lock; action transactions own their lock.
 var installationMutations = map[string]bool{
-	"environment_test":         true,
-	"environment_settings_set": true,
-	"instance_write":           true, "entry_port_set": true, "agent_label_set": true,
+	"instance_write": true, "entry_port_set": true, "agent_label_set": true,
 	"stage_begin": true, "stage_verify": true, "swap": true, "revive_resume": true,
 	"revive_review": true, "revive_resume_checked": true,
 	"service_control": true, "kit_install": true, "kit_uninstall": true,
