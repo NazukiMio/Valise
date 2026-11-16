@@ -2,7 +2,7 @@
 
 > 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-16。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前工作与交接（2026-11-16 v0.1 测试包已构建并做过窗口内验收：linger/密码弹窗与文本截断通过，同机创建副本在服务层被拒，待用户决定）
+## 0. 当前工作与交接（2026-11-16 v0.1 测试包已从 `65d2eb6` 重打完成；同机创建副本已打通并补齐端到端集成测试，待真实 Linux 靶机闭环）
 
 **架构收敛与三阶段剥离完成状态**：
 经 2026-11-15 代码审计与产品复盘，用户已确认**撤销** A/B 双槽位并行运行环境（`linux-bwrap` 容器接管、三档恢复保护模式、独立程序树采集与父子切换状态机）。分支 `refactor/revoke-ab-slots-and-doc-audit` 上三个阶段均已完成、验证并提交：
@@ -30,7 +30,7 @@
 依据 [UI.md](UI.md) 第 4、7.10/7.11、9.5、11 节与 [DEV_PLAN.md](DEV_PLAN.md) 第 5 项，只改 `client/ui/gui` 与 `client/ui/service` 的一处判断：
 
 1. **全局状态**：`gui/i18n.go` 的当前词表 `words` 改为 `atomic.Pointer[catalog]`（后台 goroutine 调 `T()` 与主线程 `chooseLocale()` 不再竞态）；包级 `confirmations` 收进 `App.confirms`（带锁的实例字段），“现在备份 / 备份一次 / 保存保护计划”仍是一键确认。测试：`gui/concurrency_test.go`（`-race` 下并发 `T()` + `chooseLocale()`；两个 `App` 的确认互不可见、各只生效一次）。
-2. **创建副本**：`gui/restoresetup.go` 只在“迁移”时把原服务器排除出目标列表；切到“创建副本”默认选中原服务器，同机时直接展开目录映射输入区并给一句提示（新词条 `restore.same_server_hint`）。测试：`restore_test.go` `TestCloneOnTheOnlyServer`（单服务器可选中原服务器并发起副本计划）。**更正（2026-11-16 窗口内验收）**：这一项只打通了界面，服务层 `planRevive` 仍拒绝同机副本，见下面“窗口内验收”。
+2. **创建副本**：`gui/restoresetup.go` 只在“迁移”时把原服务器排除出目标列表；切到“创建副本”默认选中原服务器，同机时直接展开目录映射输入区并给一句提示（新词条 `restore.same_server_hint`）。服务层随后已在 `9e46fd1`（`service/revive_plan.go` 放开同机副本：须不同实例标识与显式目录、禁止与已接入实例目录重合或嵌套、须声明 `relocation`、不取代原实例且不启停任何服务）与 `65d2eb6`（无受控服务时不显示“复活前会先停止服务”）打通。测试：`restore_test.go` `TestCloneOnTheOnlyServer`、`service/revive_samehost_test.go` `TestCloneOnTheSameServer` 与 `gui/restore_integration_test.go` `TestSameServerCloneFlowCompletesWithoutStoppingService`。
 3. **健康页修复的服务器密码**：根因在服务层——`adminTransport` 早已支持 askpass 转交，但 `service/system_fixes_run.go` 的 `adminLoginAvailable` 只看 `NoTerminalLogin`、没看 `canPrompt()`，桌面上没有管理钥匙的密码登录服务器因此拿不到 linger 一键修复（被判成只能手动）。已补 `|| s.canPrompt()`（本阶段唯一的 `service` 改动）。GUI 删除 `fixError` 里“去终端执行 `valise action …`”的退回与 3 个词条 `health.need_password*`；`health.admin_login` 改为同时说明管理口令与服务器密码；UI.md 7.3 一处旧表述同步。
 4. **linger 一键开启**：新文件 `gui/healthsysfix.go`：点击后先 `PlanSystemFix`，确认框直接列出命令、改变的系统设置、撤销办法与需要的管理登录；确认后 `RunSystemFix`（摘要绑定计划），结果分别显示每条命令的退出码与复核结论，未通过时可重试；服务层判为不能代为执行时只说明原因并列出命令。时钟修复与“忽略”不在 GUI 里（v0.2）。
 5. **验证（均为实际运行）**：`gui/healthfix_test.go` 经 fake-ssh（ssh 替身按 OpenSSH 的方式通过 `SSH_ASKPASS` 询问密码）跑通“无管理钥匙 → 窗口弹出服务器密码 → linger 修复 / 需管理登录的 profile 动作执行”，含取消密码后不执行、可重试；撤掉服务层修复后该测试与 `TestAdminLoginAvailableNeedsAPrompt` 均失败。`go test -race ./gui/...`、`go tool mygo vet`、AGENTS.md 第 6 节 5 步自检全部通过；`gui/*.go` 最大 381 行。**未做**：真实 OpenSSH + sshd 靶机上的 askpass 与 `loginctl`（polkit）行为，fake-ssh 不能代替，留给下面的真机闭环。
@@ -48,22 +48,17 @@
 
 ### 下一步待办
 
-1. **用户真机端到端验收（阶段 A 测试包已构建，2026-11-16）**：测试包在 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/`，构建自 `d89a953`（`2177be0` 加一处 porter 清理；首次打包自 `2177be0`，清理后整包重打），内含 `Valise Test.app`、CLI `valise`、`valise-porter_linux_arm64` / `_amd64`、`standalone-restore/`、`SHA256SUMS`、`BUILD.json` 与验收步骤 `TESTING.md`。
+1. **用户真机端到端验收（阶段 A 测试包已从 `65d2eb6` 整包重打并完成窗口/fake-ssh 验收，2026-11-16）**：测试包在 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/`，最新包构建自 `65d2eb6`（包含 `2177be0`、`d89a953`、`9e46fd1` 同机创建副本支持与 `65d2eb6` 计划提示修正），内含 `Valise Test.app`、CLI `valise`、`valise-porter_linux_arm64` / `_amd64`、`standalone-restore/`、`SHA256SUMS`、`BUILD.json` 与验收步骤 `TESTING.md`。
    - **打包方式**（没有 `mygo.json`，沿用 11-14 包的做法）：`go build -trimpath -ldflags "-X main.version=… -X valise/client/porter.ReleasePublicKey=$(cat ~/.cache/valise-drill/devpack/key.pub)"` 编出桌面程序与 CLI，放进 `.app` 骨架（`Info.plist`、`PkgInfo`、mygo 终端插件声明的 `libghostty-vt.dylib`，SHA-256 与插件清单一致），整个 `.app` 做 ad hoc 签名；porter 用 `CGO_ENABLED=0` 交叉编译。没有重新生成资料包或钥匙。
-   - **已核对（实际运行）**：两个 porter 为静态 ELF（aarch64 / x86-64，`CGO_ENABLED=0`）；四个二进制都带 `stage-test-20261116` 版本号且不含旧版本号；`valise version` 输出新版本；`valise profiles status` 报 2026.11.10 已验签；`codesign --verify --deep --strict` 通过；桌面程序 `-h` 可执行；`SHA256SUMS` 复核全部 OK。
-   - **A/B 入口**：四个二进制里搜不到 `linux-bwrap`、`environment-restore`、`valise/core/environment`、`restore.policy` 等（11-14 包里有 18 处）；CLI 帮助里没有环境相关命令。首次打包时 `porter/internal/server/action_conflicts.go` 的加锁名单里还留着 `environment_test`、`environment_settings_set` 两个没有处理函数的名字；已在 `d89a953` 删除并重新打包，新二进制里搜不到。
+   - **已核对（实际运行）**：四个二进制均带有 `vcs.revision=65d2eb630567a9a2aaf4095076c7c4457cd78480`、`vcs.modified=false`（`d89a953` 时跑过的 Linux 靶机 porter 临时运行与 CLI linger 验证、A/B 清理核查与 `65d2eb6` 重打包的 4 个二进制版本/静态 ELF 产物保持一致，无任何 A/B 入口）；`codesign --verify --deep --strict` 通过；`SHA256SUMS` 复核全部 OK。
    - **真实运行补证（2026-11-16）**：
-     - 四个二进制的构建来源戳都是 `vcs.revision=d89a953…`、`vcs.modified=false`；以下各项均在重新打包后的产物上重做过（app 的 5 分钟运行与 askpass 助手是在首次打包的产物上做的，界面代码两次打包相同）。
-     - 两个 porter 在真实 Linux 上从临时目录运行（`ubuntu-vm` ARM64、InstaBox x86_64；用完即删，未部署）：`version` 为本版本号、非动态链接、SHA-256 与清单一致、`hello` 握手正常；`environment_settings_set`、`environment_test`、`environment_status`、`environment_restore_prepare` 实测均返回 `method not found`。`ubuntu-vm-x86` 当时连不上。
-     - 打包的 `Valise Test.app` 指向隔离的 fake-ssh 数据目录启动并运行 5 分钟以上，无报错输出，没有自行发起管理登录。
-     - 打包 app 程序的 askpass 转交助手单独运行通过（取回答案；被拒绝时失败退出）。
-     - 打包的 CLI 在同一 fake-ssh 目录上跑通 linger 修复（Valise 接入、无管理钥匙、密码登录）：密码错不执行，密码对则 `loginctl enable-linger` 退出码 0、复核通过。
-     - 同一份界面代码（`2177be0` 之后只改过文档与 porter 的加锁名单）上重跑并通过：`TestCloneOnTheOnlyServer`、`TestHealthLingerFixAsksServerPasswordInWindow`、`TestHealthActionAsksServerPasswordInWindow`、`TestTailTextKeepsTheNewestOutput`、`TestInstallTextFallbackSaysWhenCut` 等。
-   - **窗口内验收（2026-11-16，用户授权后在打包的 `Valise Test.app` 真实窗口里操作；数据目录是隔离的 fake-ssh 测试世界：一台 Valise 接入、无管理钥匙、密码登录的服务器）**：
+     - `d89a953` 构建期已跑：两个 porter 在真实 Linux 上从临时目录运行（`ubuntu-vm` ARM64、InstaBox x86_64，用完即删，未部署）：`hello` 握手正常，`environment_*` 均返回 `method not found`（`ubuntu-vm-x86` 当时连不上）；app 指向隔离 fake-ssh 启动运行 5 分钟以上无报错；askpass 转交助手与 CLI linger 修复在 fake-ssh 上跑通。
+     - `9e46fd1` / `65d2eb6` 修复后测试与本次收尾：新增 `service` `TestCloneOnTheSameServer` 与 `gui` `TestSameServerCloneFlowCompletesWithoutStoppingService`（覆盖已占 ID/目录冲突拦截无执行按钮、`demo-copy2` 计划不含“会先停止服务”且含“不启动、不停止任何服务”、二次确认后恢复到 `.demo-copy2`、原实例 untouched 且均不标 `superseded`）；`AGENTS.md` 第 6 节全部 5 项检查、`go tool mygo vet` 与 `-race` 集成测试均已通过。
+   - **窗口内验收（2026-11-16，打包的 `Valise Test.app` 真实窗口；数据目录是隔离的 fake-ssh 测试世界：一台 Valise 接入、无管理钥匙、密码登录的服务器）**：
      - **健康页 linger + 服务器密码弹窗：通过。**“开启 linger”→ 确认框列出命令、改变的系统设置、撤销办法与“要输入服务器密码”，此时服务器上没有执行任何命令 → “执行”后窗口弹出“输入 me@203.0.113.9 的服务器密码”→ 取消：退出码 -1、复核“问题仍在”、未执行、给出“重试”→ 重试并输入密码：“退出码 0”“复核结果：本次检查通过：linger 已开启”，该项从列表消失。
      - **安装页文本截断：通过。**用无效的终端库路径启动（`MYGO_GHOSTTY_VT`）使终端加载失败，测试资料的安装方案打印 5000 行约 315 KiB；页面显示“只显示最近约 64 KiB 的输出，更早的已省略”，文字从第 3961 行开始。
-     - **同机创建副本：界面通过，计划生成失败（缺陷）。**只有一台服务器时目标默认选中原服务器、直接展开目录映射与同机提示；但填好目录点“查看计划”后服务层报 `mode_mismatch`“v0.1 的迁移与克隆只支持到另一台服务器”（`client/ui/service/revive_plan.go` `planRevive` 拒绝 `From == Target` 的迁移与副本）。Phase F1 第 2 项只打通了界面：当时的测试把后台执行替换掉了，只断言请求发出，没有走到服务层。UI.md 7.11 写的是同机副本由服务层拦截路径重合与嵌套，代码则整体拒绝——规范与代码冲突，放开它涉及同机实例标识、共用服务与目录重合的检查，**等用户决定**后再改。
-     - 顺带看到的（未改）：取消密码后的错误文字来自服务层，提到 `valise server rekey` 与“终端界面按 K”，还提示“开启高级模式”，对桌面用户不合适；本地未审核资料在安装入口卡片上写“官方安装方案”（方案页里有“未经审核”提示）；服务器页“用户通行证 · 能用”标签折成两行；窗口在后台时不重绘。
+     - **同机创建副本（`9e46fd1` 与 `65d2eb6` 窗口实测）：通过（含冲突拦截与计划生成）。**`9e46fd1` 包窗口内：同机副本 `demo-copy` 从填写目录一路走到“文件已恢复，未启动程序”，副本落在指定目录、原实例文件与记录未变且均未标“已被取代”。`65d2eb6` 重打新包窗口内：用已占用的标识加原实例目录被拦下且不显示执行按钮；换为 `demo-copy2` 与新目录后计划正常生成，矛盾的“会先停止服务”提示已消失（该轮窗口手动操作停在“计划生成”未点执行，完整的冲突拦截 + `demo-copy2` 二次确认执行全链路已由 `gui` fake-ssh 集成测试 `TestSameServerCloneFlowCompletesWithoutStoppingService` 补齐通过）。
+     - **顺带看到的（未改）**：取消密码后的错误文字来自服务层，提到 `valise server rekey` 与“终端界面按 K”，还提示“开启高级模式”，对桌面用户不合适；本地未审核资料在安装入口卡片上写“官方安装方案”（方案页里有“未经审核”提示）；服务器页“用户通行证 · 能用”标签折成两行；窗口在后台时不重绘。
    - **没做**：真实 OpenSSH + sshd 与真实 `loginctl`（polkit）；没有部署任何服务器；上一级目录 `valise-porter-test/` 里的同名 porter 仍是 11-14 的版本，没有覆盖（LAB.md 约定那里放最新 porter，是否覆盖等用户决定）。
    - 之后可按页继续把其余内联面板与写死列宽换成语义函数与令牌（非阻塞）。
 2. **真机闭环范围**：在 macOS 桌面 + Linux 靶机上实测「添加服务器 → 接入 → 保护计划 → 手动备份 → 文件/暂存恢复测试 → 健康页 linger 一键开启（密码登录、无管理钥匙）→ 原生界面 → 恢复当前实例 / 迁移 / 同机创建副本」；真实 OpenSSH + sshd 的 askpass 与 `loginctl`（polkit）行为此前只在 fake-ssh 上验证过。
@@ -71,7 +66,7 @@
 
 ### 必须保留的环境与基线事实
 
-- **当前用户构建**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/Valise Test.app`（`0.0.0-dev+stage-test-20261116`，构建自 `d89a953`，A/B 已剥离，含 Phase F1/F2）。更新测试服务器的 porter 时选同目录的 `valise-porter_linux_arm64`（ubuntu-vm / debian-vm）或 `valise-porter_linux_amd64`（ubuntu-vm-x86）。上一个包 `stage-test-20261114` 构建于撤销 A/B 之前，不再使用。
+- **当前用户构建**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/Valise Test.app`（`0.0.0-dev+stage-test-20261116`，构建自 `65d2eb6`，A/B 已剥离，含 Phase F1/F2 与同机创建副本支持）。更新测试服务器的 porter 时选同目录的 `valise-porter_linux_arm64`（ubuntu-vm / debian-vm）或 `valise-porter_linux_amd64`（ubuntu-vm-x86）。上一个包 `stage-test-20261114` 构建于撤销 A/B 之前，不再使用。
 - **默认资料包与演练公钥**：默认资料包为 `2026.11.10`（OpenClaw 22、Hermes 11）；默认配置公钥 `~/.cache/valise-drill/devpack/key.pub`，演练配置公钥 `~/.cache/valise-drill/drillpack/key.pub`，不得混用或覆盖。
 - **构建环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；禁止执行 `rm -f`（用 `git rm` 或 `t.TempDir()`）；禁止自动 `git push`。
 - **原基线**：分叉前分支 `n2-agent-protection-journey` 位于 `f243bcf`（含 `07d7952`、`4bdd0fb`、`3e9f124`、`4d890c2`、`f243bcf`）；工作树中的 `references/` 与 `.DS_Store` 保留不提交。

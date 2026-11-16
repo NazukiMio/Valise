@@ -4,18 +4,23 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/ui"
+
 	"valise/client/config"
+	"valise/core/journey"
 	"valise/core/revive"
 	"valise/core/vaultrpc"
 	"valise/testbed/fakesshenv"
 	"valise/ui/service"
 )
 
-func TestRestoreFlowWaitsBeforeChangingLiveDirectory(t *testing.T) {
+func restoreIntegrationWorld(t *testing.T, extraProfile string) (string, *service.Service, journey.TimelinePoint) {
+	t.Helper()
 	e := fakesshenv.New(t)
 	home := e.AddHost("box")
 	e.InstallPorter("box")
@@ -39,7 +44,7 @@ status: draft
 detect: { binaries: [demo], state_dir_candidates: ["${HOME}/.demo"], markers_any: [demo.json] }
 paths: [{ root: state, glob: "demo.json", category: config, verify: pending }]
 provenance: { kind: binary, binary: { name: demo } }
-`)
+`+extraProfile)
 	svc := &service.Service{Dirs: config.Dirs{Data: dir, Cache: t.TempDir()}, Config: config.Config{SSHBinary: e.SSH}, Home: dir}
 	ctx := context.Background()
 	if _, err := svc.AddServers("box"); err != nil {
@@ -65,17 +70,11 @@ provenance: { kind: binary, binary: { name: demo } }
 	if err != nil || len(timeline.Items) != 1 {
 		t.Fatalf("timeline %+v %v", timeline, err)
 	}
-	a := New(svc)
-	a.run = func(f func()) { f() }
-	a.openRestore(timeline.Items[0], "box")
-	r := a.restore
-	r.draft = true
-	a.prepareRestore(r)
-	if r.j.err != nil || r.plan == nil {
-		t.Fatal(r.j.err)
-	}
-	r.sourceChoice = "proceed"
-	write(filepath.Join(home, ".demo/demo.json"), "live")
+	return home, svc, timeline.Items[0]
+}
+
+func runConfirmedRestore(t *testing.T, a *App, r *restoreFlow, beforeConfirm func()) {
+	t.Helper()
 	var mu sync.Mutex
 	confirmed := make(chan struct{}, 1)
 	finished := make(chan struct{}, 1)
@@ -103,9 +102,8 @@ provenance: { kind: binary, binary: { name: demo } }
 	case <-time.After(20 * time.Second):
 		t.Fatal("no second confirmation")
 	}
-	b, err := os.ReadFile(filepath.Join(home, ".demo/demo.json"))
-	if err != nil || string(b) != "live" {
-		t.Fatalf("live directory changed before second decision: %q %v", b, err)
+	if beforeConfirm != nil {
+		beforeConfirm()
 	}
 	mu.Lock()
 	reply, deadline := r.reply, r.deadline
@@ -122,8 +120,107 @@ provenance: { kind: binary, binary: { name: demo } }
 	if runErr != nil || result.SwapState != revive.StateRestored || result.State != "succeeded" {
 		t.Fatalf("result %+v %v", result, runErr)
 	}
-	b, err = os.ReadFile(filepath.Join(home, ".demo/demo.json"))
+}
+
+func TestRestoreFlowWaitsBeforeChangingLiveDirectory(t *testing.T) {
+	home, svc, pt := restoreIntegrationWorld(t, "")
+	a := New(svc)
+	a.run = func(f func()) { f() }
+	a.openRestore(pt, "box")
+	r := a.restore
+	r.draft = true
+	a.prepareRestore(r)
+	if r.j.err != nil || r.plan == nil {
+		t.Fatal(r.j.err)
+	}
+	r.sourceChoice = "proceed"
+	liveFile := filepath.Join(home, ".demo/demo.json")
+	os.WriteFile(liveFile, []byte("live"), 0o700)
+	runConfirmedRestore(t, a, r, func() {
+		b, err := os.ReadFile(liveFile)
+		if err != nil || string(b) != "live" {
+			t.Fatalf("live directory changed before second decision: %q %v", b, err)
+		}
+	})
+	b, err := os.ReadFile(liveFile)
 	if err != nil || string(b) != "before" {
 		t.Fatalf("not restored %q %v", b, err)
+	}
+}
+
+// Same-server clone end-to-end in GUI over fake-ssh (Stage A completion):
+// taken id/directory is blocked without a confirm button; valid demo-copy2
+// plans without "会先停止服务" and restores into its own directory while
+// leaving the original instance intact and not superseded.
+func TestSameServerCloneFlowCompletesWithoutStoppingService(t *testing.T) {
+	home, svc, pt := restoreIntegrationWorld(t, "relocation: { env: DEMO_HOME }\n")
+	a := New(svc)
+	a.run = func(f func()) { f() }
+	tt := ui.NewTester(a.View, 1180, 900)
+	a.openRestore(pt, "box")
+	r := a.restore
+	r.mode = revive.ModeClone
+	r.draft = true
+
+	// Same id as original is refused outright; new id with original directory
+	// produces conflict blockers without an execute button.
+	r.id = "demo"
+	r.roots = "state=" + filepath.Join(home, ".demo")
+	a.prepareRestore(r)
+	if r.j.err == nil || r.plan != nil || !strings.Contains(r.j.err.Error(), "demo") {
+		t.Fatalf("expected copy_same_id error, got err=%v plan=%+v", r.j.err, r.plan)
+	}
+	r.id = "demo-copy2"
+	a.prepareRestore(r)
+	if r.j.err != nil || r.plan == nil || len(r.plan.Revive.Blockers) == 0 {
+		t.Fatalf("expected conflict blockers, got err=%v plan=%+v", r.j.err, r.plan)
+	}
+	tt.Frame()
+	if tt.HasText(T("restore.prepare")) {
+		t.Fatalf("conflict plan offered execute button: %q", tt.Texts())
+	}
+
+	// New id demo-copy2 and clean directory plan cleanly without stopping any service.
+	r.step = "setup"
+	r.id = "demo-copy2"
+	copyDir := filepath.Join(home, ".demo-copy2")
+	r.roots = "state=" + copyDir
+	a.prepareRestore(r)
+	if r.j.err != nil || r.plan == nil || len(r.plan.Revive.Blockers) != 0 {
+		t.Fatalf("expected clean clone plan, got err=%v plan=%+v", r.j.err, r.plan)
+	}
+	warnings := strings.Join(r.plan.Revive.Warnings, "\n")
+	if strings.Contains(warnings, "会先停止服务") || !strings.Contains(warnings, "不启动、不停止任何服务") {
+		t.Fatalf("unexpected warnings for no-service clone: %q", warnings)
+	}
+	tt.Frame()
+	if !tt.HasText(T("restore.prepare")) {
+		t.Fatalf("clean plan did not offer execute button: %q", tt.Texts())
+	}
+
+	r.sourceChoice = "proceed"
+	liveFile := filepath.Join(home, ".demo/demo.json")
+	os.WriteFile(liveFile, []byte("live"), 0o700)
+	runConfirmedRestore(t, a, r, nil)
+
+	if b, err := os.ReadFile(filepath.Join(copyDir, "demo.json")); err != nil || string(b) != "before" {
+		t.Fatalf("clone dir not restored: %q %v", b, err)
+	}
+	if b, err := os.ReadFile(liveFile); err != nil || string(b) != "live" {
+		t.Fatalf("original live dir altered: %q %v", b, err)
+	}
+	list, err := svc.Instances(context.Background(), "box")
+	if err != nil || len(list) != 2 {
+		t.Fatalf("instances %+v %v", list, err)
+	}
+	roots := map[string]string{}
+	for _, inst := range list {
+		if inst.Superseded != nil {
+			t.Fatalf("instance %s marked superseded: %+v", inst.InstanceID, inst.Superseded)
+		}
+		roots[inst.InstanceID] = inst.Roots["state"]
+	}
+	if roots["demo"] != filepath.Join(home, ".demo") || roots["demo-copy2"] != copyDir {
+		t.Fatalf("unexpected instance roots: %+v", roots)
 	}
 }
