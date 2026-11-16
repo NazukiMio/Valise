@@ -79,9 +79,12 @@
 2. **治理高耗时测试套件**：当前完整 `selfcheck` 中 `client/ui/service`（~260–300s）与 `client/ui/tui`（~140–160s）耗时偏高，影响局部修改后的快速回归；剥离 A/B 冗余测试后，进一步审查剩余慢测试（减少无谓休眠等待与重复伪造 SSH 进程拉起），将常规回归耗时降至分钟级以内。
 3. **补齐实机未核实项**：在真实靶机上完成 `profiles/hermes.yaml` 与 `kit/tools.yaml`（含 `rclone` 核实信息）的 `verify: pending` 消除，并完成 OpenClaw 真实 GUI 端到端链路验收。
 4. **文档规范化维护**：坚持 `AGENTS.md` 第四总原则——设计定稿即覆盖正式规范，验证流水统一放入 `docs/acceptance/`，不再向正文追加施工日志。
-5. **前端审计整固与模板化底座（2026-11-16 新增，分两阶段交付）**：
-   - **Phase F1（v0.1 缺陷修复与能力打通）**：消除 `gui` 包级全局并发竞态（`i18n.go` `words` 加读写锁/原子指针、`backupnow.go` `confirmations` 收归 `App` 字段）；修复 `restoresetup.go` 创建副本在单服务器下无法选择本机的问题（允许并默认选中原服务器，同机创建副本直接展开目录映射输入框）；打通 `gui/health.go` 修复动作的无管理钥匙路径（复用 `ServerPassword` askpass 弹窗，不再退回 CLI）并接入 `linger` 一键开启。
-   - **Phase F2（内容/排版分离底座与工程收敛）**：落地 `docs/UI.md` 7.4.3 三层分离约定（通用粗粒度区块渲染与默认流式回退、`card`/`subPanel`/`cardTitle`/`fact` 语义样式函数、`Sizes` 弹性宽度令牌供后续多语言与独立面板模板使用）；限制 `installpage.go` 降级文本缓冲长度（如尾部 64 KiB）并逐步收敛 `App` 平铺字段。
+5. **前端审计整固与模板化底座（2026-11-16 已完成，Phase F1 `d43f228` / Phase F2 `2177be0`）**：
+   - **Phase F1**：消除 `gui` 包级全局并发竞态、`confirmations` 收归 `App`、解锁 GUI 单机创建副本、打通健康页无管理钥匙 askpass 与 `linger` 一键开启（`9e46fd1`/`65d2eb6`/`b63c764` 补齐服务层同机副本与集成测试）。
+   - **Phase F2**：落地 `docs/UI.md` 7.4.3 三层分离约定（`renderSections`、`card`/`subPanel` 语义样式函数、`Sizes` 弹性宽度令牌）、`installpage` 64 KiB 尾部文本缓冲与 `App` 字段分组（`appstate.go`）。
+6. **真机首轮实测修复与口令体验简化（2026-11-16 新增，分 Phase B1 / Phase B2 两阶段交付）**：
+   - **Phase B1（`debian-vm` 真机首轮实测 5 项阻塞修复）**：修复 `gui/protect.go` `desired()` 过滤 `SupersededPlan.ServerCopies` 产生 `nil` 切片导致重新接入后“按原设置重新生效”报 `request_invalid`；新增 `porter` `target_remove`（主人操作，引用保护计划时拒绝、否则清除服务器 `targets.json` 记录）并在 `gui/locdetail.go` 对 `station`/`ssh` 统一开放“移除…”；优化 `service/gate.go` `RequireGate` 先查本机仓库满足即放行（避免阻塞在失效远程目标），并为 `porter native --instance` 增加 `--shell` 实例交互终端及 GUI `gui/native.go` 断联/退出顶部“重新连接”入口；调整 `gui/onserver.go`，在服务器上已有 Agent 时仍保留官方安装方案区块。
+   - **Phase B2（单一 Valise 主口令统管与联动解锁）**：默认解锁时间窗口从 15 分钟延长至 60 分钟；`gate.go` 对 `repo-trial.json` 已验证过的仓库后续快照仅做免私钥 `vault.VerifyNoKey` 放行；实施“单一 Valise 口令同时保护加密钥匙与默认管理钥匙 + 添加服务器默认用 Valise 口令创建管理钥匙 + 一次输入联动解锁 `ownerIdentity` 与 `ssh-agent`”（兼容并支持一键迁移历史独立管理口令钥匙）。
 
 ### N5：管理方 MCP、结构化 CLI、自定义范围与可选扩展
 

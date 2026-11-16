@@ -2,7 +2,7 @@
 
 > 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-16。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前工作与交接（2026-11-16 v0.1 测试包已从 `65d2eb6` 重打完成；同机创建副本已打通并补齐端到端集成测试，待真实 Linux 靶机闭环）
+## 0. 当前工作与交接（2026-11-16 `debian-vm` 真机首轮实测反馈已定稿并更新规范；待分 Phase B1 / B2 修复后重打测试包闭环）
 
 **架构收敛与三阶段剥离完成状态**：
 经 2026-11-15 代码审计与产品复盘，用户已确认**撤销** A/B 双槽位并行运行环境（`linux-bwrap` 容器接管、三档恢复保护模式、独立程序树采集与父子切换状态机）。分支 `refactor/revoke-ab-slots-and-doc-audit` 上三个阶段均已完成、验证并提交：
@@ -48,21 +48,27 @@
 
 ### 下一步待办
 
-1. **用户真机端到端验收（阶段 A 测试包已从 `65d2eb6` 整包重打并完成窗口/fake-ssh 验收，2026-11-16）**：测试包在 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/`，最新包构建自 `65d2eb6`（包含 `2177be0`、`d89a953`、`9e46fd1` 同机创建副本支持与 `65d2eb6` 计划提示修正），内含 `Valise Test.app`、CLI `valise`、`valise-porter_linux_arm64` / `_amd64`、`standalone-restore/`、`SHA256SUMS`、`BUILD.json` 与验收步骤 `TESTING.md`。
-   - **打包方式**（没有 `mygo.json`，沿用 11-14 包的做法）：`go build -trimpath -ldflags "-X main.version=… -X valise/client/porter.ReleasePublicKey=$(cat ~/.cache/valise-drill/devpack/key.pub)"` 编出桌面程序与 CLI，放进 `.app` 骨架（`Info.plist`、`PkgInfo`、mygo 终端插件声明的 `libghostty-vt.dylib`，SHA-256 与插件清单一致），整个 `.app` 做 ad hoc 签名；porter 用 `CGO_ENABLED=0` 交叉编译。没有重新生成资料包或钥匙。
+1. **真机首轮实测修复与口令体验简化（Phase B1 → Phase B2，2026-11-16 用户已在规范层面确认并定稿）**：
+   - 用户在真实 `debian-vm` 靶机（`openclaw`）使用 `stage-test-20261116` 包实测发现 5 个阻塞/体验问题，相关规范已同步至 `AGENTS.md`（3、7.1）、`ARCHITECTURE.md`（2.1、2.2、3、3.3、7）、`INSTALL.md`（2、4.1、4.2）、`UI.md`（7.5、7.8、7.9、8、9.3、9.7、13）与 `DEV_PLAN.md`（第 6 项）：
+     - **Phase B1（5 项真机 Bug 修复）**：
+       1. `gui/protect.go` `desired()` 过滤 `SupersededPlan.ServerCopies` 时 `var keep []protection.ServerCopy` 为 `nil` 切片，导致无副本时“按原设置重新生效”或改计划报 `request_invalid（缺少服务器副本完整设置）`；改用非 nil 空切片并兜底；
+       2. 服务器残留失效远程目标无法清除：`porter` 新增 `target_remove`（主人操作，`WithLegacyTargetsWrite` 检查未被当前生效计划引用后从 `targets.json` 删除，不删远端文件），并在 `gui/locdetail.go` 对 `station` 与 `ssh` 统一开放“移除…”（`StationRemove` / `TargetRemove`）；
+       3. 原生界面慢/断联与仅引导命令退出：`service/gate.go` `RequireGate` 优先检查本机仓库（满足即放行，不连带卡在失效远程目标上）；`porter/internal/install/native.go` 与 `service/native_instance.go` 支持 `native --instance <id> --shell` 实例交互终端；`gui/native.go` 提供“引导/默认命令”和“打开实例交互终端”并列入口，并在退出/断开后于终端卡片顶部直接提供“重新连接”、“改用交互终端”与“返回准备页”；
+       4. `gui/onserver.go` 去掉 `if len(sc.found) == 0` 限制，服务器上已有 Agent 时下方仍保留“安装新的 Agent / 官方安装方案”区块；
+       5. 注：实测机已有 linger 时如需验证“开启 linger”，可在服务器执行 `sudo loginctl disable-linger $USER` 后在健康页点重新检查复现。
+     - **Phase B2（单一 Valise 主口令统管与联动解锁）**：
+       1. 默认解锁窗口从 15 分钟延长至 **60 分钟**（设置 1–240 分钟可调）；
+       2. `service/gate.go` 对 `repo-trial.json` 中已有试解验证记录的本机仓库，后续新快照只需通过免私钥 `vault.VerifyNoKey` 即可放行，不再反复弹 Valise 口令；
+       3. 取消“管理口令必须与 Valise 口令不同”约束：实现单一 Valise 口令同时保护加密钥匙与默认管理钥匙、向导登录页在已设 Valise 口令时默认勾选一并创建管理钥匙、输入一次 Valise 口令同时解锁 `ownerIdentity` 与 `ssh-agent` 中的管理钥匙（向后兼容历史独立管理口令钥匙，并在设置页提供一键同步/重办为 Valise 口令）。
+2. **用户真机端到端验收（`65d2eb6` 阶段 A 测试包与此前隔离窗口/fake-ssh 验收基线，2026-11-16）**：测试包在 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/`（待 Phase B1/B2 完成后重新构建），此前验证记录：
    - **已核对（实际运行）**：四个二进制均带有 `vcs.revision=65d2eb630567a9a2aaf4095076c7c4457cd78480`、`vcs.modified=false`（`d89a953` 时跑过的 Linux 靶机 porter 临时运行与 CLI linger 验证、A/B 清理核查与 `65d2eb6` 重打包的 4 个二进制版本/静态 ELF 产物保持一致，无任何 A/B 入口）；`codesign --verify --deep --strict` 通过；`SHA256SUMS` 复核全部 OK。
    - **真实运行补证（2026-11-16）**：
      - `d89a953` 构建期已跑：两个 porter 在真实 Linux 上从临时目录运行（`ubuntu-vm` ARM64、InstaBox x86_64，用完即删，未部署）：`hello` 握手正常，`environment_*` 均返回 `method not found`（`ubuntu-vm-x86` 当时连不上）；app 指向隔离 fake-ssh 启动运行 5 分钟以上无报错；askpass 转交助手与 CLI linger 修复在 fake-ssh 上跑通。
-     - `9e46fd1` / `65d2eb6` 修复后测试与本次收尾：新增 `service` `TestCloneOnTheSameServer` 与 `gui` `TestSameServerCloneFlowCompletesWithoutStoppingService`（覆盖已占 ID/目录冲突拦截无执行按钮、`demo-copy2` 计划不含“会先停止服务”且含“不启动、不停止任何服务”、二次确认后恢复到 `.demo-copy2`、原实例 untouched 且均不标 `superseded`）；`AGENTS.md` 第 6 节全部 5 项检查、`go tool mygo vet` 与 `-race` 集成测试均已通过。
-   - **窗口内验收（2026-11-16，打包的 `Valise Test.app` 真实窗口；数据目录是隔离的 fake-ssh 测试世界：一台 Valise 接入、无管理钥匙、密码登录的服务器）**：
-     - **健康页 linger + 服务器密码弹窗：通过。**“开启 linger”→ 确认框列出命令、改变的系统设置、撤销办法与“要输入服务器密码”，此时服务器上没有执行任何命令 → “执行”后窗口弹出“输入 me@203.0.113.9 的服务器密码”→ 取消：退出码 -1、复核“问题仍在”、未执行、给出“重试”→ 重试并输入密码：“退出码 0”“复核结果：本次检查通过：linger 已开启”，该项从列表消失。
-     - **安装页文本截断：通过。**用无效的终端库路径启动（`MYGO_GHOSTTY_VT`）使终端加载失败，测试资料的安装方案打印 5000 行约 315 KiB；页面显示“只显示最近约 64 KiB 的输出，更早的已省略”，文字从第 3961 行开始。
-     - **同机创建副本（`9e46fd1` 与 `65d2eb6` 窗口实测）：通过（含冲突拦截与计划生成）。**`9e46fd1` 包窗口内：同机副本 `demo-copy` 从填写目录一路走到“文件已恢复，未启动程序”，副本落在指定目录、原实例文件与记录未变且均未标“已被取代”。`65d2eb6` 重打新包窗口内：用已占用的标识加原实例目录被拦下且不显示执行按钮；换为 `demo-copy2` 与新目录后计划正常生成，矛盾的“会先停止服务”提示已消失（该轮窗口手动操作停在“计划生成”未点执行，完整的冲突拦截 + `demo-copy2` 二次确认执行全链路已由 `gui` fake-ssh 集成测试 `TestSameServerCloneFlowCompletesWithoutStoppingService` 补齐通过）。
-     - **顺带看到的（未改）**：取消密码后的错误文字来自服务层，提到 `valise server rekey` 与“终端界面按 K”，还提示“开启高级模式”，对桌面用户不合适；本地未审核资料在安装入口卡片上写“官方安装方案”（方案页里有“未经审核”提示）；服务器页“用户通行证 · 能用”标签折成两行；窗口在后台时不重绘。
-   - **没做**：真实 OpenSSH + sshd 与真实 `loginctl`（polkit）；没有部署任何服务器；上一级目录 `valise-porter-test/` 里的同名 porter 仍是 11-14 的版本，没有覆盖（LAB.md 约定那里放最新 porter，是否覆盖等用户决定）。
-   - 之后可按页继续把其余内联面板与写死列宽换成语义函数与令牌（非阻塞）。
-2. **真机闭环范围**：在 macOS 桌面 + Linux 靶机上实测「添加服务器 → 接入 → 保护计划 → 手动备份 → 文件/暂存恢复测试 → 健康页 linger 一键开启（密码登录、无管理钥匙）→ 原生界面 → 恢复当前实例 / 迁移 / 同机创建副本」；真实 OpenSSH + sshd 的 askpass 与 `loginctl`（polkit）行为此前只在 fake-ssh 上验证过。
-3. **合并与后续演进**：真机闭环通过后，将分支 `refactor/revoke-ab-slots-and-doc-audit` 整理合并，并按 `docs/DEV_PLAN.md` 推进 MVP `v0.1` 收口与 5 项用户痛点规划。
+     - `9e46fd1` / `65d2eb6` 修复后测试与 `b63c764` 收尾：新增 `service` `TestCloneOnTheSameServer` 与 `gui` `TestSameServerCloneFlowCompletesWithoutStoppingService`（覆盖已占 ID/目录冲突拦截无执行按钮、`demo-copy2` 计划不含“会先停止服务”且含“不启动、不停止任何服务”、二次确认后恢复到 `.demo-copy2`、原实例 untouched 且均不标 `superseded`）；`AGENTS.md` 第 6 节全部 5 项检查、`go tool mygo vet` 与 `-race` 集成测试均已通过。
+   - **窗口内验收（2026-11-16，打包的 `Valise Test.app` 真实窗口；隔离 fake-ssh 测试世界）**：健康页 linger + 服务器密码弹窗通过、安装页 64 KiB 文本截断通过、同机创建副本（`demo-copy` 走到“文件已恢复，未启动程序”与 `demo-copy2` 冲突拦截/计划生成）通过。
+   - **此前顺带看到的待微调 UI 文案（非阻塞）**：取消密码后服务层错误文字仍含 CLI `valise server rekey` / 终端界面提示；本地未审核资料卡片写“官方安装方案”；服务器页标签折行；后台窗口切换不重绘。
+   - **没做**：真实 `loginctl enable-linger`（靶机已预先配置 linger）；上一级目录 `valise-porter-test/` 里的同名 porter 仍是 11-14 的版本，没有覆盖。
+3. **合并与后续演进**：Phase B1/B2 落地并重打测试包完成真机全链路闭环后，将分支 `refactor/revoke-ab-slots-and-doc-audit` 整理合并，并按 `docs/DEV_PLAN.md` 推进 MVP `v0.1` 收口与 5 项用户痛点规划。
 
 ### 必须保留的环境与基线事实
 
