@@ -271,6 +271,47 @@ func (n *Node) box(e ui.Element) ui.Element {
 	return e
 }
 
+// pageGap is the space between a page's blocks.
+const pageGap = 20
+
+// pageSection is one coarse block of a page (docs/UI.md 7.4.3): a header, a
+// status strip, tabs, the content. What is inside keeps its own order;
+// confirmations and passphrase dialogs are never sections.
+type pageSection struct {
+	name string
+	draw func(*ui.Context)
+}
+
+// renderSections draws a page's sections. Without a tree for the page they
+// flow one under another in the page's column, as the classic themes have
+// them. With a tree each sits where its slot is, and a section the tree
+// left out follows after it: a tree places sections, it cannot hide one.
+func renderSections(c *ui.Context, tree *Node, sections []pageSection) {
+	if tree == nil {
+		for _, s := range sections {
+			s.draw(c.Key(s.name))
+		}
+		return
+	}
+	drawn := map[string]bool{}
+	slots := map[string]func(*ui.Context, *Node){}
+	for _, s := range sections {
+		slots[s.name] = func(c *ui.Context, n *Node) {
+			if drawn[s.name] {
+				return // a slot named twice is drawn once
+			}
+			drawn[s.name] = true
+			n.box(ui.Column(c.Key(s.name)).Gap(pageGap)).Children(func() { s.draw(c) })
+		}
+	}
+	render(c, tree, slots)
+	for _, s := range sections {
+		if !drawn[s.name] {
+			s.draw(c.Key(s.name))
+		}
+	}
+}
+
 func gap(v float32) *float32 { return &v }
 
 // classicShell is the window of the classic themes: the sidebar on the

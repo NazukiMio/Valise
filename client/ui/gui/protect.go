@@ -162,7 +162,7 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 	d := ps.desired()
 	card(ui.Column(c)).Gap(8).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, T("protect.title")).FontSize(16).Bold().Grow(1)
+			sectionTitle(ui.Text(c, T("protect.title"))).Grow(1)
 			a.planTag(c, ps)
 			if ps.view.ServerPlan != nil && !ps.backupBlocked() {
 				if ps.oneOffSupported {
@@ -202,8 +202,8 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 	if ps.newBackupConfirm {
 		open := true
 		if ui.Modal(c, &open, func() {
-			ui.Column(c).Width(440).Padding(24).Gap(12).Children(func() {
-				ui.Text(c, T("backup.new")).FontSize(18).Bold()
+			dialog(ui.Column(c), 440).Children(func() {
+				dialogTitle(ui.Text(c, T("backup.new")))
 				ui.Text(c, T("backup.new_warning")).Wrap()
 				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 					ui.Button(c, T("common.cancel")).OnClick(func() { ps.newBackupConfirm = false })
@@ -289,8 +289,8 @@ func (a *App) scheduleDialog(c *ui.Context, row *agentRow, ps *protState) {
 	e := ps.sched
 	open := true
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(440).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("protect.schedule_title")).FontSize(18).Bold()
+		dialog(ui.Column(c), 440).Children(func() {
+			dialogTitle(ui.Text(c, T("protect.schedule_title")))
 			ui.Checkbox(c, &e.on, T("protect.schedule_enable"))
 			if e.on {
 				ui.Row(c).Gap(10).Children(func() {

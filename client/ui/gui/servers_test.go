@@ -158,7 +158,7 @@ func TestInstallScreen(t *testing.T) {
 	tt.Frame()
 	hasAll(t, tt.Texts(), "服务器上已经有 OpenClaw", "去接入它")
 	plan.Existing = nil
-	a.installs["lab/openclaw"] = &installRun{plan: plan, conn: newInstallConn(), text: "==> done\n",
+	a.installs["lab/openclaw"] = &installRun{plan: plan, conn: newInstallConn(), text: tailText{s: "==> done\n"},
 		res: &service.InstallResult{Exits: []int{0, -1}, Completed: true, Found: &enroll.Candidate{StateDir: "/home/me/.openclaw"}}}
 	tt.Frame()
 	hasAll(t, tt.Texts(), "装好了，并在服务器上找到了它", "命令：第 1 步退出码 0，第 2 步没选，跳过", "接入它", "==> done")

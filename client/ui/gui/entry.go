@@ -82,7 +82,7 @@ func (a *App) entryReport(c *ui.Context, row *agentRow) {
 	if st == nil {
 		return
 	}
-	ui.Column(c).Gap(4).Padding(12, 16).Radius(10).Background(palette.Board).Border(1, palette.CardBorder).Children(func() {
+	reportPanel(ui.Column(c)).Gap(4).Children(func() {
 		if st.open {
 			ui.Text(c, T("entry.opened", "url", st.display)).FontSize(13).Bold()
 		}

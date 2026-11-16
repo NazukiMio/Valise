@@ -13,12 +13,13 @@ import (
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 
-	"valise/core/journey"
 	"valise/core/profile"
 	"valise/ui/service"
 )
 
-// App is the window's state.
+// App is the window's state: what every page shares, then each area's
+// own state (appstate.go). The areas are embedded, so a view reads
+// a.health or a.restore as before; grouping says whose it is.
 type App struct {
 	svc    *service.Service
 	router *ui.Router
@@ -27,87 +28,8 @@ type App struct {
 	run    func(func())
 	update func(func())
 
-	agents   load[service.AgentListResult]
-	timeline load[service.JourneyPage]
-	servers  load[[]serverRow]
-	harness  map[string]string // profile id → display name
-	display  map[string]*profile.Display
-	hasRepos bool // a local repository is registered (docs/UI.md 7.2)
-
-	agentTab int    // tabOverview, tabJourney, tabHealth
-	point    string // snapshot id open in the journey, "" for the list
-	folds    map[string]*bool
-
-	glow            string    // point lit on the journey's line, opening next
-	glowAt          time.Time // when its glow started
-	journeyView     int       // 0 points, 1 route
-	timelinePending []journey.LocationRef
-	timelineScanID  uint64
-	timelineCancel  context.CancelFunc
-	timelineScope   service.TimelineScanRequest
-	timelineScopeID string
-	scanTimeline    func(context.Context, service.TimelineScanRequest, func(service.TimelineUpdate)) error
-
-	entries     map[string]*entryState // admin page tunnels by server/instance
-	entryOpener func(context.Context, string, string, service.OpenOptions) error
-	openURL     func(string) error
-	pickImage   func() (string, error) // the system's open dialog; "" when cancelled
-
-	prefs  prefs
-	images map[string]ui.ImageSource // chosen pictures by server/instance
-	logos  map[string]ui.ImageSource // official logos by profile id
-	query  string                    // the home page's search
-
-	focusSearch    bool                    // ⌘F was pressed
-	iconErr        error                   // choosing an agent's picture failed
-	health         map[string]*healthState // by server/instance
-	loc            *locState               // the backup locations pages
-	locAdding      *locAdd                 // adding a location
-	restoreTest    *restoreTestFlow
-	runRestoreTest func(context.Context, service.SelectedRestoreTest) (*service.RestoreTest, error)
-	cloudAdding    *cloudAdd     // adding a cloud drive
-	asks           []*passPrompt // secrets being asked for, first shown
-
-	pickFolder func(title, message string) (string, error) // the system's folder dialog; "" when cancelled
-	themes     map[string]themeEntry                       // imported themes by id, read at start and after an import
-	themeErr   error                                       // the chosen theme could not be used, or an import failed
-	// vaultNames maps a connection to the folder its vault has in the
-	// repositories (the server's name, which may differ: “debian-vm” keeps
-	// its backups under “debian”). Read with the agents; kept when a read
-	// fails.
-	vaultNames map[string]string
-	vaults     map[string]vaultRead // this read's vault states by connection
-
-	wiz         *wizard // the add-server wizard, nil when closed
-	pickFile    func(title, message string) (string, error)
-	scans       map[string]*serverScan // agents found by server
-	installs    map[string]*installRun // by server/profile
-	natives     map[string]*nativeState
-	native      *nativeRun
-	installable []installable // harnesses with an official install plan
-	newTerminal func(io.ReadWriteCloser) (*terminal.Terminal, error)
-	passes      map[string]*passState // admin pass actions by server
-	settings    map[string]*settingsState
-	serverTab   int                     // the server detail's tab: 0 overview, 1 settings
-	removed     []service.RemovedServer // removed servers, read with the list
-	setTab      int                     // 0 keys, 1 backup
-	keyFlow     *keyFlow                // the key dialog, nil when closed
-	keyNote     string                  // a done key action, said once
-	lockOff     bool                    // the backup lock's off confirmation is open
-	prots       map[string]*protState   // protection plans by server/instance
-	recover     *recoverState           // finding the passphrase again, nil when not
-	copyText    func(string) error      // the system clipboard; nil hides 复制
-	rebuild     *rebuildState           // rebuilding the admin passes
-	forgetting  string                  // the removed server whose record is being forgotten
-	forgetErr   error
-
-	locales         map[string]localeEntry // imported catalogs by id (docs/UI.md 7.6)
-	restoreLocation *restoreLocation
-	restore         *restoreFlow
-	restoreTasks    []service.RestoreTask
-	restoreTasksErr error
-	langErr         error // the chosen language could not be used, or an import failed
-
+	folds map[string]*bool // open sections, by name, across pages
+	asks  []*passPrompt    // secrets being asked for, first shown
 	// confirms are the plans the person confirmed in this window, taken
 	// once by the service's review hooks (backupnow.go). They belong to
 	// this window only; the hooks read them off the main thread.
@@ -115,6 +37,19 @@ type App struct {
 		sync.Mutex
 		ids map[string]bool
 	}
+
+	hooks
+	agentData
+	lookView
+	homeView
+	agentView
+	journeyView
+	healthView
+	protectView
+	locationsView
+	serversView
+	keysView
+	restoreView
 }
 
 // load is one read and what came of it.
@@ -128,18 +63,19 @@ type load[T any] struct {
 
 // New makes the state; nothing is read until Start.
 func New(svc *service.Service) *App {
-	a := &App{svc: svc, router: ui.NewRouter("/agents"), harness: map[string]string{}, display: map[string]*profile.Display{},
-		run: func(f func()) { go f() }, update: func(f func()) { f() },
-		entries: map[string]*entryState{}, entryOpener: svc.OpenEntry, openURL: service.OpenURL,
-		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{},
-		health: map[string]*healthState{}, vaultNames: map[string]string{},
-		scans: map[string]*serverScan{}, installs: map[string]*installRun{}, passes: map[string]*passState{},
-		settings: map[string]*settingsState{}, prots: map[string]*protState{},
-		natives: map[string]*nativeState{},
-		prefs:   prefs{View: "cards", Dismissed: map[string]string{}}}
-	a.scanTimeline = svc.ScanTimelineInScope
-	a.runRestoreTest = svc.RunSelectedRestoreTest
+	a := &App{svc: svc, router: ui.NewRouter("/agents"),
+		run: func(f func()) { go f() }, update: func(f func()) { f() }}
+	a.hooks = hooks{entryOpener: svc.OpenEntry, openURL: service.OpenURL,
+		scanTimeline: svc.ScanTimelineInScope, runRestoreTest: svc.RunSelectedRestoreTest}
+	a.agentData = agentData{harness: map[string]string{}, display: map[string]*profile.Display{}, vaultNames: map[string]string{},
+		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{}}
+	a.prefs = prefs{View: "cards", Dismissed: map[string]string{}}
+	a.entries, a.natives = map[string]*entryState{}, map[string]*nativeState{}
 	a.timelineScope = service.TimelineScanRequest{LocalOnly: true}
+	a.health = map[string]*healthState{}
+	a.prots = map[string]*protState{}
+	a.serversView = serversView{scans: map[string]*serverScan{}, installs: map[string]*installRun{}, passes: map[string]*passState{},
+		settings: map[string]*settingsState{}}
 	a.installReviews()
 	return a
 }

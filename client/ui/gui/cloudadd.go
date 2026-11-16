@@ -108,7 +108,7 @@ func (a *App) cloudAddPage(c *ui.Context) {
 	})
 	if len(ca.saved) > 0 {
 		ui.Row(c).Justify(ui.End).Children(func() {
-			ui.PrimaryButton(c, T("common.done")).OnClick(func() { a.cloudAdding, a.locAdding = nil, nil; a.router.Push("/locations") })
+			ui.PrimaryButton(c, T("common.done")).OnClick(func() { a.closeAdding(); a.router.Push("/locations") })
 		})
 	}
 }

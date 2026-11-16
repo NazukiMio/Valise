@@ -60,7 +60,7 @@ func TestServerShots(t *testing.T) {
 		{Kind: "exec", Summary: "加入 PATH", Optional: true, SkipEffect: "之后要用完整路径运行 openclaw", Command: []string{"true"}}}}}
 	step("/servers/lab/install/openclaw", "srv-plan")
 	ir := a.installs["lab/openclaw"]
-	ir.conn, ir.step, ir.text = newInstallConn(), "第 2 步 · 在服务器上运行", "==> Installing OpenClaw 2026.10.9\n==> Node 22.11.0 found\n"
+	ir.conn, ir.step, ir.text = newInstallConn(), "第 2 步 · 在服务器上运行", tailText{s: "==> Installing OpenClaw 2026.10.9\n==> Node 22.11.0 found\n"}
 	ir.res = &service.InstallResult{Exits: []int{0, 0, -1}, Completed: true, Found: &enroll.Candidate{StateDir: "/home/agent/.openclaw"}}
 	step("", "srv-installed")
 	step("/servers/home", "srv-detail")

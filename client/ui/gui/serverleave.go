@@ -47,8 +47,8 @@ func (a *App) openLeave(name string) {
 func (a *App) leaveDialog(c *ui.Context, name string, ss *settingsState) {
 	ls := ss.leave
 	if ui.Modal(c, &ls.open, func() {
-		ui.Column(c).Width(560).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("leave.dialog_title", "name", name)).FontSize(18).Bold()
+		dialog(ui.Column(c), 560).Children(func() {
+			dialogTitle(ui.Text(c, T("leave.dialog_title", "name", name)))
 			switch {
 			case ls.readJ.busy:
 				a.jobLine(c, &ls.readJ)
@@ -158,8 +158,7 @@ func (a *App) removeHere(name string, ls *leaveState) {
 }
 
 func (a *App) leaveDone(name string) {
-	delete(a.settings, name)
-	delete(a.passes, name)
+	a.forgetServer(name)
 	a.refreshServers()
 	a.refreshAgents()
 	a.router.Push("/servers")

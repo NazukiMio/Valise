@@ -78,8 +78,8 @@ func (a *App) passDialog(c *ui.Context) {
 		answer(passReply{err: valise.New("cancelled", cancelled, "")})
 	}
 	if ui.Modal(c, &p.open, func() {
-		ui.Column(c).Width(420).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, title).FontSize(18).Bold()
+		dialog(ui.Column(c), 420).Children(func() {
+			dialogTitle(ui.Text(c, title))
 			muted(ui.Text(c, why)).FontSize(12).Wrap()
 			in := ui.TextInput(c, &p.value).Password().Placeholder(field).Label(field).AutoFocus()
 			if in.Submitted() && p.value != "" {

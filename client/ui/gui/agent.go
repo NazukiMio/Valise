@@ -15,6 +15,9 @@ const (
 	tabManage
 )
 
+// pageAgent names the agent page's tree in a theme (Theme.Pages).
+const pageAgent = "agent"
+
 // agentPage is one agent: overview, journey and health (docs/UI.md 9.5,
 // 10.1, 7.3).
 func (a *App) agentPage(c *ui.Context, server, instance string) {
@@ -29,12 +32,42 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 	if row == nil {
 		row = &agentRow{Server: server, Instance: instance, Name: instance, Initial: initial(instance)}
 	}
-	if ui.Link(c, "‹ "+T("agent.back"), "/agents").Clicked() {
-		a.point = ""
-	}
 	points := a.pointsOf(server, instance)
+	renderSections(c, cur.Pages[pageAgent], []pageSection{
+		{"header", func(c *ui.Context) { a.agentHeader(c, row) }},
+		{"status", func(c *ui.Context) {
+			if a.iconErr != nil {
+				errorBox(c, a.iconErr, a.fold("icon-err"))
+			}
+			a.entryReport(c, row)
+		}},
+		{"tabs", func(c *ui.Context) {
+			if ui.Tabs(c, &a.agentTab, T("agent.tab.overview"), T("agent.tab.journey"), T("agent.tab.health"), T("agent.tab.manage")).Changed() {
+				a.closePoint()
+			}
+		}},
+		{"content", func(c *ui.Context) {
+			switch a.agentTab {
+			case tabJourney:
+				a.journey(c, row, points)
+			case tabHealth:
+				a.healthTab(c, row)
+			case tabManage:
+				a.manageTab(c, row)
+			default:
+				a.overview(c, row, points)
+			}
+		}},
+	})
+}
+
+// agentHeader is who it is, one sentence about it, and the page's one
+// primary action.
+func (a *App) agentHeader(c *ui.Context, row *agentRow) {
+	if ui.Link(c, "‹ "+T("agent.back"), "/agents").Clicked() {
+		a.closePoint()
+	}
 	newest := a.newest(*row)
-	// Who it is, one sentence about it, and the page's one primary action.
 	ui.Row(c).Gap(18).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Gap(6).AlignItems(ui.Center).Children(func() {
 			a.avatar(c, *row, 76)
@@ -57,25 +90,6 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 			a.entryButton(c, row)
 		}
 	})
-	if a.iconErr != nil {
-		errorBox(c, a.iconErr, a.fold("icon-err"))
-	}
-	a.entryReport(c, row)
-	if ui.Tabs(c, &a.agentTab, T("agent.tab.overview"), T("agent.tab.journey"), T("agent.tab.health"), T("agent.tab.manage")).Changed() {
-		a.point = ""
-	}
-	switch a.agentTab {
-	case tabJourney:
-		a.journey(c, row, points)
-		return
-	case tabHealth:
-		a.healthTab(c, row)
-		return
-	case tabManage:
-		a.manageTab(c, row)
-		return
-	}
-	a.overview(c, row, points)
 }
 
 func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePoint) {
@@ -86,7 +100,7 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 	statusBoard(c, agentCells(*row, points, c), false)
 	ui.Row(c).Gap(18).AlignItems(ui.Start).Children(func() {
 		card(ui.Column(c)).Grow(1).Basis(0).Children(func() {
-			ui.Text(c, T("agent.recent")).Bold()
+			cardTitle(ui.Text(c, T("agent.recent")))
 			if len(points) == 0 {
 				muted(ui.Text(c, T("backup.no_points")))
 			}
@@ -108,7 +122,7 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 			}
 		})
 		card(ui.Column(c)).Grow(1).Basis(0).Children(func() {
-			ui.Text(c, T("agent.where", "server", row.Server)).Bold()
+			cardTitle(ui.Text(c, T("agent.where", "server", row.Server)))
 			fact(c, T("agent.harness"), row.Harness)
 			if len(row.Roots) > 0 {
 				ui.Collapsible(c, T("error.tech_info"), a.fold("roots-"+row.Server+row.Instance), func() {
@@ -122,11 +136,12 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 	muted(ui.Text(c, T("backup.sources_note"))).FontSize(11)
 }
 
-// fact is one labelled line of a card.
+// fact is one labelled line of a card; the label's width is the theme's,
+// and a label longer than it wraps (docs/UI.md 7.4.3).
 func fact(c *ui.Context, label, value string) {
 	ui.Row(c).Gap(14).Children(func() {
 		if label != "" {
-			muted(ui.Text(c, label)).Width(80).FontSize(13)
+			muted(ui.Text(c, label)).Width(cur.Sizes.LabelWidth).FontSize(13).Wrap()
 		}
 		ui.Text(c, value).FontSize(13).Grow(1)
 	})

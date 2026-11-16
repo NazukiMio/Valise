@@ -224,11 +224,11 @@ func (a *App) fixReport(c *ui.Context, row *agentRow, st *healthState) {
 	f := st.fix
 	if f.confirm {
 		ui.Modal(c, &f.confirm, func() {
-			ui.Column(c).Width(460).Padding(24).Gap(12).Children(func() {
-				ui.Text(c, T("health.run_title", "name", f.action.Name)).FontSize(18).Bold()
+			dialog(ui.Column(c), 460).Children(func() {
+				dialogTitle(ui.Text(c, T("health.run_title", "name", f.action.Name)))
 				muted(ui.Text(c, service.RiskLabels[f.action.Risk]+" · "+f.access)).FontSize(12)
 				ui.Text(c, f.action.Explain).FontSize(13).Wrap()
-				ui.Column(c).Gap(4).Padding(10, 12).Radius(8).Background(palette.Board).Children(func() {
+				codeBox(ui.Column(c)).Gap(4).Children(func() {
 					muted(ui.Text(c, T("health.run_cmd", "server", row.Server)))
 					ui.Text(c, strings.Join(f.action.Argv, " ")).FontSize(12).Font(cur.Fonts.Mono).Wrap()
 				})
@@ -241,7 +241,7 @@ func (a *App) fixReport(c *ui.Context, row *agentRow, st *healthState) {
 		})
 		return
 	}
-	ui.Column(c).Gap(6).Padding(12, 16).Radius(10).Background(palette.Board).Border(1, palette.CardBorder).Children(func() {
+	reportPanel(ui.Column(c)).Gap(6).Children(func() {
 		switch {
 		case f.loading:
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c); muted(ui.Text(c, T("health.reading_action"))) })

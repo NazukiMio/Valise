@@ -42,7 +42,7 @@ func (a *App) restoreProgress(c *ui.Context, r *restoreFlow) {
 func (a *App) restoreConfirm(c *ui.Context, r *restoreFlow) {
 	c.After(time.Second)
 	card(ui.Column(c)).Gap(10).Children(func() {
-		ui.Text(c, T("restore.second")).FontSize(18).Bold()
+		dialogTitle(ui.Text(c, T("restore.second")))
 		if r.verify != nil {
 			fact(c, T("restore.stage_verified"), T("restore.files_verified", "n", r.verify.Files, "size", size(r.verify.Bytes)))
 		}
@@ -91,8 +91,8 @@ func (a *App) recheckRestore(r *restoreFlow) {
 func (a *App) restoreStopDialog(c *ui.Context, r *restoreFlow) {
 	open := true
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(460).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("restore.stop_title")).FontSize(18).Bold()
+		dialog(ui.Column(c), 460).Children(func() {
+			dialogTitle(ui.Text(c, T("restore.stop_title")))
 			muted(ui.Text(c, T("restore.stop_hint"))).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).OnClick(func() { r.stopConfirm = false })
@@ -131,8 +131,8 @@ func (a *App) queryRestore(r *restoreFlow) {
 func (a *App) restoreRecoveryDialog(c *ui.Context, r *restoreFlow) {
 	open := true
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(460).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("restore.recover_title")).FontSize(18).Bold()
+		dialog(ui.Column(c), 460).Children(func() {
+			dialogTitle(ui.Text(c, T("restore.recover_title")))
 			muted(ui.Text(c, T("restore.recover_hint"))).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).OnClick(func() { r.recoverAction = "" })
@@ -169,7 +169,7 @@ func (a *App) restoreResult(c *ui.Context, r *restoreFlow) {
 		return
 	}
 	card(ui.Column(c)).Gap(10).Children(func() {
-		ui.Text(c, T("restore.state."+orText(t.State, "failed"))).FontSize(18).Bold()
+		dialogTitle(ui.Text(c, T("restore.state."+orText(t.State, "failed"))))
 		fact(c, T("restore.target"), t.Target+" / "+t.Instance)
 		if t.PreBackupSnapshot != "" {
 			fact(c, T("restore.backup_current_result"), T("restore.checked"))

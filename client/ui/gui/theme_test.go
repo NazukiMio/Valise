@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/ui"
 )
 
 // writeTheme makes a theme folder with theme.json and a small picture.
@@ -186,5 +188,59 @@ func TestExampleThemes(t *testing.T) {
 		if len(th.Notes) != 0 {
 			t.Errorf("%s leaves out slots that must show: %v", dir, th.Notes)
 		}
+	}
+}
+
+// The widths a view may not write itself are theme tokens (docs/UI.md
+// 7.4.3): a theme file from before them keeps the classic values, one that
+// writes them changes every fact label and dialog at once, and a width out
+// of range is refused.
+func TestWidthTokens(t *testing.T) {
+	old, _, err := readTheme(writeTheme(t, immersive))
+	if err != nil {
+		t.Fatal(err)
+	}
+	classic := classicSizes()
+	if old.Sizes.LabelWidth != classic.LabelWidth || old.Sizes.TimeWidth != classic.TimeWidth ||
+		old.Sizes.DialogWidth != classic.DialogWidth || old.Sizes.PanelRadius != classic.PanelRadius || old.Sizes.Verdict != 44 {
+		t.Fatalf("an older theme file lost the classic widths: %+v", old.Sizes)
+	}
+	wide, _, err := readTheme(writeTheme(t, `{"format":"valise-theme/1","name":"wide","sizes":{"label_width":140,"time_width":180,"dialog_width":690,"panel_radius":4}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wide.Sizes.LabelWidth != 140 || wide.Sizes.TimeWidth != 180 || wide.Sizes.DialogWidth != 690 || wide.Sizes.PanelRadius != 4 || wide.Sizes.Radius != classic.Radius {
+		t.Fatalf("%+v", wide.Sizes)
+	}
+	for _, bad := range []string{`{"label_width":8}`, `{"dialog_width":4000}`, `{"time_width":-1}`} {
+		if _, _, err := readTheme(writeTheme(t, `{"format":"valise-theme/1","name":"x","sizes":`+bad+`}`)); err == nil || !strings.Contains(err.Error(), "40 到 960") {
+			t.Errorf("%s: got %v", bad, err)
+		}
+	}
+	// The views read the tokens: the same fact and dialog, drawn under each.
+	prev := cur
+	defer use(prev)
+	open := true
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Width(600).Children(func() { fact(c, "label", "value") })
+		ui.Modal(c, &open, func() { dialog(ui.Column(c), classicDialog).Children(func() { ui.Text(c, "in dialog") }) })
+	}, 1200, 600)
+	measure := func() (valueX, dialogW float32) {
+		tt.Frame()
+		tt.Advance(time.Second)
+		l, _ := tt.Find("label")
+		v, _ := tt.Find("value")
+		d, _ := tt.Find("in dialog")
+		return v.X - l.X, d.W
+	}
+	use(classicLight())
+	x0, w0 := measure()
+	use(wide)
+	x1, w1 := measure()
+	if x1-x0 != 140-classic.LabelWidth {
+		t.Errorf("fact label width did not follow the theme: %v then %v", x0, x1)
+	}
+	if w1-w0 != 690-classic.DialogWidth {
+		t.Errorf("dialog width did not follow the theme: %v then %v", w0, w1)
 	}
 }

@@ -57,8 +57,8 @@ func (a *App) restoreTestSelection(c *ui.Context, t *restoreTestFlow) {
 	open := true
 	_, windowHeight := c.Size()
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(560).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("restoretest.choose_title")).FontSize(18).Bold()
+		dialog(ui.Column(c), 560).Children(func() {
+			dialogTitle(ui.Text(c, T("restoretest.choose_title")))
 			ui.Scroll(c).MaxHeight(max(200, windowHeight-160)).Children(func() {
 				ui.Column(c).Gap(12).Children(func() {
 					fact(c, T("restore.target"), t.server+" / "+t.instance)

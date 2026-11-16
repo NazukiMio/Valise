@@ -26,7 +26,7 @@ type installRun struct {
 	running  bool
 	step     string // the step running now
 	term     *terminal.Terminal
-	text     string // the output, when the terminal could not be loaded
+	text     tailText // the output, when the terminal could not be loaded
 	input    string
 	conn     *installConn
 	res      *service.InstallResult
@@ -85,7 +85,7 @@ func (a *App) installPage(c *ui.Context, host, id string) {
 	p := ir.plan
 	if p.Existing != nil {
 		card(ui.Column(c)).Gap(10).Children(func() {
-			ui.Text(c, T("install.existing", "name", name)).FontSize(16).Bold().TextColor(palette.Warn)
+			sectionTitle(ui.Text(c, T("install.existing", "name", name))).TextColor(palette.Warn)
 			mono(muted(ui.Text(c, p.Existing.StateDir))).Wrap()
 			ui.Text(c, T("install.existing_why")).FontSize(13).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
@@ -105,7 +105,7 @@ func (a *App) planCard(c *ui.Context, key, host string, ir *installRun, name str
 	p := ir.plan
 	card(ui.Column(c)).Gap(12).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, T("install.will_do")).FontSize(16).Bold().Grow(1)
+			sectionTitle(ui.Text(c, T("install.will_do"))).Grow(1)
 			if len(p.Missing) == 0 && len(p.Unfixable) == 0 {
 				ui.Text(c, T("install.ready")).FontSize(12).TextColor(palette.Ok)
 			}
@@ -139,7 +139,7 @@ func (a *App) planCard(c *ui.Context, key, host string, ir *installRun, name str
 			})
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			ui.Button(c, T("common.cancel")).OnClick(func() { delete(a.installs, key); a.router.Push("/servers/" + host + "/agents") })
+			ui.Button(c, T("common.cancel")).OnClick(func() { a.closeInstall(key); a.router.Push("/servers/" + host + "/agents") })
 			if len(missing) == 0 {
 				ui.PrimaryButton(c, T("install.start")).OnClick(func() { a.startInstall(host, ir) })
 			}
@@ -157,12 +157,12 @@ func reasons(rs []install.Requirement) []string {
 }
 
 func (a *App) planStep(c *ui.Context, key string, i int, st *service.PlanStep) {
-	ui.Column(c).Gap(6).Padding(12, 14).Radius(10).Background(palette.Board).Children(func() {
+	subPanel(ui.Column(c)).Gap(6).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			if st.Optional {
 				ui.Checkbox(c, &st.Selected, T("install.optional", "what", st.Summary))
 			} else {
-				ui.Text(c, fmt.Sprintf("%d. %s", i+1, st.Summary)).Bold()
+				cardTitle(ui.Text(c, fmt.Sprintf("%d. %s", i+1, st.Summary)))
 			}
 		})
 		if st.URL != "" {
@@ -188,7 +188,7 @@ func (a *App) planStep(c *ui.Context, key string, i int, st *service.PlanStep) {
 
 func (a *App) startInstall(host string, ir *installRun) {
 	conn := newInstallConn()
-	ir.conn, ir.running, ir.err, ir.res, ir.text = conn, true, nil, nil, ""
+	ir.conn, ir.running, ir.err, ir.res, ir.text = conn, true, nil, nil, tailText{}
 	if a.newTerminal != nil {
 		if t, err := a.newTerminal(conn); err == nil {
 			ir.term = t
@@ -201,7 +201,7 @@ func (a *App) startInstall(host string, ir *installRun) {
 				n, err := conn.out.Read(buf)
 				if n > 0 {
 					s := string(buf[:n])
-					a.update(func() { ir.text += s })
+					a.update(func() { ir.text.add(s) })
 				}
 				if err != nil {
 					return
@@ -234,7 +234,10 @@ func (a *App) runView(c *ui.Context, key, host string, ir *installRun, name stri
 		if ir.term != nil {
 			terminal.View(c, ir.term).Height(320).AutoFocus()
 		} else {
-			mono(ui.Text(c, orText(ir.text, T("install.no_output")))).FontSize(12).Wrap().Padding(10).Radius(8).Background(palette.Board)
+			if ir.text.cut {
+				muted(ui.Text(c, T("install.text_cut", "n", maxFallbackText>>10)))
+			}
+			codeBox(mono(ui.Text(c, orText(ir.text.s, T("install.no_output")))).FontSize(12).Wrap()).Padding(10)
 			if ir.running {
 				in := ui.TextInput(c, &ir.input).Placeholder(T("install.input"))
 				if in.Submitted() {
@@ -257,13 +260,13 @@ func (a *App) installResult(c *ui.Context, key, host string, ir *installRun, nam
 	card(ui.Column(c)).Gap(8).Children(func() {
 		switch {
 		case r != nil && r.Found != nil:
-			ui.Text(c, T("install.found")).FontSize(16).Bold().TextColor(palette.Ok)
+			sectionTitle(ui.Text(c, T("install.found"))).TextColor(palette.Ok)
 			muted(ui.Text(c, T("install.found_where", "name", name, "dir", r.Found.StateDir))).Wrap()
 		case r != nil && r.Completed:
-			ui.Text(c, T("install.not_found")).FontSize(16).Bold().TextColor(palette.Warn)
+			sectionTitle(ui.Text(c, T("install.not_found"))).TextColor(palette.Warn)
 			muted(ui.Text(c, T("install.not_found_why"))).Wrap()
 		default:
-			ui.Text(c, T("install.unfinished")).FontSize(16).Bold().TextColor(palette.Warn)
+			sectionTitle(ui.Text(c, T("install.unfinished"))).TextColor(palette.Warn)
 		}
 		if r != nil && len(r.Exits) > 0 {
 			muted(ui.Text(c, exitLine(r.Exits))).Wrap()
@@ -272,9 +275,9 @@ func (a *App) installResult(c *ui.Context, key, host string, ir *installRun, nam
 			errorBox(c, ir.err, a.fold("install-err-"+key))
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			ui.Button(c, T("install.back_server")).OnClick(func() { delete(a.installs, key); a.rescanAndGo(host) })
+			ui.Button(c, T("install.back_server")).OnClick(func() { a.closeInstall(key); a.rescanAndGo(host) })
 			if r != nil && r.Found != nil {
-				ui.PrimaryButton(c, T("install.adopt")).OnClick(func() { delete(a.installs, key); a.rescanAndGo(host) })
+				ui.PrimaryButton(c, T("install.adopt")).OnClick(func() { a.closeInstall(key); a.rescanAndGo(host) })
 			}
 		})
 	})

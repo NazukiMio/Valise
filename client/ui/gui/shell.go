@@ -128,7 +128,7 @@ func (a *App) navButton(c *ui.Context, it navItem, on, withText bool) {
 func (a *App) pageSlot(c *ui.Context, n *Node) {
 	look := Node{Background: n.Background, Image: n.Image, Radius: n.Radius}
 	look.box(ui.Scroll(c).Grow(max(n.Grow, 1))).Children(func() {
-		col := ui.Column(c).Gap(20)
+		col := ui.Column(c).Gap(pageGap)
 		if n.Padding == nil {
 			col.Padding(36, 44)
 		}
@@ -136,7 +136,7 @@ func (a *App) pageSlot(c *ui.Context, n *Node) {
 		inner.Grow, inner.Background, inner.Image, inner.Radius = 0, "", "", 0
 		inner.box(col).Children(func() {
 			a.router.View(c, func(r *ui.Route) {
-				r.Page().Gap(20)
+				r.Page().Gap(pageGap)
 				switch {
 				case r.Match("/restore/tasks"):
 					a.restoreTaskList(c)

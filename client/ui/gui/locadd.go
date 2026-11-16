@@ -140,7 +140,7 @@ func (a *App) addButtons(c *ui.Context, f *locAdd, label string, ready bool, run
 		errorBox(c, f.j.err, a.fold("locadd-err"))
 	}
 	ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-		ui.Button(c, T("common.cancel")).OnClick(func() { a.locAdding = nil; a.router.Push("/locations") })
+		ui.Button(c, T("common.cancel")).OnClick(func() { a.closeAdding(); a.router.Push("/locations") })
 		b := ui.PrimaryButton(c, label).OnClick(run)
 		if !ready {
 			b.Disabled(true)
@@ -225,7 +225,7 @@ func (a *App) stationForm(c *ui.Context, f *locAdd) {
 func (a *App) stationFingerprint(c *ui.Context, f *locAdd) {
 	st := f.station()
 	card(ui.Column(c)).Gap(12).Children(func() {
-		ui.Text(c, T("loc.fp_title", "name", st.Name)).FontSize(18).Bold()
+		dialogTitle(ui.Text(c, T("loc.fp_title", "name", st.Name)))
 		ui.Column(c).Gap(6).Padding(12, 14).Radius(10).Background(palette.Board).Children(func() {
 			muted(ui.Text(c, T("wizard.identity.offered", "addr", knownHostsName(st.Address, st.PortOr22()))))
 			for _, k := range f.keys {
@@ -338,7 +338,7 @@ func (a *App) locAdded(c *ui.Context, f *locAdd) {
 			ui.Text(c, w).FontSize(13).TextColor(palette.Warn).Wrap()
 		}
 		ui.Row(c).Justify(ui.End).Children(func() {
-			ui.PrimaryButton(c, T("common.done")).OnClick(func() { a.locAdding = nil; a.router.Push("/locations") })
+			ui.PrimaryButton(c, T("common.done")).OnClick(func() { a.closeAdding(); a.router.Push("/locations") })
 		})
 	})
 }

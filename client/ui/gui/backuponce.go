@@ -14,8 +14,8 @@ func (a *App) oneOffDialog(c *ui.Context, row *agentRow, ps *protState) {
 	e := ps.oneOff
 	open := true
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(500).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("backup.once.title")).FontSize(18).Bold()
+		dialog(ui.Column(c), 500).Children(func() {
+			dialogTitle(ui.Text(c, T("backup.once.title")))
 			muted(ui.Text(c, T("backup.once.note"))).Wrap()
 			ui.RadioGroup(c, func() {
 				for _, tier := range []string{"soul", "soul-secrets", "full", "raw"} {

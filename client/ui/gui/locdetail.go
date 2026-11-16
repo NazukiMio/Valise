@@ -290,8 +290,8 @@ func (a *App) autoDialog(c *ui.Context) {
 	e := ls.auto
 	open := true
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(420).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("loc.auto_title", "host", e.host)).FontSize(18).Bold()
+		dialog(ui.Column(c), 420).Children(func() {
+			dialogTitle(ui.Text(c, T("loc.auto_title", "host", e.host)))
 			muted(ui.Text(c, T("loc.auto_what"))).FontSize(13).Wrap()
 			ui.RadioGroup(c, func() {
 				for _, v := range []string{"off", "6h", "1d", "7d"} {

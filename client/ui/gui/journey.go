@@ -19,14 +19,14 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 				return
 			}
 		}
-		a.point = ""
+		a.closePoint()
 	}
 	pageHead(c, T("journey.title", "name", row.Name), T("journey.sub"))
 	a.journeyReadNotes(c)
 	stops := route(a.agents.value.Items, row.Server, row.Instance)
 	if len(stops) > 0 {
-		ui.Row(c).Children(func() { ui.Segmented(c, &a.journeyView, T("journey.view.points"), T("journey.view.route")) })
-		if a.journeyView == 1 {
+		ui.Row(c).Children(func() { ui.Segmented(c, &a.journeyMode, T("journey.view.points"), T("journey.view.route")) })
+		if a.journeyMode == 1 {
 			routeView(c, stops)
 			return
 		}
@@ -91,7 +91,7 @@ func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool
 			box.Background(palette.Card).Border(1, palette.CardBorder)
 		}
 		box.OnClick(func() { a.point = pointKey(p) }).Children(func() {
-			ui.Text(c, when(p.CreatedAt, c.Now())).FontSize(13).Bold().Width(120)
+			ui.Text(c, when(p.CreatedAt, c.Now())).FontSize(13).Bold().Width(cur.Sizes.TimeWidth).Wrap()
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				muted(ui.Text(c, tierText(p.Scope.Tier)))
 				muted(ui.Text(c, pointLocations(p))).FontSize(11).Wrap()
@@ -107,7 +107,7 @@ func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int, 
 	p := points[i]
 	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 		if ui.Button(c, "‹ "+T("point.back")).Clicked() {
-			a.point = ""
+			a.closePoint()
 		}
 		ui.Spacer(c)
 		if i+1 < len(points) && ui.Button(c, T("point.earlier")).Clicked() {

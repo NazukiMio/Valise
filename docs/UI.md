@@ -116,7 +116,7 @@
 
 布局节点恰好是 `row`、`column`、`grid`（子节点数组）或 `slot`（插槽名）之一，可带：`columns`、`gap`、`padding`（1、2 或 4 个数）、`width`、`height`、`max_width`、`grow`、`align` 与 `justify`（`start`、`center`、`end`、`stretch`、`between`）、`background`（颜色名）、`image`（主题的图片名，铺满）、`radius`；`style` 只能写在插槽上。`page` 插槽的 `padding` 与 `max_width` 作用于页面内容。
 
-颜色名：`paper` `card` `card_border` `text` `text_sub` `line` `board` `hover` `ok` `warn` `stop` `side` `side_text` `brand` `accent` `accent_hover` `accent_text` `surface` `surface_hover` `border` `focus` `gold` `gold_soft` `canvas` `strand` `spine` `node` `node_core` `alert_bg` `alert_border` `alert_text` `error_bg` `error_border` `trouble_bg` `trouble_border` `logo_bg` `shadow`。字体：`text` `display` `mono`。尺寸：`radius` `card_radius` `verdict` `title` `text`（0 表示沿用）。变体：`timeline` 为 `strands`、`gold` 或 `plain`。图片名 `backdrop` 铺满窗口背景，`brand` 替换品牌图标；其他名字供布局的 `image` 使用。
+颜色名：`paper` `card` `card_border` `text` `text_sub` `line` `board` `hover` `ok` `warn` `stop` `side` `side_text` `brand` `accent` `accent_hover` `accent_text` `surface` `surface_hover` `border` `focus` `gold` `gold_soft` `canvas` `strand` `spine` `node` `node_core` `alert_bg` `alert_border` `alert_text` `error_bg` `error_border` `trouble_bg` `trouble_border` `logo_bg` `shadow`。字体：`text` `display` `mono`。尺寸：`radius` `card_radius` `panel_radius` `verdict` `title` `text`（0 到 120，0 表示沿用），以及宽度 `label_width`（键值行标签）、`time_width`（旅程行的时间）、`dialog_width`（标准弹窗宽度，其余弹窗按比例随它缩放），宽度取 40 到 960，不写或写 0 沿用经典值（80、120、460）。变体：`timeline` 为 `strands`、`gold` 或 `plain`。图片名 `backdrop` 铺满窗口背景，`brand` 替换品牌图标；其他名字供布局的 `image` 使用。
 
 完整可导入的样例在仓库 `examples/themes/`（“沉浸”：深色夜空背景图、窄栏导航、两列大卡片、金色发丝时间线），测试核对每个样例都能原样导入、不缺始终显示的插槽。下面是精简示例（沉浸：窄栏导航，Agent 卡片放大占满一行）：
 
@@ -145,6 +145,8 @@
 1. **粗粒度区块插槽 + 默认流式回退（Section Slots with Default Flow）**：外壳（`shell`）与首页（`home`）保持完整外部 `theme.json` 插槽校验；其余页面在建设期按 3–4 个粗粒度语义区块（如 `header`、`status`、`tabs`、`content`）通过通用区块辅助函数组织，主题未定义该页布局树时默认按经典垂直单列流（`ui.Column`）渲染，后期独立开发面板模板时只需覆盖布局树（如改摆双栏仪表盘），无需改动业务代码。强因果顺序的安全确认、口令框与风险步骤固定在区块内部或全局 Modal 层，不允许布局树拆散。
 2. **CSS Class 式语义样式函数**：视图代码避免直接硬编码内联边距、圆角与字号魔法数字，统一通过 `card`、`subPanel`、`cardTitle`、`fact`、`muted`、`mono` 等语义包装函数读取当前主题的 `Sizes` 与 `Palette` 令牌。
 3. **面向 i18n 的弹性宽度令牌**：键值行标签（`fact`）、时间线行宽与标准弹窗宽度不在业务视图中写死窄像素（如 `Width(80)`），统一读取 `Sizes` 中的弹性宽度令牌并配合 `.Wrap()`，以便后续接入英文等长词表或宽屏模板时一处调整全局生效。
+
+**落地情况（Phase F2，2026-11-16）**：语义样式函数为 `card`、`subPanel`、`reportPanel`、`codeBox`、`cardTitle`、`sectionTitle`、`dialogTitle`、`dialog`、`fact`、`muted`、`mono`（`gui/theme.go`、`gui/agent.go`）；宽度令牌见 7.4.2。区块辅助函数为 `gui/layout.go` 的 `renderSections`，已用于 Agent 页（`header`、`status`、`tabs`、`content`）：没有该页布局树时按经典单列绘制；有布局树时各区块放在对应插槽，树里没放的区块仍补在后面，不能被隐藏。区块页的布局树目前只在代码里（`Theme.Pages`），`theme.json` 尚不能写，也不做插槽校验。
 
 ### 7.5 服务器与接入（N4 第一段，2026-11-08 用户确认草图）
 

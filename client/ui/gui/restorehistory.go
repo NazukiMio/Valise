@@ -50,7 +50,7 @@ func reopenRestoreTask(task service.RestoreTask) *restoreFlow {
 func (a *App) restoreNewDialog(c *ui.Context, r *restoreFlow) {
 	open := true
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(480).Padding(24).Gap(12).Children(func() {
+		dialog(ui.Column(c), 480).Children(func() {
 			ui.Text(c, T("restore.new_title")).Bold().FontSize(18)
 			muted(ui.Text(c, T("restore.new_hint"))).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {

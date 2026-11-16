@@ -226,8 +226,8 @@ func (a *App) issuePass(name string, ps *passState) {
 
 func (a *App) revokeDialog(c *ui.Context, name string, ps *passState) {
 	if ui.Modal(c, &ps.revoke, func() {
-		ui.Column(c).Width(420).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("pass.revoke_title", "name", name)).FontSize(18).Bold()
+		dialog(ui.Column(c), 420).Children(func() {
+			dialogTitle(ui.Text(c, T("pass.revoke_title", "name", name)))
 			muted(ui.Text(c, T("pass.revoke_why"))).FontSize(12).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).OnClick(func() { ps.revoke = false })

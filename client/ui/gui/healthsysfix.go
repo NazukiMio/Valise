@@ -73,7 +73,7 @@ func (a *App) sysFixReport(c *ui.Context, row *agentRow, st *healthState) {
 		st.sys = nil // the confirmation was closed without an answer
 		return
 	}
-	ui.Column(c).Gap(6).Padding(12, 16).Radius(10).Background(palette.Board).Border(1, palette.CardBorder).Children(func() {
+	reportPanel(ui.Column(c)).Gap(6).Children(func() {
 		switch {
 		case f.loading:
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c); muted(ui.Text(c, T("health.sysfix.planning"))) })
@@ -109,12 +109,12 @@ func (a *App) sysFixConfirm(c *ui.Context, st *healthState) {
 	f := st.sys
 	fix := f.fix
 	ui.Modal(c, &f.confirm, func() {
-		ui.Column(c).Width(500).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("health.run_title", "name", fix.Name)).FontSize(18).Bold()
+		dialog(ui.Column(c), 500).Children(func() {
+			dialogTitle(ui.Text(c, T("health.run_title", "name", fix.Name)))
 			muted(ui.Text(c, T("health.sysfix.kind")))
 			fact(c, T("health.sysfix.goal"), fix.Goal)
 			fact(c, T("health.sysfix.impact"), fix.Impact)
-			ui.Column(c).Gap(4).Padding(10, 12).Radius(8).Background(palette.Board).Children(func() {
+			codeBox(ui.Column(c)).Gap(4).Children(func() {
 				muted(ui.Text(c, T("health.sysfix.cmds", "server", fix.Host)))
 				for i, step := range fix.Steps {
 					ui.Column(c.Key(i)).Gap(4).Children(func() {

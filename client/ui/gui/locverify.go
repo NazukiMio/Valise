@@ -70,12 +70,12 @@ func (a *App) verifyDialog(c *ui.Context) {
 	v := ls.verify
 	open := true
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(520).Padding(24).Gap(12).Children(func() {
+		dialog(ui.Column(c), 520).Children(func() {
 			title := T("loc.verify_title", "period", periodText(v.leaf))
 			if v.del {
 				title = T("loc.delete_title", "where", v.where, "who", a.agentOfLeaf(v.host, v.leaf), "period", periodText(v.leaf))
 			}
-			ui.Text(c, title).FontSize(18).Bold().Wrap()
+			dialogTitle(ui.Text(c, title)).Wrap()
 			if v.deleted {
 				ui.Text(c, T("loc.deleted")).TextColor(palette.Ok).Bold()
 				ui.Row(c).Justify(ui.End).Children(func() {
@@ -183,8 +183,8 @@ func (a *App) removeDialog(c *ui.Context) {
 	}
 	open := true
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(460).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("loc.remove_title", "name", l.Name)).FontSize(18).Bold()
+		dialog(ui.Column(c), 460).Children(func() {
+			dialogTitle(ui.Text(c, T("loc.remove_title", "name", l.Name)))
 			ui.Text(c, T("loc.remove_what."+l.Kind)).Wrap()
 			if l.Kind == locStation || l.Kind == locCloud {
 				muted(ui.Text(c, T("loc.remove_yours."+l.Kind))).Wrap()

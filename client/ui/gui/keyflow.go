@@ -54,7 +54,7 @@ func (a *App) keyDialog(c *ui.Context) {
 	}
 	open := true
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(460).Padding(24).Gap(12).Children(func() {
+		dialog(ui.Column(c), 460).Children(func() {
 			switch kf.step {
 			case kfSet:
 				a.setPassStep(c, kf)
@@ -113,7 +113,7 @@ func (a *App) keyButtons(c *ui.Context, kf *keyFlow, label, why string, do func(
 }
 
 func (a *App) setPassStep(c *ui.Context, kf *keyFlow) {
-	ui.Text(c, T("key.set_title")).FontSize(18).Bold()
+	dialogTitle(ui.Text(c, T("key.set_title")))
 	muted(ui.Text(c, T("key.set_what"))).FontSize(13).Wrap()
 	why := passPair(c, kf, T("key.passphrase"))
 	ui.Checkbox(c, &kf.lock, T("key.lock_too"))
@@ -145,7 +145,7 @@ func (a *App) setPassStep(c *ui.Context, kf *keyFlow) {
 }
 
 func (a *App) gateStep(c *ui.Context, kf *keyFlow) {
-	ui.Text(c, T("key.gate_title")).FontSize(18).Bold()
+	dialogTitle(ui.Text(c, T("key.gate_title")))
 	muted(ui.Text(c, T("key.gate_what"))).FontSize(13).Wrap()
 	ui.RadioGroup(c, func() {
 		ui.Radio(c, &kf.choice, "export", T("key.export"))
@@ -209,7 +209,7 @@ func (a *App) folderField(c *ui.Context, kf *keyFlow) {
 }
 
 func (a *App) kitImportStep(c *ui.Context, kf *keyFlow) {
-	ui.Text(c, T("key.import_title")).FontSize(18).Bold()
+	dialogTitle(ui.Text(c, T("key.import_title")))
 	a.folderField(c, kf)
 	labeled(c, T("key.passphrase_of_kit"), func() {
 		ui.TextInput(c, &kf.pass).Password().Label(T("key.passphrase_of_kit"))
@@ -242,7 +242,7 @@ func (a *App) kitImportStep(c *ui.Context, kf *keyFlow) {
 }
 
 func (a *App) changeStep(c *ui.Context, kf *keyFlow) {
-	ui.Text(c, T("key.change_title")).FontSize(18).Bold()
+	dialogTitle(ui.Text(c, T("key.change_title")))
 	labeled(c, T("key.current"), func() {
 		ui.TextInput(c, &kf.old).Password().Label(T("key.current")).AutoFocus()
 	})

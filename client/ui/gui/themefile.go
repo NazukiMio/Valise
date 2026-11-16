@@ -112,16 +112,9 @@ func readTheme(dir string) (*Theme, []string, error) {
 		merge(&t.Fonts.Mono, f.Fonts.Mono)
 	}
 	if s := f.Sizes; s != nil {
-		for _, v := range []float32{s.Radius, s.CardRadius, s.Verdict, s.Title, s.Text} {
-			if v < 0 || v > 120 {
-				return nil, nil, errors.New(T("theme.err.sizes"))
-			}
+		if err := mergeSizes(&t.Sizes, s); err != nil {
+			return nil, nil, err
 		}
-		mergeNum(&t.Sizes.Radius, s.Radius)
-		mergeNum(&t.Sizes.CardRadius, s.CardRadius)
-		mergeNum(&t.Sizes.Verdict, s.Verdict)
-		mergeNum(&t.Sizes.Title, s.Title)
-		mergeNum(&t.Sizes.Text, s.Text)
 	}
 	switch f.Variants.Timeline {
 	case "":
@@ -216,6 +209,31 @@ func merge(dst *string, v string) {
 	if v != "" {
 		*dst = v
 	}
+}
+
+// mergeSizes takes the sizes a theme file wrote; 0 keeps the base's. Radii
+// and font sizes stay within 120, widths between 40 and 960.
+func mergeSizes(dst, s *Sizes) error {
+	small := map[*float32]float32{&dst.Radius: s.Radius, &dst.CardRadius: s.CardRadius, &dst.PanelRadius: s.PanelRadius,
+		&dst.Verdict: s.Verdict, &dst.Title: s.Title, &dst.Text: s.Text}
+	widths := map[*float32]float32{&dst.LabelWidth: s.LabelWidth, &dst.TimeWidth: s.TimeWidth, &dst.DialogWidth: s.DialogWidth}
+	for _, v := range small {
+		if v < 0 || v > 120 {
+			return errors.New(T("theme.err.sizes"))
+		}
+	}
+	for _, v := range widths {
+		if v != 0 && (v < 40 || v > 960) {
+			return errors.New(T("theme.err.widths"))
+		}
+	}
+	for d, v := range small {
+		mergeNum(d, v)
+	}
+	for d, v := range widths {
+		mergeNum(d, v)
+	}
+	return nil
 }
 
 func mergeNum(dst *float32, v float32) {

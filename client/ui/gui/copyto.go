@@ -75,8 +75,8 @@ func (a *App) copyToDialog(c *ui.Context, row *agentRow, ps *protState) {
 	e := ps.copyTo
 	open := true
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(520).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("copyto.title", "name", row.Name)).FontSize(18).Bold()
+		dialog(ui.Column(c), 520).Children(func() {
+			dialogTitle(ui.Text(c, T("copyto.title", "name", row.Name)))
 			if e.read.busy {
 				a.jobLine(c, &e.read)
 				return

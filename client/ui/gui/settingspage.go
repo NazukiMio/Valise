@@ -104,8 +104,8 @@ func (a *App) passphraseRow(c *ui.Context) {
 
 func (a *App) lockOffDialog(c *ui.Context) {
 	if ui.Modal(c, &a.lockOff, func() {
-		ui.Column(c).Width(420).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("lock.off_title")).FontSize(18).Bold()
+		dialog(ui.Column(c), 420).Children(func() {
+			dialogTitle(ui.Text(c, T("lock.off_title")))
 			muted(ui.Text(c, T("lock.off_what"))).FontSize(13).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).OnClick(func() { a.lockOff = false })
@@ -157,7 +157,7 @@ func (a *App) backupSettings(c *ui.Context) {
 
 // lockOnStep turns the backup lock on: it needs the Valise passphrase.
 func (a *App) lockOnStep(c *ui.Context, kf *keyFlow) {
-	ui.Text(c, T("lock.on_title")).FontSize(18).Bold()
+	dialogTitle(ui.Text(c, T("lock.on_title")))
 	muted(ui.Text(c, T("lock.cost"))).FontSize(13).Wrap()
 	labeled(c, T("key.passphrase"), func() {
 		ui.TextInput(c, &kf.pass).Password().Label(T("key.passphrase")).AutoFocus()
@@ -180,7 +180,7 @@ func (a *App) lockOnStep(c *ui.Context, kf *keyFlow) {
 // adminChangeStep changes the admin passphrase; every admin pass is
 // sealed again.
 func (a *App) adminChangeStep(c *ui.Context, kf *keyFlow) {
-	ui.Text(c, T("admin.change_title")).FontSize(18).Bold()
+	dialogTitle(ui.Text(c, T("admin.change_title")))
 	labeled(c, T("admin.current"), func() {
 		ui.TextInput(c, &kf.old).Password().Label(T("admin.current")).AutoFocus()
 	})

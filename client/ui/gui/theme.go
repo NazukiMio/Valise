@@ -42,14 +42,24 @@ type Fonts struct {
 	Mono    string `json:"mono"`
 }
 
-// Sizes are a theme's numbers, in DIPs.
+// Sizes are a theme's numbers, in DIPs. The widths are the few a view may
+// not write itself (docs/UI.md 7.4.3): a longer language or a wider
+// template changes them here, once.
 type Sizes struct {
-	Radius     float32 `json:"radius"`      // controls
-	CardRadius float32 `json:"card_radius"` // cards and panels
-	Verdict    float32 `json:"verdict"`     // the home page's sentence
-	Title      float32 `json:"title"`       // page titles
-	Text       float32 `json:"text"`        // body text
+	Radius      float32 `json:"radius"`       // controls
+	CardRadius  float32 `json:"card_radius"`  // cards and panels
+	PanelRadius float32 `json:"panel_radius"` // panels inside a card
+	Verdict     float32 `json:"verdict"`      // the home page's sentence
+	Title       float32 `json:"title"`        // page titles
+	Text        float32 `json:"text"`         // body text
+	LabelWidth  float32 `json:"label_width"`  // a fact's label
+	TimeWidth   float32 `json:"time_width"`   // a journey row's time
+	DialogWidth float32 `json:"dialog_width"` // the standard dialog; others scale with it
 }
+
+// classicDialog is the classic themes' standard dialog width, which views
+// give their dialogs' widths against.
+const classicDialog = 460
 
 // Timeline variants (docs/UI.md 7.4).
 const (
@@ -68,7 +78,11 @@ type Theme struct {
 	Timeline string
 	Shell    *Node // the window: navigation and the page area
 	Home     *Node // the home page
-	Images   map[string]ui.ImageSource
+	// Pages are the trees of pages drawn in sections (docs/UI.md 7.4.3),
+	// by page name; a page without one flows as a classic column. Theme
+	// files do not write these yet.
+	Pages  map[string]*Node
+	Images map[string]ui.ImageSource
 	// Notes say what Valise put back that the theme left out.
 	Notes []string
 }
@@ -88,7 +102,10 @@ func classicFonts() Fonts {
 	return Fonts{Display: "Songti SC, Noto Serif CJK SC, Noto Serif SC, Source Han Serif SC", Mono: "monospace"}
 }
 
-func classicSizes() Sizes { return Sizes{Radius: 8, CardRadius: 14, Verdict: 36, Title: 30, Text: 0} }
+func classicSizes() Sizes {
+	return Sizes{Radius: 8, CardRadius: 14, PanelRadius: 10, Verdict: 36, Title: 30, Text: 0,
+		LabelWidth: 80, TimeWidth: 120, DialogWidth: classicDialog}
+}
 
 // classicLight is the palette of docs/UI.md 7.1: cream paper, white cards
 // and a gold glow, from the user's reference page.
@@ -161,3 +178,38 @@ func muted(e ui.Element) ui.Element { return e.TextColor(palette.TextSub).FontSi
 
 // mono is code-like text: paths, commands, ids.
 func mono(e ui.Element) ui.Element { return e.Font(cur.Fonts.Mono) }
+
+// The rest are the looks views share (docs/UI.md 7.4.3): a view names what
+// a box is and the theme's tokens say how it looks, so no view writes its
+// own paddings, radii or title sizes.
+
+// cardTitle is a card's heading.
+func cardTitle(e ui.Element) ui.Element { return e.Bold() }
+
+// sectionTitle is the heading of a card that is a step or a result.
+func sectionTitle(e ui.Element) ui.Element { return e.FontSize(16).Bold() }
+
+// dialogTitle is a dialog's heading.
+func dialogTitle(e ui.Element) ui.Element { return e.FontSize(18).Bold() }
+
+// subPanel is a quieter block inside a card: one step, one item.
+func subPanel(e ui.Element) ui.Element {
+	return e.Padding(12, 14).Radius(cur.Sizes.PanelRadius).Background(palette.Board)
+}
+
+// reportPanel is a block that stands on the page by itself: what an action
+// is doing and what came of it.
+func reportPanel(e ui.Element) ui.Element {
+	return e.Padding(12, 16).Radius(cur.Sizes.PanelRadius).Background(palette.Board).Border(1, palette.CardBorder)
+}
+
+// codeBox holds commands or output.
+func codeBox(e ui.Element) ui.Element {
+	return e.Padding(10, 12).Radius(cur.Sizes.Radius).Background(palette.Board)
+}
+
+// dialog is a dialog's body. width is its width in the classic themes; the
+// theme's dialog width scales every dialog together.
+func dialog(e ui.Element, width float32) ui.Element {
+	return e.Width(width * cur.Sizes.DialogWidth / classicDialog).Padding(24).Gap(12)
+}

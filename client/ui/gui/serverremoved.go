@@ -50,8 +50,8 @@ func (a *App) forgetDialog(c *ui.Context) {
 	open := true
 	name := a.forgetting
 	if ui.Modal(c, &open, func() {
-		ui.Column(c).Width(440).Padding(24).Gap(12).Children(func() {
-			ui.Text(c, T("removed.forget_title", "name", name)).FontSize(18).Bold()
+		dialog(ui.Column(c), 440).Children(func() {
+			dialogTitle(ui.Text(c, T("removed.forget_title", "name", name)))
 			muted(ui.Text(c, T("removed.forget_what"))).FontSize(13).Wrap()
 			if a.forgetErr != nil {
 				errorBox(c, a.forgetErr, a.fold("forget-err"))
