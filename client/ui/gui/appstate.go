@@ -75,16 +75,19 @@ type agentView struct {
 
 // journeyView is the timeline and the point open in it.
 type journeyView struct {
-	timeline        load[service.JourneyPage]
-	point           string    // snapshot id open in the journey, "" for the list
-	glow            string    // point lit on the journey's line, opening next
-	glowAt          time.Time // when its glow started
-	journeyMode     int       // 0 points, 1 route
-	timelinePending []journey.LocationRef
-	timelineScanID  uint64
-	timelineCancel  context.CancelFunc
-	timelineScope   service.TimelineScanRequest
-	timelineScopeID string
+	timeline         load[service.JourneyPage]
+	point            string    // snapshot id open in the journey, "" for the list
+	glow             string    // point lit on the journey's line, opening next
+	glowAt           time.Time // when its glow started
+	journeyMode      int       // 0 points, 1 route
+	timelinePending  []journey.LocationRef
+	timelineScanID   uint64
+	timelineCancel   context.CancelFunc
+	timelineScope    service.TimelineScanRequest
+	timelineScopeID  string
+	curveScroll      ui.ScrollState
+	curveScrollScope string
+	curveCount       int
 }
 
 // closePoint goes back from a point to the list.

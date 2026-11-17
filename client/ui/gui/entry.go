@@ -82,22 +82,28 @@ func (a *App) entryReport(c *ui.Context, row *agentRow) {
 	if st == nil {
 		return
 	}
-	reportPanel(ui.Column(c)).Gap(4).Children(func() {
+	reportPanel(ui.Column(c)).Gap(spInside).Children(func() {
 		if st.open {
 			ui.Text(c, T("entry.opened", "url", st.display)).FontSize(13).Bold()
 		}
-		for i, s := range st.steps {
-			if s.Step == service.EntryAuth && s.OK {
-				continue // the token itself is never shown
-			}
-			tone := "ok"
-			if !s.OK {
-				tone = "warn"
-			}
-			ui.Row(c.Key(i)).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Box(c).Size(6, 6).Radius(3).Background(toneColor(tone))
-				ui.Text(c, T(entrySteps[s.Step])).FontSize(12)
-				muted(ui.Text(c, s.Detail)).MaxLines(2)
+		if len(st.steps) > 0 {
+			ui.Row(c).Wrap().Gap(spGroup).AlignItems(ui.Center).Children(func() {
+				for i, s := range st.steps {
+					if s.Step == service.EntryAuth && s.OK {
+						continue // the token itself is never shown
+					}
+					tone := "ok"
+					if !s.OK {
+						tone = "warn"
+					}
+					ui.Row(c.Key(i)).Gap(8).AlignItems(ui.Center).Children(func() {
+						ui.Box(c).Size(6, 6).Radius(3).Background(toneColor(tone))
+						ui.Text(c, T(entrySteps[s.Step])).FontSize(12)
+						if s.Detail != "" {
+							muted(ui.Text(c, s.Detail)).MaxLines(1)
+						}
+					})
+				}
 			})
 		}
 		if st.err != nil {

@@ -18,19 +18,23 @@ import (
 // and the details open at once.
 
 const (
-	curveHeight = 300
-	curveBand   = 66 // room for the cards above and below the spine
-	curvePoints = 6
-	glowDelay   = 300 * time.Millisecond
-	hairCount   = 32
+	curveHeight     = 300
+	curveBand       = 66 // room for the cards above and below the spine
+	curvePoints     = 6
+	curvePointWidth = 148
+	glowDelay       = 300 * time.Millisecond
+	hairCount       = 32
 )
 
-// spineY is the spine's height at x in [0,1] for a box of height h at
-// animation time t (about 0.54 a second, as on the reference page).
-func spineY(x, h, t float32) float32 {
+// spineY is the spine's height at horizontal pixel offset px in a strip of
+// width w and height h at animation time t. Up to ~780 DIPs the wave spans
+// the whole strip; wider scrollable strips continue at the same wavelength.
+func spineY(px, w, h, t float32) float32 {
 	if cur.Timeline == TimelinePlain {
 		return h / 2 // the plain line is straight and still
 	}
+	period := max(min(w, 780), 1)
+	x := px / period
 	s := h / 300
 	w1 := math.Sin(float64(x)*math.Pi*2.1+float64(t)*0.55) * 24
 	w2 := math.Cos(float64(x)*math.Pi*1.3-float64(t)*0.32) * 11
@@ -63,35 +67,42 @@ var hairs = func() []hair {
 // r; the gold variant is the spine alone, a little stronger.
 func paintHairs(p *ui.Painter, r ui.Rect, t float32) {
 	span := float32(1.2 + 0.56 + 0.27)
-	for _, h := range hairs {
-		if cur.Timeline != TimelineStrands {
-			break
-		}
-		x0 := h.start + h.speed*t/0.54
-		x0 = float32(math.Mod(float64(x0+0.83), float64(span))) - 0.83 // wrap from the right edge back to the left
-		a, b := max(x0, 0), min(x0+h.length, 1)
-		if b <= a {
-			continue
-		}
-		var path ui.Path
-		first := true
-		for x := a * r.W; x <= b*r.W; x += 6 {
-			fx := x / r.W
-			y := spineY(fx, r.H, t) + h.offset + h.amp*float32(math.Sin(float64(x*h.freq+t*0.4+h.phase)))
-			if first {
-				path.MoveTo(r.X+x, r.Y+y)
-				first = false
-			} else {
-				path.LineTo(r.X+x, r.Y+y)
+	unit := min(r.W, 880)
+	if unit <= 0 {
+		return
+	}
+	tiles := max(int(math.Ceil(float64(r.W/unit))), 1)
+	if cur.Timeline == TimelineStrands {
+		for m := range tiles {
+			base := float32(m) * unit
+			for _, h := range hairs {
+				x0 := h.start + float32(m)*0.37 + h.speed*t/0.54
+				x0 = float32(math.Mod(float64(x0+0.83), float64(span))) - 0.83
+				pxA := max(base+x0*unit, 0)
+				pxB := min(base+(x0+h.length)*unit, r.W)
+				if pxB <= pxA || h.length*unit <= 0 {
+					continue
+				}
+				var path ui.Path
+				first := true
+				for x := pxA; x <= pxB; x += 6 {
+					y := spineY(x, r.W, r.H, t) + h.offset + h.amp*float32(math.Sin(float64(x*h.freq+t*0.4+h.phase)))
+					if first {
+						path.MoveTo(r.X+x, r.Y+y)
+						first = false
+					} else {
+						path.LineTo(r.X+x, r.Y+y)
+					}
+				}
+				// Strands fade toward their tips: thinner and lighter where short.
+				fade := min(1, (pxB-pxA)/(h.length*unit)*1.4)
+				p.StrokePath(&path, h.width, palette.Strand.Alpha(h.alpha*fade))
 			}
 		}
-		// Strands fade toward their tips: thinner and lighter where short.
-		fade := min(1, (b-a)/h.length*1.4)
-		p.StrokePath(&path, h.width, palette.Strand.Alpha(h.alpha*fade))
 	}
 	var spine ui.Path
 	for x := float32(0); x <= r.W; x += 4 {
-		y := spineY(x/r.W, r.H, t)
+		y := spineY(x, r.W, r.H, t)
 		if x == 0 {
 			spine.MoveTo(r.X, r.Y+y)
 		} else {
@@ -105,54 +116,76 @@ func paintHairs(p *ui.Painter, r ui.Rect, t float32) {
 	p.StrokePath(&spine, 1.6, palette.Spine.Alpha(0.85))
 }
 
-// curveStrip draws up to curvePoints of points (newest first in points).
+// curveStrip draws all saved points (oldest on the left, newest on the right)
+// and scrolls horizontally when there are more than curvePoints.
 func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
-	n := min(len(points), curvePoints)
+	n := len(points)
+	if n == 0 {
+		return
+	}
 	shown := make([]journey.TimelinePoint, n)
 	for i := range n {
 		shown[i] = points[n-1-i]
 	}
+	scope := a.timelineScopeID
+	if a.curveScrollScope != scope {
+		a.curveScrollScope = scope
+		a.curveCount = 0
+		a.curveScroll.X = math.MaxFloat32
+	} else if n > a.curveCount && (a.curveScroll.MaxX == 0 || a.curveScroll.X >= a.curveScroll.MaxX-4) {
+		a.curveScroll.X = math.MaxFloat32
+	}
+	a.curveCount = n
 	still := c.Preferences().ReduceMotion
 	a.settleGlow(c, still)
 	still = still || cur.Timeline == TimelinePlain
-	box := ui.Box(c).Height(curveHeight).Radius(16).Background(palette.Canvas).Border(1, palette.CardBorder).Clip()
-	box.Draw(func(p *ui.Painter, r ui.Rect) {
-		t := float32(0)
-		if !still {
-			t = float32(float64(p.Now().UnixMilli()%3_600_000)/1000) * 0.54
-			p.After(33 * time.Millisecond)
-		}
-		paintHairs(p, r, t)
-		for i, pt := range shown {
-			fx := (float32(i) + 0.5) / float32(n)
-			x, y := r.X+r.W*fx, r.Y+spineY(fx, r.H, t)
-			stem := r.Y + curveBand
-			if i%2 == 1 {
-				stem = r.Y + r.H - curveBand
-			}
-			p.Line(x, y, x, stem, 1, palette.Strand.Alpha(0.6))
-			if pointKey(pt) == a.glow {
-				k := min(float32(p.Now().Sub(a.glowAt))/float32(glowDelay), 1)
-				for j, rad := range []float32{30, 20, 12} {
-					p.FillPath((&ui.Path{}).Circle(x, y, rad*(0.5+0.5*k)), palette.Gold.Alpha(0.18*float32(j+1)*k))
-				}
-			}
-			p.FillPath((&ui.Path{}).Circle(x, y, 5.5), palette.Node)
-			p.StrokePath((&ui.Path{}).Circle(x, y, 5.5), 1.4, palette.Spine.Alpha(0.9))
-			p.FillPath((&ui.Path{}).Circle(x, y, 1.8), palette.NodeCore)
-		}
-	})
+	box := ui.Box(c).Height(curveHeight).Radius(radCard).Background(palette.Canvas).Border(1, palette.CardBorder).Clip()
 	box.Children(func() {
-		ui.Row(c).Fill().Children(func() {
-			for i, pt := range shown {
-				col := ui.Column(c.Key(pointKey(pt))).Grow(1).Basis(0).FillHeight().AlignItems(ui.Center).Padding(12, 6)
-				if i%2 == 0 {
-					col.Justify(ui.Start)
-				} else {
-					col.Justify(ui.End)
-				}
-				col.Children(func() { a.curveCard(c, pt) })
+		ui.ScrollHorizontal(c.Key("curve-" + scope)).TrackScroll(&a.curveScroll).Fill().Children(func() {
+			strip := ui.Row(c).Height(curveHeight).Grow(1)
+			if n > curvePoints {
+				strip.MinWidth(float32(n) * curvePointWidth).Shrink(0)
 			}
+			strip.Draw(func(p *ui.Painter, r ui.Rect) {
+				t := float32(0)
+				if !still {
+					t = float32(float64(p.Now().UnixMilli()%3_600_000)/1000) * 0.54
+					p.After(33 * time.Millisecond)
+				}
+				paintHairs(p, r, t)
+				for i, pt := range shown {
+					px := r.W * (float32(i) + 0.5) / float32(n)
+					x, y := r.X+px, r.Y+spineY(px, r.W, r.H, t)
+					stem := r.Y + curveBand
+					if i%2 == 1 {
+						stem = r.Y + r.H - curveBand
+					}
+					p.Line(x, y, x, stem, 1, palette.Strand.Alpha(0.6))
+					if pointKey(pt) == a.glow {
+						k := min(float32(p.Now().Sub(a.glowAt))/float32(glowDelay), 1)
+						for j, rad := range []float32{30, 20, 12} {
+							p.FillPath((&ui.Path{}).Circle(x, y, rad*(0.5+0.5*k)), palette.Gold.Alpha(0.18*float32(j+1)*k))
+						}
+					}
+					p.FillPath((&ui.Path{}).Circle(x, y, 5.5), palette.Node)
+					p.StrokePath((&ui.Path{}).Circle(x, y, 5.5), 1.4, palette.Spine.Alpha(0.9))
+					p.FillPath((&ui.Path{}).Circle(x, y, 1.8), palette.NodeCore)
+				}
+			})
+			strip.Children(func() {
+				for i, pt := range shown {
+					col := ui.Column(c.Key(pointKey(pt))).Grow(1).Basis(0).FillHeight().AlignItems(ui.Center).Padding(12, 6)
+					if n > curvePoints {
+						col.MinWidth(curvePointWidth)
+					}
+					if i%2 == 0 {
+						col.Justify(ui.Start)
+					} else {
+						col.Justify(ui.End)
+					}
+					col.Children(func() { a.curveCard(c, pt) })
+				}
+			})
 		})
 	})
 }

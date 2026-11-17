@@ -162,7 +162,7 @@ func (a *App) stateLine(c *ui.Context, r agentRow) {
 
 // agentList is the same agents as quiet rows.
 func (a *App) agentList(c *ui.Context, key string, rows []agentRow) {
-	card(ui.Column(c)).Padding(4, 0).Gap(0).Children(func() {
+	card(ui.Column(c)).Padding(spHair + 2).Gap(0).Children(func() {
 		for i, r := range rows {
 			if i > 0 {
 				ui.Divider(c)
@@ -173,7 +173,7 @@ func (a *App) agentList(c *ui.Context, key string, rows []agentRow) {
 }
 
 func (a *App) agentLine(c *ui.Context, r agentRow) {
-	row := pressable(ui.Row(c).Padding(11, 18).Gap(14).AlignItems(ui.Center), agentLabel(r), 0)
+	row := pressable(ui.Row(c).Padding(10, 14).Radius(radPanel).Gap(14).AlignItems(ui.Center), agentLabel(r), radPanel)
 	row.OnClick(func() { a.openAgent(r.Server, r.Instance) }).Children(func() {
 		a.avatar(c, r, 40)
 		ui.Column(c).Grow(1).Gap(2).Children(func() {

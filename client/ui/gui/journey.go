@@ -13,6 +13,7 @@ import (
 func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoint) {
 	if a.point != "" {
 		a.journeyReadNotes(c)
+		a.journeyFailedLocations(c)
 		for i, p := range points {
 			if pointKey(p) == a.point {
 				a.pointDetail(c, points, i, row.Server, row.Instance)
@@ -28,6 +29,7 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		ui.Row(c).Children(func() { ui.Segmented(c, &a.journeyMode, T("journey.view.points"), T("journey.view.route")) })
 		if a.journeyMode == 1 {
 			routeView(c, stops)
+			a.journeyFailedLocations(c)
 			return
 		}
 	}
@@ -35,6 +37,7 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		errorBox(c, a.timeline.err, a.fold("timeline-err"))
 	}
 	if len(points) == 0 {
+		a.journeyFailedLocations(c)
 		if a.timeline.busy {
 			ui.Spinner(c)
 		} else {
@@ -43,6 +46,7 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		return
 	}
 	a.curveStrip(c, points)
+	a.journeyFailedLocations(c)
 	// The full list stays below, folded by month; only the newest month is
 	// open (docs/UI.md 7.2).
 	muted(ui.Text(c, T("journey.count", "n", len(points)))).FontSize(12).LetterSpacing(0.6).Margin(8, 0, 0, 0)

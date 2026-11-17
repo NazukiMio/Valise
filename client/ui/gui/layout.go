@@ -264,6 +264,9 @@ func (n *Node) box(e ui.Element) ui.Element {
 		if col := colorFields(&p)[n.Background]; col != nil {
 			e.Background(*col)
 		}
+		if n.Background == "side" {
+			e.DragWindow()
+		}
 	}
 	if img := cur.Images[n.Image]; img != nil {
 		e.Draw(func(p *ui.Painter, r ui.Rect) { p.Image(img, r, ui.Cover) })

@@ -84,10 +84,9 @@ func (a *App) headerSlot(c *ui.Context, n *Node) {
 	n.box(ui.Row(c).Gap(8).AlignItems(ui.Center)).Children(func() {
 		muted(ui.Text(c, T("home.title"))).FontSize(13).Grow(1)
 		if a.agents.busy {
-			ui.Spinner(c)
-		} else {
-			ui.Button(c, T("common.refresh")).OnClick(func() { a.refreshAgents(); a.refreshLocalTimeline() })
+			ui.Spinner(c).Size(14, 14)
 		}
+		ui.Button(c, T("common.refresh")).Disabled(a.agents.busy).OnClick(func() { a.refreshAgents(); a.refreshLocalTimeline() })
 		ui.Button(c, T("home.add_agent")).OnClick(func() { a.startWizard(true) })
 	})
 }

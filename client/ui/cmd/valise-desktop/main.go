@@ -45,7 +45,7 @@ func main() {
 		svc.OwnerAuth.Passphrase = app.OwnerPassphrase
 		svc.PasswordAuth.Prompt = app.ServerPassword
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "Valise", Width: 1180, Height: 780, MinWidth: 860, MinHeight: 560,
-			Content: ui.View(app.View)})
+			TitleBarStyle: mygo.TitleBarHidden, Content: ui.View(app.View)})
 		app.SetUpdate(win.Update)
 		win.OnClose(func(e *mygo.CloseEvent) {
 			if !app.RequestClose(win.Close) {

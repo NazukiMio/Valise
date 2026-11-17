@@ -23,9 +23,16 @@
   - 材质与重量级主题（UI.md 7.4.4）：`gui/material.go` 提供 `flat`/`journal`/`night` 三种材质，经 `card`、`pageHead`、窗口背景生效；新增内置主题“手账”（纸纤维与点阵，GPU 着色器，静止）与“夜航”（星空，闪烁每秒 12 帧，减少动态效果时静止），经典主题保持原样。主题文件暂不能选材质。
   - 词表：恢复、备份测试、命令行页约 26 条去掉“尚未 / 进行 / 此 / 该”；新增 `health.fine`、`restore.stage.*`、`ask.dest.*`、`theme.journal`、`theme.night`。
   - 验证：新增 `designshots_test.go`（`VALISE_SHOTS=<目录> go test ./gui -run TestDesignShots`，经典深色、手账、夜航各渲染首页、健康页、旅程页，外加三种口令框）；渲染图逐张看过。
+- **第三批（用户实机体验后交互精修，2026-11-17）**：
+  - 沉浸式标题栏：`cmd/valise-desktop/main.go` 启用 `mygo.TitleBarHidden`，`gui/shell.go`、`gui/layout.go` 随主题背景延伸到标题栏、为控制按钮留出安全区并支持 `.DragWindow()` 拖拽；全局横幅移入页面区顶部以免遮挡红绿灯与全高侧栏。
+  - 导航点击回分类主页：`gui/shell.go` 中身处子页面点击所属一级导航项（`我的 Agent`/`服务器`/`备份位置`/`设置`）时直接回到分类根页面并清理子页面状态。
+  - 旅程曲线横向滚动：`gui/curve.go` 取消 6 点截断，改为 `ui.ScrollHorizontal` 横向展示全部时间点（打开时默认定位在最右侧最新时间点，增量扫入时保持贴右并保留用户向左回翻位置）；波形与发丝按定长周期自然衔接。
+  - 列表卡片圆角悬停修复：`gui/servers.go`、`gui/homeagents.go`、`gui/healthlist.go` 改用内边距 + `radPanel` 传给 `pressable`（`fineItems` 增 `.Clip()`），消除圆角外框内悬浮出直角矩形的问题。
+  - 异步防跳动：`gui/home.go`、`gui/health.go`、`gui/journeylocations.go` 刷新按钮保持原地占位并禁用加小转圈；`gui/entry.go` 隧道步骤改为水平换行展示；`gui/journey.go` 将失败位置折叠移至曲线之后，避免滞后超时把页面按钮向下推走。
+  - 验证：`client/ui` 全包 `go test -count=1 ./...`（`cmd/valise` 6.778s、`gui` 113.685s、`service` 340.211s、`tui` 183.585s）、`go vet ./...`、`gofmt` 与 `go tool mygo vet` 全过，并重打 `stage-test-20261117-ui` 待实机复核。
 - **没做，留给下一轮**：存量视图的魔法数字只迁了改到的地方；其余页面（安装、备份位置、设置）没有重排；主题文件的 `material` 字段与 `valise-theme/2`；TUI 与 CLI 的同名术语（用户 2026-11-17 决定本轮不做）。
 - **已定，后续独立阶段处理**：管理员通行证界面仍要求另设“管理口令”，与 AGENTS.md 第 3 节“默认用 Valise 口令”不一致；用户 2026-11-17 确认本分支不改，留给后续安全阶段。
-- **未做实机验收**：没有启动真实桌面窗口，也没有连真实服务器。
+- **未做实机验收**：本轮改动待重启桌面窗口与真机视觉复核。
 
 ## 0. 当前工作与交接（2026-11-17 Phase B1.2 已完成并打包 `stage-test-20261116-b1.2`，下一步进入 Phase B2）
 

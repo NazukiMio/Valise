@@ -29,7 +29,7 @@ func (a *App) serversPage(c *ui.Context) {
 		}
 		return
 	}
-	card(ui.Column(c)).Padding(4, 0).Gap(0).Children(func() {
+	card(ui.Column(c)).Padding(spHair + 2).Gap(0).Children(func() {
 		for i, r := range rows {
 			if i > 0 {
 				ui.Divider(c)
@@ -52,7 +52,7 @@ func (a *App) agentsOn(name string) int {
 
 func (a *App) serverLine(c *ui.Context, r serverRow) {
 	st := a.serverState(r.Name, c.Now())
-	line := pressable(ui.Row(c).Padding(13, 18).Gap(14).AlignItems(ui.Center), r.Name+T("common.comma")+st.Word, 0)
+	line := pressable(ui.Row(c).Padding(11, 14).Radius(radPanel).Gap(14).AlignItems(ui.Center), r.Name+T("common.comma")+st.Word, radPanel)
 	line.OnClick(func() { a.serverTab = 0; a.router.Push("/servers/" + r.Name) }).Children(func() {
 		ui.Box(c).Size(8, 8).Radius(4).Background(toneColor(st.Tone))
 		ui.Column(c).Grow(1).Gap(3).Children(func() {

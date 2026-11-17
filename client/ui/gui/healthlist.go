@@ -66,9 +66,9 @@ func (a *App) fineItems(c *ui.Context, row *agentRow, fine []service.HealthItem)
 	for i, it := range fine {
 		names[i] = it.Title
 	}
-	card(ui.Column(c)).Padding(spHair, 0).Gap(0).Children(func() {
-		head := ui.Row(c).Padding(14, 18).Gap(14).AlignItems(ui.Center).OnClick(func() { *open = !*open })
-		pressable(head, T("health.fine", "n", len(fine)), cur.Sizes.CardRadius).Children(func() {
+	card(ui.Column(c)).Padding(spHair + 2).Gap(spHair).Clip().Children(func() {
+		head := ui.Row(c).Padding(10, 14).Radius(radPanel).Gap(14).AlignItems(ui.Center).OnClick(func() { *open = !*open })
+		pressable(head, T("health.fine", "n", len(fine)), radPanel).Children(func() {
 			toneDot(c, "ok")
 			ui.Text(c, T("health.fine", "n", len(fine))).FontSize(fsBody).Bold()
 			muted(ui.Text(c, strings.Join(names, T("common.comma")))).FontSize(fsSub).Grow(1).MaxLines(1)

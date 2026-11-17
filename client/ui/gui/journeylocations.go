@@ -40,13 +40,16 @@ func pointLocations(p journey.TimelinePoint) string {
 func (a *App) journeyReadNotes(c *ui.Context) {
 	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 		if a.timeline.busy {
-			ui.Spinner(c)
+			ui.Spinner(c).Size(14, 14)
 			muted(ui.Text(c, T("journey.scanning", "n", len(a.timelinePending)))).Grow(1).Wrap()
 		} else {
 			muted(ui.Text(c, T("journey.scan_done"))).Grow(1)
-			ui.Button(c, T("journey.refresh")).OnClick(a.refreshTimeline)
 		}
+		ui.Button(c, T("journey.refresh")).Disabled(a.timeline.busy).OnClick(a.refreshTimeline)
 	})
+}
+
+func (a *App) journeyFailedLocations(c *ui.Context) {
 	failed := 0
 	for _, obs := range a.timeline.value.Observations {
 		if obs.Status != "fresh" && obs.Error != "refreshing" {

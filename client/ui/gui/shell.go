@@ -18,7 +18,6 @@ func (a *App) View(c *ui.Context) {
 		root.Draw(backdrop)
 	}
 	root.Children(func() {
-		a.banners(c)
 		render(c, &shell, map[string]func(*ui.Context, *Node){
 			"brand": a.brandSlot, "nav": a.navSlot, "tagline": taglineSlot, "page": a.pageSlot,
 		})
@@ -28,7 +27,8 @@ func (a *App) View(c *ui.Context) {
 }
 
 func (a *App) brandSlot(c *ui.Context, n *Node) {
-	ui.Row(c).Padding(0, 8, 8, 8).Gap(10).AlignItems(ui.Center).Children(func() {
+	bar := c.TitleBar()
+	ui.Row(c).Padding(max(bar.Bottom-6, 0), 8, 8, 8).Gap(10).AlignItems(ui.Center).DragWindow().Children(func() {
 		if img := cur.Images["brand"]; img != nil {
 			ui.Image(c, img).Size(28, 28)
 		} else {
@@ -68,6 +68,12 @@ func (a *App) section() string {
 }
 
 func (a *App) navigate(path string) {
+	if path == "/agents" {
+		a.closePoint()
+	}
+	if path == "/locations" {
+		a.closeAdding()
+	}
 	a.router.Push(path)
 	a.trackRoute()
 	if path == "/servers" && !a.servers.started {
@@ -80,15 +86,22 @@ func (a *App) navigate(path string) {
 // entries.
 func (a *App) navSlot(c *ui.Context, n *Node) {
 	page := a.section()
+	bar := c.TitleBar()
 	switch n.Style {
 	case "rail", "top":
 		var e ui.Element
 		if n.Style == "rail" {
 			e = ui.Column(c).Gap(6).AlignItems(ui.Center)
 		} else {
-			e = ui.Row(c).Gap(4).AlignItems(ui.Center)
+			e = ui.Row(c).Gap(4).AlignItems(ui.Center).DragWindow()
 		}
-		n.box(e).Children(func() {
+		el := n.box(e)
+		if n.Style == "rail" && !cur.Shell.find("brand") && bar.Bottom > 0 {
+			el.Margin(bar.Bottom, 0, 0, 0)
+		} else if n.Style == "top" && (bar.Left > 0 || bar.Right > 0) {
+			el.Padding(0, bar.Right+8, 0, bar.Left+8)
+		}
+		el.Children(func() {
 			for _, it := range navItems() {
 				a.navButton(c.Key(it.path), it, page == it.path, n.Style == "top")
 			}
@@ -99,14 +112,21 @@ func (a *App) navSlot(c *ui.Context, n *Node) {
 		t := *c.Theme()
 		t.SurfacePressed = palette.Card
 		changed := false
+		clickedTo := ""
 		ui.Themed(c, &t).Background(ui.Transparent).AlignItems(ui.Stretch).Grow(max(n.Grow, 0)).Children(func() {
 			changed = n.box(ui.Sidebar(c, &page, func() {
 				for _, it := range navItems() {
-					ui.SidebarItem(c, it.path, it.icon, it.label)
+					if ui.SidebarItem(c, it.path, it.icon, it.label).Clicked() {
+						if a.router.Path() != it.path || (it.path == "/agents" && a.point != "") {
+							clickedTo = it.path
+						}
+					}
 				}
 			})).Background(ui.Transparent).TextColor(palette.SideText).Changed()
 		})
-		if changed {
+		if clickedTo != "" {
+			a.navigate(clickedTo)
+		} else if changed {
 			a.navigate(page)
 		}
 	}
@@ -134,75 +154,120 @@ func (a *App) navButton(c *ui.Context, it navItem, on, withText bool) {
 	})
 }
 
-// pageSlot is the page area: it scrolls, and the router draws the page.
+// pageSlot is the page area: a drag strip under the hidden title bar,
+// window-wide banners, then the scrollable page content.
 func (a *App) pageSlot(c *ui.Context, n *Node) {
 	look := Node{Background: n.Background, Image: n.Image, Radius: n.Radius}
-	look.box(ui.Scroll(c).Grow(max(n.Grow, 1))).Children(func() {
-		col := ui.Column(c).Gap(pageGap)
-		if n.Padding == nil {
-			col.Padding(36, 44)
+	bar := c.TitleBar()
+	hasTop := shellHasTopNav(cur.Shell)
+	look.box(ui.Column(c).Grow(max(n.Grow, 1)).AlignItems(ui.Stretch)).Children(func() {
+		if bar.Height > 0 && !hasTop {
+			ui.Box(c).Height(bar.Height).DragWindow()
 		}
-		inner := *n
-		inner.Grow, inner.Background, inner.Image, inner.Radius = 0, "", "", 0
-		inner.box(col).Children(func() {
-			a.router.View(c, func(r *ui.Route) {
-				r.Page().Gap(pageGap)
-				switch {
-				case r.Match("/restore/tasks"):
-					a.restoreTaskList(c)
-				case r.Match("/restore/points"):
-					a.restoreLocationPoints(c)
-				case r.Match("/restore"):
-					a.restorePage(c)
-				case r.Match("/agents"):
-					r.Title(T("nav.agents"))
-					a.homePage(c)
-				case r.Match("/agents/{server}/{instance}"):
-					a.agentPage(c, r.Param("server"), r.Param("instance"))
-				case r.Match("/native/{server}/{instance}"):
-					a.nativePage(c, r.Param("server"), r.Param("instance"))
-				case r.Match("/servers"):
-					r.Title(T("nav.servers"))
-					a.serversPage(c)
-				case r.Match("/servers/add"):
-					r.Title(T("servers.add"))
-					a.wizardPage(c)
-				case r.Match("/servers/{name}/agents"):
-					a.onServerPage(c, r.Param("name"))
-				case r.Match("/servers/{name}/install/{profile}"):
-					a.installPage(c, r.Param("name"), r.Param("profile"))
-				case r.Match("/servers/{name}/install-custom"):
-					a.customInstallPage(c, r.Param("name"))
-				case r.Match("/servers/{name}/rename"):
-					a.renamePage(c, r.Param("name"))
-				case r.Match("/servers/{name}/migrate"):
-					a.migratePage(c, r.Param("name"))
-				case r.Match("/servers/{name}/porter"):
-					a.porterPage(c, r.Param("name"))
-				case r.Match("/servers/{name}"):
-					a.serverPage(c, r.Param("name"))
-				case r.Match("/settings"):
-					r.Title(T("nav.settings"))
-					a.settingsPage(c)
-				case r.Match("/settings/recover"):
-					a.recoverPage(c)
-				case r.Match("/settings/admin-rebuild"):
-					a.rebuildPage(c)
-				case r.Match("/locations"):
-					r.Title(T("nav.locations"))
-					a.locationsPage(c)
-				case r.Match("/locations/add"):
-					r.Title(T("loc.add_title"))
-					a.locAddPage(c)
-				case r.Match("/locations/add/cloud"):
-					r.Title(T("loc.cloud_title"))
-					a.cloudAddPage(c)
-				case r.Match("/locations/{name}"):
-					a.locationPage(c, r.Param("name"))
-				default:
-					ui.Text(c, T("page.not_found"))
+		a.banners(c)
+		ui.Scroll(c).Grow(1).Children(func() {
+			col := ui.Column(c).Gap(pageGap)
+			if n.Padding == nil {
+				topPad := float32(36)
+				if bar.Height > 0 && !hasTop {
+					topPad = max(36-bar.Height, 12)
 				}
+				col.Padding(topPad, 44, 36, 44)
+			}
+			inner := *n
+			inner.Grow, inner.Background, inner.Image, inner.Radius = 0, "", "", 0
+			if bar.Height > 0 && !hasTop && len(inner.Padding) > 0 {
+				inner.Padding = adjustTopPadding(inner.Padding, bar.Height)
+			}
+			inner.box(col).Children(func() {
+				a.router.View(c, func(r *ui.Route) {
+					r.Page().Gap(pageGap)
+					switch {
+					case r.Match("/restore/tasks"):
+						a.restoreTaskList(c)
+					case r.Match("/restore/points"):
+						a.restoreLocationPoints(c)
+					case r.Match("/restore"):
+						a.restorePage(c)
+					case r.Match("/agents"):
+						r.Title(T("nav.agents"))
+						a.homePage(c)
+					case r.Match("/agents/{server}/{instance}"):
+						a.agentPage(c, r.Param("server"), r.Param("instance"))
+					case r.Match("/native/{server}/{instance}"):
+						a.nativePage(c, r.Param("server"), r.Param("instance"))
+					case r.Match("/servers"):
+						r.Title(T("nav.servers"))
+						a.serversPage(c)
+					case r.Match("/servers/add"):
+						r.Title(T("servers.add"))
+						a.wizardPage(c)
+					case r.Match("/servers/{name}/agents"):
+						a.onServerPage(c, r.Param("name"))
+					case r.Match("/servers/{name}/install/{profile}"):
+						a.installPage(c, r.Param("name"), r.Param("profile"))
+					case r.Match("/servers/{name}/install-custom"):
+						a.customInstallPage(c, r.Param("name"))
+					case r.Match("/servers/{name}/rename"):
+						a.renamePage(c, r.Param("name"))
+					case r.Match("/servers/{name}/migrate"):
+						a.migratePage(c, r.Param("name"))
+					case r.Match("/servers/{name}/porter"):
+						a.porterPage(c, r.Param("name"))
+					case r.Match("/servers/{name}"):
+						a.serverPage(c, r.Param("name"))
+					case r.Match("/settings"):
+						r.Title(T("nav.settings"))
+						a.settingsPage(c)
+					case r.Match("/settings/recover"):
+						a.recoverPage(c)
+					case r.Match("/settings/admin-rebuild"):
+						a.rebuildPage(c)
+					case r.Match("/locations"):
+						r.Title(T("nav.locations"))
+						a.locationsPage(c)
+					case r.Match("/locations/add"):
+						r.Title(T("loc.add_title"))
+						a.locAddPage(c)
+					case r.Match("/locations/add/cloud"):
+						r.Title(T("loc.cloud_title"))
+						a.cloudAddPage(c)
+					case r.Match("/locations/{name}"):
+						a.locationPage(c, r.Param("name"))
+					default:
+						ui.Text(c, T("page.not_found"))
+					}
+				})
 			})
 		})
 	})
+}
+
+func adjustTopPadding(p []float32, barH float32) []float32 {
+	switch len(p) {
+	case 1:
+		return []float32{max(p[0]-barH, 12), p[0], p[0], p[0]}
+	case 2:
+		return []float32{max(p[0]-barH, 12), p[1], p[0], p[1]}
+	case 4:
+		return []float32{max(p[0]-barH, 12), p[1], p[2], p[3]}
+	}
+	return p
+}
+
+func shellHasTopNav(n *Node) bool {
+	if n == nil {
+		return false
+	}
+	if n.Slot == "nav" && n.Style == "top" {
+		return true
+	}
+	for _, list := range [][]Node{n.Row, n.Column, n.Grid} {
+		for i := range list {
+			if shellHasTopNav(&list[i]) {
+				return true
+			}
+		}
+	}
+	return false
 }

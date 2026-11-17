@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"valise/core/journey"
 )
 
 func sectionOrder(tt *ui.Tester) string {
@@ -89,5 +91,47 @@ func TestAgentPageSections(t *testing.T) {
 	}
 	if err := tt.Click(T("agent.tab.health")); err != nil || a.agentTab != tabHealth {
 		t.Fatalf("tabs do not work inside a tree: %v", err)
+	}
+}
+
+func TestSidebarClickReturnsToSectionRoot(t *testing.T) {
+	a, tt := world(t)
+	a.navigate("/agents/home/xiaoman")
+	a.agentTab, a.point = tabJourney, "v1/sa"
+	tt.Frame()
+	tt.Advance(time.Second)
+	click(t, tt, T("nav.agents"))
+	if a.router.Path() != "/agents" || a.point != "" {
+		t.Fatalf("sidebar click did not return to root: path=%q point=%q", a.router.Path(), a.point)
+	}
+}
+
+func TestCurveScrollsHorizontallyWithManyPoints(t *testing.T) {
+	a, tt := world(t)
+	at := time.Now()
+	var items []journey.TimelinePoint
+	for i := range 10 {
+		items = append(items, journey.TimelinePoint{
+			SnapshotRef: journey.SnapshotRef{VaultID: "v1", SnapshotID: "p" + string(rune('a'+i))},
+			CreatedAt:   at.Add(-time.Duration(i) * 26 * time.Hour), RecordedInstanceID: "xiaoman",
+			Scope: journey.Scope{Tier: "full"}, FileCount: 10 + i, PlainBytes: 2048,
+			Copies: []journey.Copy{{LocationRef: journey.LocationRef{Kind: "local_repo", ID: "usb"}, SourceLocator: "home/xiaoman/2026-11-01_2026-11-30"}},
+		})
+	}
+	a.timeline.value.Items = items
+	a.navigate("/agents/home/xiaoman")
+	a.agentTab = tabJourney
+	tt.Frame()
+	tt.Advance(time.Second)
+	if a.curveScroll.MaxX <= 0 {
+		t.Fatalf("expected horizontal overflow for 10 points, got MaxX=%v", a.curveScroll.MaxX)
+	}
+	if a.curveScroll.X < a.curveScroll.MaxX-1 {
+		t.Fatalf("expected curve to open at newest end (MaxX=%v), got X=%v", a.curveScroll.MaxX, a.curveScroll.X)
+	}
+	a.curveScroll.X = 0
+	tt.Frame()
+	if a.curveScroll.X != 0 {
+		t.Fatalf("expected curve to hold user scroll X=0, got %v", a.curveScroll.X)
 	}
 }

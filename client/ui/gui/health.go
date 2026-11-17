@@ -87,15 +87,14 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 	}
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 		line := T("health.reading")
-		if !st.busy && st.report != nil {
+		if st.report != nil {
 			line = T("health.read_at", "when", when(st.at, c.Now()))
 		}
 		muted(ui.Text(c, line)).FontSize(13).Grow(1)
 		if st.busy {
-			ui.Spinner(c)
-		} else {
-			ui.Button(c, T("health.recheck")).OnClick(func() { a.readHealth(row.Server, row.Instance) })
+			ui.Spinner(c).Size(14, 14)
 		}
+		ui.Button(c, T("health.recheck")).Disabled(st.busy).OnClick(func() { a.readHealth(row.Server, row.Instance) })
 	})
 	if st.err != nil {
 		errorBox(c, st.err, a.fold("health-err-"+key))
