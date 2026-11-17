@@ -13,8 +13,10 @@ import (
 	"valise/core/identity"
 	cp "valise/core/protection"
 	"valise/core/valise"
+	"valise/core/vaultrpc"
 	porterenroll "valise/porter/internal/enroll"
 	planstore "valise/porter/internal/protection"
+	"valise/porter/internal/seal"
 )
 
 type Params = cp.BackupParams
@@ -33,6 +35,9 @@ type Store struct {
 
 	// hook is a test seam called at each executor safe point.
 	hook func(stage string)
+
+	// syncFn is an optional package-internal test seam replacing seal.Sync.
+	syncFn func(ctx context.Context, env *porterenroll.Env, paths seal.Paths, name, initiator string) (*vaultrpc.SyncResult, error)
 }
 
 func failure(code string) error {

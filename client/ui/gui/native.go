@@ -42,6 +42,10 @@ type nativeRun struct {
 	exit             func()
 }
 
+func (r *nativeRun) active() bool {
+	return r != nil && r.running && !r.stopped
+}
+
 func (a *App) nativeOf(server, instance string) *nativeState {
 	key := server + "/" + instance
 	if a.natives == nil {
@@ -106,7 +110,7 @@ func (a *App) nativePage(c *ui.Context, server, instance string) {
 		return
 	}
 	r := a.native
-	if r != nil && r.running && (r.server != server || r.instance != instance) {
+	if r.active() && (r.server != server || r.instance != instance) {
 		ui.Text(c, T("native.other_running")).Wrap()
 		ui.Button(c, T("native.return")).OnClick(func() { a.navigate("/native/" + r.server + "/" + r.instance) })
 		return
@@ -158,7 +162,7 @@ func (a *App) startNative(server, instance string, mode service.NativeMode, stop
 }
 
 func (a *App) startNativeAccepted(server, instance string, mode service.NativeMode, acceptRisk, stopService bool) {
-	if a.native != nil && a.native.running {
+	if a.native.active() {
 		return
 	}
 	if a.native != nil && a.native.termClose != nil {
@@ -171,6 +175,7 @@ func (a *App) startNativeAccepted(server, instance string, mode service.NativeMo
 		stoppedUnits: append([]string(nil), n.pausedUnits...),
 		code:         -1,
 	}
+	a.debugAction("native_start", server+"/"+instance+"/"+string(mode))
 	a.native = r
 	conn := newInstallConn()
 	r.conn = conn
@@ -209,6 +214,7 @@ func (a *App) startNativeAccepted(server, instance string, mode service.NativeMo
 		code, err := a.svc.RunInstanceNative(ctx, server, instance, mode, service.NativeIO{Stdin: conn.in, Stdout: conn.outW, Stderr: conn.outW})
 		conn.Close()
 		cancel()
+		var refresh bool
 		a.update(func() {
 			r.stoppingService, r.running, r.code = false, false, code
 			if !r.stopped && !errors.Is(err, context.Canceled) {
@@ -217,20 +223,26 @@ func (a *App) startNativeAccepted(server, instance string, mode service.NativeMo
 			if r.exit != nil {
 				r.exit()
 			}
-			if len(r.stoppedUnits) > 0 || mode == service.NativeCLI {
-				a.refreshNativeAndAgents(server, instance)
-			}
+			refresh = len(r.stoppedUnits) > 0 || mode == service.NativeCLI
 		})
+		if refresh {
+			a.refreshServices(server, instance)
+		}
 	})
 }
 
 func (a *App) stopNative(r *nativeRun) {
+	if r == nil {
+		return
+	}
+	a.debugAction("native_disconnect", r.server+"/"+r.instance)
 	r.stopped = true
+	r.stoppingService = false
 	if r.cancel != nil {
 		r.cancel()
 	}
 	if r.conn != nil {
-		r.conn.Close()
+		_ = r.conn.Close()
 	}
 }
 
@@ -295,12 +307,12 @@ func (a *App) nativeRunView(c *ui.Context, r *nativeRun, n *nativeState) {
 func (a *App) nativeRunBar(c *ui.Context, r *nativeRun, n *nativeState, info *install.NativeInfo, gated bool) {
 	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 		switch {
+		case r.stopped:
+			ui.Text(c, T("native.disconnected")).Grow(1)
 		case r.running:
 			ui.Text(c, nativeRunningText(r)).Grow(1)
 			ui.Button(c, T("native.disconnect")).OnClick(func() { a.stopNative(r) })
 			return
-		case r.stopped:
-			ui.Text(c, T("native.disconnected")).Grow(1)
 		case r.code >= 0:
 			ui.Text(c, nativeExitedText(r.mode, r.code)).Grow(1)
 		default:
@@ -334,7 +346,7 @@ func (a *App) nativeRunBar(c *ui.Context, r *nativeRun, n *nativeState, info *in
 
 // closeNative lets go of an ended session and shows the entries again.
 func (a *App) closeNative(r *nativeRun) {
-	if r.running || a.native != r {
+	if r.active() || a.native != r {
 		return
 	}
 	if r.termClose != nil {
@@ -345,7 +357,7 @@ func (a *App) closeNative(r *nativeRun) {
 
 func (a *App) nativeBanner(c *ui.Context) {
 	r := a.native
-	if r == nil || !r.running {
+	if !r.active() {
 		return
 	}
 	ui.Row(c).Padding(8).Gap(12).Children(func() {

@@ -37,6 +37,10 @@ type App struct {
 		sync.Mutex
 		ids map[string]bool
 	}
+	openDebugDir func() error
+	lastRoute    string
+	debugNote    string
+	debugNoteErr bool
 
 	hooks
 	agentData
@@ -63,8 +67,9 @@ type load[T any] struct {
 
 // New makes the state; nothing is read until Start.
 func New(svc *service.Service) *App {
-	a := &App{svc: svc, router: ui.NewRouter("/agents"),
-		run: func(f func()) { go f() }, update: func(f func()) { f() }}
+	a := &App{svc: svc, router: ui.NewRouter("/agents"), lastRoute: "/agents",
+		openDebugDir: svc.OpenDebugLogDir,
+		run:          func(f func()) { go f() }, update: func(f func()) { f() }}
 	a.hooks = hooks{entryOpener: svc.OpenEntry, openURL: service.OpenURL,
 		scanTimeline: svc.ScanTimelineInScope, runRestoreTest: svc.RunSelectedRestoreTest}
 	a.agentData = agentData{harness: map[string]string{}, display: map[string]*profile.Display{}, vaultNames: map[string]string{},

@@ -17,13 +17,15 @@ import (
 func newService(t *testing.T, sshBinary string) *Service {
 	t.Helper()
 	dir := t.TempDir()
-	return &Service{
+	s := &Service{
 		Dirs:          config.Dirs{Data: filepath.Join(dir, "data"), Cache: filepath.Join(dir, "cache")},
 		Config:        config.Config{SSHBinary: sshBinary},
 		Version:       "test",
 		Home:          dir,
 		SSHConfigPath: filepath.Join(dir, "ssh_config"),
 	}
+	t.Cleanup(s.Close)
+	return s
 }
 
 func wantCode(t *testing.T, err error, code string) {

@@ -81,13 +81,14 @@ func (a *App) passDialog(c *ui.Context) {
 			dialogTitle(ui.Text(c, title))
 			muted(ui.Text(c, why)).FontSize(12).Wrap()
 			in := ui.TextInput(c, &p.value).Password().Placeholder(field).Label(field).AutoFocus()
-			if in.Submitted() && p.value != "" {
+			allowEmpty := p.kind == askServer
+			if in.Submitted() && (p.value != "" || allowEmpty) {
 				answer(passReply{pass: p.value})
 			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).OnClick(cancel)
 				ui.PrimaryButton(c, T("common.ok")).OnClick(func() {
-					if p.value != "" {
+					if p.value != "" || allowEmpty {
 						answer(passReply{pass: p.value})
 					}
 				})

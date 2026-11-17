@@ -8,6 +8,7 @@ import (
 // 7.4). Confirmations and the passphrase dialog are outside the layout:
 // every theme gets them as the classic theme draws them.
 func (a *App) View(c *ui.Context) {
+	a.trackRoute()
 	a.chooseTheme(c.Theme().Dark)
 	c.SetTheme(widgets(c.Theme()))
 	shell := *cur.Shell
@@ -72,6 +73,7 @@ func (a *App) section() string {
 
 func (a *App) navigate(path string) {
 	a.router.Push(path)
+	a.trackRoute()
 	if path == "/servers" && !a.servers.started {
 		a.refreshServers()
 	}

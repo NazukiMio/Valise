@@ -11,6 +11,7 @@ import (
 
 	"valise/core/enroll"
 	"valise/core/install"
+	"valise/core/revive"
 	"valise/ui/service"
 )
 
@@ -75,7 +76,10 @@ func (a *App) activeNativeUnits(server, instance string, info *install.NativeInf
 func (a *App) pauseServiceForNative(ctx context.Context, r *nativeRun) bool {
 	if err := a.svc.RequireGate(ctx, r.server, r.instance); err != nil {
 		a.update(func() {
-			r.stoppingService, r.running, r.err = false, false, err
+			r.stoppingService, r.running = false, false
+			if !r.stopped && !errors.Is(err, context.Canceled) {
+				r.err = err
+			}
 			if r.exit != nil {
 				r.exit()
 			}
@@ -100,9 +104,11 @@ func (a *App) pauseServiceForNative(ctx context.Context, r *nativeRun) bool {
 			if r.exit != nil {
 				r.exit()
 			}
-			a.refreshNativeAndAgents(r.server, r.instance)
 		}
 	})
+	if err != nil {
+		a.refreshServices(r.server, r.instance)
+	}
 	return err == nil
 }
 
@@ -130,8 +136,8 @@ func (a *App) restoreNativeServices(server, instance string, units []string) {
 			if res != nil && len(res.Service) > 0 && n.info != nil {
 				n.info.Service = res.Service
 			}
-			a.refreshNativeAndAgents(server, instance)
 		})
+		a.refreshServices(server, instance)
 	})
 }
 
@@ -225,25 +231,77 @@ func (a *App) setNativeServiceState(server, instance string, units []string, act
 	}
 }
 
-func (a *App) refreshNativeAndAgents(server, instance string) {
+var nativeRefreshTimeout = 5 * time.Second
+
+func (a *App) refreshServices(server, instance string) {
 	key := server + "/" + instance
-	n := a.natives[key]
-	if n != nil {
-		a.run(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
+	a.run(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), nativeRefreshTimeout)
+		defer cancel()
+
+		var hasNative, hasHealth bool
+		a.update(func() {
+			hasNative = a.natives[key] != nil
+			hasHealth = a.health[key] != nil
+		})
+
+		if hasNative {
 			info, err := a.svc.InstanceNativeInfo(ctx, server, instance)
 			if err == nil && info != nil {
-				a.update(func() { n.info = info })
+				a.update(func() {
+					if n := a.natives[key]; n != nil {
+						n.info = info
+					}
+				})
 			}
-		})
-	}
-	if a.health[key] != nil {
-		a.readHealth(server, instance)
-	}
-	if list, err := a.svc.ServerList(); err == nil && len(list) > 0 {
-		a.refreshAgents()
-	}
+		}
+
+		if hasHealth {
+			r, err := a.svc.Health(ctx, server, instance)
+			caps, capErr := a.svc.BackupCapabilities(ctx, server)
+			last, hasLast := a.svc.LastRestoreTest(server, instance)
+			if err == nil && r != nil {
+				a.update(func() {
+					st := a.health[key]
+					if st == nil || st.busy {
+						return
+					}
+					st.report, st.err, st.at = r, nil, time.Now()
+					st.canTest = slices.Contains(caps, revive.ReviewCapability)
+					st.testReadFailed = capErr != nil
+					if last.AgentRef != nil && last.State != "running" && last.State != "needs_cleanup" {
+						matched := r.AgentRef != nil && *r.AgentRef == *last.AgentRef
+						hasLast = hasLast && matched
+						if !matched && a.restoreTest != nil && !a.restoreTest.j.busy && a.restoreTest.server == server && a.restoreTest.instance == instance {
+							a.restoreTest = nil
+						}
+					}
+					if hasLast && (a.restoreTest == nil || !a.restoreTest.j.busy && (a.restoreTest.server != server || a.restoreTest.instance != instance)) {
+						a.restoreTest = &restoreTestFlow{server: server, instance: instance, result: &last}
+					}
+				})
+			}
+		}
+
+		if list, err := a.svc.ServerList(); err == nil && len(list) > 0 {
+			res, err := a.svc.ListAgents(ctx, service.AgentListRequest{})
+			if err == nil {
+				vaults := a.readVaults(ctx, res)
+				a.update(func() {
+					if a.agents.busy {
+						return
+					}
+					a.agents = load[service.AgentListResult]{started: true, value: res, at: time.Now()}
+					a.vaults = vaults
+					for conn, vr := range vaults {
+						if vr.name != "" {
+							a.vaultNames[conn] = vr.name
+						}
+					}
+				})
+			}
+		}
+	})
 }
 
 func appendUnits(dst, more []string) []string {

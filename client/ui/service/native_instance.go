@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
+	"syscall"
 	"time"
 
 	"valise/client/porter"
@@ -25,7 +27,7 @@ func (s *Service) InstanceNativeInfo(ctx context.Context, host, instance string)
 		return nil, err
 	}
 	if info.InstanceID != instance || info.ProfileID == "" {
-		return nil, valise.New("native_info_mismatch", "收到的原生界面资料不属于这个 Agent", "重新读取这个 Agent 后再试")
+		return nil, valise.New("native_info_mismatch", "收到的命令行与向导资料不属于这个 Agent", "重新读取这个 Agent 后再试")
 	}
 	return &info, nil
 }
@@ -64,21 +66,21 @@ func (s *Service) InstanceNativeCommand(ctx context.Context, host, instance stri
 	switch mode {
 	case NativeCLI:
 		if len(info.Argv) == 0 {
-			return nil, nil, valise.New("native_cli_none", "这个 Agent 没有声明原生引导", "改用原生会话或实例交互终端")
+			return nil, nil, valise.New("native_cli_none", "这个 Agent 没有声明初始化配置向导（Onboard）", "改用 Agent 终端会话（TUI）或系统命令行（Shell）")
 		}
 	case NativeSession:
 		if len(info.SessionArgv) == 0 {
-			return nil, nil, valise.New("native_session_none", "这个 Agent 没有声明原生会话", "改用实例交互终端，或更新资料后重新接入")
+			return nil, nil, valise.New("native_session_none", "这个 Agent 没有声明 Agent 终端会话（TUI）", "改用系统命令行（Shell），或更新资料后重新接入")
 		}
 		if !info.Session {
-			return nil, nil, valise.New("unsupported_capability", "服务器上的 porter 尚不能打开这个 Agent 的原生会话", "在当前服务器的设置中更新 porter 后再试")
+			return nil, nil, valise.New("unsupported_capability", "服务器上的 porter 尚不能打开这个 Agent 的终端会话（TUI）", "在当前服务器的设置中更新 porter 后再试")
 		}
 	case NativeShell:
 		if !info.Shell {
-			return nil, nil, valise.New("unsupported_capability", "服务器上的 porter 尚不能打开这个 Agent 的交互终端", "在当前服务器的设置中更新 porter 后再试")
+			return nil, nil, valise.New("unsupported_capability", "服务器上的 porter 尚不能打开这个 Agent 的系统命令行（Shell）", "在当前服务器的设置中更新 porter 后再试")
 		}
 	default:
-		return nil, nil, valise.New("native_mode_invalid", "不认识的原生界面方式", "")
+		return nil, nil, valise.New("native_mode_invalid", "不认识的命令行与向导方式", "")
 	}
 	if err := s.RequireGate(ctx, host, instance); err != nil {
 		return nil, nil, err
@@ -87,16 +89,42 @@ func (s *Service) InstanceNativeCommand(ctx context.Context, host, instance stri
 	if err != nil {
 		return nil, nil, err
 	}
+	var closeOnce sync.Once
+	asyncDone := func() {
+		closeOnce.Do(func() {
+			closeMasterAsync(done)
+		})
+	}
 	found, err := porter.Probe(ctx, t)
 	if err != nil {
-		done()
+		asyncDone()
 		return nil, nil, err
 	}
 	if !found.Supports(install.NativeCapability) {
-		done()
-		return nil, nil, valise.New("unsupported_capability", "服务器上的 porter 尚不能按 Agent 打开原生界面", "在当前服务器的设置中更新 porter 后再试")
+		asyncDone()
+		return nil, nil, valise.New("unsupported_capability", "服务器上的 porter 尚不能按 Agent 打开命令行与向导", "在当前服务器的设置中更新 porter 后再试")
 	}
-	return t.TTYCommand(ctx, nativeLine(found.Path, instance, mode)), done, nil
+	cmd := t.TTYCommand(ctx, nativeLine(found.Path, instance, mode))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil || cmd.Process.Pid <= 0 {
+			return os.ErrProcessDone
+		}
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
+	cmd.WaitDelay = 500 * time.Millisecond
+	return cmd, asyncDone, nil
+}
+
+func closeMasterAsync(closeMaster func()) {
+	if closeMaster == nil {
+		return
+	}
+	go closeMaster()
 }
 
 type NativeIO struct {
@@ -123,7 +151,7 @@ func (s *Service) RunInstanceNative(ctx context.Context, host, instance string, 
 			// remote command exits.
 			pw, err := cmd.StdinPipe()
 			if err != nil {
-				return -1, valise.New("native_start_failed", "原生界面没有启动", "重新检查服务器连接和管理登录后再试").WithDetail(err.Error())
+				return -1, valise.New("native_start_failed", "命令行与向导没有启动", "重新检查服务器连接和管理登录后再试").WithDetail(err.Error())
 			}
 			go func() {
 				_, _ = io.Copy(pw, streams.Stdin)
@@ -141,11 +169,11 @@ func (s *Service) RunInstanceNative(ctx context.Context, host, instance string, 
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		if exit.ExitCode() == ssh.ExitConnFailed {
-			return exit.ExitCode(), valise.New("terminal_conn_failed", "和服务器的原生界面连接已断开", "检查网络后重新打开；不要把连接结束当作 Agent 已停止")
+			return exit.ExitCode(), valise.New("terminal_conn_failed", "和服务器的命令行与向导连接已断开", "检查网络后重新打开；不要把连接结束当作 Agent 已停止")
 		}
 		return exit.ExitCode(), nil
 	}
-	return -1, valise.New("native_start_failed", "原生界面没有启动", "重新检查服务器连接和管理登录后再试")
+	return -1, valise.New("native_start_failed", "命令行与向导没有启动", "重新检查服务器连接和管理登录后再试")
 }
 
 // NativeServiceRestoreResult keeps starting paused service units separate from

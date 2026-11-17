@@ -21,16 +21,16 @@ func (a *App) settingsPage(c *ui.Context) {
 			ui.Button(c, T("common.close")).OnClick(func() { a.keyNote = "" })
 		})
 	}
-	if a.setTab == 2 {
+	switch a.setTab {
+	case 2:
 		a.personalization(c)
-		return
-	}
-	if a.setTab == 1 {
+	case 1:
 		a.backupSettings(c)
 		ui.Button(c, T("restore.history")).OnClick(func() { a.readRestoreTasks(); a.navigate("/restore/tasks") })
-		return
+	default:
+		a.keySettings(c)
 	}
-	a.keySettings(c)
+	a.debugSettings(c)
 }
 
 func (a *App) keySettings(c *ui.Context) {

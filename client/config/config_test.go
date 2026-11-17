@@ -123,3 +123,28 @@ func TestTakeoverAndDetached(t *testing.T) {
 		t.Fatalf("off server kept: %s", b)
 	}
 }
+
+func TestDebugLogRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	c, err := Load(dir)
+	if err != nil || c.DebugLog != nil {
+		t.Fatalf("expected nil DebugLog when unset, got %+v %v", c, err)
+	}
+	if err := SetDetachedTasks(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetDebugLog(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Load(dir)
+	if err != nil || c.DebugLog == nil || !*c.DebugLog || !c.DetachedTasks {
+		t.Fatalf("expected DebugLog=true and preserved settings, got %+v %v", c, err)
+	}
+	if err := SetDebugLog(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Load(dir)
+	if err != nil || c.DebugLog == nil || *c.DebugLog || !c.DetachedTasks {
+		t.Fatalf("expected DebugLog=false and preserved settings, got %+v %v", c, err)
+	}
+}

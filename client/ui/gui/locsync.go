@@ -47,6 +47,7 @@ func (a *App) syncButton(c *ui.Context, l location) {
 // syncLocation copies every server's backups to the location; a failure
 // at one server is written down and the next goes on.
 func (a *App) syncLocation(l location) {
+	a.debugAction("location_sync", l.Name)
 	ls := a.locs()
 	sy := &locSync{}
 	ls.syncs[l.Name] = sy

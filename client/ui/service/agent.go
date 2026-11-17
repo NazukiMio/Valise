@@ -312,8 +312,9 @@ func (s *Service) LockAdmin() {
 	}
 }
 
-// Close ends Valise's own ssh-agent.
+// Close ends Valise's own ssh-agent and stops debug log writes.
 func (s *Service) Close() {
+	s.closeDebugLog()
 	a := &s.agent
 	a.mu.Lock()
 	defer a.mu.Unlock()

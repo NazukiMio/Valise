@@ -105,11 +105,13 @@ func (s *Service) RunRestore(ctx context.Context, p *PreparedRestore, human Revi
 	if err = s.validateRestore(ctx, p, ""); err != nil {
 		t.State = "failed"
 		t.Stage = ""
+		s.LogStage("restore", "validate", t.Target, "failed", safeDebugErrCode(err))
 		return t, err
 	}
 	if err = s.saveRestore(t); err != nil {
 		return t, err
 	}
+	s.LogStage("restore", t.Stage, t.Target, t.State, "")
 	publish := func() {
 		if changed != nil {
 			changed(t)
@@ -134,6 +136,7 @@ func (s *Service) RunRestore(ctx context.Context, p *PreparedRestore, human Revi
 			parentProgress(pr)
 		}
 		if changedStage {
+			s.LogStage("restore", t.Stage, t.Target, t.State, "")
 			store()
 		}
 	})
@@ -145,6 +148,7 @@ func (s *Service) RunRestore(ctx context.Context, p *PreparedRestore, human Revi
 			t.Verified = true
 			t.State = "waiting"
 			t.Stage = "confirm"
+			s.LogStage("restore", t.Stage, t.Target, t.State, "")
 			store()
 			if recordErr != nil {
 				return false
@@ -170,6 +174,7 @@ func (s *Service) RunRestore(ctx context.Context, p *PreparedRestore, human Revi
 			}
 			t.State = "running"
 			t.Stage = "swap"
+			s.LogStage("restore", t.Stage, t.Target, t.State, "")
 			store()
 			return recordErr == nil
 		},
@@ -204,6 +209,11 @@ func (s *Service) RunRestore(ctx context.Context, p *PreparedRestore, human Revi
 	if err = s.saveRestore(t); err != nil {
 		return t, err
 	}
+	finalStage := t.Stage
+	if finalStage == "" {
+		finalStage = "finish"
+	}
+	s.LogStage("restore", finalStage, t.Target, t.State, safeDebugErrCode(runErr))
 	publish()
 	return t, runErr
 }

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"valise/core/valise"
 	"valise/core/vaultrpc"
@@ -103,6 +104,9 @@ func TestGateDoesNotAskCopyLocationsWhenARepositoryHasThePod(t *testing.T) {
 	if err := s.TargetSet(ctx, "box", vaultrpc.Target{Name: "dead", Kind: "rsync", Dest: "dead:/backup"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.call(ctx, "box", vaultrpc.MethodSyncRecord, vaultrpc.SyncRecordParams{Target: "dead", Snapshots: []string{ss}}, nil); err != nil {
+		t.Fatal(err)
+	}
 	// Nothing here yet: the copy location is asked, fails, and is named.
 	g, err := s.AdvancedGate(ctx, "box", "")
 	if err != nil || g.OK() || !strings.Contains(g.Agents[0].Reason, "dead") {
@@ -148,5 +152,57 @@ func TestGateDoesNotAskCopyLocationsWhenARepositoryHasThePod(t *testing.T) {
 	}
 	if _, err := os.Stat(tried); err == nil {
 		t.Fatal("an old pod in the repository made the gate ask the dead copy location")
+	}
+}
+
+func TestGateSkipsHangingRemoteTargetWithinTimeout(t *testing.T) {
+	s, home, _, ss := sealedWorld(t)
+	ctx := context.Background()
+	s.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
+	if err := s.ServerNameSet(ctx, "box", "box"); err != nil {
+		t.Fatal(err)
+	}
+
+	tried := filepath.Join(home, "slow-tried")
+	slow := "#!/bin/sh\necho x >> " + tried + "\nsleep 30\n"
+	for _, tool := range []string{"rsync", "ssh"} {
+		if err := os.WriteFile(filepath.Join(home, ".local/bin", tool), []byte(slow), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Target without LastSynced skips listing completely.
+	if err := s.TargetSet(ctx, "box", vaultrpc.Target{Name: "unsynced", Kind: "rsync", Dest: "slow:/backup1"}); err != nil {
+		t.Fatal(err)
+	}
+	// Target with LastSynced invokes listing, times out independently without blocking 30s.
+	if err := s.TargetSet(ctx, "box", vaultrpc.Target{Name: "slownas", Kind: "rsync", Dest: "slow:/backup2"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.call(ctx, "box", vaultrpc.MethodSyncRecord, vaultrpc.SyncRecordParams{Target: "slownas", Snapshots: []string{ss}}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if targetGateTimeout != 3*time.Second {
+		t.Fatalf("targetGateTimeout = %v, want 3s", targetGateTimeout)
+	}
+	orig := targetGateTimeout
+	targetGateTimeout = 200 * time.Millisecond
+	defer func() { targetGateTimeout = orig }()
+
+	start := time.Now()
+	g, err := s.AdvancedGate(ctx, "box", "demo")
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed >= 2*time.Second {
+		t.Fatalf("AdvancedGate stalled on hanging remote target: %v", elapsed)
+	}
+	if g.OK() || !strings.Contains(g.Agents[0].Reason, "slownas") || !strings.Contains(g.Agents[0].Reason, "超时") {
+		t.Fatalf("expected skipped timeout reason for slownas, got: %+v", g)
+	}
+	b, _ := os.ReadFile(tried)
+	if strings.Count(string(b), "x") != 1 {
+		t.Fatalf("expected only synced slownas to attempt listing once (unsynced skipped), got %q", string(b))
 	}
 }

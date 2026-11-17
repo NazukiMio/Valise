@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -91,5 +92,42 @@ func TestRPCDelayAndContext(t *testing.T) {
 	_, _, err := Dial(ctx, fakeTransport(t, e, "box"), porter, "t")
 	if err == nil || time.Since(start) > 5*time.Second {
 		t.Fatalf("err=%v after %v", err, time.Since(start))
+	}
+}
+
+func TestRPCProcessHookStartAndEnd(t *testing.T) {
+	e := fakesshenv.New(t)
+	e.AddHost("box")
+	porter := e.InstallPorter("box")
+	var mu sync.Mutex
+	var events []ProcessEvent
+	tr, err := New("box", Options{
+		Binary:     e.SSH,
+		ControlDir: t.TempDir(),
+		Mode:       ModeAdmin,
+		ProcessHook: func(ev ProcessEvent) {
+			mu.Lock()
+			events = append(events, ev)
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _, err := Dial(context.Background(), tr, porter, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	got := append([]ProcessEvent{}, events...)
+	mu.Unlock()
+	if len(got) != 2 || got[0].Phase != "start" || got[0].Kind != "rpc" || got[0].Mode != ModeAdmin {
+		t.Fatalf("unexpected start event: %+v", got)
+	}
+	if got[1].Phase != "end" || got[1].Kind != "rpc" || got[1].Mode != ModeAdmin || got[1].Host != "box" || got[1].ExitCode != 0 {
+		t.Fatalf("unexpected end event: %+v", got)
 	}
 }

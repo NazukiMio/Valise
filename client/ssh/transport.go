@@ -14,9 +14,30 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"valise/core/valise"
 )
+
+// Transport access modes recorded by diagnostic process hooks.
+const (
+	ModeDaily     = "daily"
+	ModeAdmin     = "admin"
+	ModeUser      = "user"
+	ModeBootstrap = "bootstrap"
+)
+
+// ProcessEvent describes the start or end of an SSH subprocess launched by
+// Transport. It intentionally excludes credentials, arguments, and paths.
+type ProcessEvent struct {
+	Phase      string
+	Host       string
+	Mode       string
+	Kind       string
+	DurationMS int64
+	ExitCode   int
+	ErrCode    string
+}
 
 // Options configure how ssh(1) is run.
 type Options struct {
@@ -60,6 +81,11 @@ type Options struct {
 	// askpass relay of a frontend that has no terminal (SSH_ASKPASS and
 	// what it needs). Never secrets themselves.
 	Env []string
+	// Mode labels the transport access level (daily, admin, user, bootstrap)
+	// for diagnostic logging; inferred from options when empty.
+	Mode string
+	// ProcessHook, when set, receives SSH subprocess start and end events.
+	ProcessHook func(ProcessEvent)
 }
 
 // ConnectTimeoutSeconds bounds opening a connection; AliveIntervalSeconds
@@ -93,11 +119,56 @@ func New(host string, opts Options) (*Transport, error) {
 	if opts.Binary == "" {
 		opts.Binary = "ssh"
 	}
+	if opts.Mode == "" {
+		opts.Mode = inferMode(opts)
+	}
 	return &Transport{host: host, opts: opts}, nil
+}
+
+func inferMode(opts Options) string {
+	switch {
+	case opts.AuthNone:
+		return ModeBootstrap
+	case opts.ConfigFile != "":
+		switch {
+		case opts.ControlName == "cmd-" && opts.BatchMode:
+			return ModeDaily
+		case opts.Identity != "" && filepath.Base(opts.Identity) == "admin" && opts.BatchMode:
+			return ModeAdmin
+		case opts.BatchMode && opts.NoControl:
+			return ModeDaily
+		default:
+			return ModeBootstrap
+		}
+	case opts.HostConfig != nil:
+		if opts.ControlPath != "" {
+			return ModeAdmin
+		}
+		return ModeUser
+	default:
+		return ""
+	}
 }
 
 // Host returns the host alias.
 func (t *Transport) Host() string { return t.host }
+
+// Mode returns the access mode configured or inferred for this transport.
+func (t *Transport) Mode() string { return t.opts.Mode }
+
+// EmitProcess delivers an SSH subprocess lifecycle event to ProcessHook, if set.
+func (t *Transport) EmitProcess(ev ProcessEvent) {
+	if t == nil || t.opts.ProcessHook == nil {
+		return
+	}
+	if ev.Host == "" {
+		ev.Host = t.host
+	}
+	if ev.Mode == "" {
+		ev.Mode = t.opts.Mode
+	}
+	t.opts.ProcessHook(ev)
+}
 
 // ReusesUserControlMaster reports whether the user's own connection sharing
 // is used instead of Valise's.
@@ -272,23 +343,69 @@ func (t *Transport) Run(ctx context.Context, remoteCmd string, stdin io.Reader) 
 	}
 	var out, errb bytes.Buffer
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, &out, &errb
-	if err := runContext(ctx, cmd); err != nil {
+	start := time.Now()
+	started, err := runContext(ctx, cmd, func() {
+		t.EmitProcess(ProcessEvent{Phase: "start", Kind: "run"})
+	})
+	if err != nil {
 		var ee *exec.ExitError
 		if !errors.As(err, &ee) {
+			errCode := "start_failed"
+			if started {
+				errCode = contextErrCode(err)
+			}
+			exitCode := -1
+			if started && cmd.ProcessState != nil {
+				exitCode = cmd.ProcessState.ExitCode()
+			}
+			t.EmitProcess(ProcessEvent{
+				Phase:      "end",
+				Kind:       "run",
+				DurationMS: time.Since(start).Milliseconds(),
+				ExitCode:   exitCode,
+				ErrCode:    errCode,
+			})
 			return nil, t.startError(err)
 		}
 	}
 	res := &Result{Stdout: out.Bytes(), Stderr: errb.Bytes(), ExitCode: cmd.ProcessState.ExitCode()}
+	errCode := ""
+	if res.ExitCode == ExitConnFailed {
+		errCode = "ssh_connect_failed"
+	} else if res.ExitCode != 0 {
+		errCode = "nonzero_exit"
+	}
+	t.EmitProcess(ProcessEvent{
+		Phase:      "end",
+		Kind:       "run",
+		DurationMS: time.Since(start).Milliseconds(),
+		ExitCode:   res.ExitCode,
+		ErrCode:    errCode,
+	})
 	if res.ExitCode == ExitConnFailed {
 		return res, t.ConnError(errb.String())
 	}
 	return res, nil
 }
 
+func contextErrCode(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "context_canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "context_deadline_exceeded"
+	default:
+		return "wait_failed"
+	}
+}
+
 // runContext runs cmd and kills it when ctx ends.
-func runContext(ctx context.Context, cmd *exec.Cmd) error {
+func runContext(ctx context.Context, cmd *exec.Cmd, onStart func()) (bool, error) {
 	if err := cmd.Start(); err != nil {
-		return err
+		return false, err
+	}
+	if onStart != nil {
+		onStart()
 	}
 	done := make(chan struct{})
 	go func() {
@@ -301,9 +418,9 @@ func runContext(ctx context.Context, cmd *exec.Cmd) error {
 	err := cmd.Wait()
 	close(done)
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return true, ctx.Err()
 	}
-	return err
+	return true, err
 }
 
 // ConnError is the user-facing error for a failed SSH connection.

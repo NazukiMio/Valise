@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"valise/client/config"
 	"valise/client/porter"
@@ -74,7 +75,11 @@ func (s *Service) HasDailyKey(host string) bool {
 func (s *Service) Tiered(host string) bool { return s.server(host).Valise() }
 
 func (s *Service) valiseOptions(srv config.Server) ssh.Options {
-	return ssh.Options{Binary: s.Config.SSHBinary, ConfigFile: filepath.Join(s.Dirs.Data, config.SSHConfigFile)}
+	return ssh.Options{
+		Binary:      s.Config.SSHBinary,
+		ConfigFile:  filepath.Join(s.Dirs.Data, config.SSHConfigFile),
+		ProcessHook: s.sshProcessHook(),
+	}
 }
 
 // transport is the daily transport: the daily key on servers added by
@@ -87,6 +92,7 @@ func (s *Service) transport(host string) (*ssh.Transport, ssh.HostConfig, error)
 	o := s.valiseOptions(srv)
 	o.Identity, o.IdentityAgent, o.BatchMode, o.ControlDir = s.keyPath(host, dailyKeyName), "none", true, s.Dirs.Cache
 	o.ControlName = "cmd-" // never shared with a full login's master
+	o.Mode = ssh.ModeDaily
 	t, err := ssh.New(host, o)
 	if err != nil {
 		return nil, ssh.HostConfig{}, valise.New("bad_host", "服务器别名无效："+host, "检查服务器列表")
@@ -101,10 +107,12 @@ func (s *Service) userTransport(host string) (*ssh.Transport, ssh.HostConfig, er
 	}
 	hc := c.Lookup(host)
 	o := ssh.Options{
-		Binary:     s.Config.SSHBinary,
-		ControlDir: s.Dirs.Cache,
-		HostConfig: &hc,
-		BatchMode:  s.NoTerminalLogin && !s.canPrompt(),
+		Binary:      s.Config.SSHBinary,
+		ControlDir:  s.Dirs.Cache,
+		HostConfig:  &hc,
+		BatchMode:   s.NoTerminalLogin && !s.canPrompt(),
+		Mode:        ssh.ModeUser,
+		ProcessHook: s.sshProcessHook(),
 	}
 	if s.canPrompt() && !o.BatchMode {
 		if o.Env, err = s.relayEnv(); err != nil {
@@ -152,8 +160,9 @@ func (s *Service) adminTransport(ctx context.Context, host string) (t *ssh.Trans
 			return nil, nil, err
 		}
 		hc := c.Lookup(host)
-		o = ssh.Options{Binary: s.Config.SSHBinary, HostConfig: &hc, BatchMode: s.NoTerminalLogin && !s.canPrompt()}
+		o = ssh.Options{Binary: s.Config.SSHBinary, HostConfig: &hc, BatchMode: s.NoTerminalLogin && !s.canPrompt(), ProcessHook: s.sshProcessHook()}
 	}
+	o.Mode = ssh.ModeAdmin
 	if s.canPrompt() && !o.BatchMode {
 		if o.Env, err = s.relayEnv(); err != nil {
 			return nil, nil, err
@@ -273,7 +282,11 @@ func (s *Service) withSession(ctx context.Context, host string, fn func(caller) 
 	return fn(c)
 }
 
-func (p *porterSession) Call(ctx context.Context, method string, params, result any) error {
+func (p *porterSession) Call(ctx context.Context, method string, params, result any) (err error) {
+	start := time.Now()
+	defer func() {
+		p.s.logRPC(method, p.host, time.Since(start).Milliseconds(), err)
+	}()
 	if err := transactionCompatibility(p.hello, method, params); err != nil {
 		return err
 	}

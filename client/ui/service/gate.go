@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"valise/core/valise"
@@ -39,6 +41,10 @@ const GateCode = "offsite_pod_required"
 // staleAfter: an offsite pod older than this is warned about (the warning
 // can be dismissed). A variable for tests.
 var staleAfter = 7 * 24 * time.Hour
+
+// targetGateTimeout bounds listing each remote copy location during gate
+// checks so one unreachable target cannot stall the rest. A variable for tests.
+var targetGateTimeout = 3 * time.Second
 
 const repoTrialFile = "repo-trial.json"
 
@@ -150,6 +156,9 @@ func (s *Service) AdvancedGate(ctx context.Context, host, instance string) (*Gat
 	}
 	if !check() && len(st.Targets) > 0 {
 		places = append(places, s.targetPlaces(ctx, host, st)...)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		check()
 	}
 	return res, nil
@@ -205,33 +214,57 @@ func (s *Service) repoPlaces(host string, st *vaultrpc.StatusResult) []offsitePl
 }
 
 // targetPlaces lists the snapshots each of the server's copy locations
-// holds, asking the server to list every one of them.
+// holds concurrently, skipping unsynced targets and bounding each query with
+// targetGateTimeout so an offline target cannot block the gate.
 func (s *Service) targetPlaces(ctx context.Context, host string, st *vaultrpc.StatusResult) []offsitePlace {
-	var out []offsitePlace
-	for _, t := range st.Targets {
-		p := offsitePlace{label: "备份位置 " + t.Name, leaf: map[string]string{}}
-		list, err := s.TargetList(ctx, host, t.Name)
-		if err != nil {
-			p.err = "列不出远程备份位置 " + t.Name + " 上的内容：" + errText1(err)
-			out = append(out, p)
+	out := make([]offsitePlace, len(st.Targets))
+	var wg sync.WaitGroup
+	for i, t := range st.Targets {
+		if len(t.LastSynced) == 0 {
+			out[i] = offsitePlace{
+				label: "备份位置 " + t.Name,
+				leaf:  map[string]string{},
+				err:   "远程备份位置 " + t.Name + " 还没有同步记录",
+			}
 			continue
 		}
-		synced := map[string]bool{}
-		for _, id := range t.LastSynced {
-			synced[id] = true
-		}
-		for _, l := range list.Leaves {
-			if l.Deleting {
-				continue
+		wg.Add(1)
+		go func(idx int, t vaultrpc.TargetState) {
+			defer wg.Done()
+			p := offsitePlace{label: "备份位置 " + t.Name, leaf: map[string]string{}}
+			tctx, cancel := context.WithTimeout(ctx, targetGateTimeout)
+			defer cancel()
+
+			list, err := s.TargetList(tctx, host, t.Name)
+			if err != nil {
+				if (errors.Is(err, context.DeadlineExceeded) || errors.Is(tctx.Err(), context.DeadlineExceeded)) && ctx.Err() == nil {
+					p.err = "查询远程备份位置 " + t.Name + " 超时，已跳过"
+				} else {
+					p.err = "列不出远程备份位置 " + t.Name + " 上的内容：" + errText1(err)
+				}
+				out[idx] = p
+				return
 			}
-			for _, id := range l.Snapshots {
-				if synced[id] {
-					p.leaf[id] = l.Leaf
+			synced := map[string]bool{}
+			for _, id := range t.LastSynced {
+				synced[id] = true
+			}
+			if list != nil {
+				for _, l := range list.Leaves {
+					if l.Deleting {
+						continue
+					}
+					for _, id := range l.Snapshots {
+						if synced[id] {
+							p.leaf[id] = l.Leaf
+						}
+					}
 				}
 			}
-		}
-		out = append(out, p)
+			out[idx] = p
+		}(i, t)
 	}
+	wg.Wait()
 	return out
 }
 

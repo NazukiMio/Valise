@@ -239,3 +239,37 @@ func TestNativePauseServiceOnboardAndRestoreFlow(t *testing.T) {
 	hasAll(t, w.tt.Texts(), T("native.service_started", "units", "demo.service"),
 		T("health.after", "state", T("service.failed")), "问题仍在")
 }
+
+func TestNativeDisconnectDoesNotStallUI(t *testing.T) {
+	w := newNativeFlowWorld(t)
+	prof := strings.Replace(nativeTestProfile, "native_session_cli: [/bin/echo, session-done]", "native_session_cli: [/bin/sleep, \"5\"]", 1)
+	if err := os.WriteFile(filepath.Join(w.a.svc.Dirs.Data, "profiles/demo.yaml"), []byte(prof), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	origOwner := w.a.svc.OwnerAuth.Passphrase
+	w.a.svc.OwnerAuth.Passphrase = func(string) (string, error) { return w.pass, nil }
+	if _, err := w.a.svc.Enroll(context.Background(), "vps", service.EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+	w.a.svc.OwnerAuth.Passphrase = origOwner
+	w.do(func() { w.a.openAgent("vps", "demo") })
+	w.wait(t, "native card", func() bool { return w.tt.HasText(T("native.open")) })
+	w.click(t, T("native.open"))
+	w.wait(t, "prepare session", func() bool { return w.tt.HasText(T("native.session")) })
+	w.click(t, T("native.session"))
+	w.wait(t, "backup gate", func() bool { return w.tt.HasText(T("native.backup_needed")) })
+	w.click(t, T("native.accept_risk"))
+	w.click(t, T("native.continue_once"))
+	w.answerOwner(t, func() bool { return w.tt.HasText(T("native.disconnect")) })
+	t0 := time.Now()
+	w.click(t, T("native.disconnect"))
+	if elapsed := time.Since(t0); elapsed >= 2*time.Second {
+		t.Fatalf("disconnect click took %v", elapsed)
+	}
+	w.do(func() {
+		if !w.tt.HasText(T("native.disconnected")) {
+			t.Fatalf("UI did not switch to disconnected immediately: %q", w.tt.Texts())
+		}
+	})
+	w.wait(t, "native worker finished", func() bool { return w.a.native != nil && !w.a.native.running })
+}

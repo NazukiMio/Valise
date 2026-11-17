@@ -29,6 +29,7 @@ type BackupControllerConfig struct {
 	// PollInterval spaces run status queries of asynchronous tasks.
 	PollInterval time.Duration
 	AllowOneOff  func(context.Context, string) error
+	OnStage      func(op, stage, target, status, errCode string)
 }
 type BackupPlan struct {
 	Selection           protection.BackupSelection `json:"selection,omitzero"`
@@ -142,15 +143,23 @@ func (c *BackupController) accepted(ctx context.Context, host string, a identity
 	// WithAccepted remains the execution authority for pending transactions.
 	return cloneProtection(*v.ServerPlan), nil
 }
+func (c *BackupController) logStage(op, stage, target, status, errCode string) {
+	if c != nil && c.config.OnStage != nil {
+		c.config.OnStage(op, stage, target, status, errCode)
+	}
+}
+
 func (c *BackupController) PrepareBackup(ctx context.Context, host string, a identity.AgentRef) (BackupPlan, error) {
 	if host == "" {
 		return BackupPlan{}, protectionError("request_invalid", "缺少备份服务器")
 	}
 	if err := protection.ValidateAgent(a); err != nil {
+		c.logStage("backup", "prepare", host, "failed", safeDebugErrCode(err))
 		return BackupPlan{}, err
 	}
 	server, err := c.accepted(ctx, host, a)
 	if err != nil {
+		c.logStage("backup", "prepare", host, "failed", safeDebugErrCode(err))
 		return BackupPlan{}, err
 	}
 	id, err := identity.NewID()
@@ -168,6 +177,7 @@ func (c *BackupController) PrepareBackup(ctx context.Context, host string, a ide
 	}
 	c.plans[id] = backupPrepared{host: host, plan: cloneProtection(plan)}
 	c.mu.Unlock()
+	c.logStage("backup", "prepare", host, "prepared", "")
 	return cloneProtection(plan), nil
 }
 func backupRequestDigest(host string, p protection.ServerPlan, selections ...protection.BackupSelection) string {
@@ -202,6 +212,7 @@ func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKe
 	digest := backupRequestDigest(p.host, p.plan.ServerPlan, p.plan.Selection)
 	keyDigest, _ := protection.Digest(submissionKey)
 	var task BackupTask
+	createdWaiting := false
 	err := c.withStore(func() error {
 		tasks, err := c.loadTasks()
 		if err != nil {
@@ -231,8 +242,12 @@ func (c *BackupController) StartBackup(ctx context.Context, planID, submissionKe
 			return err
 		}
 		task = BackupTask{Selection: p.plan.Selection, Schema: "valise-backup-task/1", Kind: "backup", TaskRef: ProtectionTaskRef{ExecutorID: c.config.ExecutorID, TaskID: taskID}, Host: p.host, AgentRef: p.plan.ServerPlan.AgentRef, PlanID: planID, PlanDigest: p.plan.PlanDigest, RequestDigest: digest, SubmissionKeyDigest: keyDigest, RunID: runID, ServerPlan: cloneProtection(p.plan.ServerPlan), State: "waiting", Wait: "confirmation", Revision: 1, ObservedAt: c.now().UTC()}
+		createdWaiting = true
 		return c.save(task)
 	})
+	if err == nil && createdWaiting {
+		c.logStage("backup", "confirm", task.Host, task.State, "")
+	}
 	if err != nil || task.State != "waiting" || c.config.Review == nil {
 		return cloneProtection(task), err
 	}
@@ -301,6 +316,7 @@ func (t BackupTask) params() protection.BackupParams {
 }
 func (c *BackupController) updateWaiting(old BackupTask, update func(*BackupTask)) (BackupTask, error) {
 	t := old
+	changed := false
 	err := c.withStore(func() error {
 		current, err := c.load(old.TaskRef.TaskID)
 		if err != nil {
@@ -313,10 +329,18 @@ func (c *BackupController) updateWaiting(old BackupTask, update func(*BackupTask
 		update(&t)
 		t.Revision++
 		t.ObservedAt = c.now().UTC()
+		changed = t.State != current.State
 		return c.save(t)
 	})
 	if err == nil {
 		c.follow.notify(t)
+		if changed {
+			stage := "confirm"
+			if t.State == "running" {
+				stage = "run"
+			}
+			c.logStage("backup", stage, t.Host, t.State, "")
+		}
 	}
 	return cloneProtection(t), err
 }
@@ -343,6 +367,7 @@ func (c *BackupController) GetBackupTask(ctx context.Context, ref ProtectionTask
 }
 func (c *BackupController) finish(old BackupTask, run protection.BackupRun, callErr error) (BackupTask, error) {
 	t := old
+	changed := false
 	err := c.withStore(func() error {
 		current, err := c.load(old.TaskRef.TaskID)
 		if err != nil {
@@ -351,6 +376,11 @@ func (c *BackupController) finish(old BackupTask, run protection.BackupRun, call
 		t = current
 		if backupTerminal(t.State) {
 			return nil
+		}
+		prevState := current.State
+		prevStage := ""
+		if current.Run != nil {
+			prevStage = current.Run.Stage
 		}
 		valid := callErr == nil && backupRunMatches(t, run)
 		cancelling := t.State == "cancelling" || t.CancelRequested
@@ -382,10 +412,35 @@ func (c *BackupController) finish(old BackupTask, run protection.BackupRun, call
 		}
 		t.Revision++
 		t.ObservedAt = c.now().UTC()
+		newStage := ""
+		if t.Run != nil {
+			newStage = t.Run.Stage
+		}
+		changed = t.State != prevState || newStage != prevStage
 		return c.save(t)
 	})
 	if err == nil {
 		c.follow.notify(t)
+		if changed {
+			stage := "run"
+			target := t.Host
+			errCode := safeDebugErrCode(callErr)
+			if t.Run != nil {
+				if t.Run.Stage != "" {
+					stage = t.Run.Stage
+				}
+				if t.Run.StageTarget != nil && t.Run.StageTarget.ID != "" {
+					target = t.Host + "/" + t.Run.StageTarget.ID
+				}
+				if t.Run.ErrorCode != "" {
+					errCode = t.Run.ErrorCode
+				}
+			}
+			if errCode == "" && t.Error != nil {
+				errCode = t.Error.Code
+			}
+			c.logStage("backup", stage, target, t.State, errCode)
+		}
 	}
 	return cloneProtection(t), err
 }

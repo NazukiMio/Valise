@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"valise/core/valise"
@@ -132,5 +133,47 @@ func TestControlNameSeparatesAccessLevels(t *testing.T) {
 	}
 	if p1, p2 := path(full), path(daily); p1 == "" || p2 == "" || p1 == p2 || !strings.Contains(p2, "/cmd-%C") {
 		t.Fatalf("%q %q", p1, p2)
+	}
+}
+
+func TestModeInferenceAndProcessHook(t *testing.T) {
+	dailyTr, _ := New("h", Options{ConfigFile: "/c", ControlName: "cmd-", BatchMode: true, Identity: "/k/daily"})
+	adminTr, _ := New("h", Options{ConfigFile: "/c", BatchMode: true, Identity: "/k/admin"})
+	userTr, _ := New("h", Options{HostConfig: &HostConfig{}})
+	bootTr, _ := New("h", Options{ConfigFile: "/c", NoPubkey: true, ControlPath: "/tmp/op-1"})
+	explicitTr, _ := New("h", Options{Mode: ModeAdmin, ConfigFile: "/c"})
+	if dailyTr.Mode() != ModeDaily || adminTr.Mode() != ModeAdmin || userTr.Mode() != ModeUser || bootTr.Mode() != ModeBootstrap || explicitTr.Mode() != ModeAdmin {
+		t.Fatalf("modes: daily=%q admin=%q user=%q boot=%q explicit=%q", dailyTr.Mode(), adminTr.Mode(), userTr.Mode(), bootTr.Mode(), explicitTr.Mode())
+	}
+
+	e := fakesshenv.New(t)
+	e.AddHost("box")
+	var mu sync.Mutex
+	var events []ProcessEvent
+	tr, err := New("box", Options{
+		Binary:     e.SSH,
+		ControlDir: t.TempDir(),
+		Mode:       ModeDaily,
+		ProcessHook: func(ev ProcessEvent) {
+			mu.Lock()
+			events = append(events, ev)
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := tr.Run(context.Background(), "exit 7", nil)
+	if err != nil || res.ExitCode != 7 {
+		t.Fatalf("unexpected run result: res=%+v err=%v", res, err)
+	}
+	mu.Lock()
+	got := append([]ProcessEvent{}, events...)
+	mu.Unlock()
+	if len(got) != 2 || got[0].Phase != "start" || got[0].Host != "box" || got[0].Mode != ModeDaily || got[0].Kind != "run" {
+		t.Fatalf("unexpected start event: %+v", got)
+	}
+	if got[1].Phase != "end" || got[1].Host != "box" || got[1].Mode != ModeDaily || got[1].ExitCode != 7 || got[1].ErrCode != "nonzero_exit" {
+		t.Fatalf("unexpected end event: %+v", got)
 	}
 }

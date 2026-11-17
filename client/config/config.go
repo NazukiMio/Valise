@@ -41,6 +41,10 @@ type Config struct {
 	// server declares backup-runs/2, a planned backup is handed to the
 	// server's one-shot unit.
 	DetachedTasks bool `json:"detached_tasks,omitempty"`
+	// DebugLog enables or disables structured client debug logging when
+	// explicitly configured (nil uses the version-based default unless
+	// VALISE_DEBUG is set).
+	DebugLog *bool `json:"debug_log,omitempty"`
 }
 
 // Repo is a local folder used as a repository.
@@ -119,6 +123,10 @@ func SetRedDismissDays(dir string, days int) error { return setKey(dir, "red_dis
 
 // SetDetachedTasks records the 分离模式 setting.
 func SetDetachedTasks(dir string, on bool) error { return setKey(dir, "detached_tasks", on) }
+
+// SetDebugLog records debug_log in config.json, keeping the file's other
+// settings.
+func SetDebugLog(dir string, on bool) error { return setKey(dir, "debug_log", on) }
 
 // SetTakeover turns takeover mode on or off for one server, keeping the
 // other servers' settings. Off removes the server from the list.

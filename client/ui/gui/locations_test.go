@@ -174,3 +174,47 @@ func TestCloudForm(t *testing.T) {
 		t.Fatalf("answer %q", got)
 	}
 }
+
+func TestLocationCardClickAndSyncButton(t *testing.T) {
+	a, tt := locWorld(t)
+	a.router.Push("/locations")
+	tt.Advance(time.Second)
+
+	// Clicking the card subtitle / body navigates to /locations/nas.
+	click(t, tt, T("loc.kind.station"))
+	if a.router.Path() != "/locations/nas" {
+		t.Fatalf("clicking card body went to %q, want /locations/nas", a.router.Path())
+	}
+
+	// Hovering card subtitle sets pointer cursor and clicking blank space inside the card navigates.
+	a.router.Push("/locations")
+	tt.Frame()
+	rect, ok := tt.Find(T("loc.kind.station"))
+	if !ok {
+		t.Fatal("missing nas kind label")
+	}
+	tt.Move(rect.X+4, rect.Y+4)
+	if tt.Cursor() != ui.CursorPointer {
+		t.Fatalf("card cursor = %v, want CursorPointer", tt.Cursor())
+	}
+	tt.ClickAt(rect.X+rect.W+40, rect.Y+rect.H/2)
+	tt.Advance(time.Second)
+	if a.router.Path() != "/locations/nas" {
+		t.Fatalf("clicking card blank area went to %q, want /locations/nas", a.router.Path())
+	}
+
+	// Clicking the child "同步" button starts syncing WITHOUT navigating to /locations/nas.
+	a.router.Push("/locations")
+	tt.Frame()
+	a.run = func(func()) {}
+	if a.locs().syncs["nas"] != nil {
+		t.Fatal("nas sync already started")
+	}
+	click(t, tt, T("loc.sync"))
+	if a.router.Path() != "/locations" {
+		t.Fatalf("clicking sync button navigated to %q", a.router.Path())
+	}
+	if sy := a.locs().syncs["nas"]; sy == nil || !sy.j.busy {
+		t.Fatalf("clicking sync button did not start sync: %+v", sy)
+	}
+}

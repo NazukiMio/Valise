@@ -111,6 +111,7 @@ func (s *Service) answer(c net.Conn) {
 	}
 	prompt, _ := rd.ReadString('\n')
 	prompt = strings.ReplaceAll(strings.TrimSpace(prompt), "\\n", "\n")
+	s.logAskpass(prompt)
 	if s.PasswordAuth.Prompt == nil {
 		fmt.Fprintln(c, "no")
 		return

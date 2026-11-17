@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"valise/core/enroll"
@@ -168,6 +169,9 @@ type Output struct {
 // Run executes argv (argv[0] looked up on the login PATH) with a timeout.
 // Commands come only from profile argv arrays or fixed tool invocations.
 func (e *Env) Run(ctx context.Context, timeout time.Duration, dir string, argv ...string) (*Output, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	bin := argv[0]
 	if !filepath.IsAbs(bin) {
 		p, err := e.LookPath(bin)
@@ -184,6 +188,20 @@ func (e *Env) Run(ctx context.Context, timeout time.Duration, dir string, argv .
 	if cmd.Dir == "" {
 		cmd.Dir = e.Home
 	}
+	// Put the command in its own process group so cancelling ctx tears down
+	// rsync/sftp/ssh subprocesses together instead of blocking on stalled I/O.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil || cmd.Process.Pid <= 0 {
+			return os.ErrProcessDone
+		}
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
+	cmd.WaitDelay = 2 * time.Second
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()

@@ -13,7 +13,7 @@ func (s *Service) backupService() (*BackupController, error) {
 	s.readersMu.Lock()
 	defer s.readersMu.Unlock()
 	if s.backupController == nil {
-		c, err := NewBackupController(BackupControllerConfig{StateDir: s.Dirs.Data, RPC: s.call, Review: s.BackupReview, Capabilities: s.detachCapabilities, AllowOneOff: s.allowOneOffBackup})
+		c, err := NewBackupController(BackupControllerConfig{StateDir: s.Dirs.Data, RPC: s.call, Review: s.BackupReview, Capabilities: s.detachCapabilities, AllowOneOff: s.allowOneOffBackup, OnStage: s.LogStage})
 		if err != nil {
 			return nil, err
 		}

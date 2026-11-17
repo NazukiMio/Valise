@@ -194,13 +194,23 @@ func TestNativeEntriesSessionShellOnboardAndReconnectAfterExit(t *testing.T) {
 	tt.Frame()
 	hasAll(t, tt.Texts(), T("native.onboard_service_warn", "units", "openclaw-gateway.service"), T("native.stop_and_onboard"), T("native.connect_direct"))
 
-	// While a session runs there is only its own control.
+	// While a session runs there is only its own control, and clicking disconnect
+	// immediately switches UI to disconnected state without waiting for backend exit.
 	_, cancel := context.WithCancel(context.Background())
 	a.native = &nativeRun{server: "home", instance: "xiaoman", mode: service.NativeSession, running: true, cancel: cancel, conn: newInstallConn()}
 	show()
-	if !tt.HasText(T("native.session_running")) || !tt.HasText(T("native.disconnect")) || tt.HasText(T("native.reconnect")) || tt.HasText(T("native.to_prepare")) {
+	hasAll(t, tt.Texts(), T("native.title"), T("native.session_running"), T("native.disconnect"))
+	if tt.HasText(T("native.reconnect")) || tt.HasText(T("native.to_prepare")) {
 		t.Fatalf("running: %q", tt.Texts())
 	}
-	a.stopNative(a.native)
+	if T("native.title") != "命令行与向导" || T("native.open") != "打开命令行与向导…" ||
+		T("native.session") != "打开 Agent 终端会话（TUI）" || T("native.shell") != "打开系统命令行（Shell）" ||
+		T("native.onboard_title") != "初始化配置向导（Onboard）" {
+		t.Fatalf("unexpected native labels: %q %q %q %q %q", T("native.title"), T("native.open"), T("native.session"), T("native.shell"), T("native.onboard_title"))
+	}
+	click(t, tt, T("native.disconnect"))
+	if !a.native.stopped || !tt.HasText(T("native.disconnected")) || tt.HasText(T("native.disconnect")) {
+		t.Fatalf("disconnect did not immediately switch UI: stopped=%v texts=%q", a.native.stopped, tt.Texts())
+	}
 	a.native.running = false
 }

@@ -150,6 +150,7 @@ func (s *Service) runRestoreTest(ctx context.Context, host, instance, snapshot s
 	if err := s.recordRestoreTest(host, instance, res); err != nil {
 		return nil, err
 	}
+	s.LogStage("restore_test", "plan", host, res.State, "")
 	fail := func(step string, err error) (*RestoreTest, error) {
 		res.State = "failed"
 		if ctx.Err() == context.Canceled {
@@ -159,11 +160,13 @@ func (s *Service) runRestoreTest(ctx context.Context, host, instance, snapshot s
 			res.State = "needs_cleanup"
 		}
 		res.Step, res.Problem = step, errText1(err)
+		s.LogStage("restore_test", step, host, res.State, safeDebugErrCode(err))
 		return res, s.recordRestoreTest(host, instance, res)
 	}
 	if len(rp.Blockers) > 0 {
 		return fail(TestServer, &rp.Blockers[0])
 	}
+	s.LogStage("restore_test", TestLocal, host, "running", "")
 	if err := s.unpackLocal(ctx, rp); err != nil {
 		if e, ok := valise.As(err); ok && e.Code == "restore_test_local_cleanup" {
 			res.Cleanup = "pending"
@@ -172,6 +175,7 @@ func (s *Service) runRestoreTest(ctx context.Context, host, instance, snapshot s
 	}
 	res.LocalVerified = true
 	res.Cleanup = "pending"
+	s.LogStage("restore_test", TestLocal, host, "passed", "")
 	if err := s.recordRestoreTest(host, instance, res); err != nil {
 		return res, err
 	}
@@ -179,6 +183,7 @@ func (s *Service) runRestoreTest(ctx context.Context, host, instance, snapshot s
 		return fail(TestServer, err)
 	}
 	res.OK, res.State = true, "passed"
+	s.LogStage("restore_test", "finish", host, "passed", "")
 	return res, s.recordRestoreTest(host, instance, res)
 }
 
@@ -239,6 +244,7 @@ func (s *Service) unpackServer(ctx context.Context, rp *RevivePlan, result *Rest
 		Grant string `json:"grant"`
 	}
 	report(ctx, TestServer, 0, rp.Bytes)
+	s.LogStage("restore_test", TestServer, rp.Target, "running", "")
 	if err := s.callOwner(ctx, rp.target, nil, revive.MethodStageBegin, revive.StageBeginParams{Plan: rp.Plan}, &begun); err != nil {
 		_ = s.discardRestoreTest(context.WithoutCancel(ctx), rp.Target, rp.Plan.InstanceID, result)
 		return err
@@ -251,6 +257,7 @@ func (s *Service) unpackServer(ctx context.Context, rp *RevivePlan, result *Rest
 				Category: f.Category, SQLite: rp.sqlite[f.Root+":"+f.Path]})
 		}
 		report(ctx, StageVerify, 0, 0)
+		s.LogStage("restore_test", StageVerify, rp.Target, "running", "")
 		var ver revive.StageVerifyResult
 		if err = s.callOwner(ctx, rp.target, nil, revive.MethodStageVerify, revive.StageVerifyParams{OpID: rp.Plan.OpID, Manifest: man}, &ver); err == nil && len(ver.Problems) > 0 {
 			err = valise.New("stage_verify_failed", fmt.Sprintf("服务器上解开后有 %d 个问题", len(ver.Problems)), "换一个更早的备份再测试").
@@ -261,6 +268,7 @@ func (s *Service) unpackServer(ctx context.Context, rp *RevivePlan, result *Rest
 		}
 	}
 	report(ctx, "test_cleanup", 0, 0)
+	s.LogStage("restore_test", "test_cleanup", rp.Target, "running", "")
 	if derr := s.discardRestoreTest(context.WithoutCancel(ctx), rp.Target, rp.Plan.InstanceID, result); derr != nil {
 		err = valise.New("discard_failed", "测试暂存尚未完成清理", "检查连接后点“核实并清理”，不要重新发起测试")
 	}

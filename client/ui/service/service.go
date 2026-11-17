@@ -52,6 +52,7 @@ type Service struct {
 	full     advanced
 	owner    ownerCache
 	askRelay relayState
+	debug    debugLogger
 
 	readersMu            sync.Mutex
 	agentsReader         *AgentReader

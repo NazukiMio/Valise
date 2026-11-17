@@ -66,6 +66,7 @@ func (a *App) readLocations() {
 	hosts := a.hosts()
 	ls.read, ls.reading, ls.lists = true, len(hosts), map[string]*listRead{}
 	a.run(func() {
+		var mu sync.Mutex
 		var wg sync.WaitGroup
 		for _, h := range hosts {
 			wg.Add(1)
@@ -74,6 +75,7 @@ func (a *App) readLocations() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 				defer cancel()
 				st, err := a.svc.VaultStatus(ctx, h)
+				mu.Lock()
 				a.update(func() {
 					ls.reading--
 					if err == nil {
@@ -81,6 +83,7 @@ func (a *App) readLocations() {
 					}
 					ls.errs[h] = err
 				})
+				mu.Unlock()
 			}()
 		}
 		wg.Wait()
@@ -214,12 +217,19 @@ func (a *App) locationsPage(c *ui.Context) {
 // locCard is one location: what it is in one line, its servers under it,
 // and what the last sync did.
 func (a *App) locCard(c *ui.Context, l location) {
-	card(ui.Column(c)).Gap(10).Children(func() {
+	box := card(ui.Column(c)).Gap(10).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(l.Name)
+	if box.Hovered() {
+		box.Border(1, palette.Brand)
+	}
+	box.OnClick(func() {
+		a.debugAction("location_open", l.Name)
+		a.router.Push("/locations/" + l.Name)
+	}).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, locIcon(l.Kind)).FontSize(22).TextColor(palette.Brand)
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Link(c, l.Name, "/locations/"+l.Name).FontSize(16).Bold()
+					ui.Text(c, l.Name).FontSize(16).Bold()
 					plainTag(c, T("loc.kind."+l.Kind))
 				})
 				muted(ui.Text(c, a.locLine(l, c.Now()))).Wrap()

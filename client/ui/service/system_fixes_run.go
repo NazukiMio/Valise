@@ -336,9 +336,11 @@ func (s *Service) RunSystemFix(ctx context.Context, host, instance, id, digest s
 		return nil, err
 	}
 	res := &SystemFixResult{Fix: id, Mode: f.Mode}
+	s.LogStage("sysfix", "start", host, id+"."+f.Mode, "")
 	if f.NonInteractive {
 		ok, err := s.sudoWithoutPassword(ctx, host)
 		if err != nil {
+			s.LogStage("sysfix", "sudo_check", host, "failed", safeDebugErrCode(err))
 			return nil, err
 		}
 		if !ok {
@@ -348,6 +350,7 @@ func (s *Service) RunSystemFix(ctx context.Context, host, instance, id, digest s
 			s.sudoNeedsPassword(f, res)
 			res.Verification = s.verifySystem(ctx, host, id, 0)
 			s.auditSystemFix(ctx, host, f, res, nil)
+			s.LogStage("sysfix", "finish", host, res.Verification.State, "sudo_password_required")
 			return res, nil
 		}
 	}
@@ -391,6 +394,7 @@ func (s *Service) RunSystemFix(ctx context.Context, host, instance, id, digest s
 		res.Next = s.systemNext(f, res)
 	}
 	s.auditSystemFix(ctx, host, f, res, runErr)
+	s.LogStage("sysfix", "finish", host, res.Verification.State, safeDebugErrCode(runErr))
 	return res, runErr
 }
 
@@ -424,11 +428,14 @@ func (s *Service) runSystemStep(ctx context.Context, host, mode string, argv []s
 	}
 	t, done, err := s.adminTransport(ctx, host)
 	if err != nil {
-		return -1, err
+		return -1, wrapAdminSSHLoginErr(err)
 	}
 	defer done()
 	found, err := porter.Probe(ctx, t)
 	if err != nil {
+		if ue, ok := valise.As(err); !ok || (ue.Code != "porter_not_found" && ue.Code != "porter_unusable") {
+			return -1, wrapAdminSSHLoginErr(err)
+		}
 		return -1, err
 	}
 	if mode == FixAdvanced {
@@ -438,7 +445,7 @@ func (s *Service) runSystemStep(ctx context.Context, host, mode string, argv []s
 	if stdin == nil && len(argv) >= 2 && argv[0] == "sudo" && argv[1] == "-S" && s.canPrompt() {
 		chk, err := t.Run(ctx, execLine(found.Path, nil, []string{"sudo", "-n", "true"}), nil)
 		if err != nil {
-			return -1, err
+			return -1, wrapAdminSSHLoginErr(err)
 		}
 		if chk.ExitCode != 0 {
 			pw, err := s.PasswordAuth.Prompt("[sudo] password for " + host + ":")
@@ -456,6 +463,28 @@ func (s *Service) runSystemStep(ctx context.Context, host, mode string, argv []s
 		return -1, err
 	}
 	return r.ExitCode, nil
+}
+
+func wrapAdminSSHLoginErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	const prefix = "SSH 管理登录未通过（非 sudo 失败）："
+	if ue, ok := valise.As(err); ok {
+		if strings.Contains(ue.Reason, "SSH 管理登录未通过（非 sudo 失败）") {
+			return err
+		}
+		next := ue.Suggestion
+		if next == "" {
+			next = "请检查这台服务器的 SSH 登录密码、私钥口令或管理钥匙后重试"
+		}
+		out := valise.New(ue.Code, prefix+ue.Reason, next)
+		if ue.Detail != "" {
+			out = out.WithDetail(ue.Detail)
+		}
+		return out
+	}
+	return valise.New("ssh_admin_login_failed", prefix+err.Error(), "检查这台服务器的 SSH 登录密码、私钥口令或管理钥匙后重试")
 }
 
 // verifySystem re-reads the server (polling up to settle) independently
@@ -504,12 +533,16 @@ func (s *Service) systemNext(f *SystemFix, r *SystemFixResult) string {
 	if r.Verification.State == "resolved" {
 		return ""
 	}
+	ranAny := false
 	failed := false
 	for _, st := range r.Steps {
+		ranAny = ranAny || st.Ran
 		failed = failed || (st.Ran && st.Exit != 0)
 	}
 	manual := "自己在服务器上执行：" + joinCommands(f.Manual)
 	switch {
+	case !ranAny && len(r.Steps) > 0:
+		return "修复命令尚未执行；" + manual
 	case r.Verification.State == "unknown":
 		return "稍后刷新健康页复核；若问题仍在，" + manual
 	case f.ID == FixLinger && failed && f.Mode == FixDirect && len(f.Steps) > 0 && IsSudo(f.Steps[0].Command):

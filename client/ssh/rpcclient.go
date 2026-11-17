@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"valise/core/rpc"
@@ -32,6 +33,7 @@ type RPCClient struct {
 	// progress receives the progress notifications of pending calls.
 	progress map[string]rpc.ProgressFunc
 	err      error // set once the stream is gone
+	aborted  bool  // true once any Call returned early on ctx cancellation
 	done     chan struct{}
 	waited   chan struct{}
 	exitErr  error
@@ -76,14 +78,42 @@ func DialEnv(ctx context.Context, t *Transport, porterPath, clientVersion string
 		done: make(chan struct{}), waited: make(chan struct{}),
 	}
 	cmd.Stderr = c.stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	c.conn = rpc.NewConn(stdout, stdin)
 	if err := cmd.Start(); err != nil {
+		t.EmitProcess(ProcessEvent{Phase: "end", Kind: "rpc", ExitCode: -1, ErrCode: "start_failed"})
 		return nil, nil, t.startError(err)
 	}
+	start := time.Now()
+	t.EmitProcess(ProcessEvent{Phase: "start", Kind: "rpc"})
 	go c.readLoop()
 	go func() {
 		<-c.done
 		c.exitErr = cmd.Wait()
+		exitCode := -1
+		if cmd.ProcessState != nil {
+			exitCode = cmd.ProcessState.ExitCode()
+		}
+		errCode := ""
+		if c.exitErr != nil {
+			switch {
+			case exitCode == ExitConnFailed:
+				errCode = "ssh_connect_failed"
+			case errors.Is(c.exitErr, context.Canceled):
+				errCode = "context_canceled"
+			case errors.Is(c.exitErr, context.DeadlineExceeded):
+				errCode = "context_deadline_exceeded"
+			default:
+				errCode = "nonzero_exit"
+			}
+		}
+		t.EmitProcess(ProcessEvent{
+			Phase:      "end",
+			Kind:       "rpc",
+			DurationMS: time.Since(start).Milliseconds(),
+			ExitCode:   exitCode,
+			ErrCode:    errCode,
+		})
 		close(c.waited)
 	}()
 
@@ -203,6 +233,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, params, result any)
 	case <-ctx.Done():
 		c.mu.Lock()
 		delete(c.pending, string(id))
+		c.aborted = true
 		c.mu.Unlock()
 		return ctx.Err()
 	}
@@ -232,11 +263,25 @@ func (c *RPCClient) streamError() error {
 // is killed if it does not exit promptly.
 func (c *RPCClient) Close() error {
 	_ = c.stdin.Close()
+	c.mu.Lock()
+	aborted := c.aborted
+	c.mu.Unlock()
+	grace := 3 * time.Second
+	if aborted {
+		grace = 150 * time.Millisecond
+	}
 	select {
 	case <-c.waited:
-	case <-time.After(3 * time.Second):
-		_ = c.cmd.Process.Kill()
-		<-c.waited
+	case <-time.After(grace):
+		if c.cmd != nil && c.cmd.Process != nil && c.cmd.Process.Pid > 0 {
+			if err := syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL); errors.Is(err, syscall.ESRCH) {
+				_ = c.cmd.Process.Kill()
+			}
+		}
+		select {
+		case <-c.waited:
+		case <-time.After(2 * time.Second):
+		}
 	}
 	return nil
 }

@@ -91,7 +91,10 @@ func (s *Service) ownerIdentity(host string) (age.Identity, error) {
 // proveOwner runs the owner proof on a daily porter session.
 func (s *Service) proveOwner(ctx context.Context, c *ssh.RPCClient, host string) error {
 	var ch rpc.OwnerChallengeResult
-	if err := c.Call(ctx, rpc.MethodOwnerChallenge, struct{}{}, &ch); err != nil {
+	start := time.Now()
+	err := c.Call(ctx, rpc.MethodOwnerChallenge, struct{}{}, &ch)
+	s.logRPC(rpc.MethodOwnerChallenge, host, time.Since(start).Milliseconds(), err)
+	if err != nil {
 		var re *rpc.Error
 		if errors.As(err, &re) && re.Code == rpc.CodeMethodNotFound {
 			return valise.New("porter_outdated", host+" 上的 porter 版本较旧，还不支持用 Valise 口令确认本人",
@@ -112,7 +115,10 @@ func (s *Service) proveOwner(ctx context.Context, c *ssh.RPCClient, host string)
 	if err != nil {
 		return err
 	}
-	return c.Call(ctx, rpc.MethodOwnerProve, rpc.OwnerProveParams{Nonce: nonce}, nil)
+	startProve := time.Now()
+	err = c.Call(ctx, rpc.MethodOwnerProve, rpc.OwnerProveParams{Nonce: nonce}, nil)
+	s.logRPC(rpc.MethodOwnerProve, host, time.Since(startProve).Milliseconds(), err)
+	return err
 }
 
 // ownerPorter is where owner operations run on host: the daily key and its
@@ -156,5 +162,8 @@ func (s *Service) callOwner(ctx context.Context, o *ownerPorter, env []string, m
 			return err
 		}
 	}
-	return c.Call(ctx, method, params, result)
+	start := time.Now()
+	err = c.Call(ctx, method, params, result)
+	s.logRPC(method, o.host, time.Since(start).Milliseconds(), err)
+	return err
 }

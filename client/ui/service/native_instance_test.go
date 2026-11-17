@@ -6,13 +6,16 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"valise/client/config"
 	"valise/core/install"
 	"valise/core/rpc"
+	"valise/core/vaultrpc"
 	"valise/testbed/fakesshenv"
 )
 
@@ -311,4 +314,127 @@ native_session_cli: [/bin/echo, session-ran]
 		resBad.Verification == nil || resBad.Verification.State != "remaining" {
 		t.Fatalf("restore broken: %+v err=%v", resBad, err)
 	}
+}
+
+func TestNativeCommandSkipsHangingRemoteTargetGateAndCancelKillsProcessGroup(t *testing.T) {
+	s, home, _, ss := sealedWorld(t)
+	ctx := context.Background()
+	s.OwnerAuth.Passphrase = func(string) (string, error) { return pass, nil }
+	if err := os.WriteFile(filepath.Join(s.Dirs.Data, "profiles", "demo.yaml"), []byte(demoProfile+"native_cli: [/bin/echo, ok]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ServerNameSet(ctx, "box", "box"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate an offline target whose listing hangs 30s; gate must skip within 3s.
+	hanging := "#!/bin/sh\nsleep 30\n"
+	for _, tool := range []string{"rsync", "ssh"} {
+		if err := os.WriteFile(filepath.Join(home, ".local/bin", tool), []byte(hanging), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.TargetSet(ctx, "box", vaultrpc.Target{Name: "nas", Kind: "rsync", Dest: "nas:/backup"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.call(ctx, "box", vaultrpc.MethodSyncRecord, vaultrpc.SyncRecordParams{Target: "nas", Snapshots: []string{ss}}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	origGate := targetGateTimeout
+	targetGateTimeout = 200 * time.Millisecond
+	defer func() { targetGateTimeout = origGate }()
+
+	start := time.Now()
+	_, _, err := s.InstanceNativeCommand(ctx, "box", "demo", NativeCLI)
+	if elapsed := time.Since(start); elapsed >= 2*time.Second {
+		t.Fatalf("InstanceNativeCommand blocked on hanging gate: %v", elapsed)
+	}
+	wantCode(t, err, GateCode)
+
+	// Cancelling ctx kills local ssh process group immediately (even if ssh spawned local helpers)
+	// and RunInstanceNative returns immediately without blocking on a 60s child.
+	if err := os.WriteFile(filepath.Join(s.Dirs.Data, "profiles", "demo.yaml"), []byte(demoProfile+"native_cli: [/bin/sleep, \"60\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+	localPIDFile := filepath.Join(home, "ssh-local-child.pid")
+	sshWrap := filepath.Join(home, "ssh-wrap.sh")
+	origSSH := s.Config.SSHBinary
+	wrapBody := "#!/bin/sh\ncase \"$*\" in\n *\"native --instance\"*)\n  sleep 60 &\n  echo $! > " + localPIDFile + "\n  wait\n  exit 0\n  ;;\nesac\nexec " + origSSH + " \"$@\"\n"
+	if err := os.WriteFile(sshWrap, []byte(wrapBody), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.Config.SSHBinary = sshWrap
+	defer func() { s.Config.SSHBinary = origSSH }()
+
+	runCtx, cancel := context.WithCancel(WithRiskAccepted(ctx))
+	type runOut struct {
+		code int
+		err  error
+	}
+	outCh := make(chan runOut, 1)
+	go func() {
+		code, rerr := s.RunInstanceNative(runCtx, "box", "demo", NativeCLI, NativeIO{})
+		outCh <- runOut{code: code, err: rerr}
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	var childPID int
+	for time.Now().Before(deadline) {
+		if b, rerr := os.ReadFile(localPIDFile); rerr == nil && len(strings.TrimSpace(string(b))) > 0 {
+			if n, perr := strconv.Atoi(strings.TrimSpace(string(b))); perr == nil && n > 0 {
+				childPID = n
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if childPID == 0 {
+		cancel()
+		t.Fatal("ssh local child process did not start")
+	}
+
+	cancelAt := time.Now()
+	cancel()
+	select {
+	case <-outCh:
+		if time.Since(cancelAt) > 2*time.Second {
+			t.Fatalf("RunInstanceNative cancel took too long: %v", time.Since(cancelAt))
+		}
+	case <-time.After(3 * time.Second):
+		_ = syscall.Kill(childPID, syscall.SIGKILL)
+		t.Fatal("RunInstanceNative hung after cancel")
+	}
+	gone := false
+	for i := 0; i < 20; i++ {
+		if kerr := syscall.Kill(childPID, 0); kerr != nil {
+			gone = true
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if !gone {
+		_ = syscall.Kill(childPID, syscall.SIGKILL)
+		t.Fatalf("descendant pid %d survived local ssh process group cancel", childPID)
+	}
+
+	// closeMasterAsync returns immediately even if CloseMaster blocks.
+	t0 := time.Now()
+	startedClose := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	closeMasterAsync(func() {
+		close(startedClose)
+		<-release
+	})
+	if time.Since(t0) > 100*time.Millisecond {
+		t.Fatalf("closeMasterAsync blocked caller: %v", time.Since(t0))
+	}
+	<-startedClose
 }

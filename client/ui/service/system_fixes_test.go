@@ -414,3 +414,72 @@ exec "$@"
 		t.Fatal("sudo password leaked to audit or ran log")
 	}
 }
+
+func TestLingerFixSudoRetryNopasswdAndAdminLoginError(t *testing.T) {
+	s, home := systemWorld(t)
+	ctx := context.Background()
+	bin := filepath.Join(home, ".local/bin")
+	write(t, filepath.Join(home, "deny"), "")
+	write(t, filepath.Join(bin, "loginctl"), `#!/bin/sh
+case "$1" in
+ show-user) cat "$HOME/linger" 2>/dev/null || echo no ;;
+ enable-linger)
+  echo "$*" >> "$HOME/ran"
+  if test -e "$HOME/deny" && test -z "$SUDO_OK"; then echo 'Could not enable linger: Access denied' >&2; exit 1; fi
+  printf yes > "$HOME/linger" ;;
+esac
+`)
+	// NOPASSWD sudo: `sudo -n true` exits 0 without asking for a password.
+	write(t, filepath.Join(bin, "sudo"), `#!/bin/sh
+if [ "$1" = "-n" ] && [ "$2" = "true" ]; then
+ exit 0
+fi
+if [ "$1" = "-S" ]; then
+ shift
+fi
+echo sudo >> "$HOME/ran"
+export SUDO_OK=1
+exec "$@"
+`)
+	os.Chmod(filepath.Join(bin, "loginctl"), 0o755)
+	os.Chmod(filepath.Join(bin, "sudo"), 0o755)
+
+	// Part 1: NOPASSWD sudo-n-true passes -> sudo prompt is never called and linger resolves.
+	f2, err := s.PlanSystemFix(ctx, "box", "demo", FixLinger, SystemFixOptions{Sudo: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.NoTerminalLogin = true
+	var prompts []string
+	s.PasswordAuth.Prompt = func(p string) (string, error) {
+		prompts = append(prompts, p)
+		return "", nil
+	}
+	res, err := s.RunSystemFix(ctx, "box", "demo", FixLinger, f2.Digest, SystemFixOptions{Sudo: true}, InstallIO{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range prompts {
+		if strings.Contains(strings.ToLower(p), "sudo") {
+			t.Fatalf("sudo prompt unexpectedly asked on NOPASSWD server: %q", prompts)
+		}
+	}
+	if !res.Steps[0].Ran || res.Steps[0].Exit != 0 || res.Verification.State != "resolved" {
+		t.Fatalf("expected NOPASSWD sudo linger success: %+v %+v", res, res.Verification)
+	}
+
+	// Part 2: SSH login failure (both adminTransport error & porter.Probe auth cancel)
+	// clearly reports SSH admin login failure rather than sudo/linger failure.
+	sVPS, _, _ := addVPS(t, "")
+	sVPS.NoTerminalLogin = true
+	_, err = sVPS.runSystemStep(ctx, "vps", FixDirect, []string{"sudo", "-S", "loginctl", "enable-linger", "agent"}, InstallIO{})
+	if err == nil || !strings.Contains(err.Error(), "SSH 管理登录未通过（非 sudo 失败）") {
+		t.Fatalf("expected SSH admin login error prefix on adminTransport err, got: %v", err)
+	}
+	t.Setenv("FAKESSH_FAIL_CONNECT", "vps")
+	sVPS.PasswordAuth.Prompt = func(string) (string, error) { return "", valise.New("cancelled", "用户取消", "") }
+	_, err = sVPS.runSystemStep(ctx, "vps", FixDirect, []string{"sudo", "-S", "loginctl", "enable-linger", "agent"}, InstallIO{})
+	if err == nil || !strings.Contains(err.Error(), "SSH 管理登录未通过（非 sudo 失败）") {
+		t.Fatalf("expected SSH admin login error prefix on probe SSH err, got: %v", err)
+	}
+}

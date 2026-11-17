@@ -60,6 +60,7 @@ func (a *App) runSysFix(st *healthState) {
 	f := st.sys
 	f.confirm, f.running = false, true
 	fix, sudo := f.fix, f.sudo
+	a.debugAction("sysfix_run", fix.Host+"/"+fix.ID)
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
@@ -104,7 +105,10 @@ func (a *App) sysFixReport(c *ui.Context, row *agentRow, st *healthState) {
 		if !f.busy() {
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if canSudoRetry(f) {
-					ui.PrimaryButton(c, T("health.sysfix.retry_sudo")).OnClick(func() { a.prepareSysFixSudo(row, st, f.item) })
+					ui.PrimaryButton(c, T("health.sysfix.retry_sudo")).OnClick(func() {
+						a.debugAction("sysfix_retry_sudo", row.Server+"/"+f.item.ID)
+						a.prepareSysFixSudo(row, st, f.item)
+					})
 				}
 				if f.err != nil || f.result != nil && (f.result.Verification == nil || f.result.Verification.State != "resolved") {
 					ui.Button(c, T("common.retry")).OnClick(func() { a.prepareSysFixMode(row, st, f.item, f.sudo) })
