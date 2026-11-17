@@ -75,7 +75,7 @@ func (a *App) cloudAddPage(c *ui.Context) {
 	if !ca.read {
 		a.readClouds(ca)
 	}
-	ui.Link(c, "‹ "+T("loc.add_title"), "/locations/add")
+	backLink(c, T("loc.add_title"), "/locations/add")
 	pageHead(c, T("loc.cloud_title"), "")
 	if ca.err != nil {
 		errorBox(c, ca.err, a.fold("clouds-err"))

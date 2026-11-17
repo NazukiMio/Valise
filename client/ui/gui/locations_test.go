@@ -45,8 +45,8 @@ func TestLocationsPage(t *testing.T) {
 	a, tt := locWorld(t)
 	a.router.Push("/locations")
 	tt.Advance(time.Second)
-	hasAll(t, tt.Texts(), "添加备份位置…", "usb", "本机文件夹", "现在补齐", "nas", "另一台机器", "同步", "gdrive", "云盘",
-		"服务器：未登录 · 这台电脑：已登录", "home", "cloud", "有 3 个新备份没补", when(time.Now().Add(-time.Hour), time.Now())+" 已同步 · 自动 · 至多每天一次", "还没同步过")
+	hasAll(t, tt.Texts(), "添加备份位置…", "usb", "本机文件夹", "现在同步", "nas", "另一台机器", "同步", "gdrive", "云盘",
+		"服务器：未登录 · 这台电脑：已登录", "home", "cloud", "还差 3 个新备份", when(time.Now().Add(-time.Hour), time.Now())+" 已同步 · 自动 · 至多每天一次", "还没同步过")
 }
 
 // A location's page lists each server's periods by agent: what the
@@ -91,7 +91,7 @@ func TestCopyToDialog(t *testing.T) {
 	a.agentTab = tabManage
 	a.router.Push("/agents/home/xiaoman")
 	tt.Advance(time.Second)
-	hasAll(t, tt.Texts(), "小满 · 备份后复制到", "服务器直传", "nas", "至多每天一次", "这台电脑补齐（只在 Valise 打开时）", "usb", "备份后", "打开时")
+	hasAll(t, tt.Texts(), "小满 · 备份后复制到", "服务器直传", "nas", "至多每天一次", "这台电脑同步（只在 Valise 打开时）", "usb", "备份后", "打开时")
 }
 
 // TestLocationShots renders the locations segment (docs/UI.md 7.9).

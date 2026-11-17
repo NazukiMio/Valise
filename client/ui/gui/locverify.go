@@ -152,7 +152,7 @@ func (a *App) deleteButtons(c *ui.Context, v *verifyRun) {
 	}
 	ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 		ui.Button(c, T("common.cancel")).OnClick(func() { ls.verify = nil })
-		b := ui.PrimaryButton(c, T("loc.delete_go")).OnClick(func() {
+		b := dangerButton(c, T("loc.delete_go")).OnClick(func() {
 			a.start(&v.delJ, 10*time.Minute, func(ctx context.Context) error {
 				return a.svc.TargetLeafDelete(ctx, v.host, v.where, v.leaf)
 			}, func(err error) {

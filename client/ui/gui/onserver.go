@@ -61,7 +61,7 @@ func (a *App) onServerPage(c *ui.Context, host string) {
 	if a.wiz != nil && a.wiz.host == host {
 		stepper(c, len(wizardSteps())-1)
 	} else {
-		ui.Link(c, "‹ "+host, "/servers/"+host)
+		backLink(c, host, "/servers/"+host)
 	}
 	ui.Row(c).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Children(func() {
@@ -295,10 +295,7 @@ func (a *App) installTiles(c *ui.Context, host string, first bool) {
 	}
 	ui.Grid(c).Columns(3).Gap(12).Children(func() {
 		for _, h := range a.installable {
-			t := card(ui.Column(c.Key(h.ID))).Gap(8).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(T("install.title", "name", h.Name))
-			if t.Hovered() {
-				t.Border(1, palette.Brand)
-			}
+			t := pressableCard(card(ui.Column(c.Key(h.ID))).Gap(spInside), T("install.title", "name", h.Name))
 			t.OnClick(func() { a.router.Push("/servers/" + host + "/install/" + h.ID) }).Children(func() {
 				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 					a.avatar(c, agentRow{Profile: h.ID, Name: h.Name}, 28)

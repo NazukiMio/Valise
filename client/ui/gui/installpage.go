@@ -72,7 +72,7 @@ func (a *App) installPage(c *ui.Context, host, id string) {
 		})
 	}
 	name := orText(a.harness[id], id)
-	ui.Link(c, "‹ "+T("wizard.step.agents"), "/servers/"+host+"/agents")
+	backLink(c, T("wizard.step.agents"), "/servers/"+host+"/agents")
 	pageHead(c, T("install.title", "name", name), T("install.sub", "host", host))
 	switch {
 	case ir.planning:
@@ -218,8 +218,8 @@ func (a *App) changedScriptBox(c *ui.Context, p *service.InstallPlan, i int, st 
 		} else {
 			ui.Text(c, T("install.script_updated")).Bold().TextColor(palette.Warn).Wrap()
 		}
-		mono(ui.Text(c, T("install.sha_expected", "sha", st.ExpectedSHA256))).FontSize(11).Wrap()
-		mono(ui.Text(c, T("install.sha_actual", "sha", st.SHA256))).FontSize(11).Wrap()
+		mono(ui.Text(c, T("install.sha_expected", "sha", st.ExpectedSHA256))).FontSize(fsCaption).Wrap()
+		mono(ui.Text(c, T("install.sha_actual", "sha", st.SHA256))).FontSize(fsCaption).Wrap()
 		a.renderScriptFindings(c, st.ScriptFindings)
 		if st.ScriptRefused {
 			ui.Text(c, T("install.script_refused_hint")).FontSize(12).TextColor(palette.Warn).Wrap()

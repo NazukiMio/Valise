@@ -19,7 +19,7 @@ func (a *App) restoreLocationPoints(c *ui.Context) {
 		return
 	}
 	a.ensureTimelineScope(selected.host, "")
-	ui.Link(c, "‹ "+T("nav.locations"), "/locations/"+selected.location)
+	backLink(c, T("nav.locations"), "/locations/"+selected.location)
 	pageHead(c, T("restore.location_points"), selected.location+" / "+selected.host+" / "+periodText(selected.leaf))
 	if a.timeline.busy {
 		ui.Spinner(c)

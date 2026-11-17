@@ -99,7 +99,7 @@ func TestHomePutsAttentionFirst(t *testing.T) {
 func TestDismissRemembersTheSituation(t *testing.T) {
 	a, tt := world(t)
 	click(t, tt, "知道了")
-	if !tt.HasText("2 个 Agent，1 件事需要你处理") || !tt.HasText("另有 1 件已知道 ›") || tt.HasText("nas 离线") {
+	if !tt.HasText("2 个 Agent，1 件事需要你处理") || !tt.HasText("另有 1 件已知道") || tt.HasText("nas 离线") {
 		t.Fatalf("%q", tt.Texts())
 	}
 	b := New(a.svc)
@@ -107,9 +107,9 @@ func TestDismissRemembersTheSituation(t *testing.T) {
 	if b.prefs.Dismissed["srv-nas"] != "unknown:ssh_connect_failed" {
 		t.Fatalf("not kept on disk: %v", b.prefs.Dismissed)
 	}
-	click(t, tt, "另有 1 件已知道 ›")
+	click(t, tt, "另有 1 件已知道")
 	click(t, tt, "重新提醒")
-	if !tt.HasText("nas 离线") || tt.HasText("另有 1 件已知道 ›") {
+	if !tt.HasText("nas 离线") || tt.HasText("另有 1 件已知道") {
 		t.Fatalf("not asked back: %q", tt.Texts())
 	}
 	click(t, tt, "知道了")

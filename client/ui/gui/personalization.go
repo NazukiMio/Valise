@@ -15,14 +15,15 @@ func (a *App) appearanceWarnings(c *ui.Context) {
 	if a.themeErr == nil && a.langErr == nil && len(cur.Notes) == 0 && !words.Load().Imported {
 		return
 	}
-	ui.Column(c).Gap(4).Padding(8, 16).Children(func() {
+	banner(c, "warn", func() {
 		if a.themeErr != nil {
-			ui.Text(c, a.themeErr.Error()).TextColor(palette.Warn).Wrap()
+			ui.Text(c, a.themeErr.Error()).FontSize(fsSub).Wrap()
 		}
-		for _, note := range cur.Notes {
-			ui.Text(c, note).TextColor(palette.Warn).Wrap()
+		for i, note := range cur.Notes {
+			ui.Text(c.Key(i), note).FontSize(fsSub).Wrap()
 		}
 		a.languageNotes(c)
+	}, func() {
 		ui.Button(c, T("settings.open_personalization")).OnClick(func() {
 			a.setTab = 2
 			a.navigate("/settings")

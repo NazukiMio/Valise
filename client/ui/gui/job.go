@@ -82,6 +82,6 @@ func (a *App) doingText(doing string, at, now time.Time) string {
 // needTag is the small tag that says what a button will ask for.
 func needTag(c *ui.Context, s string) {
 	ui.Box(c.Key("need-"+s)).Padding(1, 8).Radius(999).Background(palette.Board).Children(func() {
-		ui.Text(c, s).FontSize(11).TextColor(palette.TextSub)
+		ui.Text(c, s).FontSize(fsCaption).TextColor(palette.TextSub)
 	})
 }

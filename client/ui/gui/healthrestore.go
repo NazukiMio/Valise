@@ -202,8 +202,11 @@ func testStage(stage string) string {
 
 func (a *App) restoreTestBanner(c *ui.Context) {
 	if t := a.restoreTest; t != nil && (t.j.busy || t.result != nil && (t.result.State == "running" || t.result.State == "needs_cleanup")) {
-		ui.Row(c).Padding(8, 16).Gap(10).Children(func() {
-			ui.Text(c, T("restoretest.banner", "server", t.server, "instance", t.instance)).Grow(1).Wrap()
+		tone := "busy"
+		if !t.j.busy && t.result.State == "needs_cleanup" {
+			tone = "warn"
+		}
+		banner(c, tone, bannerText(c, T("restoretest.banner", "server", t.server, "instance", t.instance), ""), func() {
 			ui.Button(c, T("restoretest.view")).OnClick(func() { a.showRestoreTest(t) })
 		})
 	}

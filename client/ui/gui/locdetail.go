@@ -29,7 +29,7 @@ func (a *App) locationPage(c *ui.Context, name string) {
 	if !ls.read {
 		a.readLocations()
 	}
-	ui.Link(c, "‹ "+T("nav.locations"), "/locations")
+	backLink(c, T("nav.locations"), "/locations")
 	l, ok := a.locationOf(name)
 	if !ok {
 		if ls.reading > 0 {

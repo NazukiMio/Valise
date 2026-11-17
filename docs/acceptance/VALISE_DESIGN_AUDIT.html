@@ -1,0 +1,491 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Valise 设计审计</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 版式：单栏长文，顶部粘性目录；表格各自横向滚动。行李牌式的章节标签是唯一装饰。 */
+:root{--bg:#f3f2ee;--panel:#fbfaf7;--fg:#24211d;--sub:#655f56;--line:#d9d4c9;--brass:#8a6a34;--warn:#9a5a1c;--bad:#a23b2e;--ok:#3f6b46;--code:#ece9e1;
+--serif:"Songti SC","Noto Serif CJK SC","Source Han Serif SC",Georgia,serif;--sans:-apple-system,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#191816;--panel:#211f1c;--fg:#ebe6dd;--sub:#a9a195;--line:#3b3731;--brass:#d2b279;--warn:#e0a35c;--bad:#e58373;--ok:#93bd97;--code:#2a2723;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#191816;--panel:#211f1c;--fg:#ebe6dd;--sub:#a9a195;--line:#3b3731;--brass:#d2b279;--warn:#e0a35c;--bad:#e58373;--ok:#93bd97;--code:#2a2723;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.7 var(--sans)}
+.wrap{max-width:1040px;margin:0 auto;padding-block:28px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1{font:700 34px/1.25 var(--serif);margin:0 0 6px;text-wrap:balance}
+h2{font:700 25px/1.3 var(--serif);margin:56px 0 4px;padding-top:14px;border-top:2px solid var(--fg);text-wrap:balance}
+h3{font:700 18px/1.4 var(--sans);margin:30px 0 8px}
+h4{font:700 15px/1.5 var(--sans);margin:20px 0 4px;color:var(--brass)}
+p{margin:8px 0;max-width:46em}
+ul,ol{margin:6px 0;padding-left:1.3em;max-width:48em}li{margin:3px 0}
+.lede{color:var(--sub);max-width:44em}
+.tag{display:inline-block;font:600 11px/1 var(--mono);letter-spacing:.08em;padding:5px 9px 4px;border:1px solid var(--brass);color:var(--brass);border-radius:3px 12px 12px 3px;margin-bottom:8px}
+nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px 18px;padding:9px 0;margin:14px 0 0;font-size:13px}
+nav a{color:var(--sub);text-decoration:none}nav a:hover,nav a:focus-visible{color:var(--fg);text-decoration:underline}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.tw{overflow-x:auto;margin:10px 0 16px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;line-height:1.55}
+th,td{text-align:left;vertical-align:top;padding:8px 11px;border-bottom:1px solid var(--line)}
+th{font-weight:600;color:var(--sub);font-size:12px;white-space:nowrap;background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td code,p code,li code{font:12.5px var(--mono);background:var(--code);padding:1px 5px;border-radius:4px;word-break:break-word}
+pre{font:12.5px/1.6 var(--mono);background:var(--code);padding:12px 14px;border-radius:8px;overflow-x:auto;margin:10px 0}
+.ev{font:600 11px/1 var(--sans);padding:2px 6px;border-radius:999px;border:1px solid var(--line);color:var(--sub);white-space:nowrap}
+.ev.m{color:var(--ok);border-color:var(--ok)}.ev.i{color:var(--brass);border-color:var(--brass)}.ev.g{color:var(--warn);border-color:var(--warn)}
+.box{border:1px solid var(--line);border-left:3px solid var(--brass);background:var(--panel);border-radius:6px;padding:10px 14px;margin:12px 0;max-width:52em}
+.box.w{border-left-color:var(--warn)}
+.old{color:var(--sub)}.new{font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin:12px 0}
+.grid>div{min-width:0;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:12px 14px}
+.grid h4{margin-top:0}
+.sw{display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid var(--line);vertical-align:-1px;margin-right:4px}
+</style>
+<div class="wrap">
+<span class="tag">VALISE · 第一阶段 · 只读审计</span>
+<h1>Valise 审美、交互与文案审计</h1>
+<p class="lede">范围：<code>client/ui/gui/</code> 全部 74 个非测试 Go 文件（14,365 行）、<code>zh-CN.json</code> 全部 1,353 条、<code>examples/themes/immersive</code>，对照 <code>docs/PRODUCT.md</code>、<code>docs/UI.md</code> 与 mygo v0.9.2 文档。本轮没有改动仓库里的任何文件。</p>
+<p class="lede">每个关键结论都标了出处：<span class="ev m">实测</span> 我读了代码或跑了统计；<span class="ev i">推断</span> 从代码推出的观感，没有运行桌面应用看过；<span class="ev g">猜测</span> 需要先量一下才能定。</p>
+<nav><a href="#sum">结论</a><a href="#a">A 视觉与主题</a><a href="#b">B 逐页审计</a><a href="#c">C 文案与术语</a><a href="#d">D 工程指南</a><a href="#ask">需要你决定</a></nav>
+
+<h2 id="sum">先说结论</h2>
+<ol>
+<li><b>规范写得比界面好。</b>UI.md 7.2 的“正常就安静、异常才出声、每页一个主按钮”方向是对的，但代码只在首页落实了。全应用有 83 个主按钮、171 个普通按钮 <span class="ev m">实测</span>，健康页、命令行页、安装页一屏里同时出现两三个主按钮。</li>
+<li><b>没有“危险”这一档。</b>调色板只有 ok / warn / stop 三种语气，stop 与次要文字对比度 1.03（等于同色），健康检查的“严重”和“留意”画成同一种橙色，删除、注销、关闭备用锁用的是普通主按钮 <span class="ev m">实测</span>。这是诚实状态的硬伤，比好不好看更要紧。</li>
+<li><b>整个桌面端没有一处过渡动画。</b><code>Animate*</code>、<code>Transition</code>、<code>AnimatePose</code>、<code>Timeline</code>、<code>.Cache()</code>、<code>List</code>/<code>Table</code>、<code>ui/shader</code> 的使用次数都是 0；唯一会动的是旅程发丝线，它用每 33ms 重绘一次的 CPU 路径实现 <span class="ev m">实测</span>。</li>
+<li><b>主题只解耦了一半。</b>颜色是令牌，但间距、字号、阴影、动效全是散落的数字（13 种字号、22 种内边距写法、11 种圆角值 <span class="ev m">实测</span>），调色板的名字直接叫 <code>gold</code>、<code>strand</code>、<code>spine</code>，等于把“金线发丝”写进了主题格式。</li>
+<li><b>文案的问题集中在三处</b>：恢复流程把内部词搬上了台面（暂存、交换、活动目录、现场、相交操作）；“副本”同时指“备份的拷贝”和“克隆出来的 Agent”；与现行规范矛盾的“管理口令”文案还在。</li>
+</ol>
+
+<h2 id="a">A · 视觉体系、动效与主题架构</h2>
+
+<h3>A1 现有视觉短板</h3>
+<div class="tw"><table>
+<tr><th>问题</th><th>证据</th><th>后果</th><th>出处</th></tr>
+<tr><td>次要文字太淡，又大量用在小字上</td><td><code>TextSub #8c857b</code> 在纸面 3.38:1、卡片 3.65:1、侧栏 3.09:1；全应用 <code>FontSize(12)</code> 68 处、<code>(11)</code> 17 处、<code>(10)</code> 1 处，多数是次要色</td><td>不到 AA 的 4.5:1。数据来源说明、状态牌标签、旅程卡片的位置行都属于“该看见却看不清”</td><td><span class="ev m">实测</span></td></tr>
+<tr><td>层次靠不上色差</td><td>卡片/纸面 1.08:1，<code>Board</code>/卡片 1.03:1；<code>subPanel</code>、<code>reportPanel</code>、<code>codeBox</code>、<code>statusBoard</code>、<code>settingRow</code>、<code>passLine</code> 全用同一个 <code>Board</code> 色</td><td>“卡片里的小块”和卡片本身融在一起，只剩 1px 边线在撑结构；页面读起来是一摞同样的白方块</td><td><span class="ev m">实测</span> 数值；<span class="ev i">推断</span> 观感</td></tr>
+<tr><td>三种提醒底色其实是一种</td><td><code>AlertBg</code>/<code>ErrorBg</code> 1.01:1，<code>TroubleBg</code>/<code>AlertBg</code> 1.06:1；错误框标题也用 <code>Warn</code> 色</td><td>待处理提醒、出错、Agent 有麻烦三件事视觉上无法区分</td><td><span class="ev m">实测</span></td></tr>
+<tr><td>没有危险色；中性与“停止”同色</td><td><code>Stop #8a8377</code> 对 <code>TextSub</code> 1.03:1；<code>health.go</code> 把 <code>HealthWarn</code> 和 <code>HealthBad</code> 都映射到 <code>"warn"</code></td><td>“服务已停止”的灰点和普通说明文字一个颜色；严重问题不比提醒更醒目</td><td><span class="ev m">实测</span></td></tr>
+<tr><td>主按钮没有品牌感</td><td>浅色主题 <code>Accent #70685d</code> 是灰褐；品牌金 <code>#9a7b4f</code> 只用在图标与文字链接，且在纸面只有 3.65:1</td><td>主操作像一个“深一点的灰按钮”；金色文字链接偏淡</td><td><span class="ev m">实测</span> 数值；<span class="ev i">推断</span> 观感</td></tr>
+<tr><td>字号没有阶梯</td><td>10、11、12、13、14、15、16、18、20、22、24、26、32 共 13 种，另有主题令牌 30、36；<code>muted()</code> 默认 12 又被 80 多处 <code>.FontSize()</code> 覆盖；<code>cardTitle</code> 只加粗不定字号</td><td>相邻层级只差 1px，看不出主次；UI.md 7.1 要求的“字号成套”没有落实</td><td><span class="ev m">实测</span></td></tr>
+<tr><td>留白是随手写的</td><td><code>Gap(8)</code> 117 处、<code>(10)</code> 65、<code>(12)</code> 43、<code>(6)</code> 31、<code>(14)</code> 20…；内边距 22 种写法；圆角 10/8/3/4/999/16/12/9/7/5/14</td><td>组内与组间距离接近（8 对 12），内容没有“呼吸”的节奏；违反 7.4.3“视图不写魔法数字”</td><td><span class="ev m">实测</span></td></tr>
+<tr><td>卡片阴影几乎不存在</td><td><code>card()</code>：<code>Shadow(0,1,3,0, 5% 透明)</code>；悬停才到 8%</td><td>卡片是平的，“纸”的质感只靠底色</td><td><span class="ev m">实测</span> 数值；<span class="ev i">推断</span> 观感</td></tr>
+<tr><td>状态牌标签过小、格子不可点</td><td><code>board.go</code>：标签 11px 加字距，值 13px；格子没有点击与悬停</td><td>“航班信息屏”的气质没出来；用户看到“没有监听”不知道去哪</td><td><span class="ev m">实测</span></td></tr>
+<tr><td>旅程线只显示最新 6 个点，卡片字 10–12px</td><td><code>curve.go</code>：<code>curvePoints = 6</code>，高 300；节点卡 12/11/10px</td><td>页面主角占了最大面积，却承载最少、最难读的信息</td><td><span class="ev m">实测</span></td></tr>
+<tr><td>图标集太小，用文字字符顶替</td><td><code>icons.go</code> 16 个；<code>"›"</code> <code>"‹ "</code> <code>"✓"</code> 等字面量出现在 21 个文件里</td><td>没有警告、错误、信息、复制、终端、锁、更多等图标；箭头与对勾粗细随字体变化，也绕过了词表规则</td><td><span class="ev m">实测</span></td></tr>
+</table></div>
+
+<h3>A2 令牌与主题框架</h3>
+<p>目标只有一句：视图只说“这是什么”，主题决定“它长什么样、用什么材质、怎么动”。金线和发丝从“主题格式的一部分”降为“经典主题选用的一种时间线画法”。</p>
+
+<h4>三层令牌</h4>
+<div class="tw"><table>
+<tr><th>层</th><th>内容</th><th>谁能改</th></tr>
+<tr><td>语义色</td><td>
+表面：<code>surface.page / raised / sunken / overlay</code>（取代 paper / card / board / canvas）<br>
+文字：<code>text.primary / secondary / tertiary / on_accent</code><br>
+线：<code>line.hairline / strong</code>，<code>focus</code><br>
+强调：<code>accent / accent.hover / brand</code><br>
+状态：<code>ok / warn / danger / neutral / info</code>，每种带 <code>fg / bg / border</code> 三个值（取代 alert_* / error_* / trouble_*，新增 danger）<br>
+时间线：<code>timeline.line / strand / node / node_core / glow</code>（取代 spine / strand / node / node_core / gold / gold_soft）</td><td>内置主题与 <code>theme.json</code></td></tr>
+<tr><td>尺度</td><td>
+字号 7 级：12 说明 · 13 次要 · 14 正文 · 16 小标题 · 20 标题 · 28 页面标题 · 36 结论句<br>
+间距 4 的倍数：4 · 8 · 12 · 16 · 24 · 32 · 48<br>
+圆角 4 级：6 控件 · 10 面板 · 16 卡片 · 999 胶囊<br>
+高度 4 级：0 平 · 1 卡片 · 2 悬停 · 3 浮层<br>
+动效：120ms 快 · 200ms 常规 · 320ms 慢，弹簧取 <code>ui.Snappy</code> / <code>ui.Smooth</code></td><td>同上；每级一个数，带范围检查</td></tr>
+<tr><td>材质与变体</td><td>从 Valise 内置清单里按名字选，带几个 0–1 的强度参数：<br>
+<code>backdrop</code>：none / image / grain / aurora / starfield<br>
+<code>surface</code>：flat / paper / glass<br>
+<code>timeline</code>：strands / gold / plain / flightpath / inkline<br>
+<code>node_fx</code>：none / glow / sparks<br>
+<code>card_edge</code>：line / foil（渐变镂空边）</td><td><code>theme.json</code> 只能写名字和强度，不能带着色器源码</td></tr>
+</table></div>
+<div class="box"><b>轻量与重量级怎么共存。</b>着色器是编译进客户端的“材质库”，主题文件只是点菜单：<code>"materials": {"backdrop": "aurora", "surface": "glass", "intensity": 0.6}</code>。这样外部主题仍然是纯数据（AGENTS.md 第 3 节：主题不得含条件、循环、表达式或脚本），内置的重量级主题和用户自己做的主题走同一条路，只是选的材质不同。</div>
+<p>实现上是一张按名字登记的表，<code>card()</code>、时间线、背景各自向当前主题要画法：</p>
+<pre>type Material interface {
+    Paint(p *ui.Painter, r ui.Rect, s MaterialState) // s：悬停、选中、语气、强度
+    Static() bool                                    // true 的可以 .Cache()
+}
+var surfaces  = map[string]Material{"flat": …, "paper": …, "glass": …}
+var backdrops = map[string]Material{"none": …, "grain": …, "aurora": …}
+var timelines = map[string]TimelinePainter{"strands": …, "flightpath": …}</pre>
+<h4>护栏（哪种主题都不能破）</h4>
+<ul>
+<li><b>提醒、错误、确认框、口令框永远画在不透明表面上</b>，不吃毛玻璃和背景着色器。UI.md 7.4 的“始终显示”清单保持不变。</li>
+<li><b>导入主题时检查对比度</b>：<code>text.primary</code> 对各表面 ≥ 4.5，状态色对其底色 ≥ 3，不达标就拒绝导入并说明是哪一对。重量级主题不能把警告洗淡。</li>
+<li><b>自动降级为 flat</b>：<code>p.Accelerated()</code> 为假、系统开了减少动态效果或高对比度、或用户在个性化里把“氛围动效”设为关。降级只换材质，不改布局和文字。</li>
+<li><b>格式兼容</b>：新名字需要 <code>valise-theme/2</code>；<code>/1</code> 的旧颜色名继续按别名读取，已导入的主题不失效。这一条要先改 UI.md 7.4，见<a href="#ask">需要你决定</a>。</li>
+</ul>
+
+<h4>两套重量级主题提案</h4>
+<div class="grid">
+<div><h4>夜航（深色，沉浸）</h4>
+<p>深靛蓝夜空，机舱窗外的极光缓慢流动；卡片是磨砂舷窗；旅程是一条发光的航迹，每个时间点是一盏航标灯。</p>
+<ul>
+<li><b>背景</b>：Kage 片元着色器做两色低频噪声流动，颜色在 Oklab 里混。画进 1/4 分辨率的 <code>ui.Canvas</code> 再放大，<code>p.After(66ms)</code> 约 15 帧。</li>
+<li><b>卡片</b>：<code>shader.Options{BackdropBlur: 18}</code> 加一层 tint；1px 渐变镂空边用 <code>Masks</code>（<code>MaskContentBox</code> + <code>MaskExclude</code>）。</li>
+<li><b>旅程</b>：航迹与光晕画进一个着色器矩形；节点微光用 <code>DrawInstances</code>，上限 300 个粒子；选中节点用 Oklab <code>RadialGradient</code>。</li>
+<li><b>首页结论句</b>：<code>shader.Text</code> 给大字一层很淡的金属渐变，只在“一切正常”时用。</li>
+</ul></div>
+<div><h4>手账（浅色，质感）</h4>
+<p>一本旅行手账：厚纸、压印、烫金边，每次备份是一枚邮戳。表现力来自材质，几乎不动，待机零开销。</p>
+<ul>
+<li><b>纸面</b>：静态噪点颗粒着色器加四角暗角（<code>RadialGradient</code>），整层 <code>.Cache()</code>。</li>
+<li><b>卡片</b>：<code>InsetShadow</code> 做压印边，外阴影两层叠出纸的厚度；待处理卡片用撕边纸条的 <code>ClipPath</code>。</li>
+<li><b>烫金</b>：主按钮和选中的时间点用 <code>BorderConicGradient</code>，角度随指针位置在 <code>Draw</code> 里变，离开即静止。</li>
+<li><b>旅程</b>：一笔墨线（<code>shader.StrokePath</code>），时间点画成圆形邮戳，日期沿圆弧排字。</li>
+</ul></div>
+</div>
+<h4>性能护栏</h4>
+<div class="tw"><table>
+<tr><th>规则</th><th>依据（mygo 文档）</th><th>出处</th></tr>
+<tr><td>静态的复杂卡片（渐变、多层阴影、噪点）一律 <code>.Cache()</code>；会动的东西放在缓存外面</td><td>styling.md“Caching”：内容不变时每帧只贴一张位图</td><td><span class="ev m">实测</span> 文档</td></tr>
+<tr><td>悬停只改外观时，在 <code>Draw</code> 回调里读 <code>Hovered()</code>；现有 12 处构建期读取要迁走</td><td>performance.md：构建期读 Hover 会让指针进出时整棵视图重建</td><td><span class="ev m">实测</span> 文档与代码</td></tr>
+<tr><td>位移与缩放用 <code>AnimatePose</code>，不要 <code>AnimateTo</code> 再喂给布局</td><td>motion.md：Pose 的帧只重绘、不跑视图函数</td><td><span class="ev m">实测</span> 文档</td></tr>
+<tr><td>可能很长的集合（旅程全部时间点、周期列表、健康项、脚本全文）用 <code>List</code>/<code>Table</code></td><td>performance.md：3,000 行普通滚动每帧 11ms，<code>List</code> 0.2ms</td><td><span class="ev m">实测</span> 文档</td></tr>
+<tr><td>自己用 <code>p.After</code> 驱动的循环必须自己看 <code>ReduceMotion</code>，并在页签不可见时停下</td><td>motion.md：系统只自动处理它管的动画；<code>Loop</code> 在减少动态效果时不会停</td><td><span class="ev m">实测</span> 文档</td></tr>
+<tr><td>着色器只编译一次（包级 <code>MustCompile</code>），每帧的值用 <code>Values</code> 不用 map</td><td>shaders.md“Uniforms”“Errors and cost”</td><td><span class="ev m">实测</span> 文档</td></tr>
+<tr><td>同屏毛玻璃面板设上限（建议先定 6 块：导航、页头、弹窗等大面），Agent 卡片在数量多时退回半透明纯色</td><td>shaders.md 只说 backdrop 每帧捕获，没给单块成本</td><td><span class="ev g">猜测</span> 上限要用 <code>MYGO_FRAME_STATS</code> 在实机量过再定</td></tr>
+<tr><td>待机目标：没有交互时 0 帧。氛围背景默认 15 帧并在窗口失焦时停止；设置里给“氛围动效：开 / 低 / 关”</td><td>motion.md“Out of sight”只覆盖窗口不可见；失焦要自己判断</td><td><span class="ev i">推断</span></td></tr>
+</table></div>
+<div class="box w"><b>现有发丝线的开销。</b>32 根发丝每根按 6px 步进拼路径，再加一条 4px 步进的主脊，旅程页签可见期间每秒重建约 30 次，全部在 CPU 上 <span class="ev m">实测</span> 代码。改成一个着色器矩形后 CPU 侧只剩一次绘制调用，但实际省多少电我没量过 <span class="ev g">猜测</span>。保留现有画法也可以，至少加上“20 秒无操作后缓停”。</div>
+
+<h3>A3 全应用动效清单</h3>
+<p>原则：动效只用来解释“东西从哪来、到哪去、状态变了”。真实任务的结果、错误和确认不等动画（UI.md 10.1）。下表每一项在系统减少动态效果时都退化为直接切换或只做颜色淡变，这是 mygo 的默认行为，自绘循环除外。</p>
+<div class="tw"><table>
+<tr><th>位置</th><th>触发</th><th>mygo 原语</th><th>参数</th></tr>
+<tr><td>页面切换</td><td>路由变化</td><td>Router 的页面转场</td><td>进入 <code>Y:6</code> 加淡入，160ms。navigation.md 的转场 API 我没有细读，落地前要核对</td></tr>
+<tr><td>首页结论句的数字</td><td>待处理数变化</td><td><code>ContentTransition{Numeric: true}</code></td><td>减少时 <code>Down: true</code></td></tr>
+<tr><td>待处理卡片</td><td>出现 / 点“知道了”</td><td><code>ElementTransition{Enter: &amp;Motion{Y: 8}, Exit: &amp;Motion{Collapse: true}}</code>，每张带 <code>Key</code></td><td>200ms；下方内容用同一个 Transition 跟着上移</td></tr>
+<tr><td>Agent 卡片悬停</td><td>指针进出</td><td>边框与阴影在 <code>Draw</code> 里画；卡片少于 12 张时加 <code>AnimatePose{Y: -2}</code></td><td><code>ui.Snappy</code></td></tr>
+<tr><td>搜索过滤、卡片/列表切换</td><td>输入、点击</td><td><code>ElementTransition{Position: true}</code> 加 <code>Enter: &amp;Motion{}</code></td><td>200ms；卡片滑到新位置而不是跳</td></tr>
+<tr><td>状态点、状态牌的值</td><td>服务状态变化</td><td><code>AnimateColor</code>（<code>Oklab: true</code>）加文字 <code>ContentTransition{}</code></td><td>300ms；变为异常时用 <code>Keyframes</code> 脉冲一次，不循环</td></tr>
+<tr><td>页签内容</td><td>切换页签</td><td><code>ElementTransition{Enter: &amp;Motion{Y: 4}, Exit: &amp;Motion{Y: -4}, AfterExits: true}</code></td><td>120ms</td></tr>
+<tr><td>折叠详情</td><td>展开 / 收起</td><td><code>ElementTransition{Height: true, Animation: &amp;ui.Snappy}</code>，箭头图标 <code>Rotate</code> 用 <code>AnimateTo</code></td><td>内置 <code>Collapsible</code> 是否自带动画没查，自绘的折叠条按此</td></tr>
+<tr><td>旅程节点 → 详情</td><td>点击节点</td><td>保留现有 300ms 柔光；详情头部与节点卡片用 <code>Match</code> + <code>Fly</code> 共享元素</td><td><code>ui.Snappy</code>；这才是 UI.md 10.1 写的“从所选位置展开”</td></tr>
+<tr><td>详情里“更早 / 更晚”</td><td>点击</td><td>父容器 <code>ChildExit(Motion{X: ∓24})</code>，新内容 <code>Enter: &amp;Motion{X: ±24}</code></td><td>按方向翻页</td></tr>
+<tr><td>分步进度（准备服务器、备份、恢复、清理）</td><td>某一步状态变化</td><td>标记图标 <code>ContentTransition{}</code>，行底色 <code>ElementTransition{Colors: true}</code>，新出现的行 <code>Animation.Delay</code> 递增 40ms</td><td>当前步的转圈保留</td></tr>
+<tr><td>打开管理页的四步</td><td>每步返回</td><td>同上，横向排列</td><td></td></tr>
+<tr><td>向导步骤条</td><td>下一步 / 返回</td><td>当前步的下划线用 <code>Match</code> 滑动；步骤页按方向 <code>ChildExit</code></td><td>200ms</td></tr>
+<tr><td>弹窗</td><td>打开 / 关闭</td><td><code>Enter: &amp;Motion{Scale: 0.96}</code>，<code>Duration: 150ms</code>，<code>ExitDuration: 100ms</code>，<code>ExitEase: ui.EaseIn</code></td><td><code>ui.Modal</code> 是否允许给内容加 Transition 需核对</td></tr>
+<tr><td>按钮进入忙碌</td><td>点击后</td><td>文字与转圈用 <code>ContentTransition{}</code> 交叉淡变，按钮宽度不变</td><td></td></tr>
+<tr><td>读取中的占位</td><td>首次加载</td><td>骨架块：<code>Draw</code> 里用 <code>Loop</code> 加渐变遮罩扫光</td><td>只重绘；取代孤零零的转圈和 26px 灰字</td></tr>
+<tr><td>复制成功等轻反馈</td><td>点击</td><td>mygo 的 Toast</td><td>取代目前换一行文字的做法</td></tr>
+</table></div>
+
+<h2 id="b">B · 逐页视觉重心与交互审计</h2>
+<p>先列全局问题，再逐页。文件与函数名都是 <span class="ev m">实测</span> 读到的；“太吵”“不够醒目”这类判断是 <span class="ev i">推断</span>。</p>
+
+<h3>全局</h3>
+<div class="tw"><table>
+<tr><th>问题</th><th>在哪</th><th>改法</th></tr>
+<tr><td>看起来像卡片或行，却只有里面的小按钮能点</td><td><code>statusBoard</code> 的格子；概览“最近保存”的三行（<code>overview</code>）；<code>healthLine</code>；<code>restoreTaskList</code> 与 <code>restoreLocationPoints</code> 的卡片；<code>importStep</code> 的主机行；<code>periodLine</code>；<code>settingRow</code>；<code>attentionCard</code> 与 <code>knownCard</code> 的主体；旅程曲线上的节点和连线（只有小卡片可点）</td><td>定一条规则：<b>有边框有底色的行，要么整行可点并带右箭头和悬停，要么去掉卡片外观</b>。全应用只有 15 处 <code>CursorPointer</code>，可点的整行与不可点的整行长得一样</td></tr>
+<tr><td>悬停反馈在构建期读取</td><td>12 处：<code>agentCard</code>、<code>agentLine</code>、<code>textLink</code>、<code>curveCard</code>、<code>pointLine</code>、<code>locCard</code>、<code>serverLine</code>、<code>agentsHere</code>、<code>loginTile</code>、<code>navButton</code>、<code>installTiles</code>、<code>customInstallTile</code></td><td>抽一个 <code>pressable(e, look)</code>：手型、角色、焦点环、在 <code>Draw</code> 里画悬停与按下。所有可点区域只走它</td></tr>
+<tr><td>主按钮泛滥、危险操作没有样式</td><td>83 个 <code>PrimaryButton</code>；<code>loc.delete_go</code>、<code>lock.off_go</code>、<code>leave.go_clean</code>、<code>removed.forget_go</code>、<code>pass.revoke</code> 都是普通主按钮</td><td>四种按钮：主（每屏至多一个）、普通、安静（文字按钮）、危险（<code>danger</code> 色，只出现在确认框里）。删除入口本身用安静按钮</td></tr>
+<tr><td>返回是 14 处手拼的 <code>"‹ " + 文字</code> 链接</td><td><code>agentHeader</code>、<code>serverPage</code>、<code>wizardPage</code>、<code>locationPage</code> 等</td><td>一个 <code>backLink(c, label, path)</code>，用图标；三级以上的页面（服务器 → 设置 → 改名）改用面包屑</td></tr>
+<tr><td>页底的 11px 免责小字</td><td><code>backup.sources_note</code>（首页、概览）、<code>health.scope_note</code>、<code>journey.all_locations</code>、<code>wizard.next.offline</code></td><td>这些话是诚实状态的一部分，不能删。提到 12px、改放在它所说明的那块内容的标题旁（一个“数据来源”小图标加浮层，或标题下一行）</td></tr>
+<tr><td>加载只有一个转圈</td><td><code>serversPage</code>、<code>journey</code>、<code>restoreLocationPoints</code> 等</td><td>骨架占位，旁边写正在读什么；保留旧结果时写“下面是 X 前的情况”（UI.md 7.5 已有此规则）</td></tr>
+<tr><td>空状态只有一句灰字</td><td><code>home.empty</code>、<code>servers.empty</code>、<code>journey.empty</code>、<code>server.no_agents</code></td><td>图标 + 一句话 + 这一页真实存在的那个动作（首页是“添加 Agent”，服务器页是“添加服务器”）。不画未实现的入口</td></tr>
+<tr><td>词表规则被绕过的字面量</td><td><code>"porter "+版本</code>（<code>serverPage</code>）、<code>settingRow(c, "porter", …)</code> 7 处、<code>"SHA-256 "</code> 2 处、<code>"，"</code> 2 处、<code>"Valise"</code>（<code>brandSlot</code>）</td><td>进词表，或明确登记为“不翻译的专有名词”并由测试守住</td></tr>
+</table></div>
+
+<h3>外壳 <code>shell.go</code></h3>
+<ul>
+<li><b>顶部最多叠五条横幅</b>（<code>recoveryBanner</code>、<code>nativeBanner</code>、<code>restoreBanner</code>、<code>restoreTestBanner</code>、<code>appearanceWarnings</code>），各画各的，压在侧栏和页面之上。改成页面区顶部的一条“进行中”栏：每件事一行、同一种样式、各自的“查看”按钮；超过两条时折成“还有 N 项进行中”。找回模式是独占状态，保留整宽。哪一条都不隐藏。</li>
+<li><b>侧栏没有待处理提示</b>。在“我的 Agent”旁放一个数字点，显示未处理的提醒数。它只是计数，不合并各项状态。</li>
+<li><b>页面区最宽 980 且靠左</b>（<code>classicShell</code>），宽窗口右侧空一大片。改为居中；1280 以上时详情页可用主栏加 300 宽侧栏的两栏。</li>
+<li><b>只有 ⌘F 一个快捷键</b>。补 ⌘1–4 切一级入口、Esc 关闭详情与弹窗、⌘R 重新读取。</li>
+</ul>
+
+<h3>首页 <code>home.go</code> <code>homeagents.go</code> <code>reminders.go</code></h3>
+<ul>
+<li><b>正常和异常一样响。</b><code>verdictSlot</code> 里“一切正常”和“2 件事需要你处理”都是 36px 粗体。正常时降为 28px 常规字重的次要色，异常时才用 36px 粗体，并把件数染成 <code>warn</code>。</li>
+<li><b>“重新读取”与“添加 Agent”同级</b>（<code>headerSlot</code>）。重新读取改为图标按钮，旁边写上次读取时间；添加 Agent 保持普通按钮（主按钮留给第一张提醒，UI.md 7.5 已定）。</li>
+<li><b>提醒卡片</b>（<code>attentionCard</code>）：“知道了”降为安静按钮，放在“带我去处理”左侧；卡片主体点击等于“带我去处理”；原因压成一句，其余进“查看详情”。</li>
+<li><b>Agent 卡片</b>（<code>agentCard</code>）四行里有三行是 12px 次要色。把“框架 · 服务器”并成一行，状态行升到 13px，正常时仍是次要色。有问题的卡片现在同时换底色和边框，保留边框、去掉底色即可，页面上方已经有提醒卡在说这件事。</li>
+<li><b>读取中</b>（<code>home.loading</code>）是一句 26px 灰字，改为三张骨架卡。</li>
+</ul>
+
+<h3>Agent 页 <code>agent.go</code> <code>entry.go</code> <code>board.go</code> <code>native.go</code></h3>
+<ul>
+<li><b>概览的第一块是“命令行与向导”</b>（<code>overview</code> 先调 <code>nativeCard</code>）。这是高级入口，却排在状态牌前面。顺序改为：状态牌 → 一行备份计划摘要（“每天 04:40 自动备份 · 复制到 2 处”，可点进管理与设置）→ 最近的时间点 → 所在位置 → 命令行入口。</li>
+<li><b>状态牌</b>（<code>statusBoard</code>）：标签升到 12px；每格可点，分别去健康、旅程、备份位置；“没有监听”目前是和中性一样的灰点，用 <code>neutral</code> 的空心点表示“不在运行”，与“未知”区分。</li>
+<li><b>“最近保存”的三行不可点</b>，旁边另放一个“查看完整旅程”按钮。让每行直接打开那个时间点，按钮改为安静的文字链接。</li>
+<li><b>头像下常驻“更换图标”</b>（<code>iconChoice</code>）。改为悬停头像时出现的小铅笔，或移进管理与设置。</li>
+<li><b>打开管理页的四步</b>（<code>entryReport</code>）是四行小点。改为一条横向四段的进度条，每段各自成功或失败，仍然各说各的。</li>
+<li><b>四个页签里“现在备份”在最后一个</b>。不必上移（UI.md 第 9 节明确备份不居中），有了上面那行计划摘要就够了。</li>
+</ul>
+
+<h3>旅程 <code>journey.go</code> <code>curve.go</code></h3>
+<ul>
+<li><b>曲线的点击区太小</b>：只有悬着的小卡片可点，节点圆点和连线不可点。把每一列（卡片、连线、节点）做成一个点击区，悬停时节点放大、连线变亮。</li>
+<li><b>卡片上的字</b>升到 13/12/12，位置一行只写“3 处”，完整位置进详情。</li>
+<li><b>详情是整页替换</b>（<code>pointDetail</code>），主操作“使用这个时间点…”在两张卡片和警告之后。把它放进详情头部，与“更早 / 更晚”同一行右侧。</li>
+<li><b>“只读了备份记录…”在每个位置下重复一遍</b>（<code>point.records_only</code>）。在“这个时间点的位置”标题下说一次。</li>
+<li><b>警告卡排在位置卡之后</b>。有冲突或警告时提到最前，用 <code>warn</code> 表面。</li>
+<li><b>完整列表</b>（<code>pointLine</code>）可点、有悬停，是全应用做得最好的行。放进 <code>List</code>，备份多的 Agent 不会拖慢。</li>
+</ul>
+
+<h3>恢复、迁移与副本 <code>restore*.go</code></h3>
+<ul>
+<li><b>六个阶段没有步骤条</b>，阶段说明藏在页面副标题里（<code>restorePage</code> 用 <code>restore.step.*</code>）。复用向导的步骤条：用法与去处 → 计划 → 准备 → 确认替换 → 结果。</li>
+<li><b>三种用法是三个单选圆点</b>（<code>restoreSetup</code>）。改成与向导“怎么登录”一样的选择卡片，每张一句后果。</li>
+<li><b>计划页是 11 条等重的键值行</b>（<code>restorePlan</code>）。分成三块：会改变什么（数据、被取代的实例、程序）、会影响谁（服务、共用目录）、需要什么（空间、口令）。</li>
+<li><b>计划的警告被画成次要色</b>：<code>for _, w := range p.Warnings { muted(…) }</code>。警告必须用 <code>warn</code> 语气并排在计划之前。这一条建议最先修。</li>
+<li><b>确认项散落</b>：凭据勾选、来源单选、先备份勾选、未测试勾选、快照资料勾选各占一处。收进一个“需要你确认（3 项）”面板，主按钮旁写出还差哪一项，不要只是变灰。</li>
+<li><b>准备阶段只显示当前一步</b>（<code>restoreProgress</code>）。列出全部阶段，已完成、进行中、未开始分开，和“准备服务器”同一个组件。</li>
+<li><b>结果页是平铺的键值行</b>（<code>restoreResult</code>），标题没有语气。每个分项一行，行首用图标表示通过、未知、失败，标题按总体状态着色。分项仍然各自表达，不合成一个徽标。</li>
+</ul>
+
+<h3>健康 <code>health*.go</code></h3>
+<ul>
+<li><b>正常项和问题项一样重</b>。分成“需要处理（n）”和“正常（n）”两组，后者默认收成一行（UI.md 9.5：“全部正常时一行”）。</li>
+<li><b>严重与留意同色</b>：见 A1，需要 <code>danger</code>。</li>
+<li><b>每个可修复的项各有一个主按钮</b>（<code>healthLine</code>）。只有排在最前的一项用主按钮，其余用普通按钮。</li>
+<li><b>修复报告出现在列表上方</b>（<code>fixReport</code>、<code>sysFixReport</code>），离触发它的那一行很远。改为在该行下方就地展开。</li>
+<li><b>确认框里直接列出命令</b>（<code>codeBox</code>）是对的，保持。</li>
+</ul>
+
+<h3>备份位置 <code>loc*.go</code> <code>cloud*.go</code> <code>copyto.go</code></h3>
+<ul>
+<li><b>位置卡片整卡可点、子按钮独立</b>（<code>locCard</code>），符合 UI.md 第 14 节，是好样板。悬停改到 <code>Draw</code> 里。</li>
+<li><b>周期行</b>（<code>periodLine</code>）用写死的 220/120/90 宽度排四列，右侧并排“查看时间点… / 核对… / 删除…”三个同级按钮。宽度改用令牌；删除收进行尾的“更多”菜单，或用安静的危险色文字。</li>
+<li><b>“服务器：有”“这里：有 · 核对通过”</b>：两列各用图标加词，表头写“服务器”“这里”，不要每行重复冒号前缀。</li>
+<li><b>删除周期的确认</b>（<code>deleteButtons</code>）用危险按钮；勾选“我知道删除后无法恢复”保留。</li>
+</ul>
+
+<h3>安装、命令行与向导 <code>install*.go</code> <code>native*.go</code></h3>
+<ul>
+<li><b>命令行准备页有两到三个主按钮</b>（<code>nativeDailyCard</code>、<code>nativeOnboardCard</code>）。改成三张等大的选择卡片：对话、命令行、首次设置，每张一个图标、一个名字、一句话；“查看将运行的命令”收进各自的折叠。隐私说明在页面顶部说一次。</li>
+<li><b>名字里的括号英文重复了约 20 次</b>（TUI / Shell / Onboard），见 C。</li>
+<li><b>脚本全文是 11px 等宽字</b>（<code>scriptPreview</code>）。升到 12px，放进带行号、可搜索的滚动区；几千行的脚本用 <code>List</code>。</li>
+<li><b>脚本有更新的提示</b>（<code>changedScriptBox</code>）用提醒底色、新旧 SHA 并排，是对的；把“请先展开核对”做成步骤：看全文 → 看检查结果 → 勾选。</li>
+</ul>
+
+<h3>服务器与添加向导 <code>servers.go</code> <code>serverdetail.go</code> <code>wizard*.go</code> <code>onserver.go</code></h3>
+<ul>
+<li><b>服务器行的副标题最多拼六段</b>（<code>serverLine</code>：类型 · 地址 · N 个 Agent · 已办通行证 · 原因 · 旧结果）。只留地址和 Agent 数；异常时原因单独一行并着色。</li>
+<li><b>步骤条是 12px 文字加 <code>"✓ "</code></b>（<code>stepper</code>）。改为带编号圆点的步骤条，当前步加粗、有下划线，已完成用图标。</li>
+<li><b>连接页的左右结构好</b>（表单 + 实时名片 + “接下来会发生什么”），保留；“从已有 SSH 配置导入”现在是表单底部的一行文字链接，挪到标题右侧。</li>
+<li><b>准备服务器的分步列表</b>（<code>prepareStep</code>）是好样板，抽成公共组件给备份、恢复、清理服务器共用。</li>
+<li><b>接入报告</b>（<code>adoptReport</code>）里“未识别文件按敏感保留”“资料未审核”“恢复未测试”三条提示样式一样。按轻重分开：信息、留意、留意。</li>
+</ul>
+
+<h3>设置 <code>settings*.go</code> <code>recoverpage.go</code> <code>rebuildpage.go</code></h3>
+<ul>
+<li><b>设置行的标题列写死 150 宽</b>（<code>settingRow</code>，<code>passLine</code> 是 96，<code>prepareStep</code> 是 170）。并进一个宽度令牌。</li>
+<li><b>“备份”页签只有一个“分离模式”开关和恢复记录入口</b>。开关改名（见 C），页签内容太薄可并入“钥匙与口令”之外的一个“通用”页签，这要你定。</li>
+<li><b>找回口令的流程</b>分步清楚，命令有复制按钮，保持。验证码输入做成 8 格。</li>
+</ul>
+
+<h3>弹窗 <code>adminpass.go</code> <code>keyflow.go</code> 及各确认框</h3>
+<ul>
+<li><b>四种密码框长得一样</b>（Valise 口令、管理口令、服务器密码、sudo 密码都走 <code>passDialog</code>）。新手最容易在这里输错。在标题上方加一个种类标签（“Valise 口令”“服务器密码”“sudo 密码”“私钥口令”），各配一个图标；OpenSSH 的原始提问放进一个等宽小框并标明“OpenSSH 的原话”。</li>
+<li><b>说明是 12px 次要色的三行长句</b>（<code>ask.server.why</code>）。拆成：一句为什么要、原话小框、输入框、一行带锁图标的“只交给 OpenSSH，不保存”。</li>
+<li><b>19 个弹窗的按钮顺序一致</b>（取消在左、确认在右），保持；确认按钮的字写具体动作（“注销”“移除”），不写“确定”。<code>passDialog</code> 目前是 <code>common.ok</code>。</li>
+<li><b>多重确认</b>：恢复有两次确认各 10 分钟有效，这是契约，不动。能减的是同一屏里的勾选项数量，办法见恢复一节。</li>
+</ul>
+
+<h2 id="c">C · 文案与核心术语</h2>
+<p>范围说明：我读完了 <code>zh-CN.json</code> 全部词条和 <code>gui/</code> 里的字面量。<b>服务层 <code>UserError</code> 的原因与建议文字不在 <code>gui/</code> 里，这一轮没有审。</b></p>
+
+<h3>C1 核心术语重审</h3>
+<div class="tw"><table>
+<tr><th>现在</th><th>建议</th><th>理由</th></tr>
+<tr><td>创建副本（克隆）</td><td class="new">创建分身</td><td>“副本”在备份位置里指“备份的另一份拷贝”（“核对副本”“各处的副本”），在恢复里又指克隆出的 Agent（“副本标识”）。PRODUCT.md 6.3 自己就用“分身”来解释它，词表里也已经出现“分身不带入…”。一词一义：副本只指备份的拷贝</td></tr>
+<tr><td>恢复当前实例</td><td class="new">原地恢复</td><td>“实例”是内部词。三种用法并排读作“原地恢复 / 迁移到另一台服务器 / 创建分身”，一眼能分清去处</td></tr>
+<tr><td>保护计划</td><td class="new">备份计划</td><td>里面只有三样：备份什么、几点备份、复制到哪。“保护”听起来比它实际做的多，PRODUCT.md 第 1 节也说保护数据不等于保证其他。“已生效 · 第 3 版”这种写法也说明它像个配置对象</td></tr>
+<tr><td>命令行与向导</td><td class="new">终端</td><td>入口叫“打开终端…”，进去三张卡片：和 Agent 对话、服务器命令行、首次设置向导。现在的名字是把两个子项拼成了父项的名字</td></tr>
+<tr><td>porter（界面里 20 多处裸露）</td><td class="new">搬运工</td><td>PRODUCT.md 术语表本来就叫它搬运工，又正好是旅行意象。界面写“搬运工”，技术信息里写 <code>valise-porter</code></td></tr>
+<tr><td>仓库 / 本机仓库 / 仓库副本</td><td class="new">本机文件夹</td><td>8.1 已经定了，但 <code>journey.empty</code>、<code>journey.local_only</code>、<code>locations.unavailable</code>、<code>point.repo</code>、<code>rename.kind.repo</code> 等还在说“仓库”</td></tr>
+<tr><td>时刻 / 时间点 / 保存 / 备份</td><td class="new">时间点</td><td>“保存的时刻”“全部 N 个时刻”“最近保存”“最近备份”“这个时间点的位置”指的是同一个东西。旅程标题“走过的路”保留诗意，条目统一叫时间点</td></tr>
+<tr><td>同步 / 补齐 / 补到本机 / 没补</td><td class="new">同步</td><td>“现在补齐”“有 N 个新备份没补”“上次补齐”与旁边的“同步”按钮是一个动作。“复制到”只用于计划设置（“备份后复制到”）</td></tr>
+<tr><td>核实 / 核对 / 复核 / 校验 / 检查</td><td class="new">核对（文件）· 检查（状态）</td><td>五个近义词在恢复流程里轮流出现，用户会以为是五种不同的事。“核实结果”作为按钮名保留，因为它专指“查询上一次任务的结果”</td></tr>
+<tr><td>暂存 / 暂存目录 / 测试暂存</td><td class="new">备好的文件；试放（恢复测试里）</td><td>用户不需要知道有个暂存目录，只需要知道“文件备好了、现在用的还没动”</td></tr>
+<tr><td>交换 / 目录交换</td><td class="new">替换</td><td>词表里一半已经写“替换”了，剩下的统一</td></tr>
+<tr><td>恢复套件</td><td class="new">钥匙备份包</td><td>“套件”是 kit 的直译。同一行左边写“备份钥匙”，右边写“导出恢复套件”，读者对不上是一件事</td></tr>
+<tr><td>harness / 资料 / 资料包</td><td>框架：显示具体名字（OpenClaw），泛指时写“Agent 框架”；资料包维持“harness 资料包”</td><td><code>agent.harness</code> 已经写成“运行框架”，其余几十处仍是 harness，至少统一。资料包改名牵涉 PROFILES.md，我不建议这一轮动</td></tr>
+<tr><td>分离模式</td><td class="new">关掉 Valise 也继续备份</td><td>开关的名字直接说它做什么</td></tr>
+<tr><td>备份位置、旅程、通行证、备用锁、管理页、登录授权、健康、接入、轻装/标准/完整/原样</td><td>保留</td><td>都是一听就懂的词。通行证和备用锁是整套词里最好的两个比喻；“备份位置”如果换成“寄存处”之类会更有旅行味，但新手要多想一步，不值得</td></tr>
+</table></div>
+
+<h3>C2 与规范不一致或已失效的词条</h3>
+<div class="tw"><table>
+<tr><th>词条</th><th>问题</th></tr>
+<tr><td><code>pass.admin_rule</code>“至少 12 个字符，和 Valise 口令不同”；<code>ask.admin.*</code>、<code>admin.*</code>、<code>wizard.login.admin_why</code>、<code>wizard.login.forgot</code>、<code>pass.admin_locked_how</code></td><td>AGENTS.md 与 UI.md 现行规则是管理员通行证默认用 Valise 口令加密，独立管理口令只做兼容。<code>issueForm</code>、<code>loginStep</code>、<code>migratePage</code> 仍然要求另设一个“管理口令”。这不只是文案，是界面流程与规范的出入，需要你确认以哪边为准</td></tr>
+<tr><td><code>health.admin_login</code>“有管理钥匙时输入管理口令”</td><td>界面用语应是“管理员通行证”，不说“钥匙”（PRODUCT.md 8.1）</td></tr>
+<tr><td><code>health.pending</code>“可在命令行用 valise action status 查看”</td><td>把桌面用户推回命令行，UI.md 7.3 明确不要这样</td></tr>
+<tr><td><code>restore.step.parallel_*</code>（4 条）、<code>restore.state.prepared</code>、<code>restore.state.cleaned</code>、<code>restore.state.awaiting_human</code>、<code>restoretest.progress.test_environment</code></td><td>已作废的 A/B 并行环境的文案。<code>gui/</code> 非测试代码里没有任何引用 <span class="ev m">实测</span>；键按规则保留到下一个格式版本，但建议在词表里集中标注为废弃</td></tr>
+<tr><td><code>install.sha_expected</code>“profile 原 SHA-256”</td><td>界面不说 profile，说“资料包”</td></tr>
+<tr><td><code>home.known_more</code>、<code>onserver.guide</code>、<code>loc.cloud_app_help</code> 末尾的“›”，<code>wizard.import.back</code> 开头的“‹”</td><td>箭头写进了词表。箭头是图标，应由组件画</td></tr>
+<tr><td>“重新读取”“重新检查”“重新扫描”“刷新位置”“刷新时间点”“刷新恢复记录”</td><td>六种说法一个动作。统一为“重新读取”，对象由所在位置说明</td></tr>
+</table></div>
+
+<h3>C3 逐条改写对照</h3>
+<p>占位符保持不变。右列里“详情：”之后的内容进折叠。</p>
+<div class="tw"><table>
+<tr><th>键</th><th>原文</th><th>问题</th><th>改为</th></tr>
+<tr><td><code>attention.copy.reason</code></td><td class="old">{names}。服务器上有更新的备份，这台电脑上的还停在 7 天以前；服务器损坏时，只能找回这台电脑上已有的那份。</td><td>三句话，卡片标题已经说了一半</td><td>{names} 在服务器上有新备份，这台电脑还停在 7 天前。详情：服务器坏了的话，只能找回这台电脑上已有的那份。</td></tr>
+<tr><td><code>attention.stale.reason</code></td><td class="old">{names}。服务器上最近一次备份也在 7 天以前，或从来没有：这段时间的新内容没有被保存。看看定时备份是否开着、是否在运行。</td><td>同上</td><td>{names} 这 7 天的新内容还没有备份，去看看定时备份是否开着。</td></tr>
+<tr><td><code>attention.service.reason</code></td><td class="old">在 {server} 上，{harness} 的服务现在没有运行，Agent 不会响应。</td><td>状语开头，绕</td><td>{server} 上的 {harness} 服务没在运行，Agent 现在不会回应。</td></tr>
+<tr><td><code>attention.service_unknown.reason</code></td><td class="old">尚未核实 {server} 上的当前运行环境。请重新读取原恢复记录，当前状态不等于已经停止。</td><td>“运行环境”“原恢复记录”都是内部视角</td><td>还不确定它在 {server} 上是否在运行，不等于已经停了。先去看上一次恢复的结果。</td></tr>
+<tr><td><code>agent.verdict.unknown</code></td><td class="old">当前运行环境尚未核实，请先查看健康页。</td><td>同上</td><td>还不确定它是否在运行，先看“健康”。</td></tr>
+<tr><td><code>ask.server.title</code></td><td class="old">建立 SSH 管理连接 · {who}</td><td>标题在描述系统做什么，没说要用户做什么</td><td>登录 {who}</td></tr>
+<tr><td><code>ask.server.why</code></td><td class="old">正在建立 SSH 管理连接（需要输入该服务器的登录密码或私钥口令，非 sudo 提权密码）：\n{prompt}\n直接转交给 OpenSSH，仅本次有效，Valise 不保存（无口令时可直接按回车或点确定提交）。</td><td>括号套括号，一口气读不完</td><td>OpenSSH 在问：\n{prompt}\n这里填登录服务器的密码或私钥口令，不是 sudo 密码。只交给 OpenSSH 用这一次，Valise 不保存；没有口令就直接确定。</td></tr>
+<tr><td><code>ask.sudo.why</code></td><td class="old">已建立连接，现需输入 sudo 提权密码以执行管理员命令（非 SSH 登录密码）：\n{prompt}\n只在内存中转交这一次，Valise 不保存。</td><td>“现需”“以执行”公文腔</td><td>已经登录，现在是 sudo 在问：\n{prompt}\n这里填执行管理员命令的密码，不是登录密码。只转交这一次，Valise 不保存。</td></tr>
+<tr><td><code>ask.generic</code></td><td class="old">建立 SSH 管理连接（需要输入该服务器的登录密码或私钥口令）</td><td>同上</td><td>登录服务器（服务器密码或私钥口令）</td></tr>
+<tr><td><code>ask.sudo.field</code> / <code>ask.sudo.generic</code></td><td class="old">sudo 提权密码 / 输入 sudo 提权密码</td><td>“提权”是行话</td><td>sudo 密码 / 输入 sudo 密码</td></tr>
+<tr><td><code>backup.result.cancelling</code></td><td class="old">已请求停止，正在等待执行器到达可停止的位置；已经保存的备份会保留。</td><td>“执行器”“可停止的位置”</td><td>正在停止，要等当前这一步收尾；已经存好的备份会保留。</td></tr>
+<tr><td><code>backup.result.partial</code></td><td class="old">备份已保存，部分复制尚未完成。请按下列原因处理，再在备份位置补齐。</td><td>“下列”“补齐”</td><td>备份已存到服务器，有几处复制没完成。按下面的原因处理后，到“备份位置”同步。</td></tr>
+<tr><td><code>backup.new_warning</code></td><td class="old">原任务的结果仍未核实。另一次备份会使用新的任务编号，可能多出一个时间点；原任务会保留，不会被重新发送。</td><td>“任务编号”“重新发送”是实现</td><td>上一次备份的结果还没确认。再备份一次可能多出一个时间点；上一次的记录会保留，不会重跑。</td></tr>
+<tr><td><code>backup.reconcile_hint</code></td><td class="old">这次任务还没有确定的结果。核实只查询原任务，不会重新备份；建议先核实。</td><td>顺序倒了，建议放最后</td><td>这次备份的结果还没确认。先点“核实结果”，它只是查询，不会重新备份。</td></tr>
+<tr><td><code>backup.failure.other</code></td><td class="old">这部分没有可核实的成功结果。请核实原任务与备份位置状态，结果不明时不要重复备份。</td><td>“可核实的成功结果”</td><td>这一处没拿到明确的成功结果。先核实；结果不明时不要重复备份。</td></tr>
+<tr><td><code>health.pending</code></td><td class="old">动作已开始，尚未结束；可在命令行用 valise action status 查看</td><td>推回命令行</td><td>动作还在进行，稍后点“重新检查”看结果。（前提是界面能查到这个状态，落地时确认）</td></tr>
+<tr><td><code>health.admin_login</code></td><td class="old">需要管理登录：有管理钥匙时输入管理口令，没有时输入服务器密码。</td><td>用语不合规范</td><td>这一步要管理权限：办了管理员通行证就输口令解锁，没办就输服务器密码。</td></tr>
+<tr><td><code>health.scope_note</code></td><td class="old">这里只说明已声明检查项的结果，不代表 Agent 不会出错。</td><td>“已声明检查项”</td><td>这里只列出登记过的检查项；全部通过也不代表 Agent 不会出错。</td></tr>
+<tr><td><code>install.custom.risk_label</code></td><td class="old">安全风险确认句</td><td>像表单字段名</td><td>确认句</td></tr>
+<tr><td><code>install.custom.refused</code></td><td class="old">Valise 一律不执行此内容，已拦截</td><td>“此内容”“拦截”</td><td>这段内容 Valise 不会执行，已拦下</td></tr>
+<tr><td><code>install.sha_expected</code></td><td class="old">profile 原 SHA-256：{sha}</td><td>profile</td><td>资料包记录的 SHA-256：{sha}</td></tr>
+<tr><td><code>adopt.restore_untested</code></td><td class="old">此环境恢复尚未测试：资料里有未核实的条目</td><td>“此环境恢复”读不通</td><td>恢复尚未在这个版本上测试：资料里有未核实的条目</td></tr>
+<tr><td><code>loc.callback</code></td><td class="old">已收到回调</td><td>程序员词</td><td>浏览器里已完成登录</td></tr>
+<tr><td><code>loc.fill</code> / <code>loc.missing</code></td><td class="old">现在补齐 / 有 {n} 个新备份没补</td><td>与“同步”是一件事</td><td>现在同步 / 还差 {n} 个新备份</td></tr>
+<tr><td><code>loc.remove_blocked</code></td><td class="old">以下 {n} 个 Agent 的保护计划正复制到 {name}，必须先从保护计划中取消此位置才能移除：</td><td>“以下”“此位置”</td><td>{n} 个 Agent 的备份计划还在复制到 {name}，要先取消才能移除：</td></tr>
+<tr><td><code>loc.remove_unblock_go</code></td><td class="old">从上述 Agent 的保护计划中移除此位置并继续删除</td><td>22 个字的按钮</td><td>从这些计划里取消它，并移除</td></tr>
+<tr><td><code>loc.auto_what</code></td><td class="old">服务器备份后，距上次同步超过这个间隔就顺带同步；不常驻。</td><td>“不常驻”对用户没有意义</td><td>服务器每次备份后，离上次同步超过这个间隔就顺带同步一次。</td></tr>
+<tr><td><code>protect.in_force</code></td><td class="old">已生效 · 第 {n} 版</td><td>版本号是给系统看的</td><td>已生效（第 {n} 次修改）。更好的做法是只写“已生效”，版本进技术信息，但那要改占位符</td></tr>
+<tr><td><code>protect.pending</code></td><td class="old">有修改待核实</td><td>谁核实？</td><td>修改已提交，等服务器确认</td></tr>
+<tr><td><code>protect.superseded_what</code></td><td class="old">这个 Agent 重新接入过，原来的计划已失效，定时备份不会再运行。</td><td>可以更直接</td><td>重新接入后，原来的计划已失效，定时备份已经停了。</td></tr>
+<tr><td><code>detach.title</code> / <code>detach.what</code></td><td class="old">分离模式 / 关掉 Valise 后，正在进行的备份在服务器上继续</td><td>名字不说明作用</td><td>关掉 Valise 也继续备份 / 开启后，进行中的备份交给服务器自己跑完。</td></tr>
+<tr><td><code>restore.title</code></td><td class="old">恢复、迁移与副本</td><td>术语</td><td>恢复、迁移与分身</td></tr>
+<tr><td><code>restore.mode.rollback</code> / <code>restore.mode_hint.rollback</code></td><td class="old">恢复当前实例 / 恢复过去的状态，保留当前身份与旅程。</td><td>“实例”“身份”</td><td>原地恢复 / 让它回到这个时间点，名字和旅程不变。</td></tr>
+<tr><td><code>restore.mode_hint.clone</code></td><td class="old">建立独立标识与旅程，原实例继续使用。</td><td>“独立标识”</td><td>另建一个独立的分身，原来的 Agent 照常使用。</td></tr>
+<tr><td><code>restore.data.rollback</code></td><td class="old">替换快照范围内的数据，按规则携带范围外的当前内容。</td><td>“快照”“携带”</td><td>把备份范围内的数据换成这个时间点的，范围以外的保持现状。</td></tr>
+<tr><td><code>restore.without_secrets</code></td><td class="old">这个备份没有凭据。回滚携带范围外的当前内容；迁移和副本会换下目标原有目录，不自动沿用其中的配置与凭据，可能无法启动并退回。</td><td>“回滚”“携带”“换下”</td><td>这个备份里没有登录凭据。原地恢复会保留备份范围以外的现有内容；迁移和分身会换掉目标原有的目录，不沿用里面的配置与凭据，可能启动不了并退回。</td></tr>
+<tr><td><code>restore.path_hint</code></td><td class="old">命名实例或无法自动映射的目录须明确指定；不替你猜位置。每项写成 root=绝对路径。</td><td>“命名实例”“映射”</td><td>位置没法自动安排时，请自己指定目录，每行写成 root=绝对路径。Valise 不替你猜。</td></tr>
+<tr><td><code>restore.secret_hint</code></td><td class="old">按资料声明处理：副本排除列出的独占凭据。不扫描或猜测未声明的内嵌令牌，请核对排除的整个文件及其影响。</td><td>一句里五个内部词</td><td>按资料包的声明处理：分身不带下面列出的独占凭据。没有声明的令牌 Valise 不会去找，请核对被排除的文件。</td></tr>
+<tr><td><code>restore.second</code></td><td class="old">暂存已通过，是否进行替换</td><td>“暂存已通过”</td><td>文件已备好并核对通过，现在替换吗？</td></tr>
+<tr><td><code>restore.second_hint</code></td><td class="old">确认后将替换目标数据，期间可能暂停服务。之前的状态会保留，替换开始后不能取消。</td><td>可以，略收紧</td><td>确认后开始替换，期间服务可能暂停；旧状态会保留。开始后不能取消。</td></tr>
+<tr><td><code>restore.expired</code></td><td class="old">这次交换确认已过期，尚未交换。</td><td>“交换”</td><td>确认已过期，还没有替换。</td></tr>
+<tr><td><code>restore.recheck_stage</code></td><td class="old">重新核对现场</td><td>“现场”</td><td>重新检查服务器现状</td></tr>
+<tr><td><code>restore.stop_hint</code></td><td class="old">会先核实停止结果，活动目录尚未替换；已取回的缓存与暂存材料保留，不会自动删除。</td><td>“活动目录”“暂存材料”</td><td>会先确认已经停下。现在用的文件还没动；已取回和备好的文件会留着，不自动删除。</td></tr>
+<tr><td><code>restore.new_hint</code></td><td class="old">原操作的结果仍可能未知。新操作会重新准备计划，服务器上未解决的交换日志仍会阻止相交操作；不会重发、取消或清理原操作。原记录保留在设置的“备份 → 恢复记录”中。</td><td>“交换日志”“相交操作”</td><td>上一次操作的结果可能还不明。新操作会重新做计划；上一次的记录留在“设置 → 备份 → 恢复记录”，不会被重跑、取消或清理。详情：上一次没处理完之前，涉及同一目录的新操作会被服务器拦住。</td></tr>
+<tr><td><code>restore.journal.planned</code></td><td class="old">已暂存，活动目录尚未替换</td><td>同上</td><td>文件已备好，现在用的还没动</td></tr>
+<tr><td><code>restore.journal.live_moved</code></td><td class="old">旧目录已移走，新目录尚未就位</td><td>可以保留；这是故障现场的如实描述</td><td>保留</td></tr>
+<tr><td><code>restoretest.title</code></td><td class="old">备份文件与暂存测试</td><td>“暂存测试”</td><td>测试这份备份</td></tr>
+<tr><td><code>restoretest.confirm_hint</code></td><td class="old">核对这份备份的文件，再在服务器暂存校验。包含登录信息的备份会在私有暂存中解密，测试后清理。不会停服、启动或替换当前 Agent。</td><td>三句，暂存出现两次</td><td>解开并核对这份备份的每个文件，再在服务器上试放一遍，用完即删。不停服、不启动、不替换当前 Agent。详情：含登录信息的备份只在私有的临时目录里解密。</td></tr>
+<tr><td><code>restoretest.state.passed</code></td><td class="old">文件与暂存校验通过</td><td>同上</td><td>文件核对通过，服务器试放通过</td></tr>
+<tr><td><code>restoretest.result_hint</code></td><td class="old">这里只核对备份文件与暂存，不代表已经测试恢复后的启动。</td><td>同上</td><td>这里只证明文件完好、放得进去，没有测试恢复后能否启动。</td></tr>
+<tr><td><code>point.records_only</code></td><td class="old">只读了备份记录，没有核对数据包，也没有试着解开</td><td>“数据包”</td><td>只看了备份记录，没有打开核对里面的文件</td></tr>
+<tr><td><code>journey.all_locations</code></td><td class="old">汇总服务器和已配置备份位置的时间点；发现记录不代表材料齐全或可恢复。</td><td>“材料齐全”</td><td>这里汇总了服务器和各备份位置的记录；有记录不等于文件齐全、可以恢复。</td></tr>
+<tr><td><code>native.session</code> / <code>native.shell</code> / <code>native.onboard_title</code></td><td class="old">打开 Agent 终端会话（TUI）/ 打开系统命令行（Shell）/ 初始化配置向导（Onboard）</td><td>中英双名重复约 20 次</td><td>和 Agent 对话（终端）/ 打开服务器命令行 / 首次设置向导。英文只在“查看将运行的命令”里出现</td></tr>
+<tr><td><code>native.onboard_service_warn</code></td><td class="old">检测到后台服务正在运行（{units}）。初始化配置向导（Onboard）可能需要独占状态目录，直接进入可能因锁冲突断线。</td><td>“独占状态目录”“锁冲突”</td><td>后台服务正在运行（{units}）。设置向导可能要独占数据目录，直接进入可能会断开。</td></tr>
+<tr><td><code>native.result_hint</code></td><td class="old">连接结束不代表 Agent 已停止，也不代表网关或对话已经验证通过。</td><td>“网关”</td><td>连接结束只说明终端关了：Agent 未必停止，对话是否正常也没有验证。</td></tr>
+<tr><td><code>settings.debug.switch_title</code> / <code>settings.debug.enable</code></td><td class="old">Debug 诊断日志 / 启用 Debug 诊断日志</td><td>Debug 与诊断重复</td><td>诊断日志 / 记录诊断日志</td></tr>
+<tr><td><code>set.unknown</code></td><td class="old">不知道</td><td>像是软件在耸肩</td><td>还没读到</td></tr>
+<tr><td><code>pass.admin_none</code></td><td class="old">管理员通行证 · 没办</td><td>口语过头</td><td>管理员通行证 · 未办理</td></tr>
+<tr><td><code>wizard.login.admin_why</code></td><td class="old">以后改动服务器（启动服务、安装、修复）时输管理口令就行，不用每次输服务器密码。不办的话，每次改动服务器时用服务器密码临时登录一次。</td><td>两句说了同一件事的正反面</td><td>办了以后，改动服务器只需输口令，不用每次输服务器密码。</td></tr>
+<tr><td><code>prepare.failed_step</code></td><td class="old">没有完成，见下方原因；之后的步骤没有执行</td><td>“见下方”</td><td>这一步没完成，后面的步骤没有执行。</td></tr>
+<tr><td><code>leave.what</code> / <code>leave.clean</code></td><td class="old">…清理服务器上的 Valise 东西</td><td>“Valise 东西”</td><td>…清理 Valise 留在服务器上的文件</td></tr>
+<tr><td><code>loc.station_details</code>、<code>loc.cloud_details</code>、<code>leave.vault_kept_what</code>、<code>removed.forget_what</code>、<code>recover.details</code>、<code>key.lock_details</code></td><td class="old">各 80–130 字</td><td>已经在折叠里的保持；<code>leave.vault_kept_what</code> 与 <code>removed.forget_what</code> 在确认框正文里</td><td>确认框正文各留一句：“备份都会保留，只是不再列在这里。”其余进“查看详情…”</td></tr>
+</table></div>
+
+<h2 id="d">D · 《Valise 审美、交互与文案工程指南》</h2>
+<p>下面是可以直接落进 <code>docs/</code> 的草稿（建议作为 UI.md 的一节或独立的 <code>docs/DESIGN.md</code>）。写法是规则加检查办法，后来的 Agent 不需要看到未来页面的草图也能照做。</p>
+
+<h3>D1 一页怎么搭</h3>
+<ol>
+<li><b>每页回答一个问题</b>，把这个问题写在视图函数的注释第一行。页头是：返回（或面包屑）、标题、一句现在怎样、至多一个主按钮。</li>
+<li><b>从上到下的顺序固定</b>：页头 → 需要处理的事 → 正在进行的事 → 正常的内容 → 折叠的技术信息。</li>
+<li><b>只用语义函数</b>：<code>card</code>、<code>subPanel</code>、<code>reportPanel</code>、<code>codeBox</code>、<code>fact</code>、<code>stepList</code>、<code>pressable</code>、<code>backLink</code>、<code>statusRow</code>、<code>emptyState</code>。视图文件里不出现 <code>FontSize(数字)</code>、<code>Padding(数字)</code>、<code>Radius(数字)</code>、<code>Gap(数字)</code>，一律取令牌。用一个测试扫描 <code>gui/</code> 守住，白名单只含 <code>theme.go</code> 和自绘组件。</li>
+<li><b>间距三档</b>：组内 8，组间 16，区块间 24 或 32。同一个容器里不混用相邻两档以外的值。</li>
+<li><b>卡片是例外，不是默认</b>。一页里并排的同类内容用一张卡片加分隔线；只有需要单独拿起来看的东西才各自成卡。卡片里不再套卡片，里面的小块用 <code>subPanel</code>。</li>
+<li><b>字号只有 7 级</b>，最小 12。次要信息靠颜色退后，不靠缩小。</li>
+</ol>
+
+<h3>D2 按钮与状态</h3>
+<div class="tw"><table>
+<tr><th>种类</th><th>用在</th><th>规则</th></tr>
+<tr><td>主按钮</td><td>这一屏最该做的那一件事</td><td>每屏至多一个；弹窗里的确认按钮算弹窗这一屏的</td></tr>
+<tr><td>普通按钮</td><td>其余会做事的操作</td><td>文字是动词加对象，会再问一次的以“…”结尾</td></tr>
+<tr><td>安静按钮</td><td>关闭、知道了、查看详情、删除的入口</td><td>没有边框和底色</td></tr>
+<tr><td>危险按钮</td><td>删除、注销、关闭备用锁、移除并清理</td><td>只出现在确认框里；文字写出后果（“删除并清理”），不写“确定”</td></tr>
+</table></div>
+<ul>
+<li><b>状态五种语气</b>：ok、warn、danger、neutral（明确不在运行）、unknown（没读到）。每种都是“图标或点 + 词”，不只靠颜色。</li>
+<li><b>各说各的</b>：隧道 / 端口 / 页面；退出码 / 服务是否健康；已存到服务器 / 已同步到别处；已核实 / 未核实。每一组里的每一项各占一行或一格，用 <code>statusRow</code> 或状态牌。不做把它们合起来的徽标、总分或总进度环。</li>
+<li><b>正常就安静</b>：ok 的项不着色、不加粗，可以收成一行“另有 N 项正常”。warn 和 danger 的项排在前面，写原因和下一步。</li>
+<li><b>没读到不等于正常</b>：读取失败时显示上次的结果加时间，或显示 unknown，不显示 ok。</li>
+<li><b>没做的不画</b>：未实现的能力不放按钮，也不放灰色按钮。因前置条件未满足而暂时不能点的按钮可以禁用，但旁边必须写出还差什么。</li>
+<li><b>安装检查的结论只写“未发现基础疑点”</b>，任何位置不写“安全”“已验证”“可信”。</li>
+</ul>
+
+<h3>D3 可点区域、悬停与折叠</h3>
+<ul>
+<li><b>整行整卡规则</b>：有边框或底色、内容指向另一个页面的行或卡片，整块可点，行尾有箭头图标。块内另有按钮时，按钮自己处理点击、不触发整块（参照 <code>locCard</code>）。不指向别处的信息行不做成卡片外观。</li>
+<li><b>可点的东西必须同时有</b>：<code>CursorPointer</code>、<code>Role</code>、<code>Label</code>、键盘焦点环、悬停与按下外观。全部由 <code>pressable</code> 提供，不手写。</li>
+<li><b>点击区不小于 28×28</b>；图标按钮带 Tooltip。</li>
+<li><b>悬停只在 <code>Draw</code> 回调里读</b> <code>Hovered()</code>。构建期读取会让指针每次进出都重建整个视图。只有悬停要改变布局或显示新内容时才允许在构建期读，并写注释说明。</li>
+<li><b>静态而复杂的块加 <code>.Cache()</code></b>：渐变、多层阴影、噪点、模糊。里面有会动的东西就不要整块缓存。</li>
+<li><b>移动与缩放用 <code>AnimatePose</code></b>；颜色与阴影用 <code>ElementTransition{Colors, Shadows}</code>；出现与消失用 <code>Enter</code>/<code>Exit</code> 并给元素 <code>Key</code>。动效时长只取 120 / 200 / 320 三个令牌。</li>
+<li><b>自己用 <code>p.After</code> 或 <code>AnimationFrame</code> 驱动的绘制</b>必须：看 <code>ReduceMotion</code>；看 <code>p.Accelerated()</code>；所在页签不可见时停止。</li>
+<li><b>可能超过 50 行的集合用 <code>List</code> 或 <code>Table</code></b>。</li>
+<li><b>折叠详情是必配的</b>：凡是出现 id、路径、端口、命令、哈希、错误代码、原理说明，都放进“技术信息”或“查看详情…”。例外是确认框：将要执行的每条命令和会改变的内容直接展示，不折叠（UI.md 9.5）。</li>
+<li><b>错误一律用 <code>errorBox</code></b>：原因一句、建议一句、技术信息折叠。不把原始错误文本放在主位置。</li>
+</ul>
+
+<h3>D4 中文文案怎么写</h3>
+<h4>公式</h4>
+<div class="tw"><table>
+<tr><th>场合</th><th>公式</th><th>例</th></tr>
+<tr><td>状态</td><td>谁 + 现在怎样</td><td>服务没在运行，Agent 现在不会回应。</td></tr>
+<tr><td>按钮</td><td>动词 + 对象，2–6 个字</td><td>打开管理页 · 现在同步 · 移除…</td></tr>
+<tr><td>说明</td><td>按下去会怎样，一句</td><td>只从这台电脑移除，服务器上什么都不动。</td></tr>
+<tr><td>确认框</td><td>标题是问句；正文三件事各一句：会发生什么、不会发生什么、能否撤销</td><td>移除 nas？删掉这里的记录和钥匙；上面已有的备份不动。之后可以重新添加。</td></tr>
+<tr><td>错误</td><td>原因 + 下一步</td><td>服务器没有及时回应。检查连接后再看这次操作的状态。</td></tr>
+<tr><td>等待</td><td>正在做什么 + 已等多久</td><td>正在连接 192.0.2.24…（已等 12 秒）</td></tr>
+<tr><td>空状态</td><td>现在没有什么 + 第一步怎么做</td><td>还没有备份位置。再放一份到别处，服务器坏了也不怕。</td></tr>
+</table></div>
+<h4>规矩</h4>
+<ul>
+<li><b>一处一句</b>。写完数一下句号：正文超过一个就把后面的移进“查看详情…”。</li>
+<li><b>一词一义</b>，以 PRODUCT.md 8.1 为准。同一个动作全应用只有一个叫法；新增叫法先改 8.1。</li>
+<li><b>从用户这边说</b>：写“现在用的文件还没动”，不写“活动目录尚未替换”。写“你”，不写“用户”；不写“我们”。</li>
+<li><b>口语但不随便</b>：用“没有”“还没”“先…再…”，不用“尚未”“须”“以…为准”“进行…操作”“该”“此”“上述”“下列”。也不用“搞定”“没办”这类过头的口语。</li>
+<li><b>否定要具体</b>：不写“失败”，写“没有完成”并说卡在哪一步。</li>
+<li><b>数字和名字放前面</b>：“3 个 Agent 有新备份还没同步”，不写“存在未同步备份的 Agent 共 3 个”。</li>
+<li><b>标点</b>：中文全角；“…”只用于“还会再问一次”的按钮和进行中的状态；并列用“·”仅限标签，句子里用逗号顿号；箭头和对勾是图标，不写进词表。</li>
+<li><b>旅行意象只在两处</b>：每页标题下那一句点缀语，和旅程页。按钮、确认框、错误、警告里不出现。</li>
+</ul>
+<h4>禁用词（出现在主文案里即为缺陷）</h4>
+<div class="tw"><table>
+<tr><th>类别</th><th>不写</th><th>写</th></tr>
+<tr><td>内部概念</td><td>暂存、交换、活动目录、现场、执行器、任务编号、回调、世代、journal、root、实例（指 Agent 时）、快照、封存、复活、回滚、克隆、档位、收件人、同步目标、仓库</td><td>备好的文件、替换、现在用的文件、服务器现状、（不提）、（不提）、浏览器里已完成、（不提）、（不提）、目录、Agent、备份或时间点、备份、恢复、原地恢复、分身、备份内容、（高级里才出现）、备份位置、本机文件夹</td></tr>
+<tr><td>过度承诺</td><td>安全、已验证、可信、保证、一定、完全、无损</td><td>未发现基础疑点、核对通过（并说核对了什么）</td></tr>
+<tr><td>合并状态</td><td>一切就绪、全部正常（当有未读到的项时）、已恢复（只恢复了文件时）</td><td>逐项说；“文件已恢复，未启动程序”</td></tr>
+<tr><td>公文腔</td><td>尚未、须、请先行、予以、进行、上述、下列、此、该、是否、以…为准</td><td>还没、要、先、（直接用动词）、这些、下面、这个、…吗、按…</td></tr>
+<tr><td>推诿</td><td>发生未知错误、请联系管理员、请稍后重试（不说原因）</td><td>说原因和一个能做的下一步</td></tr>
+<tr><td>旧主题词</td><td>逃生舱、着陆、空间站、上云、演练、金库</td><td>见 PRODUCT.md 8.1</td></tr>
+</table></div>
+<h4>提交前自查</h4>
+<ol>
+<li>这一屏有几个主按钮？超过一个就改。</li>
+<li>把窗口缩到最小宽度，每一行文字都能读全吗？</li>
+<li>所有新文字都在 <code>zh-CN.json</code> 里、对应测试已更新吗？</li>
+<li>每个看起来能点的块都能点吗？每个能点的块用键盘能到吗？</li>
+<li>把服务器断开再打开这一页，它显示的是“没读到”还是“正常”？</li>
+<li>系统开启“减少动态效果”后再走一遍，有没有东西还在动、有没有信息只靠动画传达？</li>
+<li>文件超过 400 行了吗？</li>
+</ol>
+
+<h2 id="ask">需要你决定的事</h2>
+<p>这些会改到正式规范，按 AGENTS.md 第 5 节应先由你定、先改文档、再写代码。</p>
+<div class="tw"><table>
+<tr><th>#</th><th>决定</th><th>牵涉的规范</th><th>我的建议</th></tr>
+<tr><td>1</td><td>术语：创建副本 → 创建分身；恢复当前实例 → 原地恢复；保护计划 → 备份计划；命令行与向导 → 终端；界面上的 porter → 搬运工</td><td>PRODUCT.md 8.1，UI.md 多处</td><td>前两个和 porter 建议直接采纳，它们在消除歧义。备份计划和终端改动面更大，其中“命令行与向导”是 11 月 16 日刚定的，可以放到下一轮</td></tr>
+<tr><td>2</td><td>新增 <code>danger</code> 语气与危险按钮</td><td>UI.md 7.4.2 的颜色名表，AGENTS.md 7.5</td><td>采纳。不涉及合并状态，只是让严重的比留意的更醒目</td></tr>
+<tr><td>3</td><td>令牌改名并升级到 <code>valise-theme/2</code>，旧名按别名兼容</td><td>UI.md 7.4、7.4.2</td><td>采纳，但分两步：先在代码里加尺度令牌和语义函数（不动主题格式），视图迁完后再升格式</td></tr>
+<tr><td>4</td><td>内置重量级主题做哪一套</td><td>UI.md 7.4“内置主题”</td><td>先做“手账”：它静态、可缓存、风险低，能先把材质框架跑通；“夜航”依赖毛玻璃的实测成本，等量过再做</td></tr>
+<tr><td>5</td><td>管理员通行证的口令：界面现在仍要求另设“管理口令”</td><td>AGENTS.md 第 3、7 节，ARCHITECTURE.md 2.1</td><td>这是实现与规范的出入，不属于润色。请确认是否按规范改成默认用 Valise 口令</td></tr>
+<tr><td>6</td><td>D 部分的指南放在哪</td><td>docs/ 放置规则</td><td>先作为提案放 <code>docs/proposals/</code>，你确认后并入 UI.md 新的一节</td></tr>
+</table></div>
+<div class="box"><b>第二阶段的落地顺序（供参考，未开始）。</b>① 修诚实状态：计划警告着色、danger、危险按钮、未读到不显示正常。② 加尺度令牌和 <code>pressable</code> / <code>stepList</code> / <code>statusRow</code> / <code>backLink</code>，逐页迁移并消掉魔法数字。③ 文案与术语，连同测试。④ 动效。⑤ 材质框架与第一套重量级主题。每一步都能单独验收，前三步不依赖主题格式升级。</div>
+</div>
+
+</body></html>

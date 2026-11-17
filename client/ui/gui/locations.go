@@ -217,10 +217,7 @@ func (a *App) locationsPage(c *ui.Context) {
 // locCard is one location: what it is in one line, its servers under it,
 // and what the last sync did.
 func (a *App) locCard(c *ui.Context, l location) {
-	box := card(ui.Column(c)).Gap(10).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(l.Name)
-	if box.Hovered() {
-		box.Border(1, palette.Brand)
-	}
+	box := pressableCard(card(ui.Column(c)).Gap(10), l.Name)
 	box.OnClick(func() {
 		a.debugAction("location_open", l.Name)
 		a.router.Push("/locations/" + l.Name)

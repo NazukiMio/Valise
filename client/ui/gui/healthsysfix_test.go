@@ -110,16 +110,16 @@ exec "$@"
 func TestServerPromptMetaKeyPassphraseAndSudo(t *testing.T) {
 	title, why, field, _ := serverPromptMeta("Enter passphrase for key '/tmp/id_ed25519':")
 	if title != T("ask.key_passphrase") || field != T("ask.key_passphrase_field") ||
-		!strings.Contains(title, "SSH 管理连接") || !strings.Contains(why, "非 sudo") {
+		!strings.Contains(title, "登录") || !strings.Contains(why, "不是 sudo 密码") {
 		t.Fatalf("key passphrase meta: %q %q %q", title, why, field)
 	}
 	title, why, _, _ = serverPromptMeta("parallels@debian-vm's password:")
-	if !strings.Contains(title, "SSH 管理连接") || !strings.Contains(why, "非 sudo") {
+	if !strings.Contains(title, "登录") || !strings.Contains(why, "不是 sudo 密码") {
 		t.Fatalf("server password meta: %q %q", title, why)
 	}
 	title, why, field, _ = serverPromptMeta("[sudo] password for vps:")
 	if title != T("ask.sudo.title", "who", "vps") || field != T("ask.sudo.field") ||
-		!strings.Contains(title, "sudo 提权密码") || !strings.Contains(why, "非 SSH") {
+		!strings.Contains(title, "sudo 密码") || !strings.Contains(why, "不是登录密码") {
 		t.Fatalf("sudo meta: %q %q %q", title, why, field)
 	}
 }

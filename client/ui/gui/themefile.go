@@ -20,10 +20,12 @@ import (
 
 // Built-in theme ids, and the choice that follows the system.
 const (
-	ThemeSystem = "system"
-	ThemeLight  = "classic-light"
-	ThemeDark   = "classic-dark"
-	ThemeFormat = "valise-theme/1"
+	ThemeSystem  = "system"
+	ThemeLight   = "classic-light"
+	ThemeDark    = "classic-dark"
+	ThemeJournal = "journal"
+	ThemeNight   = "night"
+	ThemeFormat  = "valise-theme/1"
 )
 
 // Limits of a theme folder.
@@ -304,7 +306,7 @@ func themeID(name string) string {
 	if len(id) > 24 {
 		id = id[:24]
 	}
-	if id == "" || id == ThemeLight || id == ThemeDark || id == ThemeSystem {
+	if id == "" || id == ThemeLight || id == ThemeDark || id == ThemeJournal || id == ThemeNight || id == ThemeSystem {
 		id = "theme"
 	}
 	return id

@@ -10,6 +10,7 @@ import "github.com/egoist/mygo/ui"
 type Palette struct {
 	Paper, Card, CardBorder, Text, TextSub, Line, Board, Hover ui.Color
 	Ok, Warn, Stop                                             ui.Color
+	Danger, DangerBg, DangerBorder                             ui.Color // serious trouble and what cannot be undone (docs/DESIGN.md 2)
 	Side, SideText, Brand                                      ui.Color
 	Accent, AccentHover, AccentText, Surface, SurfaceHover     ui.Color
 	Border, Focus                                              ui.Color
@@ -24,6 +25,7 @@ func colorFields(p *Palette) map[string]*ui.Color {
 	return map[string]*ui.Color{
 		"paper": &p.Paper, "card": &p.Card, "card_border": &p.CardBorder, "text": &p.Text, "text_sub": &p.TextSub,
 		"line": &p.Line, "board": &p.Board, "hover": &p.Hover, "ok": &p.Ok, "warn": &p.Warn, "stop": &p.Stop,
+		"danger": &p.Danger, "danger_bg": &p.DangerBg, "danger_border": &p.DangerBorder,
 		"side": &p.Side, "side_text": &p.SideText, "brand": &p.Brand,
 		"accent": &p.Accent, "accent_hover": &p.AccentHover, "accent_text": &p.AccentText,
 		"surface": &p.Surface, "surface_hover": &p.SurfaceHover, "border": &p.Border, "focus": &p.Focus,
@@ -76,8 +78,9 @@ type Theme struct {
 	Fonts    Fonts
 	Sizes    Sizes
 	Timeline string
-	Shell    *Node // the window: navigation and the page area
-	Home     *Node // the home page
+	Material Material // what surfaces are made of (material.go)
+	Shell    *Node    // the window: navigation and the page area
+	Home     *Node    // the home page
 	// Pages are the trees of pages drawn in sections (docs/UI.md 7.4.3),
 	// by page name; a page without one flows as a classic column. Theme
 	// files do not write these yet.
@@ -113,15 +116,16 @@ func classicLight() *Theme {
 	return &Theme{ID: ThemeLight, Name: "Classic light", Fonts: classicFonts(), Sizes: classicSizes(), Timeline: TimelineStrands,
 		Shell: classicShell(), Home: classicHome(), Pal: Palette{
 			Paper: ui.Hex("#f7f6f3"), Card: ui.RGBA(255, 255, 255, 0.96), CardBorder: ui.RGBA(220, 215, 206, 0.7),
-			Text: ui.Hex("#2b2825"), TextSub: ui.Hex("#8c857b"), Line: ui.Hex("#dfdad0"), Board: ui.Hex("#fcfbf8"), Hover: ui.Hex("#fbfaf6"),
-			Ok: ui.Hex("#5f7d5a"), Warn: ui.Hex("#a06a2c"), Stop: ui.Hex("#8a8377"),
-			Side: ui.Hex("#efece6"), SideText: ui.Hex("#8c857b"), Brand: ui.Hex("#9a7b4f"),
+			Text: ui.Hex("#2b2825"), TextSub: ui.Hex("#6f685f"), Line: ui.Hex("#dfdad0"), Board: ui.Hex("#fcfbf8"), Hover: ui.Hex("#fbfaf6"),
+			Ok: ui.Hex("#4f7049"), Warn: ui.Hex("#96601f"), Stop: ui.Hex("#8a8377"),
+			Danger: ui.Hex("#a23b2e"), DangerBg: ui.Hex("#fbeeeb"), DangerBorder: ui.RGBA(162, 59, 46, 0.45),
+			Side: ui.Hex("#efece6"), SideText: ui.Hex("#6f685f"), Brand: ui.Hex("#86683c"),
 			Accent: ui.Hex("#70685d"), AccentHover: ui.Hex("#5e574d"), AccentText: ui.Hex("#ffffff"),
 			Surface: ui.Hex("#ffffff"), SurfaceHover: ui.Hex("#f4f2ee"), Border: ui.Hex("#dfdcd5"), Focus: ui.Hex("#cfc4b5"),
 			Gold: ui.Hex("#d4c0a3"), GoldSoft: ui.RGBA(245, 230, 205, 0.95), Canvas: ui.Hex("#fbf9f4"),
 			Strand: ui.Hex("#b09c82"), Spine: ui.Hex("#a89680"), Node: ui.Hex("#ffffff"), NodeCore: ui.Hex("#8c7e6c"),
 			AlertBg: ui.Hex("#fbf3e6"), AlertBorder: ui.RGBA(214, 178, 128, 0.45), AlertText: ui.Hex("#6b5a44"),
-			ErrorBg: ui.Hex("#fbf4e8"), ErrorBorder: ui.RGBA(220, 190, 150, 0.6),
+			ErrorBg: ui.Hex("#fbeeeb"), ErrorBorder: ui.RGBA(162, 59, 46, 0.35),
 			TroubleBg: ui.Hex("#fffaf2"), TroubleBorder: ui.RGBA(214, 150, 90, 0.7),
 			LogoBg: ui.Hex("#ffffff"), Shadow: ui.Hex("#3e362c"),
 		}}
@@ -135,13 +139,14 @@ func classicDark() *Theme {
 		Paper: ui.Hex("#1f1d1a"), Card: ui.Hex("#2a2723"), CardBorder: ui.RGBA(255, 240, 220, 0.09),
 		Text: ui.Hex("#ece7df"), TextSub: ui.Hex("#a39b8f"), Line: ui.Hex("#45403a"), Board: ui.Hex("#24221f"), Hover: ui.Hex("#302d29"),
 		Ok: ui.Hex("#94b28b"), Warn: ui.Hex("#dba45f"), Stop: ui.Hex("#948d82"),
+		Danger: ui.Hex("#e58373"), DangerBg: ui.Hex("#3a2320"), DangerBorder: ui.RGBA(229, 131, 115, 0.45),
 		Side: ui.Hex("#191816"), SideText: ui.Hex("#a39b8f"), Brand: ui.Hex("#c9a66f"),
 		Accent: ui.Hex("#d8cbb6"), AccentHover: ui.Hex("#e6dbc9"), AccentText: ui.Hex("#1f1d1a"),
 		Surface: ui.Hex("#2f2c28"), SurfaceHover: ui.Hex("#37332e"), Border: ui.Hex("#45403a"), Focus: ui.Hex("#6b5f4f"),
 		Gold: ui.Hex("#c9b08a"), GoldSoft: ui.Hex("#3a3226"), Canvas: ui.Hex("#23211e"),
 		Strand: ui.Hex("#c4b092"), Spine: ui.Hex("#c8b69c"), Node: ui.Hex("#2a2723"), NodeCore: ui.Hex("#d4c0a3"),
 		AlertBg: ui.Hex("#382d20"), AlertBorder: ui.RGBA(219, 164, 95, 0.35), AlertText: ui.Hex("#d8c3a5"),
-		ErrorBg: ui.Hex("#382d20"), ErrorBorder: ui.RGBA(219, 164, 95, 0.4),
+		ErrorBg: ui.Hex("#3a2320"), ErrorBorder: ui.RGBA(229, 131, 115, 0.4),
 		TroubleBg: ui.Hex("#302820"), TroubleBorder: ui.RGBA(219, 164, 95, 0.55),
 		LogoBg: ui.Hex("#f4f1ec"), Shadow: ui.Hex("#000000"),
 	}
@@ -169,12 +174,11 @@ func widgets(base *ui.Theme) *ui.Theme {
 
 // card styles a card with a thin border.
 func card(e ui.Element) ui.Element {
-	return e.Padding(18).Gap(12).Radius(cur.Sizes.CardRadius).Background(palette.Card).
-		Border(1, palette.CardBorder).Shadow(0, 1, 3, 0, palette.Shadow.Alpha(0.05))
+	return materialCard(e.Padding(18).Gap(12).Radius(cur.Sizes.CardRadius).Background(palette.Card).Border(1, palette.CardBorder))
 }
 
 // muted is secondary text.
-func muted(e ui.Element) ui.Element { return e.TextColor(palette.TextSub).FontSize(12) }
+func muted(e ui.Element) ui.Element { return e.TextColor(palette.TextSub).FontSize(fsCaption) }
 
 // mono is code-like text: paths, commands, ids.
 func mono(e ui.Element) ui.Element { return e.Font(cur.Fonts.Mono) }
@@ -184,7 +188,7 @@ func mono(e ui.Element) ui.Element { return e.Font(cur.Fonts.Mono) }
 // own paddings, radii or title sizes.
 
 // cardTitle is a card's heading.
-func cardTitle(e ui.Element) ui.Element { return e.Bold() }
+func cardTitle(e ui.Element) ui.Element { return e.FontSize(fsBody).Bold() }
 
 // sectionTitle is the heading of a card that is a step or a result.
 func sectionTitle(e ui.Element) ui.Element { return e.FontSize(16).Bold() }

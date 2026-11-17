@@ -133,6 +133,7 @@ func TestNativeEntriesSessionShellOnboardAndReconnectAfterExit(t *testing.T) {
 	info.SessionArgv = []string{"fixture", "tui"}
 	show()
 	hasAll(t, tt.Texts(), T("native.daily_title"), T("native.session"), T("native.shell"), T("native.shell_hint"), T("native.onboard_title"), T("native.connect"))
+	shot(t, tt, "native-daily")
 
 	// Onboarding exited with code 0.
 	ended := &nativeRun{server: "home", instance: "xiaoman", mode: service.NativeCLI, code: 0}
@@ -204,8 +205,8 @@ func TestNativeEntriesSessionShellOnboardAndReconnectAfterExit(t *testing.T) {
 		t.Fatalf("running: %q", tt.Texts())
 	}
 	if T("native.title") != "命令行与向导" || T("native.open") != "打开命令行与向导…" ||
-		T("native.session") != "打开 Agent 终端会话（TUI）" || T("native.shell") != "打开系统命令行（Shell）" ||
-		T("native.onboard_title") != "初始化配置向导（Onboard）" {
+		T("native.session") != "和 Agent 对话（终端）" || T("native.shell") != "打开服务器命令行" ||
+		T("native.onboard_title") != "首次设置向导" {
 		t.Fatalf("unexpected native labels: %q %q %q %q %q", T("native.title"), T("native.open"), T("native.session"), T("native.shell"), T("native.onboard_title"))
 	}
 	click(t, tt, T("native.disconnect"))

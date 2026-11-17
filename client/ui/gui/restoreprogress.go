@@ -3,7 +3,6 @@ package gui
 import (
 	"context"
 	"github.com/egoist/mygo/ui"
-	"strings"
 	"time"
 	"valise/core/revive"
 	"valise/ui/service"
@@ -49,7 +48,7 @@ func (a *App) restoreConfirm(c *ui.Context, r *restoreFlow) {
 		fact(c, T("restore.target"), r.task.Target+" / "+r.task.Instance)
 		muted(ui.Text(c, T("restore.second_hint"))).Wrap()
 		if time.Now().After(r.deadline) {
-			ui.Text(c, T("restore.expired")).TextColor(palette.Warn).Wrap()
+			notice(c, "warn", T("restore.expired"))
 			ui.Button(c, T("restore.recheck_stage")).OnClick(func() { a.recheckRestore(r) })
 		} else {
 			ui.Checkbox(c, &r.swap, T("restore.swap_confirm"))
@@ -168,54 +167,35 @@ func (a *App) restoreResult(c *ui.Context, r *restoreFlow) {
 		a.restoreProgress(c, r)
 		return
 	}
-	card(ui.Column(c)).Gap(10).Children(func() {
-		dialogTitle(ui.Text(c, T("restore.state."+orText(t.State, "failed"))))
-		fact(c, T("restore.target"), t.Target+" / "+t.Instance)
-		if t.PreBackupSnapshot != "" {
-			fact(c, T("restore.backup_current_result"), T("restore.checked"))
-		}
-		verified := T("restore.unknown")
-		if t.Verified {
-			verified = T("restore.checked")
-		}
-		fact(c, T("restore.stage_verified"), verified)
-		directory := T("restore.journal." + strings.ToLower(orText(t.SwapState, "unknown")))
-		if t.Rollback != nil {
-			directory = T("restore.rollback.directory." + t.Rollback.Directories)
-		}
-		fact(c, T("restore.directory"), directory)
-		runtime, health := T("restore.unknown"), T("restore.unknown")
-		if t.State == "succeeded" && t.SwapState == revive.StateHealthy {
-			runtime, health = T("restore.service_checked"), T("restore.health_checked")
-		}
-		if t.SwapState == revive.StateRestored {
-			runtime, health = T("restore.no_start"), T("restore.not_checked")
-		}
-		if t.Rollback != nil {
-			runtime = T("restore.rollback.service." + t.Rollback.Service)
-			health = T("restore.rollback.health." + t.Rollback.Health)
-			fact(c, T("restore.body"), T("restore.rollback.program."+t.Rollback.Program))
-			if t.Rollback.Problem != "" {
-				ui.Text(c, T("restore.rollback.problem."+t.Rollback.Problem)).TextColor(palette.Warn).Wrap()
+	card(ui.Column(c)).Gap(spItem).Children(func() {
+		ui.Row(c).Gap(spInside + 2).AlignItems(ui.Center).Children(func() {
+			tone := restoreResultTone(t)
+			toneDot(c, tone)
+			title := dialogTitle(ui.Text(c, T("restore.state."+orText(t.State, "failed")))).Wrap()
+			if tone == "warn" || tone == "danger" {
+				title.TextColor(toneInk(tone))
 			}
+		})
+		fact(c, T("restore.target"), t.Target+" / "+t.Instance)
+		ui.Divider(c)
+		ui.Column(c).Gap(spInside).Children(func() {
+			for _, o := range restoreOutcomes(t) {
+				statusRow(c, o.tone, o.label, o.value)
+			}
+		})
+		if t.Rollback != nil && t.Rollback.Problem != "" {
+			notice(c, "warn", T("restore.rollback.problem."+t.Rollback.Problem))
 		}
-		fact(c, T("restore.service_result"), runtime)
-		fact(c, T("restore.health_result"), health)
-		relation := T("restore.no_relation")
-		if t.Relation {
-			relation = T("restore.relation_checked")
-		}
-		fact(c, T("restore.relation_result"), relation)
 		ui.Collapsible(c, T("restore.kept"), a.fold("restore-kept"), func() {
 			for _, path := range t.Prev {
 				mono(muted(ui.Text(c, path))).Wrap()
 			}
 		})
 		if t.SwapState == revive.StateRolledBack {
-			muted(ui.Text(c, T("restore.rollback_hint"))).Wrap()
+			notice(c, "warn", T("restore.rollback_hint"))
 		}
 		if t.State == "needs_recovery" || t.State == "reconciling" {
-			muted(ui.Text(c, T("restore.reconcile_hint"))).Wrap()
+			notice(c, "warn", T("restore.reconcile_hint"))
 		}
 		ui.Row(c).Gap(8).Children(func() {
 			if t.OpID != "" {
@@ -244,8 +224,7 @@ func (a *App) restoreBanner(c *ui.Context) {
 		for _, t := range a.restoreTasks {
 			if t.State == "reconciling" || t.State == "needs_recovery" {
 				task := t
-				ui.Row(c).Padding(8, 16).Gap(10).Children(func() {
-					muted(ui.Text(c, T("restore.unfinished", "target", task.Target))).Grow(1).Wrap()
+				banner(c, "warn", bannerText(c, T("restore.unfinished", "target", task.Target), ""), func() {
 					ui.Button(c, T("restore.open_task")).OnClick(func() {
 						a.restore = reopenRestoreTask(task)
 						a.navigate("/restore")
@@ -257,8 +236,11 @@ func (a *App) restoreBanner(c *ui.Context) {
 		return
 	}
 	if r.j.busy || r.task.State == "reconciling" || r.task.State == "needs_recovery" {
-		ui.Row(c).Padding(8, 16).Gap(10).Children(func() {
-			ui.Text(c, T("restore.task_banner", "stage", T("restore.step."+r.step))).Grow(1).Wrap()
+		tone := "busy"
+		if !r.j.busy {
+			tone = "warn"
+		}
+		banner(c, tone, bannerText(c, T("restore.task_banner", "stage", T("restore.step."+r.step)), ""), func() {
 			ui.Button(c, T("restore.open_task")).OnClick(func() { a.navigate("/restore") })
 		})
 	}

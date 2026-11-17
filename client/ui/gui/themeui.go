@@ -16,8 +16,10 @@ type themeEntry struct {
 }
 
 var (
-	builtinLight = classicLight()
-	builtinDark  = classicDark()
+	builtinLight   = classicLight()
+	builtinDark    = classicDark()
+	builtinJournal = journalTheme()
+	builtinNight   = nightTheme()
 )
 
 // loadThemes reads every imported theme; one that fails stays listed with
@@ -47,6 +49,10 @@ func (a *App) chooseTheme(sysDark bool) {
 		use(builtinLight)
 	case ThemeDark:
 		use(builtinDark)
+	case ThemeJournal:
+		use(builtinJournal)
+	case ThemeNight:
+		use(builtinNight)
 	default:
 		e, ok := a.themes[id]
 		switch {
@@ -70,6 +76,10 @@ func themeName(t *Theme) string {
 		return T("theme.classic_light")
 	case ThemeDark:
 		return T("theme.classic_dark")
+	case ThemeJournal:
+		return T("theme.journal")
+	case ThemeNight:
+		return T("theme.night")
 	}
 	return t.Name
 }
@@ -100,7 +110,8 @@ func (a *App) themeSlot(c *ui.Context, n *Node) {
 	}
 	n.box(ui.Column(c).Gap(6).Padding(0, pad)).Children(func() {
 		b := ui.PopoverMenuButton(c, label, func(m *ui.Menu) {
-			for _, b := range []struct{ id, name string }{{ThemeSystem, T("theme.system")}, {ThemeLight, T("theme.classic_light")}, {ThemeDark, T("theme.classic_dark")}} {
+			for _, b := range []struct{ id, name string }{{ThemeSystem, T("theme.system")}, {ThemeLight, T("theme.classic_light")}, {ThemeDark, T("theme.classic_dark")},
+				{ThemeJournal, T("theme.journal")}, {ThemeNight, T("theme.night")}} {
 				if m.Item(b.name).Checked(chosen == b.id).Chosen() {
 					a.setTheme(b.id)
 				}
@@ -135,10 +146,10 @@ func (a *App) themeSlot(c *ui.Context, n *Node) {
 			b.FontSize(12).Padding(6, 4).Label(T("theme.menu", "name", themeName(cur)))
 		}
 		if a.themeErr != nil {
-			ui.Text(c, a.themeErr.Error()).FontSize(11).TextColor(palette.Warn).Wrap()
+			ui.Text(c, a.themeErr.Error()).FontSize(fsCaption).TextColor(palette.Warn).Wrap()
 		}
 		for i, note := range cur.Notes {
-			muted(ui.Text(c.Key(i), note)).FontSize(11).Wrap()
+			muted(ui.Text(c.Key(i), note)).FontSize(fsCaption).Wrap()
 		}
 		a.languageNotes(c)
 	})

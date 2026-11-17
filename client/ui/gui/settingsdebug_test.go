@@ -21,7 +21,7 @@ func TestSettingsDebugToggleAndButtons(t *testing.T) {
 
 	a.navigate("/settings")
 	tt.Frame()
-	hasAll(t, tt.Texts(), "诊断日志", "Debug 诊断日志", "已关闭", a.svc.DebugLogPath(), "打开日志目录", "复制最近诊断日志")
+	hasAll(t, tt.Texts(), "诊断日志", "诊断日志", "已关闭", a.svc.DebugLogPath(), "打开日志目录", "复制最近诊断日志")
 
 	// Copying when no log file exists shows friendly empty feedback.
 	click(t, tt, "复制最近诊断日志")
@@ -30,7 +30,7 @@ func TestSettingsDebugToggleAndButtons(t *testing.T) {
 	}
 
 	// Enable debug logging via the Switch control.
-	click(t, tt, "启用 Debug 诊断日志")
+	click(t, tt, "记录诊断日志")
 	if !a.svc.DebugLogEnabled() || !tt.HasText("已开启") {
 		t.Fatalf("expected debug log enabled, enabled=%v texts=%q", a.svc.DebugLogEnabled(), tt.Texts())
 	}
@@ -61,7 +61,7 @@ func TestSettingsDebugToggleAndButtons(t *testing.T) {
 	}
 
 	// Disable debug logging via the Switch control.
-	click(t, tt, "启用 Debug 诊断日志")
+	click(t, tt, "记录诊断日志")
 	if a.svc.DebugLogEnabled() || !tt.HasText("已关闭") {
 		t.Fatalf("expected debug log disabled, enabled=%v texts=%q", a.svc.DebugLogEnabled(), tt.Texts())
 	}

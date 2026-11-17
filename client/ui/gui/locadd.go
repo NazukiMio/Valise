@@ -51,7 +51,7 @@ func (a *App) locAddPage(c *ui.Context) {
 		a.locAdding = &locAdd{kind: locRepo, port: "22"}
 	}
 	f := a.locAdding
-	ui.Link(c, "‹ "+T("nav.locations"), "/locations")
+	backLink(c, T("nav.locations"), "/locations")
 	pageHead(c, T("loc.add_title"), "")
 	if f.done != "" {
 		a.locAdded(c, f)

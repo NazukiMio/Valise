@@ -109,7 +109,7 @@ func (a *App) lockOffDialog(c *ui.Context) {
 			muted(ui.Text(c, T("lock.off_what"))).FontSize(13).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).OnClick(func() { a.lockOff = false })
-				ui.PrimaryButton(c, T("lock.off_go")).OnClick(func() {
+				dangerButton(c, T("lock.off_go")).OnClick(func() {
 					if err := a.svc.DisableRecovery(); err == nil {
 						a.lockOff = false
 					}

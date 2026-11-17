@@ -59,7 +59,7 @@ func (a *App) serverPage(c *ui.Context, name string) {
 	}
 	ps := a.passOf(name)
 	st := a.serverState(name, c.Now())
-	ui.Link(c, "‹ "+T("nav.servers"), "/servers")
+	backLink(c, T("nav.servers"), "/servers")
 	ui.Row(c).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Children(func() { pageHead(c, name, "") })
 		if a.agents.busy {
@@ -75,7 +75,7 @@ func (a *App) serverPage(c *ui.Context, name string) {
 		}
 		switch {
 		case ps.doc != nil && ps.doc.PorterVersion != "":
-			plainTag(c, "porter "+ps.doc.PorterVersion)
+			plainTag(c, T("server.porter_version", "version", ps.doc.PorterVersion))
 		case ps.doc != nil && ps.doc.Problem != nil:
 			plainTag(c, T("server.porter_unusable"))
 		}
@@ -231,7 +231,7 @@ func (a *App) revokeDialog(c *ui.Context, name string, ps *passState) {
 			muted(ui.Text(c, T("pass.revoke_why"))).FontSize(12).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).OnClick(func() { ps.revoke = false })
-				ui.PrimaryButton(c, T("pass.revoke")).OnClick(func() {
+				dangerButton(c, T("pass.revoke")).OnClick(func() {
 					ps.revoke, ps.busy, ps.err = false, true, nil
 					a.run(func() {
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -264,16 +264,12 @@ func (a *App) agentsHere(c *ui.Context, name string) {
 			muted(ui.Text(c, T("server.no_agents"))).FontSize(13)
 		}
 		for _, r := range here {
-			line := ui.Row(c.Key(r.Instance)).Gap(10).Padding(6, 4).AlignItems(ui.Center).Cursor(ui.CursorPointer).
-				Role(ui.RoleButton).Label(r.Name)
-			if line.Hovered() {
-				line.Background(palette.Hover)
-			}
+			line := pressable(ui.Row(c.Key(r.Instance)).Gap(10).Padding(spInside, spInside).Radius(radControl).AlignItems(ui.Center), r.Name, radControl)
 			line.OnClick(func() { a.router.Push("/agents/" + r.Server + "/" + r.Instance) }).Children(func() {
 				a.avatar(c, r, 24)
 				ui.Text(c, r.Name).Bold()
 				muted(ui.Text(c, r.Harness)).Grow(1)
-				ui.Text(c, "›").TextColor(palette.Line)
+				chevron(c)
 			})
 		}
 	})

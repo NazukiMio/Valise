@@ -100,6 +100,9 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 		return
 	}
 	p := r.plan.Revive
+	for i, w := range p.Warnings { // warnings come first and are never secondary text
+		notice(c.Key(i), "warn", w)
+	}
 	card(ui.Column(c)).Gap(8).Children(func() {
 		ui.Text(c, T("restore.plan")).Bold()
 		fact(c, T("restore.origin"), p.From)
@@ -118,9 +121,6 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 		fact(c, T("restore.body"), T("restore.body."+p.Plan.Body.Action))
 		fact(c, T("restore.access"), T("restore.access_hint"))
 	})
-	for _, w := range p.Warnings {
-		muted(ui.Text(c, w)).Wrap()
-	}
 	ui.Collapsible(c, T("restore.technical"), a.fold("restore-technical"), func() {
 		for _, root := range p.Plan.Roots {
 			fact(c, root.ID, root.Path)

@@ -40,14 +40,14 @@ func (a *App) languageItems(m *ui.Menu) {
 // language, and that an imported one is not Valise's.
 func (a *App) languageNotes(c *ui.Context) {
 	if a.langErr != nil {
-		ui.Text(c, a.langErr.Error()).FontSize(11).TextColor(palette.Warn).Wrap()
+		ui.Text(c, a.langErr.Error()).FontSize(fsCaption).TextColor(palette.Warn).Wrap()
 	}
 	if w := words.Load(); w.Imported {
 		note := T("lang.unofficial", "name", w.Name)
 		if w.Missing > 0 {
 			note += T("common.dot_sep") + T("lang.missing", "n", w.Missing)
 		}
-		muted(ui.Text(c, note)).FontSize(11).Wrap()
+		muted(ui.Text(c, note)).FontSize(fsCaption).Wrap()
 	}
 }
 

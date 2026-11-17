@@ -97,8 +97,8 @@
   - **布局**：声明式布局树。每页由 Valise 暴露一组固定插槽（例如结论句、提醒、搜索、Agent 列表、导航），主题只用行、列、网格与尺寸、间距、对齐、背景把插槽摆到位置上。没有条件、循环、表达式或脚本，是模板而不是解释器（AGENTS.md 第 3 节）。所有按钮与动作仍是同一套，只是设计与位置不同；例如“沉浸模式”：导航缩成窄栏，Agent 卡片放大占满一页。
   - **本机图片**：页面背景、品牌图等，随主题文件夹一起复制到本机。
 - **始终显示（主题不能隐藏）**：待处理提醒；错误与失败原因；确认框与口令框；各项独立状态（隧道 / 端口 / 健康、退出码 / 服务状态等，AGENTS.md 7.5）；“未核实”提示；切回经典主题的入口。主题的布局缺了其中的插槽，Valise 按经典主题的位置补上，并在主题菜单里说明补了哪些。确认框、口令框不在布局树里，任何主题下都由 Valise 以经典方式画出。其他插槽主题可以不放。
-- **内置主题**：“经典浅色”（7.1 的配色）与“经典深色”（同一色相推出）；默认“跟随系统”，在两者间随系统深浅色切换。
-- **切换入口**：设置 → 个性化里的主题菜单（2026-11-11 用户决定）：跟随系统、经典浅色、经典深色、本机已导入的主题、“导入主题…”。选择记在本机（`desktop/prefs.json`）。
+- **内置主题**：“经典浅色”（7.1 的配色）与“经典深色”（同一色相推出）；默认“跟随系统”，在两者间随系统深浅色切换。另有两套带材质的重量级主题“手账”（浅色）与“夜航”（深色），见 7.4.4（2026-11-17）。
+- **切换入口**：设置 → 个性化里的主题菜单（2026-11-11 用户决定）：跟随系统、经典浅色、经典深色、手账、夜航、本机已导入的主题、“导入主题…”。选择记在本机（`desktop/prefs.json`）。
 - **主题文件**：一个文件夹，内含 `theme.json` 与它引用的图片；导入时用系统对话框选这个文件夹，检查通过后整个复制到数据目录的 `desktop/themes/<id>/`，不从网络加载。
   - `theme.json` 的 `format` 为 `valise-theme/1`；`base` 指定继承的内置主题，没写的令牌、变体与布局都取自它；未知字段、未知插槽、同一插槽出现两次、布局树超过 12 层都算错误。
   - 颜色写 `#rrggbb` 或 `#rrggbbaa`；图片只能引用文件夹内的相对路径（不得含 `..` 或绝对路径），只认能解码的图片格式（PNG、JPEG、WebP、SVG），单张不超过 4 MiB，整个文件夹不超过 16 MiB，`theme.json` 不超过 256 KiB。
@@ -117,7 +117,7 @@
 
 布局节点恰好是 `row`、`column`、`grid`（子节点数组）或 `slot`（插槽名）之一，可带：`columns`、`gap`、`padding`（1、2 或 4 个数）、`width`、`height`、`max_width`、`grow`、`align` 与 `justify`（`start`、`center`、`end`、`stretch`、`between`）、`background`（颜色名）、`image`（主题的图片名，铺满）、`radius`；`style` 只能写在插槽上。`page` 插槽的 `padding` 与 `max_width` 作用于页面内容。
 
-颜色名：`paper` `card` `card_border` `text` `text_sub` `line` `board` `hover` `ok` `warn` `stop` `side` `side_text` `brand` `accent` `accent_hover` `accent_text` `surface` `surface_hover` `border` `focus` `gold` `gold_soft` `canvas` `strand` `spine` `node` `node_core` `alert_bg` `alert_border` `alert_text` `error_bg` `error_border` `trouble_bg` `trouble_border` `logo_bg` `shadow`。字体：`text` `display` `mono`。尺寸：`radius` `card_radius` `panel_radius` `verdict` `title` `text`（0 到 120，0 表示沿用），以及宽度 `label_width`（键值行标签）、`time_width`（旅程行的时间）、`dialog_width`（标准弹窗宽度，其余弹窗按比例随它缩放），宽度取 40 到 960，不写或写 0 沿用经典值（80、120、460）。变体：`timeline` 为 `strands`、`gold` 或 `plain`。图片名 `backdrop` 铺满窗口背景，`brand` 替换品牌图标；其他名字供布局的 `image` 使用。
+颜色名：`paper` `card` `card_border` `text` `text_sub` `line` `board` `hover` `ok` `warn` `stop` `danger` `danger_bg` `danger_border`（2026-11-17 新增：严重问题与不可撤销操作，见 DESIGN.md 第 2 节；旧主题不写时取所继承内置主题的值） `side` `side_text` `brand` `accent` `accent_hover` `accent_text` `surface` `surface_hover` `border` `focus` `gold` `gold_soft` `canvas` `strand` `spine` `node` `node_core` `alert_bg` `alert_border` `alert_text` `error_bg` `error_border` `trouble_bg` `trouble_border` `logo_bg` `shadow`。字体：`text` `display` `mono`。尺寸：`radius` `card_radius` `panel_radius` `verdict` `title` `text`（0 到 120，0 表示沿用），以及宽度 `label_width`（键值行标签）、`time_width`（旅程行的时间）、`dialog_width`（标准弹窗宽度，其余弹窗按比例随它缩放），宽度取 40 到 960，不写或写 0 沿用经典值（80、120、460）。变体：`timeline` 为 `strands`、`gold` 或 `plain`。图片名 `backdrop` 铺满窗口背景，`brand` 替换品牌图标；其他名字供布局的 `image` 使用。
 
 完整可导入的样例在仓库 `examples/themes/`（“沉浸”：深色夜空背景图、窄栏导航、两列大卡片、金色发丝时间线），测试核对每个样例都能原样导入、不缺始终显示的插槽。下面是精简示例（沉浸：窄栏导航，Agent 卡片放大占满一行）：
 
@@ -148,6 +148,13 @@
 3. **面向 i18n 的弹性宽度令牌**：键值行标签（`fact`）、时间线行宽与标准弹窗宽度不在业务视图中写死窄像素（如 `Width(80)`），统一读取 `Sizes` 中的弹性宽度令牌并配合 `.Wrap()`，以便后续接入英文等长词表或宽屏模板时一处调整全局生效。
 
 **落地情况（Phase F2，2026-11-16）**：语义样式函数为 `card`、`subPanel`、`reportPanel`、`codeBox`、`cardTitle`、`sectionTitle`、`dialogTitle`、`dialog`、`fact`、`muted`、`mono`（`gui/theme.go`、`gui/agent.go`）；宽度令牌见 7.4.2。区块辅助函数为 `gui/layout.go` 的 `renderSections`，已用于 Agent 页（`header`、`status`、`tabs`、`content`）：没有该页布局树时按经典单列绘制；有布局树时各区块放在对应插槽，树里没放的区块仍补在后面，不能被隐藏。区块页的布局树目前只在代码里（`Theme.Pages`），`theme.json` 尚不能写，也不做插槽校验。
+
+#### 7.4.4 材质与重量级主题（2026-11-17 用户授权设计裁量）
+
+- **材质是具名变体**：`flat`（经典，平纸）、`journal`（手账：纸纤维颗粒与点阵，卡片像贴进本子的便签，页面标题下有一道荧光笔）、`night`（夜航：深色星空与低处的冷光，卡片像亮着的舷窗，标题下有一道光）。代码在 `gui/material.go`，主题在 `gui/themesmore.go`；视图不判断当前是哪种材质，只调用 `card`、`pageHead` 等语义函数。
+- **只画在背后**：材质只画窗口背景、卡片阴影与标题下的记号，不画在文字、提醒、错误、确认框与口令框上面；这些在任何材质下都是实底，对比度规则与经典主题相同。
+- **性能**：背景用 `ui/shader` 在 GPU 上一次画满窗口。手账的纸面不动；夜航的星光闪烁每秒只请求 12 帧，系统开启“减少动态效果”时完全静止。
+- **主题文件暂不能选材质**：`theme.json` 仍是 `valise-theme/1`，`base` 只认经典浅色与经典深色；开放 `material` 字段要先改本节与 7.4.2。
 
 ### 7.5 服务器与接入（N4 第一段，2026-11-08 用户确认草图）
 
@@ -460,3 +467,7 @@ Agent 概览和管理与设置按服务器已接受的原生入口声明显示�
 ### 14. 卡片整卡点击与子按钮隔离（备份位置）
 
 备份位置页每张位置卡片整体可点击（指针手势 `CursorPointer`、悬停高亮边框、点击卡片任意主体或空白处进入 `/locations/<name>`），右上角「同步」/「现在补齐」等独立子按钮保持自身点击处理，点击子按钮仅触发同步而不导航离开当前列表页。
+
+### 15. 审美、交互与文案工程指南（2026-11-17）
+
+界面怎么搭、按钮与状态怎么表达、可点区域与悬停、动效与性能、中文文案写法与禁用词，统一见 [DESIGN.md](DESIGN.md)。新增或修改桌面界面先读它；它与本文件冲突时以本文件的安全与诚实状态规则为准。尺度令牌（字号、间距、圆角、动效时长）第一步只在代码里（`gui/scale.go`），`theme.json` 暂不能写；材质变体与 `valise-theme/2` 待视图迁移完成后另行定稿。

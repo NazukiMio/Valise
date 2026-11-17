@@ -15,7 +15,7 @@ import (
 
 // backToSettings is the link back to the server's settings tab.
 func (a *App) backToSettings(c *ui.Context, name string) {
-	ui.Link(c, "‹ "+T("set.back", "name", name), "/servers/"+name)
+	backLink(c, T("set.back", "name", name), "/servers/"+name)
 }
 
 // renamePlaces puts the server's own backup library first.

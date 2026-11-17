@@ -135,7 +135,7 @@ func (a *App) wizardPage(c *ui.Context) {
 		a.startWizard(false)
 		w = a.wiz
 	}
-	ui.Link(c, "‹ "+T("nav.servers"), "/servers")
+	backLink(c, T("nav.servers"), "/servers")
 	stepper(c, w.step)
 	switch w.step {
 	case wzConnect:
@@ -240,7 +240,7 @@ func (a *App) connectStep(c *ui.Context, w *wizard) {
 						ui.Text(c, s).FontSize(13).Wrap()
 					})
 				}
-				muted(ui.Text(c, T("wizard.next.offline"))).FontSize(11)
+				muted(ui.Text(c, T("wizard.next.offline"))).FontSize(fsCaption)
 			})
 		})
 	})
@@ -249,12 +249,9 @@ func (a *App) connectStep(c *ui.Context, w *wizard) {
 // loginTile is one of the two ways to log in, chosen by clicking.
 func loginTile(c *ui.Context, w *wizard, kind, title, sub string) {
 	on := w.login == kind
-	t := ui.Column(c.Key(kind)).Grow(1).Basis(0).Gap(4).Padding(12, 14).Radius(cur.Sizes.Radius).
-		Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(title).Border(1, palette.Border)
+	t := pressable(ui.Column(c.Key(kind)).Grow(1).Basis(0).Gap(4).Padding(12, 14).Radius(cur.Sizes.Radius).Border(1, palette.Border), title, cur.Sizes.Radius)
 	if on {
 		t.Border(2, palette.Brand).Background(palette.Board)
-	} else if t.Hovered() {
-		t.Background(palette.Hover)
 	}
 	t.OnClick(func() { w.login = kind }).Children(func() {
 		ui.Text(c, title).Bold().TextColor(palette.Text)

@@ -57,7 +57,7 @@ func TestJourneyLocationsAreOnePoint(t *testing.T) {
 	a.agentTab = tabJourney
 	tt.Frame()
 	tt.Advance(time.Second)
-	hasAll(t, tt.Texts(), "在服务器中 · home", "本机 · usb", "全部 1 个时刻")
+	hasAll(t, tt.Texts(), "在服务器中 · home", "本机 · usb", "全部 1 个时间点")
 	shot(t, tt, "journey-locations")
 }
 

@@ -62,7 +62,7 @@ func TestServerSettingsTab(t *testing.T) {
 	if a.router.Path() != "/servers/nas/porter" {
 		t.Fatalf("went to %s", a.router.Path())
 	}
-	hasAll(t, tt.Texts(), "更新 nas 上的 porter", "服务器上", "0.9.0", "linux/arm64", "v0.9.2", "SHA-256", "不常驻")
+	hasAll(t, tt.Texts(), "更新 nas 上的搬运工", "服务器上", "0.9.0", "linux/arm64", "v0.9.2", "SHA-256", "不常驻")
 }
 
 // Switching to the Valise passes says what it will do first.
@@ -84,7 +84,7 @@ func TestRenamePage(t *testing.T) {
 		{Kind: "repo", Name: "nas", Missing: true}}}
 	a.router.Push("/servers/home/rename")
 	tt.Frame()
-	hasAll(t, tt.Texts(), "给 home 改名", "会改动这些地方", "服务器上的备份库", "home → home-lab", "本机仓库 usb", "/v/home → /v/home-lab",
+	hasAll(t, tt.Texts(), "给 home 改名", "会改动这些地方", "服务器上的备份库", "home → home-lab", "本机文件夹 usb", "/v/home → /v/home-lab",
 		"远程备份位置 gdrive", "还没有复制过", "改名")
 	ss.renamed = true
 	ss.plan.Places[0].Done, ss.plan.Places[1].Pending, ss.plan.Places[1].Err = true, true, "云盘没有回应"
@@ -103,10 +103,10 @@ func TestLeaveDialog(t *testing.T) {
 	a.settings["home"].leave = ls
 	a.router.Push("/servers/home")
 	tt.Frame()
-	hasAll(t, tt.Texts(), "删除 home", "只从这台电脑移除", "移除并清理服务器上的 Valise 东西", "备份库会保留", "从这台电脑移除")
+	hasAll(t, tt.Texts(), "删除 home", "只从这台电脑移除", "移除并清理 Valise 留在服务器上的文件", "备份库会保留", "从这台电脑移除")
 	ls.mode = "clean"
 	tt.Frame()
-	hasAll(t, tt.Texts(), "定时备份任务", "停掉以后不再自动备份", "云盘授权", "gdrive", "porter", "用户通行证、管理员通行证",
+	hasAll(t, tt.Texts(), "定时备份任务", "停掉以后不再自动备份", "云盘授权", "gdrive", "搬运工", "用户通行证、管理员通行证",
 		"Agent 的保护技能", "不建议删", "小满：2 个保护技能", "删除并清理")
 	if tt.HasText("工具箱装的工具") {
 		t.Error("an item with nothing to clean is listed")
@@ -116,7 +116,7 @@ func TestLeaveDialog(t *testing.T) {
 	ls.steps = []service.LeaveStep{{Item: service.LeaveTimers, Detail: "xiaoman"}}
 	ls.j.err = errors.New("rclone.conf changed")
 	tt.Frame()
-	hasAll(t, tt.Texts(), "✓", "xiaoman", "✗", "没有完成", "没有执行", "home 还在列表里", "云盘授权、porter、用户通行证、管理员通行证", "重试")
+	hasAll(t, tt.Texts(), "✓", "xiaoman", "✗", "没有完成", "没有执行", "home 还在列表里", "云盘授权、搬运工、用户通行证、管理员通行证", "重试")
 
 	// Offline: only removing here, with what stays as last read.
 	ls.steps, ls.j.err, ls.offline = nil, nil, errors.New("timeout")

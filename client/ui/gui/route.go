@@ -133,7 +133,7 @@ func routeView(c *ui.Context, stops []station) {
 					if st.Current {
 						note = T("route.here")
 					}
-					muted(ui.Text(c, note)).FontSize(11).MaxLines(1)
+					muted(ui.Text(c, note)).FontSize(fsCaption).MaxLines(1)
 				})
 			}
 		})

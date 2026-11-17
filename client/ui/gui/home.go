@@ -34,7 +34,7 @@ func (a *App) foldDefault(key string, open bool) *bool {
 // pageHead is a page's title and its one-line flourish.
 func pageHead(c *ui.Context, title, sub string) {
 	ui.Column(c).Gap(6).Children(func() {
-		ui.Text(c, title).FontSize(cur.Sizes.Title).Bold().Font(cur.Fonts.Display)
+		ui.Row(c).Children(func() { titleMark(ui.Text(c, title).FontSize(cur.Sizes.Title).Bold().Font(cur.Fonts.Display)) })
 		if sub != "" {
 			muted(ui.Text(c, sub)).FontSize(13)
 		}
@@ -76,7 +76,7 @@ func (a *App) homePage(c *ui.Context) {
 		"toolbar":   func(c *ui.Context, n *Node) { a.toolbarSlot(c, n, d) },
 		"agents":    func(c *ui.Context, n *Node) { a.agentsSlot(c, n, d) },
 		"retired":   func(c *ui.Context, n *Node) { a.retiredSlot(c, n, d) },
-		"note":      func(c *ui.Context, n *Node) { muted(n.box(ui.Text(c, T("backup.sources_note")))).FontSize(11) },
+		"note":      func(c *ui.Context, n *Node) { muted(n.box(ui.Text(c, T("backup.sources_note")))).FontSize(fsCaption) },
 	})
 }
 
@@ -95,10 +95,17 @@ func (a *App) headerSlot(c *ui.Context, n *Node) {
 func (a *App) verdictSlot(c *ui.Context, n *Node, d *homeData) {
 	n.box(ui.Column(c).Gap(6)).Children(func() {
 		if d.loading {
-			ui.Text(c, T("home.loading")).FontSize(26).Font(cur.Fonts.Display).TextColor(palette.TextSub)
+			ui.Text(c, T("home.loading")).FontSize(fsTitle1).Font(cur.Fonts.Display).TextColor(palette.TextSub)
 			return
 		}
-		ui.Text(c, verdict(len(d.inUse), len(d.open))).FontSize(cur.Sizes.Verdict).Bold().Font(cur.Fonts.Display).Wrap()
+		// Calm when nothing waits; loud only when something does (docs/UI.md 7.2).
+		v := ui.Text(c, verdict(len(d.inUse), len(d.open))).Font(cur.Fonts.Display).Wrap().
+			ContentTransition(ui.ContentTransition{Numeric: true})
+		if len(d.open) > 0 {
+			v.FontSize(cur.Sizes.Verdict).Bold()
+		} else {
+			v.FontSize(fsTitle1).TextColor(palette.TextSub)
+		}
 		if len(d.known) > 0 {
 			shown := a.fold("known")
 			label := T("home.known_more", "n", len(d.known))

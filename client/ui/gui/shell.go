@@ -14,15 +14,11 @@ func (a *App) View(c *ui.Context) {
 	shell := *cur.Shell
 	shell.Grow = max(shell.Grow, 1)
 	root := ui.Column(c).Fill().AlignItems(ui.Stretch).Background(palette.Paper)
-	if img := cur.Images["backdrop"]; img != nil {
-		root.Draw(func(p *ui.Painter, r ui.Rect) { p.Image(img, r, ui.Cover) })
+	if hasBackdrop() {
+		root.Draw(backdrop)
 	}
 	root.Children(func() {
-		a.recoveryBanner(c)
-		a.nativeBanner(c)
-		a.restoreBanner(c)
-		a.restoreTestBanner(c)
-		a.appearanceWarnings(c)
+		a.banners(c)
 		render(c, &shell, map[string]func(*ui.Context, *Node){
 			"brand": a.brandSlot, "nav": a.navSlot, "tagline": taglineSlot, "page": a.pageSlot,
 		})
@@ -45,7 +41,7 @@ func (a *App) brandSlot(c *ui.Context, n *Node) {
 }
 
 func taglineSlot(c *ui.Context, n *Node) {
-	muted(ui.Text(c, T("shell.tagline"))).FontSize(11).Padding(0, 8)
+	muted(ui.Text(c, T("shell.tagline"))).FontSize(fsCaption).Padding(0, 8)
 }
 
 // navItem is one first-level entry.
@@ -98,11 +94,19 @@ func (a *App) navSlot(c *ui.Context, n *Node) {
 			}
 		})
 	default:
-		if n.box(ui.Sidebar(c, &page, func() {
-			for _, it := range navItems() {
-				ui.SidebarItem(c, it.path, it.icon, it.label)
-			}
-		})).Background(ui.RGBA(0, 0, 0, 0)).TextColor(palette.SideText).Changed() {
+		// The chosen entry is a card on the side's paper, so it reads as
+		// chosen in every theme, not as a pressed button.
+		t := *c.Theme()
+		t.SurfacePressed = palette.Card
+		changed := false
+		ui.Themed(c, &t).Background(ui.Transparent).AlignItems(ui.Stretch).Grow(max(n.Grow, 0)).Children(func() {
+			changed = n.box(ui.Sidebar(c, &page, func() {
+				for _, it := range navItems() {
+					ui.SidebarItem(c, it.path, it.icon, it.label)
+				}
+			})).Background(ui.Transparent).TextColor(palette.SideText).Changed()
+		})
+		if changed {
 			a.navigate(page)
 		}
 	}
@@ -115,8 +119,12 @@ func (a *App) navButton(c *ui.Context, it navItem, on, withText bool) {
 	if on {
 		b.Background(palette.Card)
 		ink = palette.Text
-	} else if b.Hovered() {
-		b.Background(palette.Hover)
+	} else {
+		b.Draw(func(p *ui.Painter, r ui.Rect) {
+			if hover, _ := over(b); hover {
+				p.Fill(r, palette.Hover, cur.Sizes.Radius)
+			}
+		})
 	}
 	b.OnClick(func() { a.navigate(it.path) }).Children(func() {
 		ui.Icon(c, it.icon).FontSize(18).TextColor(ink)

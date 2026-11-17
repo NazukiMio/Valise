@@ -24,7 +24,7 @@ func (a *App) rebuildPage(c *ui.Context) {
 		a.rebuild = &rebuildState{results: map[string]service.AdminRebuild{}}
 	}
 	rs := a.rebuild
-	ui.Link(c, "‹ "+T("nav.settings"), "/settings")
+	backLink(c, T("nav.settings"), "/settings")
 	card(ui.Column(c)).Gap(12).Padding(22).Children(func() {
 		ui.Text(c, T("rebuild.title")).FontSize(20).Bold().Font(cur.Fonts.Display)
 		muted(ui.Text(c, T("rebuild.what"))).FontSize(13).Wrap()

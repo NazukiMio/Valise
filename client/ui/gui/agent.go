@@ -64,7 +64,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 // agentHeader is who it is, one sentence about it, and the page's one
 // primary action.
 func (a *App) agentHeader(c *ui.Context, row *agentRow) {
-	if ui.Link(c, "‹ "+T("agent.back"), "/agents").Clicked() {
+	if backLink(c, T("agent.back"), "/agents").Clicked() {
 		a.closePoint()
 	}
 	newest := a.newest(*row)
@@ -93,9 +93,6 @@ func (a *App) agentHeader(c *ui.Context, row *agentRow) {
 }
 
 func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePoint) {
-	if !row.Retired() {
-		a.nativeCard(c, row)
-	}
 	// The details: each fact in its own cell (docs/UI.md 7.2).
 	statusBoard(c, agentCells(*row, points, c), false)
 	ui.Row(c).Gap(18).AlignItems(ui.Start).Children(func() {
@@ -108,16 +105,17 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 				if i == 3 {
 					break
 				}
-				ui.Row(c.Key(p.SnapshotRef.SnapshotID)).Gap(10).AlignItems(ui.End).Children(func() {
-					ui.Text(c, when(p.CreatedAt, c.Now())).FontSize(14)
-					muted(ui.Text(c, tierText(p.Scope.Tier)))
+				// Each recent point opens itself in the journey.
+				pressable(ui.Row(c.Key(pointKey(p))).Gap(10).Padding(spHair+2, spInside).Radius(radControl).AlignItems(ui.Center), when(p.CreatedAt, c.Now()), radControl).
+					OnClick(func() { a.agentTab, a.point = tabJourney, pointKey(p) }).Children(func() {
+					ui.Text(c, when(p.CreatedAt, c.Now())).FontSize(fsBody)
+					muted(ui.Text(c, tierText(p.Scope.Tier))).Grow(1)
+					chevron(c)
 				})
 			}
 			if len(points) > 0 {
 				ui.Row(c).Children(func() {
-					if ui.Button(c, T("journey.all")).Clicked() {
-						a.agentTab = tabJourney
-					}
+					textLink(c, T("journey.all"), func() { a.agentTab = tabJourney })
 				})
 			}
 		})
@@ -133,7 +131,10 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 			}
 		})
 	})
-	muted(ui.Text(c, T("backup.sources_note"))).FontSize(11)
+	muted(ui.Text(c, T("backup.sources_note")))
+	if !row.Retired() { // the advanced entry comes after what the page is about
+		a.nativeCard(c, row)
+	}
 }
 
 // fact is one labelled line of a card; the label's width is the theme's,

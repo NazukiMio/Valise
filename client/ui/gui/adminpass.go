@@ -78,8 +78,9 @@ func (a *App) passDialog(c *ui.Context) {
 	}
 	if ui.Modal(c, &p.open, func() {
 		dialog(ui.Column(c), 420).Children(func() {
+			askKind(c, field, askGoesTo(p))
 			dialogTitle(ui.Text(c, title))
-			muted(ui.Text(c, why)).FontSize(12).Wrap()
+			muted(ui.Text(c, why)).Wrap()
 			in := ui.TextInput(c, &p.value).Password().Placeholder(field).Label(field).AutoFocus()
 			allowEmpty := p.kind == askServer
 			if in.Submitted() && (p.value != "" || allowEmpty) {
@@ -117,4 +118,32 @@ func serverPromptMeta(prompt string) (title, why, field, cancelled string) {
 		return T("ask.key_passphrase"), T("ask.server.why", "prompt", prompt), T("ask.key_passphrase_field"), T("ask.cancel.server")
 	}
 	return T("ask.generic"), T("ask.server.why", "prompt", prompt), T("wizard.login.password"), T("ask.cancel.server")
+}
+
+// askGoesTo says where the secret is checked: on this computer, or by the
+// server. Either way Valise keeps nothing.
+func askGoesTo(p *passPrompt) string {
+	if p.kind != askServer {
+		return T("ask.dest.local")
+	}
+	low := strings.ToLower(p.host)
+	switch {
+	case strings.Contains(low, "sudo"):
+		return T("ask.dest.sudo")
+	case strings.Contains(low, "passphrase"):
+		return T("ask.dest.local")
+	}
+	return T("ask.dest.server")
+}
+
+// askKind is the strip over a secret's dialog: which secret it is and where
+// it goes, so a server password is never typed where a passphrase is asked.
+func askKind(c *ui.Context, kind, dest string) {
+	ui.Row(c).Gap(spInside).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Gap(spHair+2).Padding(3, 10).Radius(radPill).Background(palette.Brand.Alpha(0.12)).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, icons.key).FontSize(fsSub).TextColor(palette.Brand)
+			ui.Text(c, kind).FontSize(fsCaption).Bold().TextColor(palette.Brand)
+		})
+		muted(ui.Text(c, dest)).Wrap()
+	})
 }

@@ -85,16 +85,13 @@ func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool
 				bottom.Background(ui.RGBA(0, 0, 0, 0))
 			}
 		})
-		box := ui.Row(c).Grow(1).Padding(7, 12).Gap(12).Radius(8).Margin(0, 0, 4, 0).AlignItems(ui.Center).
-			Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(when(p.CreatedAt, c.Now()))
-		if box.Hovered() {
-			box.Background(palette.Card).Border(1, palette.CardBorder)
-		}
+		box := pressable(ui.Row(c).Grow(1).Padding(spInside, spItem).Gap(spItem).Radius(radPanel).Margin(0, 0, spHair, 0).AlignItems(ui.Center),
+			when(p.CreatedAt, c.Now()), radPanel)
 		box.OnClick(func() { a.point = pointKey(p) }).Children(func() {
 			ui.Text(c, when(p.CreatedAt, c.Now())).FontSize(13).Bold().Width(cur.Sizes.TimeWidth).Wrap()
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				muted(ui.Text(c, tierText(p.Scope.Tier)))
-				muted(ui.Text(c, pointLocations(p))).FontSize(11).Wrap()
+				muted(ui.Text(c, pointLocations(p))).FontSize(fsCaption).Wrap()
 			})
 			muted(ui.Text(c, T("point.files", "n", p.FileCount, "size", size(p.PlainBytes))))
 		})

@@ -73,12 +73,14 @@ func (a *App) restorePage(c *ui.Context) {
 		pageHead(c, T("restore.title"), T("restore.choose_point"))
 		return
 	}
-	ui.Link(c, "‹ "+T("nav.agents"), "/agents")
+	backLink(c, T("nav.agents"), "/agents")
 	pageHead(c, T("restore.title"), T("restore.step."+r.step))
+	restoreStepper(c, r.step)
 	if !r.point.CreatedAt.IsZero() {
-		card(ui.Column(c)).Children(func() {
-			fact(c, T("point.scope"), tierText(r.point.Scope.Tier))
-			fact(c, T("restore.snapshot_time"), r.point.CreatedAt.Local().Format("2006-01-02 15:04:05"))
+		subPanel(ui.Row(c)).Gap(spSection).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, icons.clock).FontSize(fsTitle3).TextColor(palette.Brand)
+			pointFact(c, T("restore.snapshot_time"), r.point.CreatedAt.Local().Format("2006-01-02 15:04"))
+			pointFact(c, T("point.scope"), tierText(r.point.Scope.Tier))
 		})
 	}
 	if r.j.err != nil {

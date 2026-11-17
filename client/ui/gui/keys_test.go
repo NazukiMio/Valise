@@ -50,7 +50,7 @@ func TestKeySettings(t *testing.T) {
 		t.Error("recovery offered with the lock off")
 	}
 	click(t, tt, "备份")
-	hasAll(t, tt.Texts(), "分离模式", "关掉 Valise 后，正在进行的备份在服务器上继续")
+	hasAll(t, tt.Texts(), "关掉 Valise 也继续备份", "开启后，进行中的备份交给服务器自己跑完。")
 }
 
 // The first backup waits for a key and for backing it up.
@@ -119,10 +119,10 @@ func TestRecoverPage(t *testing.T) {
 	hasAll(t, tt.Texts(), "找回 Valise 口令", "选一台“已做”备用锁的服务器。", "查看详情…")
 	a.recover = &recoverState{host: "home", check: &service.PorterCheck{Version: "0.9.2", Match: true}}
 	tt.Frame()
-	hasAll(t, tt.Texts(), "找回模式", "取消找回", "用 home 找回 Valise 口令", "porter 0.9.2 与这台电脑记下的一致", "继续")
+	hasAll(t, tt.Texts(), "找回模式", "取消找回", "用 home 找回 Valise 口令", "搬运工 0.9.2 与这台电脑记下的一致", "继续")
 	a.recover.check.Match = false
 	tt.Frame()
-	hasAll(t, tt.Texts(), "porter 与这台电脑记下的不一致，或者没有记录", "去更新 porter")
+	hasAll(t, tt.Texts(), "搬运工与这台电脑记下的不一致，或者没有记录", "去更新搬运工")
 	if tt.HasText("继续") {
 		t.Error("going on with a porter that does not match")
 	}
@@ -207,7 +207,7 @@ func TestManageTabSuperseded(t *testing.T) {
 	a.router.Push("/agents/home/xiaoman")
 	tt.Frame()
 	tt.Advance(time.Second)
-	hasAll(t, tt.Texts(), "已失效", "这个 Agent 重新接入过，原来的计划已失效，定时备份不会再运行。", "按原设置重新生效", "每天 04:40（Asia/Shanghai）", "gdrive")
+	hasAll(t, tt.Texts(), "已失效", "重新接入后，原来的计划已失效，定时备份已经停了。", "按原设置重新生效", "每天 04:40（Asia/Shanghai）", "gdrive")
 	if tt.HasText("现在备份") || tt.HasText("elsewhere") {
 		t.Errorf("backup offered or another server's copy kept: %q", tt.Texts())
 	}

@@ -21,14 +21,14 @@ func statusBoard(c *ui.Context, cells []cell, compact bool) {
 				col.BorderWidth(0, 0, 0, 1).BorderColor(palette.CardBorder)
 			}
 			col.Children(func() {
-				ui.Text(c, x.Label).FontSize(11).TextColor(palette.TextSub).LetterSpacing(0.6)
+				ui.Text(c, x.Label).FontSize(fsCaption).TextColor(palette.TextSub).LetterSpacing(0.4)
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 					if x.Tone != "" {
-						ui.Box(c).Size(6, 6).Radius(3).Background(toneColor(x.Tone))
+						toneDot(c, x.Tone)
 					}
-					v := ui.Text(c, x.Value).FontSize(13).MaxLines(1)
-					if x.Tone == "warn" {
-						v.TextColor(palette.Warn)
+					v := ui.Text(c, x.Value).FontSize(fsBody).MaxLines(1)
+					if x.Tone == "warn" || x.Tone == "danger" {
+						v.TextColor(toneInk(x.Tone))
 					}
 				})
 			})
@@ -42,6 +42,8 @@ func toneColor(tone string) ui.Color {
 		return palette.Ok
 	case "warn":
 		return palette.Warn
+	case "danger":
+		return palette.Danger
 	}
 	return palette.Stop
 }

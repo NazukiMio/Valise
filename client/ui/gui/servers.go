@@ -52,11 +52,7 @@ func (a *App) agentsOn(name string) int {
 
 func (a *App) serverLine(c *ui.Context, r serverRow) {
 	st := a.serverState(r.Name, c.Now())
-	line := ui.Row(c).Padding(13, 18).Gap(14).AlignItems(ui.Center).Cursor(ui.CursorPointer).Role(ui.RoleButton).
-		Label(r.Name + "，" + st.Word)
-	if line.Hovered() {
-		line.Background(palette.Hover)
-	}
+	line := pressable(ui.Row(c).Padding(13, 18).Gap(14).AlignItems(ui.Center), r.Name+T("common.comma")+st.Word, 0)
 	line.OnClick(func() { a.serverTab = 0; a.router.Push("/servers/" + r.Name) }).Children(func() {
 		ui.Box(c).Size(8, 8).Radius(4).Background(toneColor(st.Tone))
 		ui.Column(c).Grow(1).Gap(3).Children(func() {
@@ -82,7 +78,7 @@ func (a *App) serverLine(c *ui.Context, r serverRow) {
 			muted(ui.Text(c, strings.Join(parts, T("common.dot_sep")))).MaxLines(2)
 		})
 		stateTag(c, st)
-		ui.Text(c, "›").FontSize(18).TextColor(palette.Line)
+		chevron(c)
 	})
 }
 

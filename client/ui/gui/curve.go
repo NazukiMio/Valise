@@ -159,15 +159,20 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 
 func (a *App) curveCard(c *ui.Context, pt journey.TimelinePoint) {
 	id := pointKey(pt)
-	card := ui.Column(c).Gap(2).Padding(7, 11).Radius(10).Background(palette.Card).Border(1, palette.CardBorder).
+	card := ui.Column(c).Gap(2).Padding(spInside, spItem).Radius(radPanel).Background(palette.Card).Border(1, palette.CardBorder).
 		Shadow(0, 4, 14, 0, palette.Shadow.Alpha(0.06)).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(when(pt.CreatedAt, c.Now()))
-	if card.Hovered() || a.glow == id {
+	if a.glow == id {
 		card.Border(1, palette.Gold).Shadow(0, 0, 18, 0, palette.Gold.Alpha(0.7))
 	}
+	card.Draw(func(p *ui.Painter, r ui.Rect) { // the hover is only painted
+		if hover, _ := over(card); hover {
+			p.Stroke(r, palette.Gold, radPanel, 1.5)
+		}
+	})
 	card.OnClick(func() { a.lightPoint(id) }).Children(func() {
-		ui.Text(c, when(pt.CreatedAt, c.Now())).FontSize(12).Bold().MaxLines(1)
-		muted(ui.Text(c, tierShort(pt.Scope.Tier))).FontSize(11).MaxLines(1)
-		muted(ui.Text(c, pointLocations(pt))).FontSize(10).MaxLines(2)
+		ui.Text(c, when(pt.CreatedAt, c.Now())).FontSize(fsSub).Bold().MaxLines(1)
+		muted(ui.Text(c, tierShort(pt.Scope.Tier))).MaxLines(1)
+		muted(ui.Text(c, pointLocations(pt))).MaxLines(2)
 	})
 }
 

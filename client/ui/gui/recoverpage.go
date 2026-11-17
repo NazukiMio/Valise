@@ -38,13 +38,11 @@ func (a *App) recoveryBanner(c *ui.Context) {
 	if a.router.Path() != "/settings/recover" {
 		a.router.Push("/settings/recover")
 	}
-	ui.Row(c).Gap(12).Padding(10, 18).Background(palette.TroubleBg).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, T("recover.mode")).Bold().TextColor(palette.Warn)
-		muted(ui.Text(c, T("recover.mode_what"))).Grow(1)
-		if a.recover.done == nil {
-			ui.Button(c, T("recover.cancel")).OnClick(func() { a.endRecovery() })
-		}
-	})
+	var actions func()
+	if a.recover.done == nil {
+		actions = func() { ui.Button(c, T("recover.cancel")).OnClick(func() { a.endRecovery() }) }
+	}
+	banner(c, "warn", bannerText(c, T("recover.mode"), T("recover.mode_what")), actions)
 }
 
 func (a *App) endRecovery() {
@@ -69,7 +67,7 @@ func (a *App) recoverPage(c *ui.Context) {
 	}
 	rs := a.recover
 	if !a.recovering() {
-		ui.Link(c, "‹ "+T("nav.settings"), "/settings")
+		backLink(c, T("nav.settings"), "/settings")
 		a.lockList(c, rs)
 		return
 	}

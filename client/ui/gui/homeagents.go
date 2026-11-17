@@ -33,7 +33,9 @@ func filterAgents(rows []agentRow, query string) []agentRow {
 // agentToolbar is the section's title, the search and the view switch.
 // agentLabel names an agent for assistive technology: two agents may share
 // a name on different servers.
-func agentLabel(r agentRow) string { return r.Name + "，" + r.Harness + "，" + r.Server }
+func agentLabel(r agentRow) string {
+	return r.Name + T("common.comma") + r.Harness + T("common.comma") + r.Server
+}
 
 func (a *App) agentToolbar(c *ui.Context, n *Node, count, found int) {
 	c.OnShortcut(ui.Cmd, ui.KeyF, func() { a.focusSearch = true })
@@ -118,14 +120,12 @@ func (a *App) agentGrid(c *ui.Context, n *Node, rows []agentRow) {
 // problem is marked on its own (AGENTS.md 7.5: only problems are colored).
 func (a *App) agentCard(c *ui.Context, r agentRow, look cardLook) {
 	bad := trouble(r)
-	box := card(ui.Column(c)).Padding(look.pad).Gap(14).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(agentLabel(r))
+	box := pressableCard(card(ui.Column(c)).Padding(look.pad).Gap(14), agentLabel(r))
 	if look.minH > 0 {
 		box.MinHeight(look.minH).Justify(ui.SpaceBetween)
 	}
-	if bad {
-		box.Border(1, palette.TroubleBorder).Background(palette.TroubleBg)
-	} else if box.Hovered() {
-		box.Border(1, palette.Line).Shadow(0, 6, 18, 0, palette.Shadow.Alpha(0.08))
+	if bad { // the edge marks it; the reminder above already says why
+		box.Border(1.5, palette.TroubleBorder)
 	}
 	box.OnClick(func() { a.openAgent(r.Server, r.Instance) }).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
@@ -173,10 +173,7 @@ func (a *App) agentList(c *ui.Context, key string, rows []agentRow) {
 }
 
 func (a *App) agentLine(c *ui.Context, r agentRow) {
-	row := ui.Row(c).Padding(11, 18).Gap(14).AlignItems(ui.Center).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(agentLabel(r))
-	if row.Hovered() {
-		row.Background(palette.Hover)
-	}
+	row := pressable(ui.Row(c).Padding(11, 18).Gap(14).AlignItems(ui.Center), agentLabel(r), 0)
 	row.OnClick(func() { a.openAgent(r.Server, r.Instance) }).Children(func() {
 		a.avatar(c, r, 40)
 		ui.Column(c).Grow(1).Gap(2).Children(func() {
@@ -186,13 +183,15 @@ func (a *App) agentLine(c *ui.Context, r agentRow) {
 			})
 			a.stateLine(c, r)
 		})
-		ui.Text(c, "›").FontSize(18).TextColor(palette.Line)
+		chevron(c)
 	})
 }
 
 // textLink is a quiet, clickable line of accent text.
 func textLink(c *ui.Context, label string, fn func()) {
-	t := ui.Text(c, label).FontSize(13).TextColor(palette.Brand).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(label)
+	// The underline on hover changes what is drawn of the text itself, which
+	// a Draw callback cannot do: this one hover is read as the view builds.
+	t := ui.Text(c, label).FontSize(fsSub).TextColor(palette.Brand).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(label)
 	if t.Hovered() {
 		t.Underline()
 	}

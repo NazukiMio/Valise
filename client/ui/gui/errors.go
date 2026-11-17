@@ -27,7 +27,7 @@ func errorBox(c *ui.Context, err error, open *bool) {
 	}
 	ui.Column(c).Padding(14, 16).Gap(6).Radius(10).Background(palette.ErrorBg).
 		Border(1, palette.ErrorBorder).Children(func() {
-		ui.Text(c, reason).Bold().TextColor(palette.Warn)
+		ui.Text(c, reason).Bold().TextColor(palette.Danger)
 		if suggestion != "" {
 			ui.Text(c, suggestion).TextColor(palette.Text)
 		}

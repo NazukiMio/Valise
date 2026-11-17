@@ -101,7 +101,7 @@ func TestWizardLoginAndPrepare(t *testing.T) {
 	a.wiz.steps = []service.SetupStep{{Step: service.SetupKeys, OK: true, Detail: "daily、admin"}, {Step: service.SetupCheck, OK: true, Detail: "linux/arm64"}}
 	a.wiz.err = valise.New("porter_signature", "签名不对，没有上传", "换个网络重试")
 	tt.Frame()
-	hasAll(t, tt.Texts(), "正在准备「home-vps」", "用户通行证（只能查看和备份）、管理员通行证", "linux/arm64", "没有完成，见下方原因",
+	hasAll(t, tt.Texts(), "正在准备「home-vps」", "用户通行证（只能查看和备份）、管理员通行证", "linux/arm64", "这一步没完成，后面的步骤没有执行。",
 		"签名不对，没有上传", "重试", "更多选项")
 }
 
@@ -199,7 +199,7 @@ func TestServerDetail(t *testing.T) {
 		{Name: "home", Kind: "Valise 接入", Valise: true}, {Name: "nas", Kind: "用你自己的 SSH 设置"}}}
 	a.router.Push("/servers/home")
 	tt.Frame()
-	hasAll(t, tt.Texts(), "在线", "Valise 接入", "通行证", "用户通行证 · 这台电脑上没有", "管理员通行证 · 没办",
+	hasAll(t, tt.Texts(), "在线", "Valise 接入", "通行证", "用户通行证 · 这台电脑上没有", "管理员通行证 · 未办理",
 		"办一张管理员通行证", "这台服务器上的 Agent · 1", "小满", "查找、接入或安装")
 	click(t, tt, "办一张管理员通行证")
 	hasAll(t, tt.Texts(), "管理口令", "再输一次", "办理")

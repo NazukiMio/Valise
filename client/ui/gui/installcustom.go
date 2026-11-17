@@ -37,10 +37,7 @@ type customInstallRun struct {
 }
 
 func (a *App) customInstallTile(c *ui.Context, host string) {
-	t := card(ui.Row(c)).Gap(12).AlignItems(ui.Center).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(T("install.custom.entry"))
-	if t.Hovered() {
-		t.Border(1, palette.Brand)
-	}
+	t := pressableCard(card(ui.Row(c)).Gap(spItem).AlignItems(ui.Center), T("install.custom.entry"))
 	t.OnClick(func() { a.router.Push("/servers/" + host + "/install-custom") }).Children(func() {
 		ui.Column(c).Grow(1).Gap(4).Children(func() {
 			ui.Text(c, T("install.custom.entry")).Bold()
@@ -73,7 +70,7 @@ func (a *App) scriptPreview(c *ui.Context, foldKey string, script []byte, openDe
 		fold = a.fold(foldKey)
 	}
 	ui.Collapsible(c, T("install.script", "n", lines), fold, func() {
-		codeBox(mono(ui.Text(c, string(script))).FontSize(11).Wrap())
+		codeBox(mono(ui.Text(c, string(script))).FontSize(fsCaption).Wrap())
 	})
 }
 
@@ -136,7 +133,7 @@ func (a *App) customInstallPage(c *ui.Context, host string) {
 		ci = &customInstallRun{}
 		a.customInstalls[host] = ci
 	}
-	ui.Link(c, "‹ "+T("wizard.step.agents"), "/servers/"+host+"/agents")
+	backLink(c, T("wizard.step.agents"), "/servers/"+host+"/agents")
 	pageHead(c, T("install.custom.title"), T("install.custom.sub", "host", host))
 
 	if ci.conn != nil {

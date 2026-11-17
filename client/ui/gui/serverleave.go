@@ -145,7 +145,7 @@ func (a *App) leaveButtons(c *ui.Context, name string, ls *leaveState) {
 			ui.PrimaryButton(c, T("leave.go_here")).OnClick(func() { a.removeHere(name, ls) })
 			return
 		}
-		ui.PrimaryButton(c, T("leave.go_clean")).OnClick(func() { a.runLeave(name, ls) })
+		dangerButton(c, T("leave.go_clean")).OnClick(func() { a.runLeave(name, ls) })
 	})
 }
 

@@ -1,6 +1,31 @@
 # 当前状态与交接
 
-> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-16。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
+> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-17。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
+
+## 0a. 界面整理第二阶段（2026-11-17，分支 `design/gui-polish-phase2`，已完成）
+
+依据第一阶段只读审计（[acceptance/VALISE_DESIGN_AUDIT.html](acceptance/VALISE_DESIGN_AUDIT.html)）与用户授权（“你自己决定”），先改规范再改代码。本轮只动 `client/ui/gui` 与文档，不改 `client/ui/service`。
+
+- **规范**：PRODUCT.md 8.1 改名“原地恢复”“创建分身”“搬运工”，统一“时间点”“同步”；UI.md 7.4.2 新增颜色名 `danger` `danger_bg` `danger_border`，新增第 15 节；新增 [DESIGN.md](DESIGN.md)（审美、交互与文案工程指南）；AGENTS.md 按需阅读表加一行。
+- **已做（`client/ui` 的 `go test ./...`、`gofmt`、`go vet`、`go tool mygo vet` 通过；首页、Agent 页、服务器页用 `ui.Tester.Image()` 无窗口渲染看过）**：
+  - `gui/scale.go` 尺度令牌，`gui/widgets.go` 公共组件（`pressable`、`pressableCard`、`over`、`notice`、`statusRow`、`toneDot`、`dangerButton`、`quietButton`、`backLink`、`chevron`）。
+  - 诚实状态：恢复计划的警告改用 `notice` 并提到计划之前；健康页“严重”用 `danger`，一屏只有第一个修复是主按钮；删除周期、注销通行证、关闭备用锁、删除并清理用 `dangerButton`；错误框标题用 `danger`；“明确不在运行”画成空心点。
+  - 对比度：浅色主题次要文字 `#6f685f`（纸面 5.09:1）、品牌色 `#86683c`；最小字号 12。
+  - 悬停改为只重绘（`over`），构建期读取只剩 `textLink` 一处（有注释）。
+  - 首页结论句正常时退后、数字滚动；提醒卡片进出有过渡；Agent 概览先状态牌，最近时间点整行可点。
+  - 词表约 130 条改写，测试断言同步更新。
+- **第二批（同一分支，用户授权全权裁量，2026-11-17）**：
+  - 外壳：五种顶部横幅（找回模式、命令行连接、恢复进行中或待核实、备份测试、主题与词表警告）统一为 `gui/banners.go` 的 `banner`，有 `busy`/`warn` 语气和进出过渡，按钮靠右不再撑满；浅色侧栏的选中项改为卡片底色（原来几乎看不见）。
+  - 健康页（`gui/healthlist.go`）：需要处理的排前，修复的进度与结果放在对应那条下面；两条以上正常项收成“N 项正常”一行，可展开。
+  - 恢复流程（`gui/restoresteps.go`）：五步步骤条；时间点摘要改为一条横条；结果改为逐项带标记的行（文件、目录替换、服务、健康、旅程关系各自一行），回退问题与待核实提示用 `notice`。
+  - 命令行与向导：“日常使用”改为两张选择卡（对话 / 服务器命令行），主按钮只留给首次设置向导；返回改为 `backLink`。
+  - 口令框：顶部标签条写明是哪种密码、交给谁核对（`askKind`）。
+  - 材质与重量级主题（UI.md 7.4.4）：`gui/material.go` 提供 `flat`/`journal`/`night` 三种材质，经 `card`、`pageHead`、窗口背景生效；新增内置主题“手账”（纸纤维与点阵，GPU 着色器，静止）与“夜航”（星空，闪烁每秒 12 帧，减少动态效果时静止），经典主题保持原样。主题文件暂不能选材质。
+  - 词表：恢复、备份测试、命令行页约 26 条去掉“尚未 / 进行 / 此 / 该”；新增 `health.fine`、`restore.stage.*`、`ask.dest.*`、`theme.journal`、`theme.night`。
+  - 验证：新增 `designshots_test.go`（`VALISE_SHOTS=<目录> go test ./gui -run TestDesignShots`，经典深色、手账、夜航各渲染首页、健康页、旅程页，外加三种口令框）；渲染图逐张看过。
+- **没做，留给下一轮**：存量视图的魔法数字只迁了改到的地方；其余页面（安装、备份位置、设置）没有重排；主题文件的 `material` 字段与 `valise-theme/2`；TUI 与 CLI 的同名术语（用户 2026-11-17 决定本轮不做）。
+- **已定，后续独立阶段处理**：管理员通行证界面仍要求另设“管理口令”，与 AGENTS.md 第 3 节“默认用 Valise 口令”不一致；用户 2026-11-17 确认本分支不改，留给后续安全阶段。
+- **未做实机验收**：没有启动真实桌面窗口，也没有连真实服务器。
 
 ## 0. 当前工作与交接（2026-11-17 Phase B1.2 已完成并打包 `stage-test-20261116-b1.2`，下一步进入 Phase B2）
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
@@ -98,7 +97,7 @@ func hasNativeEntry(info *install.NativeInfo) bool {
 }
 
 func (a *App) nativePage(c *ui.Context, server, instance string) {
-	ui.Row(c).Children(func() { ui.Button(c, T("native.back")).OnClick(func() { a.openAgent(server, instance) }) })
+	ui.Row(c).Children(func() { backLink(c, T("native.back"), "/agents/"+server+"/"+instance) })
 	pageHead(c, T("native.title"), server+" · "+instance)
 	n := a.nativeOf(server, instance)
 	if n.read.busy {
@@ -130,31 +129,6 @@ func (a *App) nativePage(c *ui.Context, server, instance string) {
 	if len(n.info.Argv) > 0 {
 		a.nativeOnboardCard(c, server, instance, n)
 	}
-}
-
-func (a *App) nativeDailyCard(c *ui.Context, server, instance string, info *install.NativeInfo) {
-	card(ui.Column(c)).Gap(8).Children(func() {
-		sectionTitle(ui.Text(c, T("native.daily_title")))
-		if len(info.SessionArgv) > 0 {
-			muted(ui.Text(c, T("native.session_hint"))).Wrap()
-			ui.Collapsible(c, T("native.session_command"), a.fold("native-session-command"), func() {
-				mono(ui.Text(c, strings.Join(info.SessionArgv, " "))).Wrap()
-			})
-		}
-		ui.Row(c).Gap(8).Children(func() {
-			if len(info.SessionArgv) > 0 {
-				ui.PrimaryButton(c, T("native.session")).OnClick(func() { a.startNative(server, instance, service.NativeSession, false) })
-				if info.Shell {
-					ui.Button(c, T("native.shell")).OnClick(func() { a.startNative(server, instance, service.NativeShell, false) })
-				}
-			} else if info.Shell {
-				ui.PrimaryButton(c, T("native.shell")).OnClick(func() { a.startNative(server, instance, service.NativeShell, false) })
-			}
-		})
-		if info.Shell {
-			muted(ui.Text(c, T("native.shell_hint"))).Wrap()
-		}
-	})
 }
 
 func (a *App) startNative(server, instance string, mode service.NativeMode, stopService bool) {
@@ -360,9 +334,8 @@ func (a *App) nativeBanner(c *ui.Context) {
 	if !r.active() {
 		return
 	}
-	ui.Row(c).Padding(8).Gap(12).Children(func() {
-		ui.Text(c, T("native.banner", "server", r.server, "instance", r.instance)).Grow(1)
+	banner(c, "busy", bannerText(c, T("native.banner", "server", r.server, "instance", r.instance), ""), func() {
 		ui.Button(c, T("native.return")).OnClick(func() { a.navigate("/native/" + r.server + "/" + r.instance) })
-		ui.Button(c, T("native.disconnect")).OnClick(func() { a.stopNative(r) })
+		quietButton(c, T("native.disconnect")).OnClick(func() { a.stopNative(r) })
 	})
 }

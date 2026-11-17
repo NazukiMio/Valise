@@ -151,7 +151,7 @@ func TestInstallUpdatedScriptConfirmAndRunGUI(t *testing.T) {
 	texts := w.tt.Texts()
 	hasStartBefore := w.tt.HasText("开始安装")
 	w.mu.Unlock()
-	hasAll(t, texts, "官方安装脚本已更新", "profile 原 SHA-256："+oldSHA, "本次实际 SHA-256："+newSHA,
+	hasAll(t, texts, "官方安装脚本已更新", "资料包记录的 SHA-256："+oldSHA, "本次实际 SHA-256："+newSHA,
 		"基础检查未发现疑点（不代表安全）", "我已核对最新官方脚本内容并确认使用当前版本继续", "gui-installed args=$*")
 	if hasStartBefore {
 		t.Fatal("start button offered before confirming updated script")
@@ -345,7 +345,7 @@ func TestCustomInstallRiskSentenceAndRefusedGUI(t *testing.T) {
 	refusedTexts := w2.tt.Texts()
 	hasRunBtn := w2.tt.HasText("上传并在终端执行")
 	w2.mu.Unlock()
-	hasAll(t, refusedTexts, "Valise 一律不执行此内容，已拦截", "一律不执行：")
+	hasAll(t, refusedTexts, "这段内容 Valise 不会执行，已拦下", "一律不执行：")
 	if hasRunBtn {
 		t.Fatal("refused custom script must not offer run button")
 	}

@@ -13,7 +13,7 @@ func (a *App) readRestoreTasks() {
 }
 
 func (a *App) restoreTaskList(c *ui.Context) {
-	ui.Link(c, "‹ "+T("nav.settings"), "/settings")
+	backLink(c, T("nav.settings"), "/settings")
 	pageHead(c, T("restore.history"), T("restore.history_hint"))
 	if a.restoreTasksErr != nil {
 		errorBox(c, a.restoreTasksErr, a.fold("restore-history-error"))

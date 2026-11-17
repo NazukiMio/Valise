@@ -100,16 +100,11 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 	if st.err != nil {
 		errorBox(c, st.err, a.fold("health-err-"+key))
 	}
-	if st.fix != nil {
-		a.fixReport(c, row, st)
-	}
-	if st.sys != nil {
-		a.sysFixReport(c, row, st)
-	}
 	if t := a.restoreTest; t != nil && t.server == row.Server && t.instance == row.Instance {
 		a.restoreTestReport(c, t)
 	}
 	if st.report == nil {
+		a.looseReports(c, row, st, false, false)
 		return
 	}
 	items := append([]service.HealthItem(nil), st.report.Items...)
@@ -117,29 +112,45 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 		items = slices.DeleteFunc(items, func(it service.HealthItem) bool { return it.ID == "restore_test" })
 	}
 	sort.SliceStable(items, func(i, j int) bool { return service.Rank(items[i].Level) < service.Rank(items[j].Level) })
-	if len(items) > 0 {
-		card(ui.Column(c)).Padding(4, 0).Gap(0).Children(func() {
-			for i, it := range items {
-				if i > 0 {
-					ui.Divider(c)
-				}
-				a.healthLine(c.Key(it.ID), row, st, it)
-			}
-		})
-	}
+	fixPlaced, sysPlaced := a.healthItems(c, row, st, items)
+	a.looseReports(c, row, st, fixPlaced, sysPlaced)
 	a.actualRestoreEvidence(c, row)
-	muted(ui.Text(c, T("health.scope_note"))).FontSize(11)
+	muted(ui.Text(c, T("health.scope_note")))
 }
 
-func (a *App) healthLine(c *ui.Context, row *agentRow, st *healthState, it service.HealthItem) {
-	tone := map[string]string{service.HealthOK: "ok", service.HealthWarn: "warn", service.HealthBad: "warn"}[it.Level]
+// looseReports draws a repair's confirmation, and its progress when its
+// finding is not on the page any more.
+func (a *App) looseReports(c *ui.Context, row *agentRow, st *healthState, fixPlaced, sysPlaced bool) {
+	if st.fix != nil && !fixPlaced {
+		a.fixReport(c, row, st)
+	}
+	if st.sys != nil && !sysPlaced {
+		a.sysFixReport(c, row, st)
+	}
+}
+
+// fixButton is a finding's repair: only the first one on the page is the
+// primary button (docs/DESIGN.md 2).
+func fixButton(c *ui.Context, label string, primary bool) ui.Element {
+	if primary {
+		return ui.PrimaryButton(c, label)
+	}
+	return ui.Button(c, label)
+}
+
+func (a *App) healthLine(c *ui.Context, row *agentRow, st *healthState, it service.HealthItem, first bool) {
+	tone := map[string]string{service.HealthOK: "ok", service.HealthWarn: "warn", service.HealthBad: "danger"}[it.Level]
 	ui.Row(c).Padding(14, 18).Gap(14).AlignItems(ui.Center).Children(func() {
-		dot := ui.Box(c).Size(8, 8).Radius(4).Background(palette.Line)
 		if tone != "" {
-			dot.Background(toneColor(tone))
+			toneDot(c, tone)
+		} else {
+			ui.Box(c).Size(8, 8).Radius(4).Background(palette.Line)
 		}
 		ui.Column(c).Grow(1).Gap(3).Children(func() {
-			ui.Text(c, it.Title).FontSize(14).Bold().Wrap()
+			title := ui.Text(c, it.Title).FontSize(fsBody).Bold().Wrap()
+			if tone == "danger" {
+				title.TextColor(palette.Danger)
+			}
 			if it.Text != "" {
 				muted(ui.Text(c, it.Text)).FontSize(13).Wrap()
 			}
@@ -161,9 +172,9 @@ func (a *App) healthLine(c *ui.Context, row *agentRow, st *healthState, it servi
 				})
 			}
 		} else if it.ActionID != "" && (st.fix == nil || !st.fix.running) {
-			ui.PrimaryButton(c, it.ActionName).OnClick(func() { a.prepareFix(row, st, it) })
+			fixButton(c, it.ActionName, first).OnClick(func() { a.prepareFix(row, st, it) })
 		} else if it.SystemFix == service.FixLinger && (st.sys == nil || !st.sys.busy()) {
-			ui.PrimaryButton(c, it.ActionName).OnClick(func() { a.prepareSysFix(row, st, it) })
+			fixButton(c, it.ActionName, first).OnClick(func() { a.prepareSysFix(row, st, it) })
 		}
 	})
 }

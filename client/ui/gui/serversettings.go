@@ -226,21 +226,21 @@ func (a *App) porterRow(c *ui.Context, name string, ps *passState) {
 	}
 	switch {
 	case ps.doc == nil && ps.docBusy:
-		settingRow(c, "porter", T("set.reading"), "", func() { ui.Spinner(c) })
+		settingRow(c, T("prepare.porter"), T("set.reading"), "", func() { ui.Spinner(c) })
 	case ps.doc == nil:
-		settingRow(c, "porter", T("set.unknown"), "", nil)
+		settingRow(c, T("prepare.porter"), T("set.unknown"), "", nil)
 	case !ps.doc.PorterFound || ps.doc.PorterVersion == "":
-		settingRow(c, "porter", T("set.porter_none"), "", func() { actionWith(c, T("set.porter_deploy"), T("need.admin"), open) })
+		settingRow(c, T("prepare.porter"), T("set.porter_none"), "", func() { actionWith(c, T("set.porter_deploy"), T("need.admin"), open) })
 	case a.releaseTag() == "":
-		settingRow(c, "porter", ps.doc.PorterVersion, T("set.porter_dev"), func() { actionWith(c, T("set.porter_update"), T("need.admin"), open) })
+		settingRow(c, T("prepare.porter"), ps.doc.PorterVersion, T("set.porter_dev"), func() { actionWith(c, T("set.porter_update"), T("need.admin"), open) })
 	case versionLess(ps.doc.PorterVersion, mine):
-		settingRow(c, "porter", T("set.porter_older", "version", ps.doc.PorterVersion, "mine", mine), "", func() {
+		settingRow(c, T("prepare.porter"), T("set.porter_older", "version", ps.doc.PorterVersion, "mine", mine), "", func() {
 			actionWith(c, T("set.porter_update_to", "version", mine), T("need.admin"), open)
 		})
 	case versionLess(mine, ps.doc.PorterVersion):
-		settingRow(c, "porter", T("set.porter_newer", "version", ps.doc.PorterVersion, "mine", mine), T("set.porter_no_downgrade"), nil)
+		settingRow(c, T("prepare.porter"), T("set.porter_newer", "version", ps.doc.PorterVersion, "mine", mine), T("set.porter_no_downgrade"), nil)
 	default:
-		settingRow(c, "porter", T("set.porter_same", "version", ps.doc.PorterVersion), "", nil)
+		settingRow(c, T("prepare.porter"), T("set.porter_same", "version", ps.doc.PorterVersion), "", nil)
 	}
 }
 
