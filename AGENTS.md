@@ -62,7 +62,7 @@ Valise 是一个开源的「自托管 Agent 安装与管理入口」，帮助缺
 - 桌面界面用 **mygo 原生 UI**（`ui` 包，Go 写，GPU 绘制；2026-11-08 用户决定），代码在 `client/ui/gui/`，入口 `client/ui/cmd/valise-desktop/`，直接调用 service，没有 TS 前端与绑定生成。`client/ui/gui/` 下单个 `.go` 文件不得超过 400 行。约定见 `docs/UI.md` 第 2–7 节。
 - macOS 下先执行（详见 `docs/LAB.md`）：`export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`
 - 终端 UI 用 Bubble Tea，版本锁定见 `docs/UI.md` 第 8 节；`client/ui/tui/` 下单个 `.go` 文件不得超过 400 行。
-- mygo 版本锁定为用户指定的 v0.7.3，记录在 `docs/UI.md`；升级必须经过用户同意。库与 CLI 都写在 `client/ui/go.mod`（CLI 为 Go tool 依赖），统一通过 `go tool mygo …` 调用。
+- mygo 版本锁定为用户同意升级后的 v0.9.2（2026-11-17 经用户同意自 v0.7.3 升级），记录在 `docs/UI.md`；后续升级必须经过用户同意。库与 CLI 都写在 `client/ui/go.mod`（CLI 为 Go tool 依赖），统一通过 `go tool mygo …` 调用。
 - 单元测试和集成测试中，"远端"一律通过 fake-ssh 测试替身模拟（规范见 `docs/LAB.md`）。fake-ssh 测试通过，不等于靶机验收通过。
 - **禁止执行 `rm -f`**（会触发宿主审批拦截）。清空文件用 `: > file`；Go 测试中一律使用 `t.TempDir()`。porter 删除目录时只能在 Go 代码内调用 `os.RemoveAll`，并且只能由用户显式命令触发。
 

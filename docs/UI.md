@@ -13,15 +13,15 @@
 ## 2. 资料来源
 
 - 桌面界面用 **mygo 原生 UI**（2026-11-08 用户决定）：界面用 mygo 的 `ui` 包在 Go 里写，由 mygo 在 GPU 上绘制（macOS Metal、Windows Direct3D 11、Linux OpenGL）。没有 HTML、JavaScript、TypeScript、webview 和前端构建，也不需要 Bun。
-- 官方文档：https://github.com/egoist/mygo/tree/main/docs （原生 UI 在 `docs/ui/`），阅读时以锁定 tag 下的版本为准；本地副本在 Go 模块缓存 `github.com/egoist/mygo@v0.7.3/docs/`。
+- 官方文档：https://github.com/egoist/mygo/tree/main/docs （原生 UI 在 `docs/ui/`），阅读时以锁定 tag 下的版本为准；本地副本在 Go 模块缓存 `github.com/egoist/mygo@v0.9.2/docs/`。
 - Go API：`go doc -all github.com/egoist/mygo/ui`、`go doc -all github.com/egoist/mygo`
 - 开发机检查：`go tool mygo doctor`
 - 不确定的 API 一律查阅文档或源码，**不要凭印象编写**。
 
 ## 3. 版本锁定与 CLI
 
-- 锁定版本：v0.7.3（用户于 2026-10-31 指定，tag 提交 `6f28d7b`，要求 Go 1.27.3）。锁定后，升级必须经过用户同意。
-- 库与 CLI 都写进 `client/ui/go.mod`：`go get github.com/egoist/mygo@v0.7.3` 与 `go get -tool github.com/egoist/mygo/cmd/mygo@v0.7.3`，之后统一用 `go tool mygo <命令>`（`dev`、`vet`、`build`、`doctor`）。
+- 锁定版本：v0.9.2（2026-11-17 经用户同意自 v0.7.3 升级，tag 提交 `25ce62f`，要求 Go 1.27.3）。锁定后，升级必须经过用户同意。
+- 库与 CLI 都写进 `client/ui/go.mod`：`go get github.com/egoist/mygo@v0.9.2` 与 `go get -tool github.com/egoist/mygo/cmd/mygo@v0.9.2`，之后统一用 `go tool mygo <命令>`（`dev`、`vet`、`build`、`doctor`）。
 - 应用的名称、标识与版本写在 `client/ui/mygo.json`，图标在 `client/ui/resources/`（`mygo init -template native` 的布局）。
 
 ## 4. 代码结构与调用约定
