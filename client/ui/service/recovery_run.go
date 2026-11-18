@@ -173,6 +173,17 @@ func (s *Service) FinishRecovery(ctx context.Context, run *RecoveryRun, newPassp
 	if err != nil {
 		return nil, keyErr(err)
 	}
+	// The old full passphrase is unavailable on the recovery path.
+	// Discard the wrapper before replacing it so old PINs cannot revive it.
+	unlock, err := s.lockPIN()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	s.LockAdmin()
+	if err := s.removePIN(); err != nil {
+		return nil, err
+	}
 	if err := keystore.SaveFile(s.keystorePath(), sealed); err != nil {
 		return nil, err
 	}

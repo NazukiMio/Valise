@@ -58,8 +58,15 @@ type wizard struct {
 // startWizard opens the wizard; from the home page it goes on to the
 // agents once the server is ready.
 func (a *App) startWizard(fromHome bool) {
-	a.wiz = &wizard{fromHome: fromHome, login: config.LoginPassword}
+	a.wiz = &wizard{fromHome: fromHome, login: config.LoginPassword, admin: a.defaultAdminChoice()}
 	a.router.Push("/servers/add")
+}
+
+func (a *App) defaultAdminChoice() string {
+	if a.hasKey() {
+		return "yes"
+	}
+	return ""
 }
 
 // splitAddress reads “user@host:port”, “host:port”, “[v6]:port” or a bare

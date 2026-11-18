@@ -278,7 +278,8 @@ const (
 // AddServerOptions configure adding a server by hand.
 type AddServerOptions struct {
 	Server config.Server
-	// AdminPassphrase, when set, creates the admin key too.
+	// AdminPassphrase creates the admin key when supplied. Frontends with a
+	// Valise passphrase verify it before passing it here.
 	AdminPassphrase string
 	Setup           SetupOptions
 }
@@ -323,7 +324,7 @@ func (s *Service) AddServer(ctx context.Context, o AddServerOptions) error {
 		return err
 	}
 	if o.AdminPassphrase != "" {
-		o.Setup.doing(SetupKeys, "生成管理员通行证（用你的管理口令加密）")
+		o.Setup.doing(SetupKeys, "生成并加密管理员通行证")
 		if err := s.createAdminKey(ctx, srv.Name, o.AdminPassphrase); err != nil {
 			return err
 		}

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"valise/client/keystore"
+	"valise/client/config"
 	"valise/client/ssh"
 	"valise/core/valise"
 )
@@ -137,17 +137,10 @@ func (s *Service) createAdminKey(ctx context.Context, host, passphrase string) e
 	return nil
 }
 
-// checkAdminPassphrase enforces the length rule and that the admin
-// passphrase differs from the Valise passphrase (docs/ARCHITECTURE.md 2.1).
+// checkAdminPassphrase enforces the minimum length.
 func (s *Service) checkAdminPassphrase(passphrase string) error {
 	if len([]rune(passphrase)) < 12 {
 		return valise.New("admin_passphrase_short", "管理口令至少要 12 个字符", "换一个更长的口令")
-	}
-	if data, err := os.ReadFile(s.keystorePath()); err == nil {
-		if k, err := keystore.Unlock(data, passphrase); err == nil {
-			k.Lock()
-			return valise.New("admin_passphrase_same", "管理口令不能和 Valise 口令相同", "两个口令保护的东西不同，请换一个")
-		}
 	}
 	return nil
 }
@@ -175,30 +168,61 @@ func (s *Service) ChangeAdminPassphrase(ctx context.Context, old, new string) (i
 // adminAgent is Valise's own ssh-agent for unlocked admin keys. It is a
 // child of this process and ends with it (Close).
 type adminAgent struct {
-	mu   sync.Mutex
-	sock string
-	cmd  *exec.Cmd
+	windowMu sync.RWMutex
+	mu       sync.Mutex
+	closed   bool
+	sock     string
+	cmd      *exec.Cmd
 	// exited is closed when cmd exits. ProcessState is written by the Wait
 	// goroutine, so it is never read here.
 	exited chan struct{}
-	// unlocked is when each host's admin key was added, for the remaining
+	// unlocked is each host's expiry time, for the remaining
 	// window shown in the UI (the agent itself enforces the window).
-	unlocked map[string]time.Time
+	unlocked map[string]adminUnlock
+}
+
+type adminUnlock struct {
+	until         time.Time
+	handshakeOnly bool
 }
 
 // AdminWindow is how long an unlocked admin key stays in the agent.
 func (s *Service) AdminWindow() time.Duration {
-	m := s.Config.AdminWindowMinutes
-	if m < 1 || m > 120 {
-		m = 15
+	m := s.configuredAdminWindow()
+	if m < 1 || m > 240 {
+		m = 30
 	}
 	return time.Duration(m) * time.Minute
+}
+
+func (s *Service) configuredAdminWindow() int {
+	s.agent.windowMu.RLock()
+	defer s.agent.windowMu.RUnlock()
+	return s.Config.AdminWindowMinutes
+}
+
+// SetAdminWindow persists the time limit and locks existing sessions.
+func (s *Service) SetAdminWindow(minutes int) error {
+	if minutes < 1 || minutes > 240 {
+		return valise.New("admin_window_range", "免输时长必须在 1 到 240 分钟之间", "输入范围内的整数")
+	}
+	if err := config.SetAdminWindow(s.Dirs.Data, minutes); err != nil {
+		return err
+	}
+	s.agent.windowMu.Lock()
+	s.Config.AdminWindowMinutes = minutes
+	s.agent.windowMu.Unlock()
+	s.LockAdmin()
+	return nil
 }
 
 func (s *Service) agentSock(ctx context.Context) (string, error) {
 	a := &s.agent
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.closed {
+		return "", valise.New("agent_closed", "管理钥匙代理已关闭", "重新打开 Valise 后重试")
+	}
 	if a.cmd != nil && fileExists(a.sock) {
 		select {
 		case <-a.exited:
@@ -235,10 +259,20 @@ func (s *Service) unlockAdmin(ctx context.Context, host string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	key := s.keyPath(host, adminKeyName)
-	base := append(os.Environ(), "SSH_AUTH_SOCK="+sock)
-	if runTool(ctx, s.toolPath("ssh-add"), []string{"-T", key + ".pub"}, base) == nil {
+	pin := s.PINEnabled()
+	if !pin && s.AdminUnlocked(ctx, host) {
 		return sock, nil
+	}
+	if s.HasKey() && (pin || s.OwnerAuth.Passphrase != nil || s.hasCachedPassphrase()) {
+		pass, err := s.ValisePassphrase(host)
+		if err != nil {
+			ue, wrong := valise.As(err)
+			if pin || !wrong || ue.Code != "passphrase_wrong" || s.AdminAuth.Passphrase == nil {
+				return "", err
+			}
+		} else if (!pin && s.AdminUnlocked(ctx, host)) || s.loadAdminForMode(ctx, host, pass, pin) == nil {
+			return sock, nil
+		}
 	}
 	if s.AdminAuth.Passphrase == nil {
 		return "", errAdminLocked(host)
@@ -247,14 +281,32 @@ func (s *Service) unlockAdmin(ctx context.Context, host string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if err := s.loadAdmin(ctx, host, pass); err != nil {
+	if err := s.loadAdminForMode(ctx, host, pass, pin); err != nil {
 		return "", err
 	}
 	return sock, nil
 }
 
-// loadAdmin adds host's admin key to the agent for the admin window.
+// loadAdmin adds a key for the configured window or just the PIN handshake.
 func (s *Service) loadAdmin(ctx context.Context, host, passphrase string) error {
+	return s.loadAdminForMode(ctx, host, passphrase, s.PINEnabled())
+}
+
+func (s *Service) loadAdminForMode(ctx context.Context, host, passphrase string, pin bool) error {
+	window := s.AdminWindow()
+	if pin {
+		window = time.Minute
+	} else if expires, matches := s.cachedPassphraseExpiry(passphrase); matches {
+		window = time.Until(expires)
+	}
+	return s.addToAgent(ctx, host, passphrase, window, pin)
+}
+
+func (s *Service) addToAgent(ctx context.Context, host, passphrase string, window time.Duration, handshakeOnly bool) error {
+	secs := int(window / time.Second)
+	if secs < 1 {
+		return errAdminLocked(host)
+	}
 	sock, err := s.agentSock(ctx)
 	if err != nil {
 		return err
@@ -264,25 +316,35 @@ func (s *Service) loadAdmin(ctx context.Context, host, passphrase string) error 
 		return err
 	}
 	env = append(env, "SSH_AUTH_SOCK="+sock)
-	secs := strconv.Itoa(int(s.AdminWindow() / time.Second))
-	if err := runTool(ctx, s.toolPath("ssh-add"), []string{"-q", "-t", secs, s.keyPath(host, adminKeyName)}, env); err != nil {
-		return valise.New("admin_passphrase_wrong", "管理口令不对，没有解锁", "重新输入管理口令").WithDetail(err.Error())
-	}
 	s.agent.mu.Lock()
-	if s.agent.unlocked == nil {
-		s.agent.unlocked = map[string]time.Time{}
+	defer s.agent.mu.Unlock()
+	if s.agent.sock != sock {
+		return errAdminLocked(host)
 	}
-	s.agent.unlocked[host] = time.Now()
-	s.agent.mu.Unlock()
+	until := time.Now().Add(time.Duration(secs) * time.Second)
+	if err := runTool(ctx, s.toolPath("ssh-add"), []string{"-q", "-t", strconv.Itoa(secs), s.keyPath(host, adminKeyName)}, env); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return valise.New("admin_passphrase_wrong", "管理口令不对，没有解锁", "重新输入管理口令")
+	}
+	if s.agent.unlocked == nil {
+		s.agent.unlocked = map[string]adminUnlock{}
+	}
+	s.agent.unlocked[host] = adminUnlock{until: until, handshakeOnly: handshakeOnly}
 	return nil
 }
 
-// AdminUnlocked reports whether host's admin key is in the agent now.
+// AdminUnlocked reports whether host's admin key is in the agent now. A
+// short-lived PIN handshake never authorizes a subsequent operation.
 func (s *Service) AdminUnlocked(ctx context.Context, host string) bool {
+	if s.PINEnabled() {
+		return false
+	}
 	s.agent.mu.Lock()
-	sock := s.agent.sock
+	sock, unlocked := s.agent.sock, s.agent.unlocked[host]
 	s.agent.mu.Unlock()
-	if sock == "" || !s.HasAdminKey(host) {
+	if sock == "" || unlocked.handshakeOnly || !time.Now().Before(unlocked.until) || !s.HasAdminKey(host) {
 		return false
 	}
 	return runTool(ctx, s.toolPath("ssh-add"), []string{"-T", s.keyPath(host, adminKeyName) + ".pub"}, append(os.Environ(), "SSH_AUTH_SOCK="+sock)) == nil
@@ -291,37 +353,59 @@ func (s *Service) AdminUnlocked(ctx context.Context, host string) bool {
 // AdminRemaining is how much of host's admin window is left, as Valise
 // recorded it when the key was unlocked; false when it is locked.
 func (s *Service) AdminRemaining(host string) (time.Duration, bool) {
-	s.agent.mu.Lock()
-	t, ok := s.agent.unlocked[host]
-	s.agent.mu.Unlock()
-	if !ok {
+	if s.PINEnabled() {
 		return 0, false
 	}
-	left := s.AdminWindow() - time.Since(t)
-	return left, left > 0
+	s.agent.mu.Lock()
+	unlocked := s.agent.unlocked[host]
+	s.agent.mu.Unlock()
+	left := time.Until(unlocked.until)
+	if unlocked.handshakeOnly || left <= 0 {
+		return 0, false
+	}
+	return left, true
 }
 
-// LockAdmin removes every unlocked admin key from the agent.
+// LockAdmin removes every unlocked admin key and clears the owner cache.
 func (s *Service) LockAdmin() {
-	s.agent.mu.Lock()
-	sock := s.agent.sock
-	s.agent.unlocked = nil
-	s.agent.mu.Unlock()
-	if sock != "" {
-		_ = runTool(context.Background(), s.toolPath("ssh-add"), []string{"-D"}, append(os.Environ(), "SSH_AUTH_SOCK="+sock))
+	s.owner.mu.Lock()
+	defer s.owner.mu.Unlock()
+	s.owner.epoch++
+	s.owner.clear()
+	a := &s.agent
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.unlocked = nil
+	if a.sock != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := runTool(ctx, s.toolPath("ssh-add"), []string{"-D"}, append(os.Environ(), "SSH_AUTH_SOCK="+a.sock)); err != nil {
+			a.stop()
+		}
 	}
 }
 
 // Close ends Valise's own ssh-agent and stops debug log writes.
 func (s *Service) Close() {
+	s.owner.mu.Lock()
+	s.owner.closed = true
+	s.owner.epoch++
+	s.owner.clear()
+	s.owner.mu.Unlock()
 	s.closeDebugLog()
 	a := &s.agent
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.closed = true
+	a.stop()
+}
+
+func (a *adminAgent) stop() {
 	if a.cmd != nil && a.cmd.Process != nil {
 		_ = a.cmd.Process.Kill()
 	}
 	a.cmd = nil
+	a.unlocked = nil
 	if a.sock != "" {
 		_ = os.Remove(a.sock)
 		a.sock = ""

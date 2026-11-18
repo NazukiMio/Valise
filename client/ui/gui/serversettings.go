@@ -51,7 +51,7 @@ type settingsState struct {
 
 func (a *App) settingsOf(host string) *settingsState {
 	if a.settings[host] == nil {
-		a.settings[host] = &settingsState{}
+		a.settings[host] = &settingsState{migAdmin: a.defaultAdminChoice()}
 	}
 	return a.settings[host]
 }

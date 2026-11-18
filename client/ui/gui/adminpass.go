@@ -13,6 +13,7 @@ const (
 	askAdmin  = iota // the admin passphrase (unlocks the admin pass)
 	askOwner         // the Valise passphrase (proving it is you)
 	askServer        // OpenSSH's own prompt: a server password or a key's passphrase
+	askPIN           // the local six-digit PIN
 )
 
 // passPrompt is a secret being asked for by work running off the main
@@ -41,6 +42,8 @@ func (a *App) AdminPassphrase(host string) (string, error) { return a.askPass(ho
 // OwnerPassphrase is service.OwnerAuth.Passphrase for the desktop: the
 // Valise passphrase, asked when a step must confirm it is you.
 func (a *App) OwnerPassphrase(host string) (string, error) { return a.askPass(host, askOwner) }
+
+func (a *App) OwnerPIN(host string) (string, error) { return a.askPass(host, askPIN) }
 
 // ServerPassword is service.PasswordAuth.Prompt for the desktop: OpenSSH's
 // own question, relayed (docs/ARCHITECTURE.md 2.1).
@@ -72,6 +75,9 @@ func (a *App) passDialog(c *ui.Context) {
 		cancelled = T("ask.cancel.owner")
 	case askServer:
 		title, why, field, cancelled = serverPromptMeta(p.host)
+	case askPIN:
+		title, why, field = T("pin.verify"), T("pin.each_operation"), T("pin.field")
+		cancelled = T("ask.cancel.owner")
 	}
 	cancel := func() {
 		answer(passReply{err: valise.New("cancelled", cancelled, "")})

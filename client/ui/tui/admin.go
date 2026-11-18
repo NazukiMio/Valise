@@ -30,9 +30,23 @@ func askOwnerPassphrase(send func(tea.Msg), host string) (string, error) {
 	return r.pass, r.err
 }
 
+func askOwnerPIN(send func(tea.Msg), host string) (string, error) {
+	reply := make(chan adminReply, 1)
+	in := newInput("输入本机 6 位数字 PIN 码（"+host+"）", "", true, func(m *Model, v string) tea.Cmd {
+		reply <- adminReply{pass: v}
+		return nil
+	})
+	in.cancel = func() {
+		reply <- adminReply{err: valise.New("cancelled", "已取消 PIN 验证", "")}
+	}
+	send(pushMsg{in})
+	r := <-reply
+	return r.pass, r.err
+}
+
 func askAdminPassphrase(send func(tea.Msg), host string) (string, error) {
 	reply := make(chan adminReply, 1)
-	in := newInput("输入 "+host+" 的管理口令以继续（解锁后一段时间内不再询问）", "", true, func(m *Model, v string) tea.Cmd {
+	in := newInput("输入 "+host+" 的管理口令以继续", "", true, func(m *Model, v string) tea.Cmd {
 		reply <- adminReply{pass: v}
 		return nil
 	})

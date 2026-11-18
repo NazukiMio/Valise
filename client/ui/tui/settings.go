@@ -17,6 +17,7 @@ type settingsScreen struct {
 	cursor  int
 	inBody  bool // focus in the section's list instead of the sidebar
 	key     *service.KeyInfo
+	pin     bool
 	hosts   []string
 	pack    *service.ProfilesStatus
 	doctors map[string]*service.DoctorReport
@@ -64,6 +65,9 @@ func (s *settingsScreen) help() string {
 	switch s.section {
 	case ssKey:
 		items = append(items, "b", "备份钥匙", "i", "在这台电脑上导入钥匙")
+		if s.key != nil && !s.pin {
+			items = append(items, "d", "调整免输时长")
+		}
 	case ssServers:
 		items = append(items, "a", "添加服务器", "x", "移除")
 	case ssCloud:
@@ -183,6 +187,8 @@ func (s *settingsScreen) action(m *Model, k string) (tea.Cmd, bool) {
 	case s.section == ssAbout && k == "g":
 		hosts, _ := m.svc.Servers()
 		return m.push(newChecklist(hosts)), true
+	case s.section == ssKey && k == "d" && s.key != nil && !m.svc.PINEnabled():
+		return s.editUnlockWindow(m), true
 	case s.section == ssKey && k == "b":
 		return m.push(newInput("把恢复套件导出到哪个文件夹？（建议放进 U 盘或密码管理器的附件，文件夹必须是空的或不存在）", "~/Desktop/valise-恢复套件", false,
 			func(m *Model, dir string) tea.Cmd {
@@ -261,6 +267,7 @@ func expandHome(m *Model, p string) string {
 }
 
 func (s *settingsScreen) view(m *Model) string {
+	s.pin = m.svc.PINEnabled()
 	var side []string
 	for i, n := range settingsSections {
 		label := itoa(i+1) + " " + n
@@ -277,7 +284,7 @@ func (s *settingsScreen) view(m *Model) string {
 	var body string
 	switch s.section {
 	case ssKey:
-		body = s.keyView(w)
+		body = s.keyView(m, w)
 	case ssServers:
 		body = s.serversView(m, w)
 	case ssCloud:
@@ -296,11 +303,15 @@ func (s *settingsScreen) view(m *Model) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(16).Render(strings.Join(side, "\n")), body)
 }
 
-func (s *settingsScreen) keyView(w int) string {
+func (s *settingsScreen) keyView(m *Model, w int) string {
 	if s.key == nil {
 		return box("加密钥匙", warnStyle.Render("这台电脑上还没有钥匙。"), w)
 	}
-	return box(okStyle.Render("✓")+" 你的钥匙已创建", kv("存放在", s.key.Path, "保护方式", "你的口令（Valise 不保存口令）", "指纹", s.key.Fingerprint), w) + "\n\n" +
+	window := "每次操作验证本机 PIN"
+	if !m.svc.PINEnabled() {
+		window = itoa(int(m.svc.AdminWindow().Minutes())) + " 分钟"
+	}
+	return box(okStyle.Render("✓")+" 你的钥匙已创建", kv("存放在", s.key.Path, "保护方式", "Valise 口令", "指纹", s.key.Fingerprint, "免输解锁", window), w) + "\n\n" +
 		"· 所有备份都用这把钥匙加密。\n" +
 		"· 服务器只拿到\"只能上锁、不能开锁\"的那一半，服务器被攻破也打不开备份。\n" +
 		"· 换电脑时，在新电脑上导入同一把钥匙并输入口令，就能打开以前所有的备份。\n" +
@@ -365,4 +376,16 @@ func (s *settingsScreen) cloudView(m *Model, w int) string {
 	}
 	return box("仓库（本机文件夹，所有服务器共用）", repos, w) + "\n" + box("远程备份位置", strings.Join(rows, "\n"), w) + "\n" +
 		dimStyle.Render("仓库在 Valise 打开时补齐；远程备份位置配置在每台服务器上；新 agent 的周期默认按月。")
+}
+
+func (s *settingsScreen) editUnlockWindow(m *Model) tea.Cmd {
+	return m.push(newInput("免输解锁时长（1 到 240 分钟）", itoa(int(m.svc.AdminWindow().Minutes())), false, func(m *Model, text string) tea.Cmd {
+		n, _ := strconv.Atoi(strings.TrimSpace(text))
+		return func() tea.Msg {
+			if err := m.svc.SetAdminWindow(n); err != nil {
+				return failed(err)
+			}
+			return flashMsg("免输解锁时长已设为 " + itoa(n) + " 分钟")
+		}
+	}))
 }

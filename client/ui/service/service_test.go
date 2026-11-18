@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"testing"
 
+	"filippo.io/age"
+
 	"valise/client/config"
 	"valise/client/keystore"
 	"valise/core/rpc"
@@ -26,6 +28,12 @@ func newService(t *testing.T, sshBinary string) *Service {
 	}
 	t.Cleanup(s.Close)
 	return s
+}
+
+func (s *Service) rememberOwner(id age.Identity) {
+	s.owner.mu.Lock()
+	defer s.owner.mu.Unlock()
+	s.cacheOwner(id, "")
 }
 
 func wantCode(t *testing.T, err error, code string) {

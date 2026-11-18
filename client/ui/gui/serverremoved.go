@@ -88,7 +88,7 @@ func (a *App) rekeyServer(name string) {
 
 // wizardFor opens the add wizard filled in from a server record.
 func (a *App) wizardFor(srv config.Server, step int) {
-	w := &wizard{login: srv.Login, name: srv.Name, addr: srv.HostName, user: srv.User, keyPath: srv.LoginKey, step: step}
+	w := &wizard{login: srv.Login, name: srv.Name, addr: srv.HostName, user: srv.User, keyPath: srv.LoginKey, step: step, admin: a.defaultAdminChoice()}
 	if w.login == "" {
 		w.login = config.LoginPassword
 	}

@@ -76,7 +76,7 @@ func (c *cli) configTakeover(host, state string) error {
 		return err
 	}
 	if on {
-		fmt.Fprintf(c.out, "%s 的接管模式已开启：终端界面里需要 sudo 的修复，在你开启高级模式（两个口令与确认句）后用 sudo -n 直接执行；sudo 需要密码时仍转到终端。\n", host)
+		fmt.Fprintf(c.out, "%s 的接管模式已开启：终端界面里需要 sudo 的修复，在你验证口令并确认开启高级模式后用 sudo -n 直接执行；sudo 需要密码时仍转到终端。\n", host)
 	} else {
 		fmt.Fprintf(c.out, "%s 的接管模式已关闭：需要 sudo 的修复转到终端执行。\n", host)
 	}

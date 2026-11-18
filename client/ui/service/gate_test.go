@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"valise/core/valise"
+	"valise/core/vault"
 	"valise/core/vaultrpc"
 )
 
@@ -57,6 +59,29 @@ func TestAdvancedGate(t *testing.T) {
 		t.Fatalf("trial decryption repeated: %v, asked %d", err, asked)
 	}
 
+	// A newly sealed time point in the same local repository needs the
+	// keyless verification, even after the Valise unlock window was closed.
+	next, err := s.Seal(ctx, "box", vaultrpc.SealParams{InstanceID: "demo", Tier: vault.TierSoulSecrets})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RepoSync(ctx, "box", "usb"); err != nil {
+		t.Fatal(err)
+	}
+	nextDir := filepath.Join(dir, "box", leafDirName(next.Leaf))
+	if err := s.RequireGate(ctx, "box", "demo"); err != nil || asked != 1 {
+		t.Fatalf("second time point: %v, asked %d", err, asked)
+	}
+	g, err = s.AdvancedGate(ctx, "box", "demo")
+	if err != nil || !g.OK() || g.Agents[0].Pod.SnapshotID != next.SnapshotID || asked != 1 {
+		t.Fatalf("latest time point: %+v %v, asked %d", g, err, asked)
+	}
+	trialPath := filepath.Join(s.Dirs.Data, repoTrialFile)
+	trialKey := nextDir + "#" + next.SnapshotID
+	if _, ok := readRepoTrials(trialPath)[trialKey]; !ok {
+		t.Fatal("new time point was not recorded")
+	}
+
 	// A damaged repository copy no longer counts.
 	packs, _ := filepath.Glob(filepath.Join(dir, "box", "demo", "*", "packs", "*", "*"))
 	if len(packs) == 0 {
@@ -65,7 +90,19 @@ func TestAdvancedGate(t *testing.T) {
 	for _, p := range packs {
 		os.WriteFile(p, []byte("damaged"), 0o600)
 	}
-	os.Remove(filepath.Join(s.Dirs.Data, repoTrialFile))
+	done := readRepoTrials(trialPath)
+	delete(done, trialKey)
+	b, err := json.Marshal(done)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAtomicFile(trialPath, b); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.trialDecrypt("box", nextDir, next.SnapshotID); err == nil || asked != 1 {
+		t.Fatalf("unverified damaged time point: %v, asked %d", err, asked)
+	}
+	os.Remove(trialPath)
 	if g, err := s.AdvancedGate(ctx, "box", ""); err != nil || g.OK() {
 		t.Fatalf("damaged copy counted: %+v %v", g, err)
 	}

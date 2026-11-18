@@ -168,9 +168,6 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		if id, err = k.Identity(); err != nil {
 			return nil, err
 		}
-		// The passphrase just given also proves the owner for the
-		// landing (docs/ARCHITECTURE.md 2.2): no second prompt.
-		s.rememberOwner(id)
 	}
 	var v *vault.Vault
 	var pull *SnapshotPull

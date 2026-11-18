@@ -76,7 +76,21 @@ func (s *Service) EnableAdvanced(ctx context.Context, host, valisePass, adminPas
 		return valise.New("advanced_valise_passphrase", "Valise 口令不对，没有开启高级模式", "重新输入")
 	}
 	k.Lock()
-	if err := s.loadAdmin(ctx, host, adminPass); err != nil {
+	if adminPass == "" {
+		adminPass = valisePass
+		if err := s.loadAdmin(ctx, host, adminPass); err != nil {
+			if s.AdminAuth.Passphrase == nil {
+				return err
+			}
+			adminPass, err = s.AdminAuth.Passphrase(host)
+			if err != nil {
+				return err
+			}
+			if err := s.loadAdmin(ctx, host, adminPass); err != nil {
+				return err
+			}
+		}
+	} else if err := s.loadAdmin(ctx, host, adminPass); err != nil {
 		return err
 	}
 	s.DisableAdvanced(ctx)
@@ -196,11 +210,6 @@ func (s *Service) runAdvancedBatch(ctx context.Context, host, what string, b *Re
 	for i, c := range b.Commands {
 		if tio.Step != nil {
 			tio.Step(i, PlanStep{Kind: "requirement", Summary: strings.Join(c.Command, " "), Command: c.Command})
-		}
-		// The admin window is checked before every step; when it has
-		// expired the admin passphrase is asked again (the mode pauses).
-		if _, err := s.unlockAdmin(ctx, host); err != nil {
-			return err
 		}
 		if s.Advanced(ctx) == nil {
 			return valise.New("advanced_off", "高级模式已经关闭，后面的命令没有执行", "")

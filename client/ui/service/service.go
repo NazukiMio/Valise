@@ -54,6 +54,7 @@ type Service struct {
 	askRelay relayState
 	debug    debugLogger
 
+	repoTrialMu          sync.Mutex
 	readersMu            sync.Mutex
 	agentsReader         *AgentReader
 	journeyReader        *JourneyReader

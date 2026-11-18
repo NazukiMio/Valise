@@ -105,6 +105,20 @@ func TestWizardLoginAndPrepare(t *testing.T) {
 		"签名不对，没有上传", "重试", "更多选项")
 }
 
+func TestWizardUsesValisePassphraseByDefault(t *testing.T) {
+	a, tt := world(t)
+	if _, err := a.svc.KeyInit(testPass); err != nil {
+		t.Fatal(err)
+	}
+	a.startWizard(false)
+	a.wiz.addr, a.wiz.step = "agent@192.0.2.24", wzLogin
+	tt.Frame()
+	hasAll(t, tt.Texts(), "用 Valise 口令同时办一张管理员通行证")
+	if a.wiz.admin != "yes" || tt.HasText(T("pass.again")) || tt.HasText(T("pass.admin_passphrase")) {
+		t.Fatal("wizard did not default to the shared passphrase")
+	}
+}
+
 // No agent is presumed: found ones are adopted after the report, a harness
 // the profiles do not know leads to the guide, and with none the first
 // agent can be installed.

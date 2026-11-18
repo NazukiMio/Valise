@@ -85,9 +85,6 @@ func TestTakeoverEnableAdvancedUsesService(t *testing.T) {
 		t.Fatal("passphrase echoed")
 	}
 	key(t, m, "enter")
-	wantText(t, m, "box 的管理口令")
-	typeText(t, m, "admin secret pass")
-	key(t, m, "enter")
 	wantText(t, m, service.AdvancedConsent)
 	typeText(t, m, service.AdvancedConsent)
 	key(t, m, "enter")

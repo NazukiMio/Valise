@@ -56,7 +56,7 @@ func (s *Service) ExportConfig(path string) (*ConfigExportResult, error) {
 		return nil, err
 	}
 	doc := ConfigExport{Format: ConfigFormat, Version: ConfigVersion, ExportedAt: time.Now().UTC(), Servers: list,
-		KnownHosts: []string{}, Settings: ConfigSettings{AdminWindowMinutes: s.Config.AdminWindowMinutes}}
+		KnownHosts: []string{}, Settings: ConfigSettings{AdminWindowMinutes: s.configuredAdminWindow()}}
 	known, _ := os.ReadFile(filepath.Join(s.Dirs.Data, config.KnownHostsFile))
 	for _, srv := range list {
 		if srv.Valise() {
@@ -161,15 +161,15 @@ func (s *Service) ImportConfig(path string) (*ConfigImportResult, error) {
 			return nil, err
 		}
 	}
-	if w := doc.Settings.AdminWindowMinutes; w > 0 && w != s.Config.AdminWindowMinutes {
-		if s.Config.AdminWindowMinutes == 0 {
-			if err := config.SetAdminWindow(s.Dirs.Data, w); err != nil {
+	local := s.configuredAdminWindow()
+	if w := doc.Settings.AdminWindowMinutes; w >= 1 && w <= 240 && w != local {
+		if local == 0 {
+			if err := s.SetAdminWindow(w); err != nil {
 				return nil, err
 			}
-			s.Config.AdminWindowMinutes = w
 			res.Settings = "管理窗口时长设为 " + strconv.Itoa(w) + " 分钟"
 		} else {
-			res.Settings = "保留这台电脑的管理窗口时长（" + strconv.Itoa(s.Config.AdminWindowMinutes) + " 分钟）"
+			res.Settings = "保留这台电脑的管理窗口时长（" + strconv.Itoa(local) + " 分钟）"
 		}
 	}
 	return res, nil

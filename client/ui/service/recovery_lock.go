@@ -16,7 +16,6 @@ import (
 
 	"valise/client/config"
 	"valise/client/keystore"
-	"valise/core/valise"
 )
 
 // The backup lock (docs/ARCHITECTURE.md 3.2): a second age identity R
@@ -242,28 +241,6 @@ func (s *Service) refreshLocks(passphrase string) {
 	if err == nil {
 		s.wrapLocks(rid, false)
 	}
-}
-
-// resealLock seals R under a new passphrase when the passphrase changes.
-func (s *Service) resealLock(old, new string) error {
-	if !s.RecoveryEnabled() {
-		return nil
-	}
-	path := filepath.Join(s.recoveryDir(), "r.age")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	r, err := keystore.Unlock(data, old)
-	if err != nil {
-		return valise.New("recovery_lock_unreadable", "备用锁打不开", "在设置里关闭再重新开启备用锁").WithDetail(err.Error())
-	}
-	defer r.Lock()
-	b, err := keystore.Seal(r, new)
-	if err != nil {
-		return keyErr(err)
-	}
-	return keystore.SaveFile(path, b)
 }
 
 // DisableRecovery turns the backup lock off and deletes its files.

@@ -2,6 +2,12 @@
 
 > 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-18。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
+## 0. Phase B2（2026-11-18）
+
+基线为 `07a2d33`，当前分支为 `design/gui-polish-phase2`。统一 Valise 口令、30 分钟默认免输（1–240 分钟）、管理钥匙联动解锁和改密、本机 6 位 PIN，以及本机副本 Gate 的免重复试解已实现。旧独立管理口令兼容，桌面添加、迁移和重办默认采用完整 Valise 口令。
+
+验收包路径为 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261118-b2/`。自动检查覆盖范围见 [N4 验收记录第 7 节](acceptance/N4.md#7-phase-b2-客户端解锁与本机副本2026-11-18)，真机操作按包内 `TESTING.md` 复核。旅程虚拟化与备份退役仍见 0b 节。
+
 ## 0a. 界面整理第二阶段（2026-11-17，分支 `design/gui-polish-phase2`，已完成）
 
 依据第一阶段只读审计（[acceptance/VALISE_DESIGN_AUDIT.html](acceptance/VALISE_DESIGN_AUDIT.html)）与用户授权（“你自己决定”），先改规范再改代码。本轮只动 `client/ui/gui` 与文档，不改 `client/ui/service`。
@@ -45,11 +51,9 @@
    - **一键晋升（钉为存档点）**：支持在旅程中将任意一次有价值的「自动快照」转为永久「手动存档点」（免于滚动退役）。
    - **旅程区分展示**：存档点加醒目标记与备注，自动快照作次要/可折叠点并支持“仅看存档点”过滤。
    - 注：落地前需与 `VAULT_FORMAT.md` 10.4“只追加周期与不提供自动保留策略”旧决议做一次正式文档修订。
-3. **后端已知 Bug 修复与 Phase B2（单一 Valise 主口令统管 + 30 分钟免输 / 本机 6 位 PIN 码快捷解锁）**：
-   - 接收用户此前在实测中发现但暂未贴出的后端 Bug 清单并逐一排查修复；
-   - 按 `STATUS.md` 第 0 节原计划推进 Phase B2 安全与解锁体验简化（并同步清理 GUI 遗留的独立“管理口令”提示），完成后连同 `ui` 优化重打测试包闭环。
+3. **后端已知问题**：等用户提供此前实测发现的问题清单后逐项复现和修复。
 
-## 0. 当前工作与交接（2026-11-17 Phase B1.2 已完成并打包 `stage-test-20261116-b1.2`，下一步进入 Phase B2）
+## 0c. 架构收敛、前端整固与 Phase B1 实施记录
 
 **架构收敛与三阶段剥离完成状态**：
 经 2026-11-15 代码审计与产品复盘，用户已确认**撤销** A/B 双槽位并行运行环境（`linux-bwrap` 容器接管、三档恢复保护模式、独立程序树采集与父子切换状态机）。分支 `refactor/revoke-ab-slots-and-doc-audit` 上三个阶段均已完成、验证并提交：
@@ -95,7 +99,7 @@
 
 ### 下一步待办
 
-1. **真机首轮与二轮实测修复及口令体验简化（Phase B1、B1.1、B1.2 已完成，接下来进入 Phase B2，2026-11-16/17）**：
+1. **真机首轮与二轮实测修复（Phase B1、B1.1、B1.2，2026-11-16/17）**：
    - 用户在真实 `debian-vm` 靶机（`openclaw`）使用 `stage-test-20261116-b1`（`cc13a31`）与 `stage-test-20261116-b1.1`（`f328c4a`）验收后，相关规范已更新至 `AGENTS.md`（3、7.1、7.7）、`ARCHITECTURE.md`（2.1、2.2、3、3.1、3.3）、`PROFILES.md`（第 2 节 `native_session_cli`）、`INSTALL.md`（2、3、7）、`UI.md`（6、7.5、7.9、8、9.5、9.6、9.7、13、14）与 `DEV_PLAN.md`（第 6 项）：
      - **Phase B1（已完成，2026-11-16，`cc13a31`；实测包 `stage-test-20261116-b1`；“按原设置重新生效”真机通过）**：
        1. **按原设置重新生效**：`gui/protectdesired.go` 非 nil 空切片 + `sayCopies` 兜底。真机验收通过。
@@ -116,12 +120,7 @@
        4. **修复 `linger` 免密 sudo 弹窗混淆与空输入拦截**：`gui/adminpass.go` 与 `zh-CN.json` 清晰区分「建立 SSH 管理连接（需要输入该服务器的登录密码或私钥口令）」与「sudo 提权密码」，并仅对 `askServer` 放行回车/确定提交空输入（保留 `askAdmin`/`askOwner` 非空校验）；`service/system_fixes_run.go` 确认 `sudo -n true` 通过时不弹 sudo 框，若失败发生在 `adminTransport` / `porter.Probe`（非 `porter_not_found`/`porter_unusable`）或 SSH 传输阶段则返回明确前缀 `SSH 管理登录未通过（非 sudo 失败）`。新增 `TestLingerFixSudoRetryNopasswdAndAdminLoginError`、`TestPassDialogEmptyAllowedOnlyForAskServer`、`TestHealthLingerNopasswdSudoRetryInWindow`。
        5. **备份位置卡片整卡可点击**：`gui/locations.go` 的 `locCard` 整卡可点击进入 `/locations/<name>`（`CursorPointer` + 悬停高亮边框 `palette.Brand`），同时保持右上角「同步」/「现在补齐」等子按钮独立点击不误跳，并对 `readLocations` 并发写入 `a.update` 加锁消除了 headless 测试竞态。新增 `TestLocationCardClickAndSyncButton`。
        6. **验证与真机边界**：本轮修改全部完成后，全仓跑通 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`：5 步全过，含 `profilelint` 3 份资料 OK、`porter` 22 包及 `linux/arm64`/`linux/amd64` 静态交叉编译、`client`、`testbed`、`client/ui`、`go tool mygo vet`、`gofmt` 全净）、`porter ./internal/backuprun/... -race`、`client/ui/service` 定向 `-race`（`TestScanAndUnblock|TestTarget|TestNative|TestGate|TestUserTransport|TestLinger|TestDebug`）与 `client/ui/gui/...` 全包 `-race`；`gui/*.go` 最大 370 行、`tui/*.go` 最大 395 行（全 `<= 400`）。**未做**：`stage-test-20261116-b1.2` 的 macOS 真机窗口交互（含设置页 Debug 日志切换/打开/复制、命令行与向导断开离线目标、离线 `nas` 备份点击停止、免密 `debian-vm` `linger` 与位置卡片点击）未在真机实操，待用户使用本测试包现场验收。
-     - **Phase B2（延后与修订：单一 Valise 主口令统管 + 30 分钟免输/本机 6 位 PIN 码快捷解锁）**：
-       1. 未启用快捷解锁时，默认解锁时间窗口设为 **30 分钟**（设置 1–240 分钟可调）；
-       2. `service/gate.go` 对 `repo-trial.json` 中已有试解验证记录的本机仓库，后续新快照只需通过免私钥 `vault.VerifyNoKey` 即可放行，不再反复弹 Valise 口令；
-       3. 取消“管理口令必须与 Valise 口令不同”约束：实现单一 Valise 口令同时保护加密钥匙与默认管理钥匙、向导登录页在已设 Valise 口令时默认勾选一并创建管理钥匙、输入一次 Valise 口令同时解锁 `ownerIdentity` 与 `ssh-agent` 中的管理钥匙（向后兼容历史独立管理口令钥匙，并在设置页提供一键同步/重办为 Valise 口令）；
-       4. 新增可选**本机 6 位 PIN 码**快捷解锁（默认关闭）：客户端用随机盐 + `age/scrypt` 保存 `pin-unlock.age`，启用后**每次触发主人/管理操作直接弹出 6 位 PIN 验证**，不再保留长免输窗口，连续输错 5 次立即销毁包裹退回完整 Valise 口令；系统钥匙串/Touch ID/Windows Hello 与 1Password CLI (`op`) 留待后续迭代。
-2. **用户真机端到端验收（`65d2eb6` 阶段 A 测试包与此前隔离窗口/fake-ssh 验收基线，2026-11-16）**：测试包在 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/`（待 Phase B1/B2 完成后重新构建），此前验证记录：
+2. **用户真机端到端验收（`65d2eb6` 阶段 A 测试包与此前隔离窗口/fake-ssh 验收基线，2026-11-16）**：测试包在 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116/`，此前验证记录：
    - **已核对（实际运行）**：四个二进制均带有 `vcs.revision=65d2eb630567a9a2aaf4095076c7c4457cd78480`、`vcs.modified=false`（`d89a953` 时跑过的 Linux 靶机 porter 临时运行与 CLI linger 验证、A/B 清理核查与 `65d2eb6` 重打包的 4 个二进制版本/静态 ELF 产物保持一致，无任何 A/B 入口）；`codesign --verify --deep --strict` 通过；`SHA256SUMS` 复核全部 OK。
    - **真实运行补证（2026-11-16）**：
      - `d89a953` 构建期已跑：两个 porter 在真实 Linux 上从临时目录运行（`ubuntu-vm` ARM64、InstaBox x86_64，用完即删，未部署）：`hello` 握手正常，`environment_*` 均返回 `method not found`（`ubuntu-vm-x86` 当时连不上）；app 指向隔离 fake-ssh 启动运行 5 分钟以上无报错；askpass 转交助手与 CLI linger 修复在 fake-ssh 上跑通。
@@ -133,7 +132,7 @@
 
 ### 必须保留的环境与基线事实
 
-- **当前用户构建**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116-b1.2/Valise Test.app`（`0.0.0-dev+stage-test-20261116-b1.2`，构建自 Phase B1.2 提交，具体 commit 与 SHA-256 见同目录 `BUILD.json` 与 `SHA256SUMS`）。验收步骤在同目录 `TESTING.md`：先在服务器设置里把靶机 porter 更新为同目录的 `valise-porter_linux_arm64`（`debian-vm`；x86 用 `_amd64`），再依次验收 B1.2 五项与既有 B1.1 回归项。先前测试包 `stage-test-20261116`（`65d2eb6`）、`stage-test-20261116-b1`（`cc13a31`）与 `stage-test-20261116-b1.1`（`f328c4a`）均原样保留。
+- **Phase B1.2 历史测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261116-b1.2/Valise Test.app`（`0.0.0-dev+stage-test-20261116-b1.2`，构建自 Phase B1.2 提交，具体 commit 与 SHA-256 见同目录 `BUILD.json` 与 `SHA256SUMS`）。验收步骤在同目录 `TESTING.md`：先在服务器设置里把靶机 porter 更新为同目录的 `valise-porter_linux_arm64`（`debian-vm`；x86 用 `_amd64`），再依次验收 B1.2 五项与既有 B1.1 回归项。先前测试包 `stage-test-20261116`（`65d2eb6`）、`stage-test-20261116-b1`（`cc13a31`）与 `stage-test-20261116-b1.1`（`f328c4a`）均原样保留。
 - **默认资料包与演练公钥**：默认资料包为 `2026.11.10`（OpenClaw 22、Hermes 11）；默认配置公钥 `~/.cache/valise-drill/devpack/key.pub`，演练配置公钥 `~/.cache/valise-drill/drillpack/key.pub`，不得混用或覆盖。
 - **构建环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；禁止执行 `rm -f`（用 `git rm` 或 `t.TempDir()`）；禁止自动 `git push`。
 - **原基线**：分叉前分支 `n2-agent-protection-journey` 位于 `f243bcf`（含 `07d7952`、`4bdd0fb`、`3e9f124`、`4d890c2`、`f243bcf`）；工作树中的 `references/` 与 `.DS_Store` 保留不提交。

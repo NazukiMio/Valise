@@ -77,19 +77,14 @@ func (c *cli) withAdvanced(ctx context.Context, host, what string, batch *servic
 	for _, r := range service.AdvancedRisks {
 		fmt.Fprintf(c.out, "  ⚠ %s\n", r)
 	}
-	fmt.Fprintf(c.out, "高级模式只在这次运行中有效；管理钥匙的时间窗口（%d 分钟）到期后，下一步之前会再次要求管理口令。\n",
-		int(c.svc.AdminWindow().Minutes()))
+	fmt.Fprintln(c.out, "高级模式只在这次运行中有效。启用快捷解锁时，每次管理操作验证本机 PIN。")
 	vp, err := c.passphrase("Valise 口令：")
-	if err != nil {
-		return err
-	}
-	ap, err := c.passphrase(host + " 的管理口令：")
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(c.out, "请输入确认句：%s\n", service.AdvancedConsent)
 	consent := c.line("> ")
-	if err := c.svc.EnableAdvanced(ctx, host, vp, ap, consent); err != nil {
+	if err := c.svc.EnableAdvanced(ctx, host, vp, "", consent); err != nil {
 		return err
 	}
 	defer c.svc.DisableAdvanced(ctx)

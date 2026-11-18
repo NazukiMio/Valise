@@ -10,6 +10,7 @@ import (
 
 	"filippo.io/age"
 
+	"valise/client/keystore"
 	"valise/client/ssh"
 	"valise/core/revive"
 	"valise/core/rpc"
@@ -24,54 +25,154 @@ import (
 // OwnerAuth is set by the frontend to ask for the Valise passphrase.
 type OwnerAuth struct {
 	Passphrase func(host string) (string, error)
+	PIN        func(host string) (string, error)
 }
 
 type ownerCache struct {
-	mu    sync.Mutex
-	id    age.Identity
-	until time.Time
+	mu     sync.Mutex
+	epoch  uint64
+	closed bool
+	id     age.Identity
+	pass   []byte
+	until  time.Time
+	timer  *time.Timer
 }
 
-// rememberOwner keeps an unlocked identity for the window.
-func (s *Service) rememberOwner(id age.Identity) {
+func (o *ownerCache) clear() {
+	if o.timer != nil {
+		o.timer.Stop()
+		o.timer = nil
+	}
+	clear(o.pass)
+	o.pass, o.id, o.until = nil, nil, time.Time{}
+}
+
+// rememberUnlock holds the lock until linked keys are loaded so LockAdmin
+// cannot clear the agent halfway through a linked unlock.
+func (s *Service) rememberUnlock(k *keystore.UnlockedKey, passphrase string, epoch uint64) {
+	id, err := k.Identity()
+	if err != nil {
+		return
+	}
 	s.owner.mu.Lock()
-	s.owner.id, s.owner.until = id, time.Now().Add(s.AdminWindow())
-	s.owner.mu.Unlock()
+	defer s.owner.mu.Unlock()
+	if s.owner.closed || s.owner.epoch != epoch || s.PINEnabled() {
+		return
+	}
+	s.cacheOwner(id, passphrase)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	for _, host := range s.AdminPassServers() {
+		if ctx.Err() != nil {
+			break
+		}
+		if s.HasAdminKey(host) && !s.AdminUnlocked(ctx, host) {
+			_ = s.addToAgent(ctx, host, passphrase, time.Until(s.owner.until), false)
+		}
+	}
 }
 
-// ForgetOwner drops the kept identity (lock now).
+func (s *Service) cacheOwner(id age.Identity, passphrase string) {
+	o := &s.owner
+	o.clear()
+	window := s.AdminWindow()
+	until := time.Now().Add(window)
+	o.id, o.pass, o.until = id, []byte(passphrase), until
+	o.timer = time.AfterFunc(window, func() {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		if o.until == until {
+			o.clear()
+		}
+	})
+}
+
+// ForgetOwner zeros the cached passphrase and drops the unlocked identity.
 func (s *Service) ForgetOwner() {
 	s.owner.mu.Lock()
-	s.owner.id = nil
-	s.owner.mu.Unlock()
+	defer s.owner.mu.Unlock()
+	s.owner.epoch++
+	s.owner.clear()
 }
 
-// OwnerRemaining is how long the kept identity has left; false when none.
+func (s *Service) activeOwner() bool {
+	if !time.Now().Before(s.owner.until) {
+		s.owner.clear()
+	}
+	return s.owner.id != nil && !s.PINEnabled()
+}
+
+// OwnerRemaining is how long the kept identity has left.
 func (s *Service) OwnerRemaining() (time.Duration, bool) {
 	s.owner.mu.Lock()
 	defer s.owner.mu.Unlock()
-	if s.owner.id == nil || time.Now().After(s.owner.until) {
+	if !s.activeOwner() {
 		return 0, false
 	}
 	return time.Until(s.owner.until), true
 }
 
-// ownerIdentity returns the kept identity, asking for the Valise
-// passphrase when there is none.
-func (s *Service) ownerIdentity(host string) (age.Identity, error) {
+func (s *Service) hasCachedPassphrase() bool {
 	s.owner.mu.Lock()
-	id := s.owner.id
-	if id != nil && time.Now().After(s.owner.until) {
-		id, s.owner.id = nil, nil
-	}
-	s.owner.mu.Unlock()
-	if id != nil {
-		return id, nil
+	defer s.owner.mu.Unlock()
+	return s.activeOwner() && len(s.owner.pass) != 0
+}
+
+func (s *Service) cachedPassphraseExpiry(passphrase string) (time.Time, bool) {
+	s.owner.mu.Lock()
+	defer s.owner.mu.Unlock()
+	match := s.activeOwner() && len(s.owner.pass) != 0 && string(s.owner.pass) == passphrase
+	return s.owner.until, match
+}
+
+func (s *Service) promptValise(host string) (string, error) {
+	if s.PINEnabled() {
+		if s.OwnerAuth.PIN == nil {
+			return "", valise.New("pin_locked", "这一步需要本机 PIN 验证", "在 Valise 界面里完成验证")
+		}
+		pin, err := s.OwnerAuth.PIN(host)
+		if err != nil {
+			return "", err
+		}
+		return s.VerifyPIN(pin)
 	}
 	if s.OwnerAuth.Passphrase == nil {
-		return nil, valise.New("owner_locked", "这一步需要确认是你本人（"+host+"），但这里没法询问 Valise 口令", "在终端界面或命令行里执行这一步")
+		return "", valise.New("owner_locked", "这一步需要确认是你本人（"+host+"），但这里没法询问 Valise 口令", "在终端界面或命令行里执行这一步")
 	}
-	pass, err := s.OwnerAuth.Passphrase(host)
+	return s.OwnerAuth.Passphrase(host)
+}
+
+// ValisePassphrase supplies the verified passphrase to a trusted frontend
+// creating an administrator key. In PIN mode it is only used for this call.
+func (s *Service) ValisePassphrase(host string) (string, error) {
+	s.owner.mu.Lock()
+	if s.activeOwner() && len(s.owner.pass) != 0 {
+		pass := string(s.owner.pass)
+		s.owner.mu.Unlock()
+		return pass, nil
+	}
+	s.owner.mu.Unlock()
+	pass, err := s.promptValise(host)
+	if err != nil {
+		return "", err
+	}
+	k, err := s.Unlock(pass)
+	if err != nil {
+		return "", err
+	}
+	k.Lock()
+	return pass, nil
+}
+
+func (s *Service) ownerIdentity(host string) (age.Identity, error) {
+	s.owner.mu.Lock()
+	if s.activeOwner() {
+		id := s.owner.id
+		s.owner.mu.Unlock()
+		return id, nil
+	}
+	s.owner.mu.Unlock()
+	pass, err := s.promptValise(host)
 	if err != nil {
 		return nil, err
 	}
@@ -80,12 +181,7 @@ func (s *Service) ownerIdentity(host string) (age.Identity, error) {
 		return nil, err
 	}
 	defer k.Lock()
-	xid, err := k.Identity()
-	if err != nil {
-		return nil, err
-	}
-	s.rememberOwner(xid)
-	return xid, nil
+	return k.Identity()
 }
 
 // proveOwner runs the owner proof on a daily porter session.

@@ -17,6 +17,7 @@ type rebuildState struct {
 	results     map[string]service.AdminRebuild
 	j           job
 	started     bool
+	custom      bool
 }
 
 func (a *App) rebuildPage(c *ui.Context) {
@@ -29,9 +30,21 @@ func (a *App) rebuildPage(c *ui.Context) {
 		ui.Text(c, T("rebuild.title")).FontSize(20).Bold().Font(cur.Fonts.Display)
 		muted(ui.Text(c, T("rebuild.what"))).FontSize(13).Wrap()
 		if !rs.started {
-			kf := &keyFlow{pass: rs.pass, pass2: rs.pass2}
-			why := passPair(c, kf, T("admin.new"))
-			rs.pass, rs.pass2 = kf.pass, kf.pass2
+			if rs.j.err != nil {
+				errorBox(c, rs.j.err, a.fold("rb-err"))
+			}
+			hasKey := a.hasKey()
+			if hasKey && ui.Checkbox(c, &rs.custom, T("rebuild.custom")).Changed() && !rs.custom {
+				rs.pass, rs.pass2 = "", ""
+			}
+			why := ""
+			if !hasKey || rs.custom {
+				kf := &keyFlow{pass: rs.pass, pass2: rs.pass2}
+				why = passPair(c, kf, T("admin.new"))
+				rs.pass, rs.pass2 = kf.pass, kf.pass2
+			} else {
+				muted(ui.Text(c, T("rebuild.valise"))).Wrap()
+			}
 			muted(ui.Text(c, T("rebuild.login"))).Wrap()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).OnClick(func() { a.rebuild = nil; a.router.Push("/settings") })
@@ -94,13 +107,24 @@ func (a *App) firstUnfinished(rs *rebuildState) string {
 }
 
 func (a *App) runRebuild(rs *rebuildState) {
-	pass := rs.pass
+	pass, useValise := rs.pass, a.hasKey() && !rs.custom
 	rs.pass, rs.pass2, rs.started = "", "", true
 	a.start(&rs.j, 30*time.Minute, func(ctx context.Context) error {
+		if useValise {
+			var err error
+			pass, err = a.svc.ValisePassphrase(T("rebuild.title"))
+			if err != nil {
+				return err
+			}
+		}
 		a.says(&rs.j)(T("rebuild.logging_in"))
 		return a.svc.RebuildAdminPasses(ctx, pass, func(r service.AdminRebuild) {
 			a.update(func() { rs.results[r.Server] = r })
 			a.says(&rs.j)(T("rebuild.logging_in"))
 		})
-	}, nil)
+	}, func(err error) {
+		if err != nil && len(rs.results) == 0 {
+			rs.started = false
+		}
+	})
 }

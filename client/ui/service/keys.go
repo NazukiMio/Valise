@@ -49,6 +49,22 @@ func (s *Service) ensureNoKey() error {
 }
 
 func (s *Service) store(k *keystore.UnlockedKey, data []byte) (*KeyInfo, error) {
+	unlock, err := s.lockPIN()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if err := s.ensureNoKey(); err != nil {
+		return nil, err
+	}
+	// A new identity cannot inherit the previous one's PIN or trial evidence.
+	s.LockAdmin()
+	if err := s.removePIN(); err != nil {
+		return nil, err
+	}
+	if err := os.Remove(filepath.Join(s.Dirs.Data, repoTrialFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	if err := keystore.SaveFile(s.recipientPath(), []byte(k.Recipient()+"\n")); err != nil {
 		return nil, err
 	}
@@ -103,6 +119,22 @@ func (s *Service) KeyShow() (*KeyInfo, error) {
 
 // Unlock decrypts the stored identity. The caller must Lock it.
 func (s *Service) Unlock(passphrase string) (*keystore.UnlockedKey, error) {
+	s.owner.mu.Lock()
+	epoch := s.owner.epoch
+	s.owner.mu.Unlock()
+	k, err := s.unlockStored(passphrase)
+	if err != nil {
+		return nil, err
+	}
+	s.rememberUnlock(k, passphrase, epoch)
+	// Typing the passphrase is when missing backup locks are made.
+	s.refreshLocks(passphrase)
+	return k, nil
+}
+
+func (s *Service) HasKey() bool { return fileExists(s.keystorePath()) }
+
+func (s *Service) unlockStored(passphrase string) (*keystore.UnlockedKey, error) {
 	info, err := s.KeyShow()
 	if err != nil {
 		return nil, err
@@ -119,8 +151,6 @@ func (s *Service) Unlock(passphrase string) (*keystore.UnlockedKey, error) {
 		k.Lock()
 		return nil, valise.New("keystore_mismatch", "keystore.age 与 recipient.txt 不一致", "从离线恢复套件重新导入")
 	}
-	// Typing the passphrase is when missing backup locks are made.
-	s.refreshLocks(passphrase)
 	return k, nil
 }
 

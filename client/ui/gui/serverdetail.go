@@ -150,6 +150,9 @@ func (a *App) passBlock(c *ui.Context, name string, tiered bool, ps *passState) 
 				case !has:
 					ui.Text(c, T("pass.admin_none")).Bold()
 					muted(ui.Text(c, T("pass.admin_none_how"))).Wrap()
+				case a.svc.PINEnabled():
+					ui.Text(c, T("pass.admin_locked")).Bold()
+					muted(ui.Text(c, T("pin.each_operation"))).Wrap()
 				case open:
 					ui.Text(c, T("pass.admin_open", "n", int(left.Minutes())+1)).Bold()
 					muted(ui.Text(c, T("pass.admin_auto_lock"))).Wrap()
@@ -181,22 +184,14 @@ func (a *App) passBlock(c *ui.Context, name string, tiered bool, ps *passState) 
 
 func (a *App) issueForm(c *ui.Context, name string, ps *passState) {
 	ui.Column(c).Gap(8).Children(func() {
-		labeled(c, T("pass.admin_passphrase"), func() {
-			ui.TextInput(c, &ps.pass).Password().Label(T("pass.admin_passphrase")).Placeholder(T("pass.admin_rule")).AutoFocus()
-		})
-		labeled(c, T("pass.again"), func() {
-			ui.TextInput(c, &ps.pass2).Password().Label(T("pass.again")).Placeholder(T("pass.again_hint"))
-		})
-		muted(ui.Text(c, T("pass.issue_login"))).Wrap()
 		why := ""
-		switch {
-		case len([]rune(ps.pass)) < 12:
-			why = T("pass.err.short")
-		case ps.pass != ps.pass2:
-			why = T("pass.err.differ")
-		}
-		if why != "" && ps.pass != "" {
-			ui.Text(c, why).FontSize(12).TextColor(palette.Warn)
+		if a.hasKey() {
+			muted(ui.Text(c, T("pass.issue_valise"))).Wrap()
+		} else {
+			kf := &keyFlow{pass: ps.pass, pass2: ps.pass2}
+			why = passPair(c, kf, T("pass.admin_passphrase"))
+			ps.pass, ps.pass2 = kf.pass, kf.pass2
+			muted(ui.Text(c, T("pass.issue_login"))).Wrap()
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			ui.Button(c, T("common.cancel")).OnClick(func() { ps.issuing, ps.pass, ps.pass2 = false, "", "" })
@@ -209,12 +204,18 @@ func (a *App) issueForm(c *ui.Context, name string, ps *passState) {
 }
 
 func (a *App) issuePass(name string, ps *passState) {
-	pass := ps.pass
+	pass, useValise := ps.pass, a.hasKey()
 	ps.busy, ps.err, ps.pass, ps.pass2 = true, nil, "", ""
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		err := a.svc.CreateAdminKey(ctx, name, pass)
+		var err error
+		if useValise {
+			pass, err = a.svc.ValisePassphrase(name)
+		}
+		if err == nil {
+			err = a.svc.CreateAdminKey(ctx, name, pass)
+		}
 		a.update(func() {
 			ps.busy, ps.err = false, err
 			if err == nil {

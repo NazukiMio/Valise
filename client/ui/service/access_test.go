@@ -215,13 +215,15 @@ func TestAdminKey(t *testing.T) {
 	}
 }
 
-func TestAdminPassphraseDiffersFromValise(t *testing.T) {
+func TestAdminPassphraseCanMatchValise(t *testing.T) {
 	needOpenSSH(t)
 	s := newService(t, "ssh")
 	if _, err := s.KeyInit(pass); err != nil {
 		t.Fatal(err)
 	}
-	wantCode(t, s.checkAdminPassphrase(pass), "admin_passphrase_same")
+	if err := s.createAdminKey(context.Background(), "h", pass); err != nil {
+		t.Fatal(err)
+	}
 	wantCode(t, s.checkAdminPassphrase("short"), "admin_passphrase_short")
 	if err := s.checkAdminPassphrase("another long passphrase"); err != nil {
 		t.Fatal(err)

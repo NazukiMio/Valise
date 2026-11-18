@@ -122,12 +122,12 @@ func (a *App) loginStep(c *ui.Context, w *wizard) {
 		}
 		ui.Text(c, how).FontSize(13).Wrap()
 		passLine(c, T("pass.user"), T("wizard.login.user_pass"))
-		want := w.admin == "yes"
-		if ui.Checkbox(c, &want, T("wizard.login.admin_too")).Changed() {
+		want, useValise := w.admin == "yes", a.hasKey()
+		if ui.Checkbox(c, &want, adminChoiceLabel(useValise)).Changed() {
 			w.admin = map[bool]string{true: "yes"}[want]
 		}
 		muted(ui.Text(c, T("wizard.login.admin_why"))).Wrap()
-		if want {
+		if want && !useValise {
 			labeled(c, T("pass.admin_passphrase"), func() {
 				ui.TextInput(c, &w.adminPass).Password().Label(T("pass.admin_passphrase")).Placeholder(T("pass.admin_rule"))
 			})
@@ -139,9 +139,9 @@ func (a *App) loginStep(c *ui.Context, w *wizard) {
 		a.porterChoice(c, w)
 		why := ""
 		switch {
-		case want && len([]rune(w.adminPass)) < 12:
+		case want && !useValise && len([]rune(w.adminPass)) < 12:
 			why = T("pass.err.short")
-		case want && w.adminPass != w.adminPass2:
+		case want && !useValise && w.adminPass != w.adminPass2:
 			why = T("pass.err.differ")
 		}
 		if why != "" && w.adminPass != "" {
@@ -155,6 +155,13 @@ func (a *App) loginStep(c *ui.Context, w *wizard) {
 			}
 		})
 	})
+}
+
+func adminChoiceLabel(useValise bool) string {
+	if useValise {
+		return T("wizard.login.admin_valise")
+	}
+	return T("wizard.login.admin_too")
 }
 
 func passLine(c *ui.Context, title, sub string) {
@@ -224,10 +231,19 @@ func (a *App) pickPorter(w *wizard) {
 func (a *App) runAdd(w *wizard) {
 	srv := w.server()
 	opts := service.AddServerOptions{Server: srv, Setup: service.SetupOptions{Name: srv.Name, Deploy: a.deploySource(w), Doing: a.doingFor(w)}}
-	if w.admin == "yes" {
+	want, useValise := w.admin == "yes", a.hasKey()
+	if want && !useValise {
 		opts.AdminPassphrase = w.adminPass
 	}
+	w.adminPass, w.adminPass2 = "", ""
 	a.prepare(w, srv.Name, func(ctx context.Context, step func(service.SetupStep)) error {
+		if want && useValise {
+			pass, err := a.svc.ValisePassphrase(srv.Name)
+			if err != nil {
+				return err
+			}
+			opts.AdminPassphrase = pass
+		}
 		opts.Setup.Step = step
 		return a.svc.AddServer(ctx, opts)
 	})

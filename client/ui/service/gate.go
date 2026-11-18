@@ -115,7 +115,7 @@ func agoText(d time.Duration) string {
 
 // AdvancedGate checks the precondition for instance on host, or for every
 // enrolled agent when instance is "". A repository copy not yet
-// trial-decrypted asks for the Valise passphrase (once per pod).
+// trial-decrypted asks for the Valise passphrase (once per repository).
 func (s *Service) AdvancedGate(ctx context.Context, host, instance string) (*GateResult, error) {
 	insts, err := s.Instances(ctx, host)
 	if err != nil {
@@ -144,22 +144,31 @@ func (s *Service) AdvancedGate(ctx context.Context, host, instance string) (*Gat
 	// one must not hold up what the person is doing (INSTALL.md 4.2). Only
 	// when a repository does not settle it are the copy locations listed.
 	places := s.repoPlaces(host, st)
-	check := func() bool {
+	check := func() (bool, error) {
 		res.Agents = res.Agents[:0]
 		settled := true
 		for _, id := range want {
-			a := s.gateAgent(host, id, st.ServerName, st.Snapshots, places)
+			a, err := s.gateAgent(host, id, st.ServerName, st.Snapshots, places)
+			if err != nil {
+				return false, err
+			}
 			settled = settled && a.Pod != nil
 			res.Agents = append(res.Agents, a)
 		}
-		return settled
+		return settled, nil
 	}
-	if !check() && len(st.Targets) > 0 {
+	settled, err := check()
+	if err != nil {
+		return nil, err
+	}
+	if !settled && len(st.Targets) > 0 {
 		places = append(places, s.targetPlaces(ctx, host, st)...)
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		check()
+		if _, err := check(); err != nil {
+			return nil, err
+		}
 	}
 	return res, nil
 }
@@ -269,7 +278,7 @@ func (s *Service) targetPlaces(ctx context.Context, host string, st *vaultrpc.St
 }
 
 // gateAgent finds instance's newest pod that is offsite and restorable.
-func (s *Service) gateAgent(host, instance, server string, metas []vault.Meta, places []offsitePlace) GateAgent {
+func (s *Service) gateAgent(host, instance, server string, metas []vault.Meta, places []offsitePlace) (GateAgent, error) {
 	a := GateAgent{Instance: instance}
 	var pods []vault.Meta
 	for _, m := range metas {
@@ -279,7 +288,7 @@ func (s *Service) gateAgent(host, instance, server string, metas []vault.Meta, p
 	}
 	if len(pods) == 0 {
 		a.Reason = "还没有备份"
-		return a
+		return a, nil
 	}
 	sort.Slice(pods, func(i, j int) bool { return pods[i].CreatedAt.After(pods[j].CreatedAt) })
 	var why []string
@@ -295,7 +304,10 @@ func (s *Service) gateAgent(host, instance, server string, metas []vault.Meta, p
 				continue
 			}
 			if p.repo != "" {
-				if err := s.trialDecrypt(host, filepath.Join(p.repo, server, leafDirName(leaf)), m.SnapshotID); err != nil {
+				if err := s.trialDecryptInRepo(host, p.repo, filepath.Join(p.repo, server, leafDirName(leaf)), m.SnapshotID); err != nil {
+					if ue, ok := valise.As(err); ok && (ue.Code == "cancelled" || strings.HasPrefix(ue.Code, "pin_")) {
+						return a, err
+					}
 					why = append(why, p.label+" 里的 "+m.SnapshotID+" 没有通过试解："+errText1(err))
 					continue
 				}
@@ -304,7 +316,7 @@ func (s *Service) gateAgent(host, instance, server string, metas []vault.Meta, p
 			a.Pod, a.Where = &m, p.label
 			a.Age = time.Since(m.CreatedAt)
 			a.Stale = a.Age > staleAfter
-			return a
+			return a, nil
 		}
 	}
 	a.Reason = "备份都只在服务器上"
@@ -314,38 +326,79 @@ func (s *Service) gateAgent(host, instance, server string, metas []vault.Meta, p
 	if len(why) > 0 {
 		a.Reason += "（" + strings.Join(why, "；") + "）"
 	}
-	return a
+	return a, nil
 }
 
-// trialDecrypt decrypts one snapshot of a repository copy and checks every
-// file's hash, once per snapshot (remembered in repo-trial.json).
+// trialDecrypt checks a snapshot in a standalone repository directory.
 func (s *Service) trialDecrypt(host, dir, snapshot string) error {
+	return s.trialDecryptInRepo(host, dir, dir, snapshot)
+}
+
+func (s *Service) trialDecryptInRepo(host, repo, dir, snapshot string) error {
 	path := filepath.Join(s.Dirs.Data, repoTrialFile)
-	done := map[string]time.Time{}
-	if b, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(b, &done)
-	}
+	dir, repo = filepath.Clean(dir), filepath.Clean(repo)
 	key := dir + "#" + snapshot
-	if _, ok := done[key]; ok && fileExists(filepath.Join(dir, vault.SnapshotsDir, snapshot+".meta.json")) {
+	done := readRepoTrials(path)
+	if _, ok := done[key]; ok && trialMetaExists(dir, snapshot) {
 		return nil
+	}
+	if !trialMetaExists(dir, snapshot) {
+		return valise.New("repo_verify_failed", "本机仓库缺少这个时间点的清单", "重新同步后再试")
 	}
 	if probs, err := vault.VerifyNoKey(dir); err != nil || len(probs) > 0 {
 		if err == nil {
-			err = valise.New("repo_verify_failed", probs[0].String(), "")
+			err = valise.New("repo_verify_failed", probs[0].String(), "重新同步后再试")
 		}
 		return err
 	}
-	ident, err := s.ownerIdentity(host)
+	if !repoTrialPassed(repo, done) {
+		ident, err := s.ownerIdentity(host)
+		if err != nil {
+			return err
+		}
+		if _, probs, err := vault.VerifyWithKey(dir, []string{snapshot}, ident); err != nil || len(probs) > 0 {
+			if err == nil {
+				err = valise.New("repo_verify_failed", probs[0].String(), "重新同步后再试")
+			}
+			return err
+		}
+	}
+	s.repoTrialMu.Lock()
+	defer s.repoTrialMu.Unlock()
+	done = readRepoTrials(path)
+	done[key] = time.Now().UTC()
+	b, err := json.MarshalIndent(done, "", "  ")
 	if err != nil {
 		return err
 	}
-	if _, probs, err := vault.VerifyWithKey(dir, []string{snapshot}, ident); err != nil || len(probs) > 0 {
-		if err == nil {
-			err = valise.New("repo_verify_failed", probs[0].String(), "")
-		}
-		return err
+	return writeAtomicFile(path, append(b, '\n'))
+}
+
+func readRepoTrials(path string) map[string]time.Time {
+	var done map[string]time.Time
+	if b, err := os.ReadFile(path); err == nil && json.Unmarshal(b, &done) == nil && done != nil {
+		return done
 	}
-	done[key] = time.Now().UTC()
-	b, _ := json.MarshalIndent(done, "", "  ")
-	return os.WriteFile(path, append(b, '\n'), 0o600)
+	return map[string]time.Time{}
+}
+
+func trialMetaExists(dir, snapshot string) bool {
+	return snapshot != "" && filepath.Base(snapshot) == snapshot &&
+		fileExists(filepath.Join(dir, vault.SnapshotsDir, snapshot+".meta.json"))
+}
+
+func repoTrialPassed(repo string, done map[string]time.Time) bool {
+	for entry := range done {
+		i := strings.LastIndexByte(entry, '#')
+		if i < 0 {
+			continue
+		}
+		dir, snapshot := entry[:i], entry[i+1:]
+		rel, err := filepath.Rel(repo, dir)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) &&
+			trialMetaExists(dir, snapshot) {
+			return true
+		}
+	}
+	return false
 }

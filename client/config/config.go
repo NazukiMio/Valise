@@ -16,7 +16,7 @@ type Config struct {
 	// SSHBinary is the ssh(1) to run. Tests point it at fake-ssh.
 	SSHBinary string `json:"ssh_binary,omitempty"`
 	// AdminWindowMinutes is how long an unlocked admin key stays usable
-	// (1–120, default 15; docs/ARCHITECTURE.md 2.1).
+	// (1–240, default 30; docs/ARCHITECTURE.md 2.1).
 	AdminWindowMinutes int `json:"admin_window_minutes,omitempty"`
 	// Repos are local folders escape pods are copied to (docs/
 	// ARCHITECTURE.md section 7, "本机仓库"), shared by all servers.

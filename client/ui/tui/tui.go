@@ -135,6 +135,7 @@ func Run(ctx context.Context, opt Options) error {
 	opt.Service.NoTerminalLogin = true
 	opt.Service.AdminAuth.Passphrase = func(host string) (string, error) { return askAdminPassphrase(m.send, host) }
 	opt.Service.OwnerAuth.Passphrase = func(host string) (string, error) { return askOwnerPassphrase(m.send, host) }
+	opt.Service.OwnerAuth.PIN = func(host string) (string, error) { return askOwnerPIN(m.send, host) }
 	defer opt.Service.Close()
 	_, err := p.Run()
 	return err

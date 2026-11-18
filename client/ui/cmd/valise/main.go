@@ -198,6 +198,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	if err == nil {
 		c.svc.AdminAuth.Passphrase = c.adminPassphrase
 		c.svc.OwnerAuth.Passphrase = c.ownerPassphrase
+		c.svc.OwnerAuth.PIN = func(string) (string, error) { return c.passphrase("本机 6 位数字 PIN 码：") }
 		err = c.dispatch(ctx, args)
 		// A normal exit lets in-flight work reach a safe boundary; a detached
 		// server backup goes on without this process.

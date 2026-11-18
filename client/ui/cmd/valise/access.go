@@ -52,7 +52,7 @@ func (c *cli) ownerPassphrase(host string) (string, error) {
 
 // newAdminPassphrase asks for a new admin passphrase twice.
 func (c *cli) newAdminPassphrase() (string, error) {
-	fmt.Fprintln(c.out, "管理口令保护管理钥匙，必须和 Valise 口令不同（至少 12 个字符）。")
+	fmt.Fprintln(c.out, "管理口令保护管理钥匙，至少 12 个字符。可以使用 Valise 口令。")
 	p1, err := c.passphrase("设置管理口令：")
 	if err != nil {
 		return "", err

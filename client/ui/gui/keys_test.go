@@ -39,7 +39,7 @@ func TestKeySettings(t *testing.T) {
 	}
 	tt.Advance(time.Second)
 	hasAll(t, tt.Texts(), "加密钥匙由 Valise 口令保护", "已备份钥匙", "备份钥匙", "Valise 口令", "备用锁开着 · 0 台服务器可用来找回",
-		"忘了口令…", "关闭备用锁…", "管理口令", "还没有服务器办管理员通行证")
+		"忘了口令…", "关闭备用锁…", "管理员通行证", "还没有服务器办管理员通行证")
 	if tt.HasText("救不了的情况") {
 		t.Error("details shown unfolded")
 	}
@@ -51,6 +51,35 @@ func TestKeySettings(t *testing.T) {
 	}
 	click(t, tt, "备份")
 	hasAll(t, tt.Texts(), "关掉 Valise 也继续备份", "开启后，进行中的备份交给服务器自己跑完。")
+}
+
+func TestPINSettingsAndWindow(t *testing.T) {
+	a, tt := world(t)
+	if _, err := a.svc.KeyInit(testPass); err != nil {
+		t.Fatal(err)
+	}
+	a.router.Push("/settings")
+	tt.Frame()
+	hasAll(t, tt.Texts(), "本机快捷解锁", "PIN 码未开启", "免输解锁时长", "30 分钟")
+	click(t, tt, "调整时长…")
+	a.keyFlow.pass = "240"
+	tt.Frame()
+	click(t, tt, "保存")
+	hasAll(t, tt.Texts(), "240 分钟")
+	click(t, tt, "开启 PIN…")
+	a.keyFlow.old, a.keyFlow.pass, a.keyFlow.pass2 = testPass, "012345", "012345"
+	tt.Frame()
+	click(t, tt, "保存")
+	if !a.svc.PINEnabled() || tt.HasText("调整时长…") {
+		t.Fatal("PIN settings did not hide the window control")
+	}
+	hasAll(t, tt.Texts(), "6 位 PIN 码已开启", "每次操作都要验证本机 PIN 码。", "修改 PIN…")
+	click(t, tt, "关闭 PIN")
+	click(t, tt, "关闭快捷解锁")
+	if a.svc.PINEnabled() {
+		t.Fatal("PIN remains enabled")
+	}
+	hasAll(t, tt.Texts(), "PIN 码未开启", "240 分钟", "调整时长…")
 }
 
 // The first backup waits for a key and for backing it up.
@@ -144,7 +173,7 @@ func TestRebuildPage(t *testing.T) {
 	a, tt := world(t)
 	a.router.Push("/settings/admin-rebuild")
 	tt.Frame()
-	hasAll(t, tt.Texts(), "重办管理员通行证", "管理员通行证不锁数据，所以不找回，直接换新的。", "新的管理口令", "开始重办")
+	hasAll(t, tt.Texts(), "重办管理员通行证", "为已有通行证或待重办的服务器换发管理员通行证。", "新的管理口令", "开始重办")
 }
 
 // TestKeyShots renders the keys and backups screens.

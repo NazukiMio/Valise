@@ -154,11 +154,11 @@ func (a *App) migratePage(c *ui.Context, name string) {
 		for i, k := range []string{"migrate.step.login", "migrate.step.user", "migrate.step.check", "migrate.step.hostkey"} {
 			passLine(c, strconv.Itoa(i+1), T(k, "name", name))
 		}
-		want := ss.migAdmin == "yes"
-		if ui.Checkbox(c, &want, T("wizard.login.admin_too")).Changed() {
+		want, useValise := ss.migAdmin == "yes", a.hasKey()
+		if ui.Checkbox(c, &want, adminChoiceLabel(useValise)).Changed() {
 			ss.migAdmin = map[bool]string{true: "yes"}[want]
 		}
-		if want {
+		if want && !useValise {
 			labeled(c, T("pass.admin_passphrase"), func() {
 				ui.TextInput(c, &ss.migPass).Password().Label(T("pass.admin_passphrase")).Placeholder(T("pass.admin_rule"))
 			})
@@ -174,18 +174,24 @@ func (a *App) migratePage(c *ui.Context, name string) {
 		if ss.migJ.err != nil {
 			errorBox(c, ss.migJ.err, a.fold("mig-err-"+name))
 		}
-		bad := want && (len([]rune(ss.migPass)) < 12 || ss.migPass != ss.migPass2)
+		bad := want && !useValise && (len([]rune(ss.migPass)) < 12 || ss.migPass != ss.migPass2)
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			ui.Button(c, T("common.cancel")).OnClick(func() { ss.migPass, ss.migPass2 = "", ""; a.router.Push("/servers/" + name) })
 			b := ui.PrimaryButton(c, T("migrate.go")).OnClick(func() {
 				pass := ""
-				if want {
+				if want && !useValise {
 					pass = ss.migPass
 				}
 				ss.migPass, ss.migPass2 = "", ""
 				var missing bool
 				a.start(&ss.migJ, 10*time.Minute, func(ctx context.Context) (err error) {
 					a.says(&ss.migJ)(T("migrate.running", "name", name))
+					if want && useValise {
+						pass, err = a.svc.ValisePassphrase(name)
+						if err != nil {
+							return err
+						}
+					}
 					missing, err = a.svc.MigrateServer(ctx, name, pass)
 					return err
 				}, func(err error) {

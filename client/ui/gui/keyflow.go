@@ -13,12 +13,15 @@ import (
 // live only until the dialog closes.
 
 const (
-	kfSet         = "set"
-	kfGate        = "gate"
-	kfImport      = "import"
-	kfChange      = "change"
-	kfLockOn      = "lock_on"
-	kfAdminChange = "admin_change"
+	kfSet          = "set"
+	kfGate         = "gate"
+	kfImport       = "import"
+	kfChange       = "change"
+	kfLockOn       = "lock_on"
+	kfAdminChange  = "admin_change"
+	kfPIN          = "pin"
+	kfPINOff       = "pin_off"
+	kfUnlockWindow = "unlock_window"
 )
 
 type keyFlow struct {
@@ -45,7 +48,7 @@ func (a *App) needKey(then func()) {
 	}
 }
 
-func (a *App) hasKey() bool { _, err := a.svc.KeyShow(); return err == nil }
+func (a *App) hasKey() bool { return a.svc.HasKey() }
 
 func (a *App) keyDialog(c *ui.Context) {
 	kf := a.keyFlow
@@ -68,6 +71,12 @@ func (a *App) keyDialog(c *ui.Context) {
 				a.lockOnStep(c, kf)
 			case kfAdminChange:
 				a.adminChangeStep(c, kf)
+			case kfPIN:
+				a.pinStep(c, kf)
+			case kfPINOff:
+				a.pinOffStep(c, kf)
+			case kfUnlockWindow:
+				a.windowStep(c, kf)
 			}
 		})
 	}).Dismissed() && !kf.j.busy {

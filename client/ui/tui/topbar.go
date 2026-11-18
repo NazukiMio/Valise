@@ -25,13 +25,22 @@ func (m *Model) currentHost() string {
 // access mode in red, or the admin window of the current server.
 func (m *Model) accessState() string {
 	if fa := m.svc.AdvancedHost(); fa != "" {
-		left, _ := m.svc.AdminRemaining(fa)
+		status := "每次操作验证 PIN"
+		if !m.svc.PINEnabled() {
+			status = "等待解锁"
+			if left, ok := m.svc.AdminRemaining(fa); ok {
+				status = "剩余 " + minutes(left)
+			}
+		}
 		return lipgloss.NewStyle().Background(cBad).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).
-			Render(" 高级模式 · "+fa+" · 剩余 "+minutes(left)+" ") + dimStyle.Render(" · ") + keyStyle.Render("L") + dimStyle.Render(" 立即关闭")
+			Render(" 高级模式 · "+fa+" · "+status+" ") + dimStyle.Render(" · ") + keyStyle.Render("L") + dimStyle.Render(" 立即关闭")
 	}
 	host := m.currentHost()
 	if host == "" || !m.svc.HasAdminKey(host) {
 		return ""
+	}
+	if m.svc.PINEnabled() {
+		return dimStyle.Render("开发者模式 · 每次操作验证 PIN")
 	}
 	if left, ok := m.svc.AdminRemaining(host); ok {
 		return okStyle.Render("开发者模式已解锁 · 剩余 "+minutes(left)) + dimStyle.Render(" · ") + keyStyle.Render("L") + dimStyle.Render(" 立即锁定")
@@ -64,9 +73,13 @@ func (m *Model) unlockAdmin() tea.Cmd {
 	if !m.svc.HasAdminKey(host) {
 		return m.push(confirm("为 "+host+" 创建管理钥匙？", []string{
 			host + " 还没有管理钥匙：每次管理操作都要在终端里输入服务器密码，终端界面里没法输入。",
-			"管理钥匙用单独的管理口令加密；解锁后 " + itoa(int(m.svc.AdminWindow().Minutes())) + " 分钟内不再询问。",
+			"管理钥匙可以用 Valise 口令加密。",
 			"创建时会在终端里用服务器密码登录一次。"},
 			func(m *Model) tea.Cmd { return m.runCLI("server", "admin-key", host) }))
+	}
+	if m.svc.PINEnabled() {
+		m.flash, m.flashErr = "快捷解锁已开启。执行管理操作时验证本机 PIN。", false
+		return nil
 	}
 	if _, ok := m.svc.AdminRemaining(host); ok {
 		m.flash, m.flashErr = "开发者模式已经是解锁状态；按 L 立即锁定", false

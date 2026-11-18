@@ -44,6 +44,12 @@ func (a *App) keySettings(c *ui.Context) {
 				ui.Button(c, T("key.import")).OnClick(func() { a.keyFlow = &keyFlow{step: kfImport} })
 			})
 		})
+		if len(a.svc.AdminPassServers()) > 0 {
+			card(ui.Column(c)).Gap(8).Children(func() {
+				a.windowRow(c)
+				a.adminRow(c)
+			})
+		}
 		return
 	}
 	kb := a.svc.KeyBackupState()
@@ -69,6 +75,8 @@ func (a *App) keySettings(c *ui.Context) {
 			ui.Button(c, T("key.export_open")).OnClick(func() { a.keyFlow = &keyFlow{step: kfGate, choice: "export"} })
 		})
 		a.passphraseRow(c)
+		a.pinRow(c)
+		a.windowRow(c)
 		a.adminRow(c)
 	})
 	if a.lockOff {
@@ -133,7 +141,7 @@ func (a *App) adminRow(c *ui.Context) {
 			pending++
 		}
 	}
-	now := T("admin.servers", "n", len(servers), "m", int(a.svc.AdminWindow().Minutes()))
+	now := T("admin.servers", "n", len(servers))
 	note := ""
 	if pending > 0 {
 		note = T("admin.pending", "n", pending)
