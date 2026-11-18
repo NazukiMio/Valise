@@ -111,6 +111,8 @@ func (s *Service) PlanRevive(ctx context.Context, o ReviveOptions, passphrase st
 func (p *RevivePlan) Close() {}
 
 func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase string) (rp *RevivePlan, err error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if o.From == "" {
 		o.From = o.Target
 	}

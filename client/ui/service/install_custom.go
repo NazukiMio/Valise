@@ -100,6 +100,8 @@ func validatePlanScripts(plan *InstallPlan) error {
 // common install command, downloads any script in client memory (never via
 // curl|bash on the server), computes SHA-256, and runs static checks.
 func (s *Service) PlanCustomInstall(ctx context.Context, host, raw, profileID string) (*CustomInstallPlan, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	spec, err := install.ParseCustomInstall(raw)
 	if err != nil {
 		return nil, err
@@ -169,6 +171,8 @@ func appendFindingOnce(fs []install.Finding, f install.Finding) []install.Findin
 // uploads any script into the server's staging directory, and runs the
 // command in an interactive terminal on a fresh admin connection.
 func (s *Service) RunCustomInstall(ctx context.Context, plan *CustomInstallPlan, riskSentence string, tio InstallIO) (*InstallResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if plan == nil || len(plan.Command) == 0 {
 		return nil, valise.New("install_custom_invalid", "安装计划为空", "重新解析安装地址或指令")
 	}

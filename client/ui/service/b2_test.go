@@ -226,3 +226,59 @@ func TestB2OwnerCacheCleared(t *testing.T) {
 		}
 	}
 }
+
+func TestB2PINOperationLeasePromptsOnceAndClears(t *testing.T) {
+	needOpenSSH(t)
+	s := newService(t, "ssh")
+	ctx := context.Background()
+	if _, err := s.KeyInit(pass); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.createAdminKey(ctx, "h", pass); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnablePIN(pass, "012345"); err != nil {
+		t.Fatal(err)
+	}
+	pinAsked, fullAsked := 0, 0
+	s.OwnerAuth.PIN = func(string) (string, error) { pinAsked++; return "012345", nil }
+	s.OwnerAuth.Passphrase = func(string) (string, error) { fullAsked++; return pass, nil }
+
+	// A multi-step operation in PIN mode prompts once, reuses the lease across
+	// nested calls and admin unlocks, still hides OwnerRemaining, and clears
+	// as soon as the outermost operation completes.
+	stopOuter := s.BeginOperation()
+	stopInner := s.BeginOperation()
+	if _, err := s.ownerIdentity("h"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ownerIdentity("h"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ValisePassphrase("h"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.unlockAdmin(ctx, "h"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.OwnerRemaining(); ok {
+		t.Fatal("PIN mode exposed an owner unlock countdown window")
+	}
+	stopInner()
+	if _, err := s.ownerIdentity("h"); err != nil {
+		t.Fatal(err)
+	}
+	if pinAsked != 1 || fullAsked != 0 {
+		t.Fatalf("within operation: PIN=%d full=%d, want 1/0", pinAsked, fullAsked)
+	}
+	stopOuter()
+	if _, ok := s.OwnerRemaining(); ok || s.hasCachedPassphrase() {
+		t.Fatal("operation lease survived end of operation")
+	}
+	if _, err := s.ownerIdentity("h"); err != nil {
+		t.Fatal(err)
+	}
+	if pinAsked != 2 || fullAsked != 0 {
+		t.Fatalf("after operation finished: PIN=%d full=%d, want 2/0", pinAsked, fullAsked)
+	}
+}

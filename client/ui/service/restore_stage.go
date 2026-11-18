@@ -18,6 +18,8 @@ func restoreManifest(rp *RevivePlan) []revive.ManifestEntry {
 // confirmation and never exchanges directories. The final answer is checked
 // again by RunRestore and by the stage verifier before swap.
 func (s *Service) RecheckRestoreStage(ctx context.Context, p *PreparedRestore) error {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if err := s.validateRestore(ctx, p, p.Revive.Plan.OpID); err != nil {
 		return err
 	}

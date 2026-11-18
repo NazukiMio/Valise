@@ -210,3 +210,45 @@ func TestCurveAndMonthListVirtualization(t *testing.T) {
 		t.Fatalf("expected bottom month row %q to be virtualized out by ui.List", lastRowFiles)
 	}
 }
+
+func TestHomeGroupsAgentsByServer(t *testing.T) {
+	a, tt := world(t)
+	a.router.Push("/agents")
+	tt.Advance(time.Second)
+	hasAll(t, tt.Texts(), "home", "cloud", T("home.server_agents", "n", 1), T("home.server_open"))
+	// "cloud" has troubled agent alan so its group appears above "home".
+	cloudHead, okC := tt.Find(T("server.state.online"))
+	_ = okC
+	alanCard, okA := tt.Find("阿蓝")
+	xiaomanCard, okX := tt.Find("小满")
+	if !okA || !okX || !okC {
+		t.Fatalf("missing grouped cards or server status: %v %v %v", okA, okX, okC)
+	}
+	_ = cloudHead
+	if alanCard.Y >= xiaomanCard.Y {
+		t.Fatalf("expected troubled server group (cloud/alan) above calm group (home/xiaoman): alan=%+v xiaoman=%+v", alanCard, xiaomanCard)
+	}
+	click(t, tt, T("home.server_open"))
+	if a.router.Path() != "/servers/cloud" {
+		t.Fatalf("server detail link went to %q, want /servers/cloud", a.router.Path())
+	}
+}
+
+func TestCurveSpreadsFullWidthWhenFewPoints(t *testing.T) {
+	a, tt := world(t)
+	a.navigate("/agents/home/xiaoman")
+	a.agentTab = tabJourney
+	tt.Frame()
+	tt.Advance(time.Second)
+	if a.curveScroll.MaxX != 0 {
+		t.Fatalf("few points should not scroll horizontally: MaxX=%v", a.curveScroll.MaxX)
+	}
+	firstTier, ok1 := tt.Find("标准")
+	lastTier, ok2 := tt.Find("完整")
+	if !ok1 || !ok2 {
+		t.Fatalf("missing curve tier labels: %q", tt.Texts())
+	}
+	if gap := lastTier.X - firstTier.X; gap < 450 {
+		t.Fatalf("expected few points to spread across the full card width, got deltaX=%v (%+v -> %+v)", gap, firstTier, lastTier)
+	}
+}

@@ -51,6 +51,8 @@ var rootNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // Export writes the backup under o.To/<root id>/<path>.
 func (s *Service) Export(ctx context.Context, o ExportOptions) (*ExportResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	to := filepath.Clean(expandHome(o.To))
 	if !filepath.IsAbs(to) {
 		return nil, valise.New("export_path_invalid", "请写导出文件夹的完整路径", "例如 ~/Desktop/agent-export")

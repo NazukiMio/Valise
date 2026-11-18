@@ -159,15 +159,25 @@ func (a *App) agentsSlot(c *ui.Context, n *Node, d *homeData) {
 		return
 	}
 	shown := filterAgents(d.inUse, a.query)
-	sortTrouble(shown)
-	switch {
-	case len(shown) == 0:
+	if len(shown) == 0 {
 		muted(ui.Text(c, T("home.no_match", "query", a.query))).FontSize(14)
-	case a.prefs.View == "list":
-		a.agentList(c, "l", shown)
-	default:
-		a.agentGrid(c, n, shown)
+		return
 	}
+	groups := groupAgentsByServer(shown)
+	outer := Node{Padding: n.Padding, Width: n.Width, MaxWidth: n.MaxWidth, Grow: n.Grow, Background: n.Background, Image: n.Image, Radius: n.Radius}
+	outer.box(ui.Column(c).Gap(spSection)).Children(func() {
+		sub := &Node{Style: n.Style, Columns: n.Columns, Gap: n.Gap}
+		for _, g := range groups {
+			ui.Column(c.Key("srv-grp-" + g.server)).Gap(10).Children(func() {
+				a.serverGroupHead(c, g.server, len(g.rows))
+				if a.prefs.View == "list" {
+					a.agentList(c, "l-"+g.server+"-", g.rows)
+				} else {
+					a.agentGrid(c, sub, g.rows)
+				}
+			})
+		}
+	})
 }
 
 func (a *App) retiredSlot(c *ui.Context, n *Node, d *homeData) {

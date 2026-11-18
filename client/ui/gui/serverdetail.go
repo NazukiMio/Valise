@@ -207,6 +207,10 @@ func (a *App) issuePass(name string, ps *passState) {
 	pass, useValise := ps.pass, a.hasKey()
 	ps.busy, ps.err, ps.pass, ps.pass2 = true, nil, "", ""
 	a.run(func() {
+		if a.svc != nil {
+			stopOp := a.svc.BeginOperation()
+			defer stopOp()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		var err error

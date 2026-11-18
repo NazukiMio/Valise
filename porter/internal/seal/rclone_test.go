@@ -84,12 +84,32 @@ func TestCloudPrepareAndForget(t *testing.T) {
 	ctx := context.Background()
 	gd := kittools.Cloud{ID: "gdrive", Name: "Google Drive", RcloneType: "drive", Params: map[string]string{"scope": "drive.file"},
 		Access: kittools.AccessFolder, AccessNote: "n", AskApp: true}
-	// gd is a saved location: its login stays.
+	// Non-cloud locations reject collisions; saved cloud locations stay
+	// protected against unconfirmed CloudForget, while allowing re-login
+	// (replacing the rclone remote without dropping the saved target).
+	if err := SetTarget(w.p, vaultrpc.Target{Name: "nas", Kind: "sftp", Dest: "nas:/backup"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "nas", Cloud: gd}); err == nil || !strings.Contains(err.Error(), "target_exists") {
+		t.Fatalf("non-cloud collision: %v", err)
+	}
 	if err := SetTarget(w.p, vaultrpc.Target{Name: "gd", Kind: "rclone", Dest: "valise-gd:valise-vault/"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "gd", Cloud: gd}); err == nil || !strings.Contains(err.Error(), "target_exists") {
-		t.Fatalf("existing location: %v", err)
+	if err := CloudForget(ctx, w.env, w.p, "gd", false); err == nil {
+		t.Fatal("forgot a login a location uses")
+	}
+	if _, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "gd", Cloud: gd}); err != nil {
+		t.Fatalf("relogin on existing cloud location: %v", err)
+	}
+	if names, _ := rcloneRemotes(ctx, w.env, w.p); slices.Contains(names, "valise-gd") {
+		t.Fatalf("old remote still present before fresh login: %v", names)
+	}
+	if t2, _ := findTarget(w.p, "gd"); t2 == nil {
+		t.Fatal("saved cloud target dropped during relogin prepare")
+	}
+	if code, _, _, err := (envRunner{w.env, w.p.Home}).Run(ctx, 30*time.Second, w.p.Rclone(), "config", "create", "valise-gd", "alias", "remote="+t.TempDir(), "--config", w.p.RcloneConfig()); err != nil || code != 0 {
+		t.Fatal(code, err)
 	}
 	// A login no location uses is left over and replaced.
 	if code, _, _, err := (envRunner{w.env, w.p.Home}).Run(ctx, 30*time.Second, w.p.Rclone(), "config", "create", "valise-left", "alias", "remote=/nonexistent", "--config", w.p.RcloneConfig()); err != nil || code != 0 {
@@ -113,9 +133,6 @@ func TestCloudPrepareAndForget(t *testing.T) {
 	want := []string{w.p.Rclone(), "config", "create", "valise-drive2", "drive", "scope=drive.file", "config_is_local=false", "--no-output", "--all", "--config", w.p.RcloneConfig()}
 	if strings.Join(res.Argv, " ") != strings.Join(want, " ") {
 		t.Fatalf("%v", res.Argv)
-	}
-	if err := CloudForget(ctx, w.env, w.p, "gd", false); err == nil {
-		t.Fatal("forgot a login a location uses")
 	}
 	if err := CloudForget(ctx, w.env, w.p, "gd", true); err != nil {
 		t.Fatal(err)

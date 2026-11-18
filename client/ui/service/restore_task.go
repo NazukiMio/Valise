@@ -84,6 +84,8 @@ func validRestoreTaskID(t RestoreTask) bool {
 // RunRestore holds its local execution lock through both confirmations. The
 // caller runs it off the UI thread. Reusing a prepared operation never replays.
 func (s *Service) RunRestore(ctx context.Context, p *PreparedRestore, human ReviveConfirm, changed func(RestoreTask)) (RestoreTask, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	rp := p.Revive
 	t := RestoreTask{OpID: rp.Plan.OpID, Target: rp.Target, From: rp.From, Mode: rp.Plan.Mode, Snapshot: p.Request.Snapshot, Instance: rp.Plan.InstanceID, State: "running", Stage: "inspect", Created: time.Now().UTC()}
 	if err := os.MkdirAll(filepath.Dir(s.restoreTaskPath(t.OpID)), 0700); err != nil {

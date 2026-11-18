@@ -3,6 +3,8 @@
   "lang": "zh-CN",
   "name": "简体中文",
   "messages": {
+    "loc.cloud_relogin": "重新登录…",
+    "loc.cloud_relogin_title": "重新登录云盘 · {name}",
     "loc.cloud_waiting": "正在等 rclone 的下一步…",
     "loc.app_kept": "只交给 rclone 写进它自己的配置，Valise 不保存。",
     "loc.app_shared": "不填就用 rclone 的共享应用：它可能随时停用，之后需要重新登录。",
@@ -313,6 +315,8 @@
     "home.retired": "不再使用 · {n}（已迁出或已被替换）",
     "home.search": "搜索名字、harness 或服务器  ⌘F",
     "home.search_label": "搜索 Agent",
+    "home.server_agents": "{n} 个 Agent",
+    "home.server_open": "服务器详情 ›",
     "home.title": "我的 Agent",
     "home.view_cards": "卡片视图",
     "home.view_list": "列表视图",

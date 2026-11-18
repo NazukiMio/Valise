@@ -64,6 +64,8 @@ func (s *Service) PrepareBackup(ctx context.Context, host string, ref identity.A
 }
 
 func (s *Service) StartBackup(ctx context.Context, planID, submissionKey string) (BackupTask, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	c, err := s.backupService()
 	if err != nil {
 		return BackupTask{}, err

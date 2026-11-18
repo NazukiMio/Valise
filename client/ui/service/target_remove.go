@@ -191,6 +191,8 @@ func (s *Service) scanServerTargetRemoval(ctx context.Context, name string, obs 
 // targetName from server_copies. It stops on the first failure and returns the
 // remaining un-updated blockers along with a descriptive error.
 func (s *Service) UnblockTarget(ctx context.Context, targetName string, blockers []TargetBlocker, opts UnblockOptions) ([]TargetBlocker, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	for i, b := range blockers {
 		if err := ctx.Err(); err != nil {
 			return blockers[i:], err

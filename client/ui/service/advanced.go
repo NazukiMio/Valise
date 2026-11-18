@@ -62,6 +62,8 @@ func (s *Service) AdvancedReady(host string) error {
 // then enables the mode for host. Enabling it for another server ends it
 // for the previous one.
 func (s *Service) EnableAdvanced(ctx context.Context, host, valisePass, adminPass, consent string) error {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if err := s.AdvancedReady(host); err != nil {
 		return err
 	}
@@ -175,6 +177,8 @@ func CheckRequirements(plan *InstallPlan) *RequirementBatch {
 // again. Valise reads nothing typed in the terminal (sudo's password
 // included).
 func (s *Service) RunRequirements(ctx context.Context, plan *InstallPlan, b *RequirementBatch, tio InstallIO) (*InstallPlan, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if len(b.Unfixable) > 0 {
 		return nil, valise.New("install_requirements_unfixable", "harness 资料没有为这台服务器的发行版给出 "+b.Unfixable[0].Binary+" 的安装命令",
 			"自己在服务器上装好它，或交给服务器管理员")

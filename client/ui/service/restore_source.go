@@ -81,6 +81,8 @@ func restoreError(code, reason string) error {
 }
 
 func (s *Service) PrepareRestore(ctx context.Context, req RestoreRequest) (*PreparedRestore, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	o := req.Options
 	if req.Snapshot.VaultID == "" || req.Snapshot.SnapshotID != o.SnapshotID || req.Source.Copy.HeaderDigest == "" {
 		return nil, restoreError("source_invalid", "恢复必须绑定一个完整时间点和所选副本")

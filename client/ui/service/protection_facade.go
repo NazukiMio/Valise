@@ -37,6 +37,8 @@ func (s *Service) PrepareProtectionChange(ctx context.Context, host string, p pr
 	return c.PrepareProtectionChange(ctx, host, p)
 }
 func (s *Service) StartProtectionChange(ctx context.Context, planID, submissionKey string) (ProtectionTask, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	c, err := s.protectionService()
 	if err != nil {
 		return ProtectionTask{}, err

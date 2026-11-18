@@ -41,6 +41,8 @@ func (s *Service) ExecuteRevive(ctx context.Context, rp *RevivePlan, fault strin
 // ExecuteReviveConfirmed is ExecuteRevive with every human confirmation
 // supplied by the in-process adapter (GUI, TUI or interactive CLI).
 func (s *Service) ExecuteReviveConfirmed(ctx context.Context, rp *RevivePlan, fault string, confirm ReviveConfirm) (*revive.SwapResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if confirm.BackupCurrent && rp.Plan.Mode != revive.ModeRollback {
 		return nil, valise.New("backup_first_unavailable", "只有恢复当前实例可以选择先备份当前状态", "重新查看恢复计划")
 	}
@@ -221,6 +223,8 @@ func (s *Service) streamStage(ctx context.Context, rp *RevivePlan, grant string)
 
 // ReviveResume continues or backs out an unfinished operation.
 func (s *Service) ReviveResume(ctx context.Context, host, op, action, fault string) (*revive.SwapResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	o, err := s.ownerPorter(ctx, host)
 	if err != nil {
 		return nil, err

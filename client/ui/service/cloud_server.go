@@ -96,10 +96,29 @@ var cloudLinkPattern = `(http://127\.0\.0\.1:` + strconv.Itoa(CloudPort) + `/aut
 
 var authorizeRe = regexp.MustCompile(`rclone authorize "([a-z0-9]+)"(?: "([A-Za-z0-9_=-]+)")?`)
 
+func (s *Service) preserveTargetAuto(ctx context.Context, host string, target *vaultrpc.Target) {
+	if target == nil || target.Auto != nil {
+		return
+	}
+	st, err := s.VaultStatus(ctx, host)
+	if err != nil || st == nil {
+		return
+	}
+	for _, t := range st.Targets {
+		if t.Name == target.Name && t.Kind == target.Kind && t.Auto != nil {
+			auto := *t.Auto
+			target.Auto = &auto
+			return
+		}
+	}
+}
+
 // CloudLoginServer logs host in to a cloud drive (the server keeps the
 // authorization in Valise's rclone config) and saves the location after a
 // read-only test. A failed login leaves nothing behind on the server.
 func (s *Service) CloudLoginServer(ctx context.Context, host, name, cloudID string, o CloudOptions, lio CloudLoginIO) (*CloudResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	cloud, err := s.cloudEntry(cloudID)
 	if err != nil {
 		return nil, err
@@ -180,6 +199,7 @@ func (s *Service) CloudLoginServer(ctx context.Context, host, name, cloudID stri
 		forget()
 		return res, err
 	}
+	s.preserveTargetAuto(ctx, host, &target)
 	if err := s.TargetSet(ctx, host, target); err != nil {
 		forget()
 		return res, err

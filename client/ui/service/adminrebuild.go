@@ -46,6 +46,8 @@ func (s *Service) AdminPassServers() []string {
 // passphrase, over one temporary login with the server password (or the
 // user's own key file).
 func (s *Service) RebuildAdminPass(ctx context.Context, host, passphrase string) error {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if err := s.checkAdminPassphrase(passphrase); err != nil {
 		return err
 	}
@@ -90,6 +92,8 @@ func (s *Service) RebuildAdminPass(ctx context.Context, host, passphrase string)
 // RebuildAdminPasses rebuilds every server's admin pass in turn; each
 // result is reported by step. A server that fails stays pending.
 func (s *Service) RebuildAdminPasses(ctx context.Context, passphrase string, step func(AdminRebuild)) error {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if err := s.checkAdminPassphrase(passphrase); err != nil {
 		return err
 	}

@@ -29,14 +29,17 @@ type OwnerAuth struct {
 }
 
 type ownerCache struct {
-	mu     sync.Mutex
-	epoch  uint64
-	closed bool
-	id     age.Identity
-	pass   []byte
-	until  time.Time
-	timer  *time.Timer
+	mu      sync.Mutex
+	epoch   uint64
+	closed  bool
+	opDepth int
+	id      age.Identity
+	pass    []byte
+	until   time.Time
+	timer   *time.Timer
 }
+
+const pinOperationCeiling = 10 * time.Minute
 
 func (o *ownerCache) clear() {
 	if o.timer != nil {
@@ -47,6 +50,28 @@ func (o *ownerCache) clear() {
 	o.pass, o.id, o.until = nil, nil, time.Time{}
 }
 
+// BeginOperation opens an operation-scoped credential lease so multi-step
+// actions under 6-digit PIN mode prompt for the PIN at most once and clear
+// the temporary unlock immediately when the outermost operation finishes.
+func (s *Service) BeginOperation() func() {
+	s.owner.mu.Lock()
+	s.owner.opDepth++
+	s.owner.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.owner.mu.Lock()
+			if s.owner.opDepth > 0 {
+				s.owner.opDepth--
+			}
+			if s.owner.opDepth == 0 && s.PINEnabled() {
+				s.owner.clear()
+			}
+			s.owner.mu.Unlock()
+		})
+	}
+}
+
 // rememberUnlock holds the lock until linked keys are loaded so LockAdmin
 // cannot clear the agent halfway through a linked unlock.
 func (s *Service) rememberUnlock(k *keystore.UnlockedKey, passphrase string, epoch uint64) {
@@ -54,9 +79,14 @@ func (s *Service) rememberUnlock(k *keystore.UnlockedKey, passphrase string, epo
 	if err != nil {
 		return
 	}
+	pin := s.PINEnabled()
 	s.owner.mu.Lock()
 	defer s.owner.mu.Unlock()
-	if s.owner.closed || s.owner.epoch != epoch || s.PINEnabled() {
+	if s.owner.closed || s.owner.epoch != epoch || (pin && s.owner.opDepth <= 0) {
+		return
+	}
+	if pin {
+		s.cacheOwnerWindow(id, passphrase, pinOperationCeiling)
 		return
 	}
 	s.cacheOwner(id, passphrase)
@@ -73,9 +103,12 @@ func (s *Service) rememberUnlock(k *keystore.UnlockedKey, passphrase string, epo
 }
 
 func (s *Service) cacheOwner(id age.Identity, passphrase string) {
+	s.cacheOwnerWindow(id, passphrase, s.AdminWindow())
+}
+
+func (s *Service) cacheOwnerWindow(id age.Identity, passphrase string, window time.Duration) {
 	o := &s.owner
 	o.clear()
-	window := s.AdminWindow()
 	until := time.Now().Add(window)
 	o.id, o.pass, o.until = id, []byte(passphrase), until
 	o.timer = time.AfterFunc(window, func() {
@@ -96,17 +129,25 @@ func (s *Service) ForgetOwner() {
 }
 
 func (s *Service) activeOwner() bool {
+	if s.owner.id == nil {
+		return false
+	}
 	if !time.Now().Before(s.owner.until) {
 		s.owner.clear()
+		return false
 	}
-	return s.owner.id != nil && !s.PINEnabled()
+	if s.PINEnabled() && s.owner.opDepth <= 0 {
+		s.owner.clear()
+		return false
+	}
+	return true
 }
 
 // OwnerRemaining is how long the kept identity has left.
 func (s *Service) OwnerRemaining() (time.Duration, bool) {
 	s.owner.mu.Lock()
 	defer s.owner.mu.Unlock()
-	if !s.activeOwner() {
+	if s.PINEnabled() || !s.activeOwner() {
 		return 0, false
 	}
 	return time.Until(s.owner.until), true

@@ -27,6 +27,10 @@ func (a *App) start(j *job, timeout time.Duration, fn func(ctx context.Context) 
 	j.busy, j.err, j.cancel, j.doing, j.doingAt = true, nil, cancel, T("prepare.started"), time.Now()
 	a.run(func() {
 		defer cancel()
+		if a.svc != nil {
+			stopOp := a.svc.BeginOperation()
+			defer stopOp()
+		}
 		err := fn(ctx)
 		if ctx.Err() == context.Canceled {
 			err = valise.New("cancelled", T("prepare.stopped"), T("prepare.stopped_hint"))

@@ -215,6 +215,8 @@ func (s *Service) certFresh(host, station string) bool {
 // issueCert gives host's station key a certificate: a five-minute probe
 // first, to learn the address the station sees, then the real one.
 func (s *Service) issueCert(ctx context.Context, host, serverName, pub string, st config.Station) error {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	command, _, _, ok := certLimit(st, serverName)
 	if !ok {
 		return valise.New("station_unlimited", "备份位置 "+st.Name+" 没有 rrsync 也没有 sftp-server，无法限制服务器的钥匙", "Valise 不给服务器凭据，改由这台电脑中转")

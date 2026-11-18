@@ -98,6 +98,8 @@ var actionSettle = 20 * time.Second
 
 // RunAction runs one action of the instance.
 func (s *Service) RunAction(ctx context.Context, host, instance, id string, o ActionOptions) (*ActionResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	list, err := s.Actions(ctx, host, instance)
 	if err != nil {
 		return nil, err

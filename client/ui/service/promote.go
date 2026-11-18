@@ -14,6 +14,8 @@ import (
 // and follows the instance's existing copy settings. Copy errors explicitly
 // preserve the fact that the savepoint was published.
 func (s *Service) PromoteSnapshot(ctx context.Context, host, instance, snapshotID, note string) error {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	note, err := vault.NormalizeNote(note)
 	if err != nil {
 		return err

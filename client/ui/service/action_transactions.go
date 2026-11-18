@@ -63,6 +63,8 @@ func (s *Service) ActionStatus(ctx context.Context, host, op string) (*action.Op
 	return &operation, err
 }
 func (s *Service) ResumeAction(ctx context.Context, host, op, choice string) (*ActionResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	status, err := s.ActionStatus(ctx, host, op)
 	if err != nil {
 		return nil, err

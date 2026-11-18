@@ -16,6 +16,7 @@ import (
 	"valise/client/minisign/minisigntest"
 	"valise/client/profiles"
 	"valise/core/vault"
+	"valise/core/vaultrpc"
 )
 
 // The server's fake rclone: config create prints rclone's headless line,
@@ -235,5 +236,48 @@ func TestCloudLinkPattern(t *testing.T) {
 		"2026/11/08 NOTICE: If your browser doesn't open automatically go to the following link: http://127.0.0.1:53682/auth?state=Ab-9_x\r\n")
 	if got := scan.Links(); len(got) != 1 || got[0] != "http://127.0.0.1:53682/auth?state=Ab-9_x" {
 		t.Fatalf("%v", got)
+	}
+}
+
+func TestCloudReloginPreservesAutoAndUpsertsHere(t *testing.T) {
+	s, _ := cloudWorld(t)
+	ctx := context.Background()
+
+	loginOnce := func() {
+		r, w := io.Pipe()
+		res, err := s.CloudLoginServer(ctx, "box", "gd", "gdrive", CloudOptions{AllowPending: true}, CloudLoginIO{
+			LoginIO: LoginIO{Stdin: r, Stdout: io.Discard},
+			ConfirmAuthorize: func(string) bool {
+				go func() { time.Sleep(200 * time.Millisecond); w.Write([]byte("PASTED\n")) }()
+				return true
+			},
+		})
+		if err != nil || !res.Saved {
+			t.Fatalf("%+v %v", res, err)
+		}
+	}
+	loginOnce()
+	target := CloudTarget("gd")
+	target.Auto = &vaultrpc.AutoSync{Every: "1d"}
+	if err := s.TargetSet(ctx, "box", target); err != nil {
+		t.Fatal(err)
+	}
+	// Re-login on the same server target succeeds and keeps Auto intact.
+	loginOnce()
+	st, err := s.VaultStatus(ctx, "box")
+	if err != nil || len(st.Targets) != 1 || st.Targets[0].Auto == nil || st.Targets[0].Auto.Every != "1d" {
+		t.Fatalf("auto sync lost across cloud relogin: %+v %v", st.Targets, err)
+	}
+
+	// Local cloud name validation & upsert: allows updating existing cloud in-place
+	// without duplicates, while still rejecting collisions with repos.
+	s.Config.Repos = []config.Repo{{Name: "usb", Path: t.TempDir()}}
+	s.Config.Clouds = []config.Cloud{{Name: "gd", Cloud: "gdrive"}}
+	if !s.validCloudName("gd") || s.validCloudName("usb") || s.CloudIDOf("gd") != "gdrive" || s.CloudIDOf("unknown") != "" {
+		t.Fatalf("cloud helpers mismatch")
+	}
+	updated := s.upsertCloudHere("gd", "google-drive")
+	if len(updated) != 1 || updated[0].Cloud != "google-drive" {
+		t.Fatalf("upsertCloudHere duplicated or failed: %+v", updated)
 	}
 }

@@ -92,6 +92,8 @@ func (o VerifyOptions) skipped(where string) bool { return o.Only != nil && !o.O
 
 // VerifyCopies checks one period of host everywhere it is kept.
 func (s *Service) VerifyCopies(ctx context.Context, host, leaf string, o VerifyOptions) (*CopyReport, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if _, _, ok := vault.SplitLeaf(leaf); !ok {
 		return nil, valise.New("leaf_invalid", "无效的周期："+leaf, "使用 valise vault status 列出的名称")
 	}

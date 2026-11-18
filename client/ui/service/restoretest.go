@@ -69,6 +69,8 @@ func (s *Service) RunRestoreTest(ctx context.Context, host, instance, snapshot s
 }
 
 func (s *Service) runRestoreTest(ctx context.Context, host, instance, snapshot string, selected *SelectedRestoreTest) (*RestoreTest, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	unlock, err := s.restoreTestLock(host, instance)
 	if err != nil {
 		return nil, err

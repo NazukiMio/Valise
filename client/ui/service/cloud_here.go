@@ -32,6 +32,38 @@ func (s *Service) cloudHere(name string) *config.Cloud {
 	return nil
 }
 
+// CloudIDOf returns the configured cloud driver ID for a local cloud
+// location, or "" when unknown.
+func (s *Service) CloudIDOf(name string) string {
+	if c := s.cloudHere(name); c != nil && c.Cloud != "" {
+		return c.Cloud
+	}
+	return ""
+}
+
+func (s *Service) validCloudName(name string) bool {
+	if !repoNameRe.MatchString(name) || s.IsStation(name) {
+		return false
+	}
+	for _, r := range s.Repos() {
+		if r.Name == name {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Service) upsertCloudHere(name, cloudID string) []config.Cloud {
+	clouds := append([]config.Cloud{}, s.Config.Clouds...)
+	for i := range clouds {
+		if clouds[i].Name == name {
+			clouds[i].Cloud = cloudID
+			return clouds
+		}
+	}
+	return append(clouds, config.Cloud{Name: name, Cloud: cloudID})
+}
+
 func (s *Service) hereStation(ctx context.Context, name string) (stationsync.Station, error) {
 	local := s.FindLocalRclone(ctx)
 	if local == nil {
@@ -70,7 +102,7 @@ func (s *Service) CloudLoginHere(ctx context.Context, name, cloudID string, o Cl
 	if cloud.Pending() && !o.AllowPending {
 		return valise.New("cloud_pending", cloud.Name+" 的登录与复制还没有在这个版本上测试", "确实要试用时加 --allow-pending；出现问题请报告")
 	}
-	if !repoNameRe.MatchString(name) || s.cloudHere(name) != nil || s.IsStation(name) {
+	if !s.validCloudName(name) {
 		return valise.New("cloud_name_invalid", "名字无效或已被使用："+name, "换一个只含小写字母、数字和连字符的名字")
 	}
 	local := s.FindLocalRclone(ctx)
@@ -108,7 +140,7 @@ func (s *Service) CloudLoginHere(ctx context.Context, name, cloudID string, o Cl
 		s.forgetHere(local.Path, name)
 		return err
 	}
-	clouds := append(append([]config.Cloud{}, s.Config.Clouds...), config.Cloud{Name: name, Cloud: cloudID})
+	clouds := s.upsertCloudHere(name, cloudID)
 	if err := config.SetClouds(s.Dirs.Data, clouds); err != nil {
 		s.forgetHere(local.Path, name)
 		return err

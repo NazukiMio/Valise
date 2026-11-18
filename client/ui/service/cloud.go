@@ -53,6 +53,8 @@ func (s *Service) TargetList(ctx context.Context, host, target string) (*vaultrp
 
 // TargetLeafDelete deletes one whole period on a cloud backup.
 func (s *Service) TargetLeafDelete(ctx context.Context, host, target, leaf string) error {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if vault.IsSavepointLeaf(leaf) {
 		return permanentLeaf()
 	}
@@ -91,6 +93,8 @@ func (s *Service) TimerStatus(ctx context.Context, host, instance string) (*vaul
 // a fresh admin connection (docs/INSTALL.md section 2); with profileID it
 // is the harness terminal instead. Call done after it exits.
 func (s *Service) ShellCommand(ctx context.Context, host, profileID string) (cmd *exec.Cmd, done func(), err error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	var dirs []string
 	if profileID != "" {
 		set, err := s.Profiles()

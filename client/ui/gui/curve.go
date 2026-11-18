@@ -190,42 +190,21 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 	still = still || cur.Timeline == TimelinePlain
 	box := ui.Box(c).Height(curveHeight).Radius(radCard).Background(palette.Canvas).Border(1, palette.CardBorder).Clip()
 	box.Children(func() {
-		scroller := ui.ScrollHorizontal(c.Key("curve-" + scope)).TrackScroll(&a.curveScroll).Fill()
-		boxW := scroller.LayoutBounds().W
-		if boxW <= 0 {
-			boxW = box.LayoutBounds().W
+		boxW := box.LayoutBounds().W
+		overflow := n > curvePoints && (boxW <= 0 || float32(n)*curvePointWidth > boxW)
+		if !overflow {
+			a.curveScroll = ui.ScrollState{}
 		}
-		scrollX, viewW, maxScroll, _, _, iMin, iMax := curveViewport(n, a.curveScroll, boxW)
-		if n > curvePoints && (scrollX > 2 || scrollX < maxScroll-2) {
-			edge := min(24/max(viewW, 240), 0.08)
-			black := ui.RGB(0, 0, 0)
-			var stops []ui.GradientStop
-			if scrollX > 2 {
-				stops = append(stops, ui.GradientStop{Color: ui.Transparent, At: 0}, ui.GradientStop{Color: black, At: edge})
-			} else {
-				stops = append(stops, ui.GradientStop{Color: black, At: 0})
-			}
-			if scrollX < maxScroll-2 {
-				stops = append(stops, ui.GradientStop{Color: black, At: 1 - edge}, ui.GradientStop{Color: ui.Transparent, At: 1})
-			} else {
-				stops = append(stops, ui.GradientStop{Color: black, At: 1})
-			}
-			scroller.MaskLinearGradient(ui.LinearGradient{Angle: 90, Stops: stops})
-		}
-		scroller.Children(func() {
-			strip := ui.Row(c).Height(curveHeight).Grow(1)
-			if n > curvePoints {
-				strip.MinWidth(float32(n) * curvePointWidth).Shrink(0)
-			}
+		buildStrip := func(strip ui.Element, scroll bool, iMin, iMax int) {
 			strip.Draw(func(p *ui.Painter, r ui.Rect) {
 				t := float32(0)
 				if !still {
 					t = float32(float64(p.Now().UnixMilli()%3_600_000)/1000) * 0.54
 					p.After(33 * time.Millisecond)
 				}
-				_, _, _, drawLeft, drawRight, drawMin, drawMax := curveViewport(n, a.curveScroll, boxW)
-				if n <= curvePoints {
-					drawLeft, drawRight = 0, r.W
+				drawLeft, drawRight, drawMin, drawMax := float32(0), r.W, 0, n-1
+				if scroll {
+					_, _, _, drawLeft, drawRight, drawMin, drawMax = curveViewport(n, a.curveScroll, boxW)
 				}
 				paintHairs(p, r, drawLeft, drawRight, t)
 				for i := drawMin; i <= drawMax; i++ {
@@ -249,13 +228,13 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 				}
 			})
 			strip.Children(func() {
-				if n > curvePoints && iMin > 0 {
+				if scroll && iMin > 0 {
 					ui.Box(c.Key("pad-left")).Width(float32(iMin) * curvePointWidth).Shrink(0).FillHeight()
 				}
 				for i := iMin; i <= iMax; i++ {
 					pt := shown[i]
 					col := ui.Column(c.Key(pointKey(pt))).FillHeight().AlignItems(ui.Center).Padding(12, 6)
-					if n > curvePoints {
+					if scroll {
 						col.Width(curvePointWidth).Shrink(0)
 					} else {
 						col.Grow(1).Basis(0)
@@ -270,10 +249,39 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 					}
 					col.Children(func() { a.curveCard(c, pt) })
 				}
-				if n > curvePoints && iMax < n-1 {
+				if scroll && iMax < n-1 {
 					ui.Box(c.Key("pad-right")).Width(float32(n-1-iMax) * curvePointWidth).Shrink(0).FillHeight()
 				}
 			})
+		}
+		if !overflow {
+			buildStrip(ui.Row(c).Fill(), false, 0, n-1)
+			return
+		}
+		scroller := ui.ScrollHorizontal(c.Key("curve-" + scope)).TrackScroll(&a.curveScroll).Fill()
+		if w := scroller.LayoutBounds().W; w > 0 {
+			boxW = w
+		}
+		scrollX, viewW, maxScroll, _, _, iMin, iMax := curveViewport(n, a.curveScroll, boxW)
+		if scrollX > 2 || scrollX < maxScroll-2 {
+			edge := min(24/max(viewW, 240), 0.08)
+			black := ui.RGB(0, 0, 0)
+			var stops []ui.GradientStop
+			if scrollX > 2 {
+				stops = append(stops, ui.GradientStop{Color: ui.Transparent, At: 0}, ui.GradientStop{Color: black, At: edge})
+			} else {
+				stops = append(stops, ui.GradientStop{Color: black, At: 0})
+			}
+			if scrollX < maxScroll-2 {
+				stops = append(stops, ui.GradientStop{Color: black, At: 1 - edge}, ui.GradientStop{Color: ui.Transparent, At: 1})
+			} else {
+				stops = append(stops, ui.GradientStop{Color: black, At: 1})
+			}
+			scroller.MaskLinearGradient(ui.LinearGradient{Angle: 90, Stops: stops})
+		}
+		scroller.Children(func() {
+			strip := ui.Row(c).Height(curveHeight).Grow(1).MinWidth(max(float32(n)*curvePointWidth, boxW)).Shrink(0)
+			buildStrip(strip, true, iMin, iMax)
 		})
 	})
 }

@@ -142,6 +142,8 @@ func (p *InstallPlan) HasUnconfirmedScript() bool {
 // PlanInstall checks profileID's official plan against host and downloads
 // and verifies its scripts.
 func (s *Service) PlanInstall(ctx context.Context, host, profileID string) (*InstallPlan, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	set, err := s.Profiles()
 	if err != nil {
 		return nil, err
@@ -274,6 +276,8 @@ type InstallResult struct {
 // RunInstall uploads the plan's scripts and runs its steps on one admin
 // connection. It stops at the first failing step.
 func (s *Service) RunInstall(ctx context.Context, plan *InstallPlan, tio InstallIO) (*InstallResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if len(plan.Missing) > 0 {
 		return nil, valise.New("install_requirements", "服务器还缺少方案需要的程序："+plan.Missing[0].Reason,
 			"先装好这些程序（自己在原生界面里装、交给服务器管理员，或开启高级模式）")

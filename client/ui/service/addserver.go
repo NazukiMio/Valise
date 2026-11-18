@@ -287,6 +287,8 @@ type AddServerOptions struct {
 // AddServer records a server added by hand and sets it up. The host key
 // must have been confirmed with TrustHostKeys first.
 func (s *Service) AddServer(ctx context.Context, o AddServerOptions) error {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	srv := o.Server
 	srv.Source = config.SourceValise
 	if srv.Login == "" {
@@ -394,6 +396,8 @@ func (s *Service) checkDaily(ctx context.Context, host string, step func(SetupSt
 // CreateAdminKey creates host's admin key and installs it with one
 // temporary login (password or the user's own key file).
 func (s *Service) CreateAdminKey(ctx context.Context, host, passphrase string) error {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	srv := s.server(host)
 	if !srv.Valise() {
 		return valise.New("admin_key_untiered", host+" 用的是你自己的 SSH 设置，不需要管理钥匙", "先迁移到 Valise 日常钥匙")
@@ -447,6 +451,8 @@ func (s *Service) RemoveAdminKey(ctx context.Context, host string) error {
 // the user's existing login, and the host key already trusted in
 // ~/.ssh/known_hosts is copied. Hosts behind ProxyJump are refused.
 func (s *Service) MigrateServer(ctx context.Context, host, adminPassphrase string) (porterMissing bool, err error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	srv := s.server(host)
 	if srv.Valise() {
 		return false, valise.New("already_migrated", host+" 已经在用 Valise 日常钥匙", "")

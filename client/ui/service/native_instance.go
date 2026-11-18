@@ -59,6 +59,8 @@ func nativeLine(porterPath, instance string, mode NativeMode) string {
 // InstanceNativeCommand uses a new management connection. Neither a local
 // profile command nor a request-supplied argv can override the server's entry.
 func (s *Service) InstanceNativeCommand(ctx context.Context, host, instance string, mode NativeMode) (*exec.Cmd, func(), error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	info, err := s.InstanceNativeInfo(ctx, host, instance)
 	if err != nil {
 		return nil, nil, err
@@ -135,6 +137,8 @@ type NativeIO struct {
 // RunInstanceNative only connects streams. No recording, output parser,
 // credential detection or chat inspection is installed on this path.
 func (s *Service) RunInstanceNative(ctx context.Context, host, instance string, mode NativeMode, streams NativeIO) (int, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	cmd, done, err := s.InstanceNativeCommand(ctx, host, instance, mode)
 	if err != nil {
 		return -1, err
@@ -192,6 +196,8 @@ var nativeServiceSettle = 20 * time.Second
 // instance after checking the offsite backup gate, returning the unit names
 // actually stopped by this call.
 func (s *Service) PauseInstanceServices(ctx context.Context, host, instance string) ([]string, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if err := s.RequireGate(ctx, host, instance); err != nil {
 		return nil, err
 	}

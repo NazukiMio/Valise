@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"sort"
 	"strings"
 	"time"
 
@@ -196,4 +197,45 @@ func textLink(c *ui.Context, label string, fn func()) {
 		t.Underline()
 	}
 	t.OnClick(fn)
+}
+
+type serverAgentGroup struct {
+	server string
+	rows   []agentRow
+}
+
+// groupAgentsByServer groups rows by server, sorts troubled agents first within
+// each server, and orders servers with any troubled agent before calm ones.
+func groupAgentsByServer(rows []agentRow) []serverAgentGroup {
+	byServer := map[string][]agentRow{}
+	for _, r := range rows {
+		byServer[r.Server] = append(byServer[r.Server], r)
+	}
+	groups := make([]serverAgentGroup, 0, len(byServer))
+	for srv, list := range byServer {
+		sortTrouble(list)
+		groups = append(groups, serverAgentGroup{server: srv, rows: list})
+	}
+	sort.Slice(groups, func(i, j int) bool {
+		ti, tj := trouble(groups[i].rows[0]), trouble(groups[j].rows[0])
+		if ti != tj {
+			return ti
+		}
+		return groups[i].server < groups[j].server
+	})
+	return groups
+}
+
+func (a *App) serverGroupHead(c *ui.Context, server string, count int) {
+	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+		ui.Icon(c, icons.server).FontSize(16).TextColor(palette.Brand)
+		ui.Text(c, server).FontSize(15).Bold()
+		stateTag(c, a.serverState(server, c.Now()))
+		muted(ui.Text(c, T("home.server_agents", "n", count))).FontSize(12)
+		ui.Box(c).Grow(1)
+		textLink(c, T("home.server_open"), func() {
+			a.serverTab = 0
+			a.navigate("/servers/" + server)
+		})
+	})
 }

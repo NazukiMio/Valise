@@ -11,6 +11,8 @@ import (
 // CleanupRestoreTest only reconciles the original test. It never restarts it,
 // switches directories or completes a real restore.
 func (s *Service) CleanupRestoreTest(ctx context.Context, host, instance, op string) (*RestoreTest, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	unlock, err := s.restoreTestLock(host, instance)
 	if err != nil {
 		return nil, err

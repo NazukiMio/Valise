@@ -49,6 +49,9 @@ func (a *App) locationPage(c *ui.Context, name string) {
 			muted(ui.Text(c, a.locLine(l, c.Now()))).Wrap()
 		})
 		a.syncButton(c, l)
+		if l.Kind == locCloud {
+			ui.Button(c, T("loc.cloud_relogin")).OnClick(func() { a.openCloudRelogin(l.Name) })
+		}
 		ui.Button(c, T("loc.remove_open")).OnClick(func() { a.openRemoveLocation(l) })
 	})
 	card(ui.Column(c)).Gap(8).Children(func() { a.syncResult(c, l) })

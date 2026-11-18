@@ -218,3 +218,30 @@ func TestLocationCardClickAndSyncButton(t *testing.T) {
 		t.Fatalf("clicking sync button did not start sync: %+v", sy)
 	}
 }
+
+func TestCloudReloginButtonAndFlow(t *testing.T) {
+	a, tt := locWorld(t)
+	a.router.Push("/locations/gdrive")
+	tt.Advance(time.Second)
+	if !tt.HasText(T("loc.cloud_relogin")) {
+		t.Fatalf("cloud detail missing relogin button: %q", tt.Texts())
+	}
+	click(t, tt, T("loc.cloud_relogin"))
+	if a.router.Path() != "/locations/add/cloud" {
+		t.Fatalf("relogin button went to %q, want /locations/add/cloud", a.router.Path())
+	}
+	if a.cloudAdding == nil || !a.cloudAdding.relogin || a.cloudAdding.name != "gdrive" || a.cloudAdding.id != "google-drive" {
+		t.Fatalf("relogin state mismatch: %+v", a.cloudAdding)
+	}
+	hasAll(t, tt.Texts(), T("loc.cloud_relogin_title", "name", "gdrive"), "gdrive")
+	a.cloudAdding.read = true
+	a.cloudAdding.id = "google-drive"
+	a.cloudAdding.clouds = []kittools.Cloud{
+		{ID: "google-drive", Name: "Google Drive", Access: kittools.AccessFolder, AccessNote: "只能访问 Valise 自己建的文件", AskApp: true}}
+	a.cloudAdding.saved = []string{"home"}
+	tt.Frame()
+	click(t, tt, T("common.done"))
+	if a.router.Path() != "/locations/gdrive" {
+		t.Fatalf("done button after relogin went to %q, want /locations/gdrive", a.router.Path())
+	}
+}

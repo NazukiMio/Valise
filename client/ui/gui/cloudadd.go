@@ -19,6 +19,7 @@ import (
 
 type cloudAdd struct {
 	read    bool
+	relogin bool
 	clouds  []kittools.Cloud
 	err     error
 	id      string
@@ -67,6 +68,15 @@ func (a *App) openCloudAdd() {
 	a.router.Push("/locations/add/cloud")
 }
 
+func (a *App) openCloudRelogin(name string) {
+	id := ""
+	if a.svc != nil {
+		id = a.svc.CloudIDOf(name)
+	}
+	a.cloudAdding = &cloudAdd{name: name, id: id, relogin: true}
+	a.router.Push("/locations/add/cloud")
+}
+
 func (a *App) cloudAddPage(c *ui.Context) {
 	if a.cloudAdding == nil {
 		a.cloudAdding = &cloudAdd{name: "gdrive"}
@@ -75,8 +85,16 @@ func (a *App) cloudAddPage(c *ui.Context) {
 	if !ca.read {
 		a.readClouds(ca)
 	}
-	backLink(c, T("loc.add_title"), "/locations/add")
-	pageHead(c, T("loc.cloud_title"), "")
+	backLabel, backTarget := T("loc.add_title"), "/locations/add"
+	title := T("loc.cloud_title")
+	doneTarget := "/locations"
+	if ca.relogin {
+		backLabel, backTarget = ca.name, "/locations/"+ca.name
+		title = T("loc.cloud_relogin_title", "name", ca.name)
+		doneTarget = backTarget
+	}
+	backLink(c, backLabel, backTarget)
+	pageHead(c, title, "")
 	if ca.err != nil {
 		errorBox(c, ca.err, a.fold("clouds-err"))
 	}
@@ -94,7 +112,11 @@ func (a *App) cloudAddPage(c *ui.Context) {
 		return
 	}
 	card(ui.Column(c)).Gap(12).Children(func() {
-		labeled(c, T("loc.name"), func() { ui.TextInput(c, &ca.name).Label(T("loc.name")).Placeholder("gdrive") })
+		if ca.relogin {
+			labeled(c, T("loc.name"), func() { ui.Text(c, ca.name).Bold() })
+		} else {
+			labeled(c, T("loc.name"), func() { ui.TextInput(c, &ca.name).Label(T("loc.name")).Placeholder("gdrive") })
+		}
 		if cl.AskApp {
 			a.ownApp(c, ca, cl)
 		}
@@ -108,7 +130,7 @@ func (a *App) cloudAddPage(c *ui.Context) {
 	})
 	if len(ca.saved) > 0 {
 		ui.Row(c).Justify(ui.End).Children(func() {
-			ui.PrimaryButton(c, T("common.done")).OnClick(func() { a.closeAdding(); a.router.Push("/locations") })
+			ui.PrimaryButton(c, T("common.done")).OnClick(func() { a.closeAdding(); a.router.Push(doneTarget) })
 		})
 	}
 }

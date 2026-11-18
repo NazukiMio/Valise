@@ -65,6 +65,8 @@ func (s *Service) CloudFormReady(cloudID string) bool {
 // CloudLoginServerForm logs host in to a cloud drive with the form, then
 // tests and saves the location like CloudLoginServer.
 func (s *Service) CloudLoginServerForm(ctx context.Context, host, name, cloudID string, f CloudForm) (*CloudResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	cloud, err := s.cloudEntry(cloudID)
 	if err != nil {
 		return nil, err
@@ -150,6 +152,7 @@ func (s *Service) CloudLoginServerForm(ctx context.Context, host, name, cloudID 
 		err = valise.New("cloud_unreachable", "登录完成了，但服务器读不了这个云盘："+chk.Reason, "重新登录；"+chk.Suggestion).WithDetail(chk.Detail)
 	}
 	if err == nil {
+		s.preserveTargetAuto(ctx, host, &target)
 		err = s.TargetSet(ctx, host, target)
 	}
 	if err != nil {
@@ -204,7 +207,7 @@ func (s *Service) CloudLoginHereForm(ctx context.Context, name, cloudID string, 
 	if err := kittools.CheckApp(f.App); err != nil {
 		return valise.New("app_invalid", "自己的应用填写有误", "client_id 与 client_secret 各填一行；不用自己的应用就都留空")
 	}
-	if !repoNameRe.MatchString(name) || s.cloudHere(name) != nil || s.IsStation(name) {
+	if !s.validCloudName(name) {
 		return valise.New("cloud_name_invalid", "名字无效或已被使用："+name, "换一个只含小写字母、数字和连字符的名字")
 	}
 	local := s.FindLocalRclone(ctx)
@@ -255,7 +258,7 @@ func (s *Service) CloudLoginHereForm(ctx context.Context, name, cloudID string, 
 		s.forgetHere(local.Path, name)
 		return err
 	}
-	clouds := append(append([]config.Cloud{}, s.Config.Clouds...), config.Cloud{Name: name, Cloud: cloudID})
+	clouds := s.upsertCloudHere(name, cloudID)
 	if err := config.SetClouds(s.Dirs.Data, clouds); err != nil {
 		s.forgetHere(local.Path, name)
 		return err

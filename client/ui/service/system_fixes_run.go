@@ -317,6 +317,8 @@ func SystemFixSteps(f *SystemFix) *RequirementBatch {
 // exit codes and the re-check are reported separately, and an audit entry
 // is written whatever the outcome.
 func (s *Service) RunSystemFix(ctx context.Context, host, instance, id, digest string, o SystemFixOptions, tio InstallIO) (*SystemFixResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	f, err := s.PlanSystemFix(ctx, host, instance, id, o)
 	if err != nil {
 		return nil, err

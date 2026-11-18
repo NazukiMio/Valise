@@ -132,6 +132,8 @@ func (s *Service) RunKitToolBatch(ctx context.Context, host string, b *Requireme
 // InstallKitBinary downloads an enhanced tool's official build, checks its
 // SHA-256, and has porter write it to ~/.local/bin.
 func (s *Service) InstallKitBinary(ctx context.Context, host, id string) (*KitTool, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	k, err := s.kitTool(ctx, host, id)
 	if err != nil {
 		return nil, err
@@ -193,6 +195,8 @@ func (s *Service) InstallKitBinary(ctx context.Context, host, id string) (*KitTo
 
 // RemoveKitBinary removes an enhanced tool Valise installed (unchanged).
 func (s *Service) RemoveKitBinary(ctx context.Context, host, id string) error {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	k, err := s.kitTool(ctx, host, id)
 	if err != nil {
 		return err

@@ -47,8 +47,13 @@ func rcloneRemotes(ctx context.Context, e *porterenroll.Env, p Paths) ([]string,
 	return names, nil
 }
 
-// cloudFresh checks a new cloud login and clears a login left over from
-// one that never finished.
+func isSameCloudTarget(t *vaultrpc.Target, name string) bool {
+	return t != nil && t.Kind == stationsync.MethodRclone &&
+		strings.HasPrefix(t.Dest, vaultrpc.CloudRemote(name)+":")
+}
+
+// cloudFresh checks a new cloud login or explicit cloud re-login and clears a
+// login left over (or expired) before creating a fresh remote.
 func cloudFresh(ctx context.Context, e *porterenroll.Env, p Paths, name string, cloud kittools.Cloud) error {
 	if !targetNameRe.MatchString(name) {
 		return valise.New("target_name_invalid", "备份位置名只能包含小写字母、数字和连字符", "例如 gdrive")
@@ -59,7 +64,7 @@ func cloudFresh(ctx context.Context, e *porterenroll.Env, p Paths, name string, 
 	if _, err := os.Stat(p.Rclone()); err != nil {
 		return valise.New("rclone_missing", "服务器上没有 Valise 安装的 rclone", "先在服务器设置的工具里安装 rclone，再登录云盘")
 	}
-	if t, _ := findTarget(p, name); t != nil {
+	if t, _ := findTarget(p, name); t != nil && !isSameCloudTarget(t, name) {
 		return valise.New("target_exists", "服务器上已经有名为 "+name+" 的备份位置", "换一个名字，或先移除它")
 	}
 	if err := p.ensureRcloneConfig(); err != nil {
@@ -70,10 +75,9 @@ func cloudFresh(ctx context.Context, e *porterenroll.Env, p Paths, name string, 
 	if err != nil {
 		return err
 	}
-	// No location uses this name (checked above), so an existing login is
-	// left over from one that never finished (the client was closed, the
-	// connection dropped): Valise saves the location right after a login
-	// passes its test. It is unusable, and the new login replaces it.
+	// Either no non-cloud target uses this name or we are refreshing an existing
+	// rclone cloud target's credentials: drop the old remote so rclone can create
+	// a fresh login while keeping targets.json and sync state intact.
 	for _, n := range names {
 		if n != remote {
 			continue
@@ -82,18 +86,18 @@ func cloudFresh(ctx context.Context, e *porterenroll.Env, p Paths, name string, 
 		if err != nil || code != 0 {
 			return valise.New("rclone_failed", "没能清除上次没有完成的 "+name+" 云盘登录", "稍后重试，或运行 valise cloud remove <服务器> "+name).WithDetail(lastLine(string(stderr)))
 		}
-		p.AppendAudit(AuditEntry{Time: time.Now().UTC(), Op: "cloud_forget", Initiator: vaultrpc.InitiatorClient, Target: name, Result: "ok", Reason: "unfinished login"})
+		p.AppendAudit(AuditEntry{Time: time.Now().UTC(), Op: "cloud_forget", Initiator: vaultrpc.InitiatorClient, Target: name, Result: "ok", Reason: "unfinished or relogin"})
 	}
 	return nil
 }
 
 // cloudStarted checks that a form login being continued exists and is
-// not a saved location.
+// either unsaved or a same-name cloud target being re-authenticated.
 func cloudStarted(ctx context.Context, e *porterenroll.Env, p Paths, name string) error {
 	if !targetNameRe.MatchString(name) {
 		return valise.New("target_name_invalid", "备份位置名无效："+name, "")
 	}
-	if t, _ := findTarget(p, name); t != nil {
+	if t, _ := findTarget(p, name); t != nil && !isSameCloudTarget(t, name) {
 		return valise.New("target_exists", "服务器上已经有名为 "+name+" 的备份位置", "换一个名字，或先移除它")
 	}
 	names, err := rcloneRemotes(ctx, e, p)
