@@ -10,11 +10,12 @@ import (
 // Vault tree, see docs/VAULT_FORMAT.md section 10: one valise-vault/1 vault
 // (a leaf) per instance and period.
 const (
-	TreeFormat   = "valise-vault-tree/1"
-	PeriodFormat = "valise-period/1"
-	TreeFile     = "TREE"
-	PeriodFile   = "PERIOD"
-	DeletingFile = "DELETING"
+	TreeFormat       = "valise-vault-tree/1"
+	PeriodFormat     = "valise-period/1"
+	TreeFile         = "TREE"
+	PeriodFile       = "PERIOD"
+	DeletingFile     = "DELETING"
+	SavepointsPeriod = "savepoints"
 	// LegacyLeaf names the vault from before the tree (one per server).
 	LegacyLeaf = "-"
 )
@@ -86,10 +87,16 @@ func SplitLeaf(leaf string) (instance, period string, ok bool) {
 		return "", "", true
 	}
 	instance, period, found := strings.Cut(leaf, "/")
-	if !found || !instanceRe.MatchString(instance) || len(instance) > 64 || !ValidPeriodName(period) {
+	if !found || !instanceRe.MatchString(instance) || len(instance) > 64 || (period != SavepointsPeriod && !ValidPeriodName(period)) {
 		return "", "", false
 	}
 	return instance, period, true
+}
+
+// IsSavepointLeaf reports whether leaf is an instance's permanent vault.
+func IsSavepointLeaf(leaf string) bool {
+	_, period, ok := SplitLeaf(leaf)
+	return ok && period == SavepointsPeriod
 }
 
 // Validate checks a setting; the time zone must be loadable.

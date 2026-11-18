@@ -1,6 +1,10 @@
 package gui
 
-import "valise/core/protection"
+import (
+	"strconv"
+	"strings"
+	"valise/core/protection"
+)
 
 // desired is the plan in force, or a starting point when there is none.
 func (ps *protState) desired() protection.Desired {
@@ -33,4 +37,13 @@ func sayCopies(d protection.Desired) protection.Desired {
 		d.ServerCopies = []protection.ServerCopy{}
 	}
 	return d
+}
+
+func parseRetention(text string) (int, bool) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return 0, true
+	}
+	n, err := strconv.Atoi(text)
+	return n, err == nil && n >= 0
 }

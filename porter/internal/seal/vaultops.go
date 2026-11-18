@@ -49,6 +49,7 @@ func Status(p Paths) (*vaultrpc.StatusResult, error) {
 		return nil, err
 	}
 	t := now()
+	snapshots := map[string]vault.Meta{}
 	for _, l := range leaves {
 		ls := vaultrpc.LeafState{Leaf: l.Leaf, Period: l.Period, Deleting: l.Deleting, Snapshots: []string{}, Bytes: dirBytes(l.Dir)}
 		if l.Period != nil && l.Period.TZ != "" && l.Period.Contains(t) {
@@ -63,11 +64,16 @@ func Status(p Paths) (*vaultrpc.StatusResult, error) {
 				ls.VaultID, ls.Epochs = v.Desc.VaultID, len(v.Epochs)
 				for _, m := range v.Metas {
 					ls.Snapshots = append(ls.Snapshots, m.SnapshotID)
-					res.Snapshots = append(res.Snapshots, m)
+					if _, exists := snapshots[m.SnapshotID]; !exists || vault.IsSavepointLeaf(l.Leaf) {
+						snapshots[m.SnapshotID] = m
+					}
 				}
 			}
 		}
 		res.Leaves = append(res.Leaves, ls)
+	}
+	for _, m := range snapshots {
+		res.Snapshots = append(res.Snapshots, m)
 	}
 	sort.SliceStable(res.Snapshots, func(i, j int) bool { return res.Snapshots[i].SnapshotID < res.Snapshots[j].SnapshotID })
 	res.Exists = len(res.Snapshots) > 0
@@ -332,6 +338,11 @@ func Sync(ctx context.Context, e *porterenroll.Env, p Paths, name, initiator str
 	if err != nil {
 		return nil, err
 	}
+	unlock, err := p.Lock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	st, err := Status(p)
 	if err != nil {
 		return nil, err
@@ -339,11 +350,6 @@ func Sync(ctx context.Context, e *porterenroll.Env, p Paths, name, initiator str
 	if !st.Exists {
 		return nil, valise.New("vault_missing", "服务器上还没有备份库", "先建立一个备份：valise seal <服务器> <实例>")
 	}
-	unlock, err := p.Lock()
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
 	return syncLocked(ctx, e, p, t, st, initiator)
 }
 

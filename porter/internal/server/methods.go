@@ -167,6 +167,13 @@ func init() {
 		}
 		return seal.Seal(ctx, s.loginEnv(ctx), paths(s), p, vaultrpc.InitiatorClient)
 	}
+	methods[vaultrpc.MethodSnapshotPromote] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.SnapshotPromoteParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.PromoteSnapshot(ctx, paths(s), p, vaultrpc.InitiatorClient)
+	}
 	methods[vaultrpc.MethodStatus] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		return seal.Status(paths(s))
 	}

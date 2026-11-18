@@ -34,7 +34,7 @@ type Writer struct {
 	hmacKey    []byte
 	pol        chunker.Pol
 	recipients []age.Recipient
-	known      map[string]bool
+	known      map[string]BlobEntry
 	enc        *zstd.Encoder
 
 	pack       *os.File
@@ -77,7 +77,7 @@ func OpenWriter(dir string, recipients []string, keyFile func(vaultID string) st
 	if len(recipients) == 0 {
 		return nil, errors.New("vault: no recipients")
 	}
-	w := &Writer{dir: dir, known: map[string]bool{}, now: now.UTC()}
+	w := &Writer{dir: dir, known: map[string]BlobEntry{}, now: now.UTC()}
 	for _, r := range recipients {
 		rc, err := age.ParseX25519Recipient(r)
 		if err != nil {
@@ -101,16 +101,18 @@ func OpenWriter(dir string, recipients []string, keyFile func(vaultID string) st
 	sort.Strings(fps)
 	kf := keyFile(desc.VaultID)
 	var params DedupeParams
-	if n := len(epochs); n > 0 && equalStrings(sortedCopy(epochs[n-1].RecipientFingerprints), fps) {
-		if b, err := os.ReadFile(kf); err == nil && json.Unmarshal(b, &params) == nil &&
-			params.VaultID == desc.VaultID && params.Epoch == epochs[n-1].Epoch {
-			w.params = params
+	if b, err := os.ReadFile(kf); err == nil && json.Unmarshal(b, &params) == nil && params.VaultID == desc.VaultID {
+		for _, epoch := range epochs {
+			if params.Epoch == epoch.Epoch && equalStrings(sortedCopy(epoch.RecipientFingerprints), fps) {
+				w.params = params
+				break
+			}
 		}
 	}
 	if w.params.Epoch == 0 {
-		next := 1
-		if n := len(epochs); n > 0 {
-			next = epochs[n-1].Epoch + 1
+		next, err := nextEpoch(dir, epochs)
+		if err != nil {
+			return nil, err
 		}
 		if err := w.newEpoch(next, fps, kf); err != nil {
 			return nil, err
@@ -132,7 +134,7 @@ func OpenWriter(dir string, recipients []string, keyFile func(vaultID string) st
 	for _, ix := range idx {
 		if ix.Epoch == w.params.Epoch {
 			for _, b := range ix.Blobs {
-				w.known[b.ID] = true
+				w.known[b.ID] = b
 			}
 		}
 	}
@@ -216,7 +218,7 @@ func (w *Writer) blobID(plain []byte) string {
 func (w *Writer) AddBlob(plain []byte) (string, error) {
 	id := w.blobID(plain)
 	w.plainTotal += int64(len(plain))
-	if w.known[id] {
+	if _, ok := w.known[id]; ok {
 		return id, nil
 	}
 	var ct bytes.Buffer
@@ -230,26 +232,33 @@ func (w *Writer) AddBlob(plain []byte) (string, error) {
 	if err := aw.Close(); err != nil {
 		return "", err
 	}
+	return id, w.appendCiphertext(bytes.NewReader(ct.Bytes()), BlobEntry{
+		ID: id, Length: int64(ct.Len()), PlainSize: int64(len(plain)),
+	})
+}
+
+func (w *Writer) appendCiphertext(ciphertext io.Reader, entry BlobEntry) error {
 	if w.pack == nil {
 		if err := os.MkdirAll(joinRel(w.dir, PacksDir), 0o700); err != nil {
-			return "", err
+			return err
 		}
 		f, err := os.CreateTemp(joinRel(w.dir, PacksDir), "tmp-*")
 		if err != nil {
-			return "", err
+			return err
 		}
 		w.pack, w.packOff = f, 0
 	}
-	if _, err := w.pack.Write(ct.Bytes()); err != nil {
-		return "", err
+	if _, err := io.CopyN(w.pack, ciphertext, entry.Length); err != nil {
+		return err
 	}
-	w.packBlobs = append(w.packBlobs, BlobEntry{ID: id, Offset: w.packOff, Length: int64(ct.Len()), PlainSize: int64(len(plain))})
-	w.packOff += int64(ct.Len())
-	w.known[id] = true
+	entry.Offset = w.packOff
+	w.packBlobs = append(w.packBlobs, entry)
+	w.packOff += entry.Length
+	w.known[entry.ID] = entry
 	if w.packOff >= PackTargetSize {
-		return id, w.finishPack()
+		return w.finishPack()
 	}
-	return id, nil
+	return nil
 }
 
 func (w *Writer) finishPack() error {
@@ -290,6 +299,7 @@ func (w *Writer) finishPack() error {
 	for _, b := range w.packBlobs {
 		b.Pack = id
 		w.newBlobs = append(w.newBlobs, b)
+		w.known[b.ID] = b
 	}
 	w.packBlobs = nil
 	return nil
@@ -368,7 +378,14 @@ func (w *Writer) Commit(snap Snapshot, files Files, meta Meta) (*Meta, error) {
 	if w.newBlobs == nil {
 		w.newBlobs = []BlobEntry{}
 	}
-	ix := mustJSON(Index{Format: FormatIndex, SnapshotID: snap.SnapshotID, Epoch: w.params.Epoch, Blobs: w.newBlobs})
+	entries := w.newBlobs
+	if meta.Kind == KindAuto {
+		entries, err = w.snapshotEntries(blobs, files)
+		if err != nil {
+			return nil, err
+		}
+	}
+	ix := mustJSON(Index{Format: FormatIndex, SnapshotID: snap.SnapshotID, Epoch: w.params.Epoch, Blobs: entries})
 	if err := writeOnce(w.dir, IndexPath(snap.SnapshotID), ix); err != nil {
 		return nil, err
 	}
@@ -398,6 +415,27 @@ func (w *Writer) Commit(snap Snapshot, files Files, meta Meta) (*Meta, error) {
 		return nil, err
 	}
 	return &meta, nil
+}
+
+func (w *Writer) snapshotEntries(list []string, files Files) ([]BlobEntry, error) {
+	ids := append([]string(nil), list...)
+	for _, file := range files.Files {
+		ids = append(ids, file.Blobs...)
+	}
+	seen := make(map[string]bool)
+	entries := make([]BlobEntry, 0)
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		entry, ok := w.known[id]
+		if !ok || entry.Pack == "" {
+			return nil, errors.New("vault: snapshot index is missing a blob")
+		}
+		seen[id] = true
+		entries = append(entries, entry)
+	}
+	return entries, nil
 }
 
 // Abort removes the unfinished pack, if any.

@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -133,5 +134,79 @@ func TestCurveScrollsHorizontallyWithManyPoints(t *testing.T) {
 	tt.Frame()
 	if a.curveScroll.X != 0 {
 		t.Fatalf("expected curve to hold user scroll X=0, got %v", a.curveScroll.X)
+	}
+}
+
+func TestCurveAndMonthListVirtualization(t *testing.T) {
+	a, tt := world(t)
+	now := time.Date(2026, 11, 20, 18, 0, 0, 0, time.Local)
+	var items []journey.TimelinePoint
+	for i := range 30 {
+		// Put newest 2 points in Nov and older 28 points in Oct so the Oct
+		// collapsible stays closed and texts uniquely reflect curve cards.
+		at := now.Add(-time.Duration(i) * time.Hour)
+		if i >= 2 {
+			at = now.AddDate(0, -1, 0).Add(-time.Duration(i) * time.Hour)
+		}
+		items = append(items, journey.TimelinePoint{
+			SnapshotRef: journey.SnapshotRef{VaultID: "v1", SnapshotID: fmt.Sprintf("p%02d", i)},
+			CreatedAt:   at, RecordedInstanceID: "xiaoman",
+			Scope: journey.Scope{Tier: "full"}, FileCount: 10 + i, PlainBytes: 2048,
+			Copies: []journey.Copy{{LocationRef: journey.LocationRef{Kind: "local_repo", ID: fmt.Sprintf("disk-%02d", i)}, SourceLocator: "home/xiaoman/2026-11-01_2026-11-30"}},
+		})
+	}
+	a.timeline.value.Items = items
+	a.navigate("/agents/home/xiaoman")
+	a.agentTab = tabJourney
+	tt.Frame()
+	tt.Advance(time.Second)
+
+	if a.curveScroll.MaxX <= 0 {
+		t.Fatalf("expected horizontal overflow for 30 points, got MaxX=%v", a.curveScroll.MaxX)
+	}
+	if a.curveScroll.X < a.curveScroll.MaxX-1 {
+		t.Fatalf("expected curve to open at newest end (MaxX=%v), got X=%v", a.curveScroll.MaxX, a.curveScroll.X)
+	}
+	newestLoc := journeyLocation(journey.LocationRef{Kind: "local_repo", ID: "disk-00"})
+	oldestLoc := journeyLocation(journey.LocationRef{Kind: "local_repo", ID: "disk-29"})
+	if !tt.HasText(newestLoc) {
+		t.Fatalf("expected newest curve card %q to be instantiated", newestLoc)
+	}
+	if tt.HasText(oldestLoc) {
+		t.Fatalf("expected off-screen oldest curve card %q to be virtualized out", oldestLoc)
+	}
+
+	// Fold the Nov month so we also confirm newest curve cards virtualize out when scrolled left.
+	novMonth := T("time.year_month", "y", now.Year(), "m", int(now.Month()))
+	*a.foldDefault("month-homexiaoman"+novMonth, true) = false
+	a.curveScroll.X = 0
+	tt.Frame()
+	tt.Advance(time.Second)
+	if a.curveScroll.X != 0 {
+		t.Fatalf("expected curve to hold user scroll X=0, got %v", a.curveScroll.X)
+	}
+	if !tt.HasText(oldestLoc) {
+		t.Fatalf("expected oldest curve card %q after scrolling left", oldestLoc)
+	}
+	if tt.HasText(newestLoc) {
+		t.Fatalf("expected far-right curve card %q to be virtualized out when scrolled left", newestLoc)
+	}
+
+	// Now put all 30 points in the same expanded month (> monthListThreshold) and
+	// verify ui.List virtualizes the month rows instead of instantiating all 30.
+	for i := range items {
+		items[i].CreatedAt = now.Add(-time.Duration(i) * 30 * time.Minute)
+	}
+	*a.foldDefault("month-homexiaoman"+novMonth, true) = true
+	a.timeline.value.Items = items
+	tt.Frame()
+	tt.Advance(time.Second)
+	firstRowFiles := T("point.files", "n", 10, "size", size(2048))
+	lastRowFiles := T("point.files", "n", 39, "size", size(2048))
+	if !tt.HasText(firstRowFiles) {
+		t.Fatalf("expected top month row %q in virtual list", firstRowFiles)
+	}
+	if tt.HasText(lastRowFiles) {
+		t.Fatalf("expected bottom month row %q to be virtualized out by ui.List", lastRowFiles)
 	}
 }

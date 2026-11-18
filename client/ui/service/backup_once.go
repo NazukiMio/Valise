@@ -7,6 +7,7 @@ import (
 	"valise/core/identity"
 	"valise/core/protection"
 	"valise/core/valise"
+	"valise/core/vault"
 )
 
 func (s *Service) allowOneOffBackup(ctx context.Context, host string) error {
@@ -32,8 +33,13 @@ func (s *Service) PrepareOneOffBackup(ctx context.Context, host string, ref iden
 	if err != nil {
 		return BackupPlan{}, err
 	}
-	if selection.Tier == "" {
-		return BackupPlan{}, valise.New("unsupported_scope", "没有选择本次范围", "选择一个现有备份档位")
+	note, err := vault.NormalizeNote(selection.Note)
+	if err != nil {
+		return BackupPlan{}, err
+	}
+	selection.Note = note
+	if selection.Tier == "" && note == "" {
+		return BackupPlan{}, valise.New("unsupported_scope", "没有选择本次范围或填写备注", "选择一个现有备份档位")
 	}
 	if err := selection.Validate(); err != nil {
 		return BackupPlan{}, err
@@ -46,7 +52,9 @@ func (s *Service) PrepareOneOffBackup(ctx context.Context, host string, ref iden
 		return p, err
 	}
 	p.Selection = selection
-	p.IncludesCredentials = selection.Tier != "soul"
+	if selection.Tier != "" {
+		p.IncludesCredentials = selection.Tier != "soul"
+	}
 	p.PlanDigest, _ = protection.Digest(p)
 	c.mu.Lock()
 	c.plans[p.PlanID] = backupPrepared{host: host, plan: cloneProtection(p)}

@@ -3,8 +3,10 @@ package seal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"valise/core/stationsync"
@@ -15,8 +17,7 @@ import (
 	porterenroll "valise/porter/internal/enroll"
 )
 
-// Deleting whole leaves (docs/VAULT_FORMAT.md 10.4). Only the user starts
-// these, through the client; nothing deletes automatically.
+// Whole-leaf deletion by an explicit request or an accepted retention plan.
 
 type deletingMark struct {
 	Started   time.Time `json:"started"`
@@ -32,27 +33,16 @@ func refuseCurrent(p Paths, leaf string) error {
 	if leaf == vault.LegacyLeaf {
 		return nil
 	}
+	if vault.IsSavepointLeaf(leaf) {
+		return valise.New("leaf_permanent", "手动存档点永久保留，不能整组删除", "只选择已结束的日期周期")
+	}
 	all, err := Leaves(p)
 	if err != nil {
 		return err
 	}
-	newest := ""
 	for _, l := range all {
-		if l.Period != nil && l.Period.InstanceID == inst {
-			newest = l.Leaf
-		}
-	}
-	if newest == leaf {
-		for _, l := range all {
-			if l.Leaf == leaf && l.Period != nil && !l.Deleting {
-				day := now().UTC().Format("2006-01-02")
-				if l.Period.TZ != "" {
-					day = vault.PeriodSetting{TZ: l.Period.TZ}.LocalDay(now()).Format("2006-01-02")
-				}
-				if day <= l.Period.End {
-					return valise.New("leaf_current", "周期 "+leaf+" 是实例 "+inst+" 当前正在写入的周期，不能删除", "等这个周期结束后再删除")
-				}
-			}
+		if l.Leaf == leaf && l.Period != nil && !periodEnded(l.Period, now()) {
+			return valise.New("leaf_current", "周期 "+leaf+" 是实例 "+inst+" 当前正在写入的周期，不能删除", "等这个周期结束后再删除")
 		}
 	}
 	return nil
@@ -60,23 +50,27 @@ func refuseCurrent(p Paths, leaf string) error {
 
 // DeleteLeaf deletes one whole leaf on the server.
 func DeleteLeaf(p Paths, leaf, initiator string) (res *vaultrpc.LeafDeleteResult, err error) {
-	dir, err := p.LeafDir(leaf)
-	if err != nil {
-		return nil, err
-	}
-	if err := refuseCurrent(p, leaf); err != nil {
-		return nil, err
-	}
-	if _, err := os.Stat(dir); err != nil {
-		return nil, valise.New("leaf_missing", "服务器上没有周期 "+leaf, "用 valise vault status 列出现有周期")
-	}
 	unlock, err := p.Lock()
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
+	if err := refuseCurrent(p, leaf); err != nil {
+		return nil, err
+	}
+	return deleteLeafLocked(p, leaf, initiator, "leaf_delete")
+}
+
+func deleteLeafLocked(p Paths, leaf, initiator, op string) (res *vaultrpc.LeafDeleteResult, err error) {
+	dir, err := p.LeafDir(leaf)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(dir); err != nil {
+		return nil, valise.New("leaf_missing", "服务器上没有周期 "+leaf, "用 valise vault status 列出现有周期")
+	}
 	defer func() {
-		ent := AuditEntry{Time: time.Now().UTC(), Op: "leaf_delete", Instance: leafInstance(leaf), Initiator: initiator, Result: "ok", Reason: leaf}
+		ent := AuditEntry{Time: time.Now().UTC(), Op: op, Instance: leafInstance(leaf), Initiator: initiator, Result: "ok", Reason: leaf}
 		if err != nil {
 			ent.Result = "failed"
 		} else {
@@ -113,6 +107,105 @@ func DeleteLeaf(p Paths, leaf, initiator string) (res *vaultrpc.LeafDeleteResult
 		os.Remove(p.DedupeKey(vaultID))
 	}
 	return res, nil
+}
+
+func periodEnded(period *vault.Period, at time.Time) bool {
+	day := at.UTC()
+	if period.TZ != "" {
+		day = (vault.PeriodSetting{TZ: period.TZ}).LocalDay(at)
+	}
+	return day.Format("2006-01-02") > period.End
+}
+
+// RetireExpiredAutoLeaves implements a user-confirmed server-only retention
+// plan. Old or mixed leaves with a historical snapshot are left to explicit
+// review. The lock binds eligibility to deletion and serializes promotion.
+func RetireExpiredAutoLeaves(p Paths, instance string, keepPeriods int) error {
+	if keepPeriods <= 0 {
+		return nil
+	}
+	unlock, err := p.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	all, err := Leaves(p)
+	if err != nil {
+		return err
+	}
+	at := now()
+	var ended, resume []LeafInfo
+	for _, leaf := range all {
+		if leaf.Period == nil || leaf.Period.InstanceID != instance || !periodEnded(leaf.Period, at) {
+			continue
+		}
+		if leaf.Deleting {
+			var mark deletingMark
+			b, err := os.ReadFile(filepath.Join(leaf.Dir, vault.DeletingFile))
+			if err == nil && json.Unmarshal(b, &mark) == nil && mark.Initiator == vaultrpc.InitiatorAuto {
+				resume = append(resume, leaf)
+			}
+			continue
+		}
+		setting := vault.PeriodSetting{Unit: leaf.Period.Unit, TZ: leaf.Period.TZ}
+		if leaf.Period.Format == vault.PeriodFormat && setting.Validate() == nil && onlyAutomatic(leaf, instance) {
+			ended = append(ended, leaf)
+		}
+	}
+	sort.Slice(ended, func(i, j int) bool {
+		if ended[i].Period.End == ended[j].Period.End {
+			return ended[i].Leaf < ended[j].Leaf
+		}
+		return ended[i].Period.End < ended[j].Period.End
+	})
+	retire := append(resume, ended[:max(0, len(ended)-keepPeriods)]...)
+	for _, leaf := range retire {
+		if _, err := deleteLeafLocked(p, leaf.Leaf, vaultrpc.InitiatorAuto, "leaf_retire"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func onlyAutomatic(leaf LeafInfo, instance string) bool {
+	dir := filepath.Join(leaf.Dir, vault.SnapshotsDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	metas, headers := map[string]bool{}, map[string]bool{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		if id, ok := strings.CutSuffix(name, ".age"); ok && entry.Type().IsRegular() {
+			headers[id] = true
+		}
+		if id, ok := strings.CutSuffix(name, ".meta.json"); ok {
+			if !entry.Type().IsRegular() {
+				return false
+			}
+			var meta vault.Meta
+			b, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil || json.Unmarshal(b, &meta) != nil ||
+				!strings.HasPrefix(id, "s_") || !vault.ValidID(id) || meta.SnapshotID != id ||
+				meta.Format != vault.FormatMeta || meta.Kind != vault.KindAuto || meta.InstanceID != instance {
+				return false
+			}
+			metas[id] = true
+		}
+	}
+	if len(metas) == 0 || len(metas) != len(headers) {
+		return false
+	}
+	for id := range metas {
+		if !headers[id] {
+			return false
+		}
+	}
+	_, err = os.Lstat(filepath.Join(leaf.Dir, vault.DeletingFile))
+	return errors.Is(err, os.ErrNotExist)
 }
 
 func leafInstance(leaf string) string {
@@ -228,9 +321,6 @@ func TargetLeafDelete(ctx context.Context, e *porterenroll.Env, p Paths, name, l
 	if !ok {
 		return valise.New("leaf_invalid", "无效的周期："+leaf, "使用备份位置列表中的名称")
 	}
-	if err := refuseCurrent(p, leaf); err != nil {
-		return err
-	}
 	tree, legacy, err := remoteBases(p, t)
 	if err != nil {
 		return err
@@ -249,6 +339,9 @@ func TargetLeafDelete(ctx context.Context, e *porterenroll.Env, p Paths, name, l
 		return err
 	}
 	defer unlock()
+	if err := refuseCurrent(p, leaf); err != nil {
+		return err
+	}
 	defer func() {
 		ent := AuditEntry{Time: time.Now().UTC(), Op: "target_leaf_delete", Instance: inst, Initiator: initiator, Target: t.Name, Result: "ok", Reason: leaf}
 		if err != nil {

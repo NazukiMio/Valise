@@ -57,12 +57,16 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 
 ### 3.3 与快照的关联
 
+时间轴投影可选 `kind` 与 `note`。从原自动快照晋升的存档点携带来源快照引用；同一时间点可优先呈现永久叶子，恢复和副本核对仍以实际叶子的备份库身份为准。
+
 不为新世代改写旧快照。新备份在服务器外部运行记录中保存 AgentRef → SnapshotRef 的明确绑定；旧快照无绑定时展示在该备份库历史中。仅靠同 instance_id / 同周期不能把旧世代全部挂到当前 Agent。丢失运行/迁移记录后仍可从完整备份库重建保存点和导出，只会缺少世代、原因、教学标记和迁移关联。
 
 ## 4. 保护计划：权威、版本与兼容
 
 
 ### 4.1 两部分状态
+
+服务器计划的 `period.keep_auto_periods` 可省略，省略或 0 表示关闭自动退役。正数保留最近 N 个已结束的纯自动周期；变更随保护计划确认与版本比较。手动备份选择可带 `note`，备注最多 140 个字符、不含控制字符；定时任务不能提交备注。
 
 `ProtectionView` 包含 `server_plan`, `client_binding?`, `effective_summary`, `legacy_settings?`, `warnings`。两部分分别保存、分别版本化，不构造跨机器原子事务。
 
@@ -269,6 +273,8 @@ wait.kind = confirmation / owner_unlock / admin_login / risk_ack / stage_confirm
 - **区分破坏性 sudo 命令**：每个内置修复步骤标明是否“破坏性”（会删除或覆盖数据、不可简单撤销）。只有含破坏性步骤的修复，执行前才再检查“别处有可恢复的备份”（INSTALL.md 4.2）；非破坏性步骤（开启 linger、开启时间同步、重启时间同步服务）不查。
 
 ## 8. 授权、确认与自动化边界
+
+`snapshot_promote` 是主人操作，参数为实例 ID、原快照 ID 与可选备注。成功返回相同快照 ID、永久叶子名及新增字节。已有晋升幂等返回。定时任务可按已确认的计划退役服务器上已结束的纯自动周期；此权限不授予日常 RPC、受管方工具或跨进程管理方接口。
 
 - `CallerContext` 由进程启动/适配层注入，值为 human_gui / human_tui / human_cli / manager_mcp；请求 JSON 不得自称 human。受管方 MCP 仍是另一套服务器接口，完全不接入此身份。
 - `AccessRequirement` 按目标列 daily / owner / admin、原因、是否需要独立连接及 gate 检查。复用原 owner challenge、Valise 内存解锁窗口、ssh-agent 与临时管理登录；每次管理操作新连接，不能将 admin 窗口看作复用 SSH 会话许可。

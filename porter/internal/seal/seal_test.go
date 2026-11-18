@@ -391,7 +391,7 @@ func TestTreePeriods(t *testing.T) {
 	if err := SetPeriodSetting(w.p, "demo", vault.PeriodSetting{Unit: vault.UnitWeek, TZ: "Asia/Shanghai"}); err != nil {
 		t.Fatal(err)
 	}
-	first := w.seal(t, vault.TierSoul)
+	first := w.sealAuto(t)
 	if first.Leaf != "demo/2026-10-26_2026-11-01" {
 		t.Fatal(first.Leaf)
 	}
@@ -408,7 +408,7 @@ func TestTreePeriods(t *testing.T) {
 		t.Fatal("TREE missing after naming")
 	}
 	now = func() time.Time { return base.Add(8 * 24 * time.Hour) }
-	second := w.seal(t, vault.TierSoul)
+	second := w.sealAuto(t)
 	if second.Leaf != "demo/2026-11-02_2026-11-08" || second.NewEpoch == false {
 		t.Fatalf("%s new epoch %v", second.Leaf, second.NewEpoch)
 	}
@@ -444,7 +444,7 @@ func TestTreePeriods(t *testing.T) {
 		t.Fatal(res, err)
 	}
 	log, err := SealLog(w.p, "demo")
-	if err != nil || len(log.Entries) != 2 || log.Entries[1].SnapshotID != second.SnapshotID || log.Entries[0].Reason != "test" || log.Entries[0].Initiator != "client" {
+	if err != nil || len(log.Entries) != 2 || log.Entries[1].SnapshotID != second.SnapshotID || log.Entries[0].Reason != "test" || log.Entries[0].Initiator != vaultrpc.InitiatorTimer {
 		t.Fatalf("%+v %v", log, err)
 	}
 	audit, _ := os.ReadFile(w.p.Audit())

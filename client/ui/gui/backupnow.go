@@ -66,11 +66,11 @@ func taskErr(e *service.ProtectionTaskError) error {
 // startBackupNow makes sure the key exists and was backed up (the first
 // time), then registers it on the server if needed and backs up.
 func (a *App) startBackupNow(row *agentRow, ps *protState) {
-	a.needKey(func() { a.runBackup(row, ps) })
-}
-
-func (a *App) runBackup(row *agentRow, ps *protState) {
-	a.runSelectedBackup(row, ps, protection.BackupSelection{})
+	if ps.savepointsSupported {
+		ps.oneOff = &oneOffBackup{planned: true}
+		return
+	}
+	a.needKey(func() { a.runSelectedBackup(row, ps, protection.BackupSelection{}) })
 }
 
 func (a *App) runSelectedBackup(row *agentRow, ps *protState, selection protection.BackupSelection) {
@@ -89,7 +89,7 @@ func (a *App) runSelectedBackup(row *agentRow, ps *protState, selection protecti
 		say(T("backup.preparing"))
 		var plan service.BackupPlan
 		var err error
-		if selection.Tier != "" {
+		if selection.Tier != "" || selection.Note != "" {
 			plan, err = a.svc.PrepareOneOffBackup(ctx, host, ref, selection)
 		} else {
 			plan, err = a.svc.PrepareBackup(ctx, host, ref)
@@ -157,6 +157,9 @@ func (a *App) backupCard(c *ui.Context, row *agentRow, br *backupRun) {
 		if br.task != nil {
 			if br.task.Selection.Tier != "" {
 				muted(ui.Text(c, T("backup.once.result", "tier", tierText(br.task.Selection.Tier)))).Wrap()
+			}
+			if br.task.Selection.Note != "" {
+				fact(c, T("savepoint.note.label"), br.task.Selection.Note)
 			}
 			switch br.task.State {
 			case "succeeded":

@@ -89,7 +89,7 @@ func Merge(results ...Result) Result {
 			}
 		}
 	}
-	for _, p := range points {
+	for _, p := range preferredPoints(points) {
 		sort.Slice(p.Copies, func(i, j int) bool {
 			a, b := p.Copies[i], p.Copies[j]
 			return a.LocationRef.Kind+"/"+a.LocationRef.ID+"/"+a.LocationRef.AuthorityID+"/"+a.SourceLocator < b.LocationRef.Kind+"/"+b.LocationRef.ID+"/"+b.LocationRef.AuthorityID+"/"+b.SourceLocator
@@ -111,5 +111,46 @@ func Merge(results ...Result) Result {
 		}
 		return a.SnapshotRef.SnapshotID < b.SnapshotRef.SnapshotID
 	})
+	return out
+}
+
+// A promotion preserves the original encrypted header but is stored under a
+// different vault ID. Prefer its physical reference only when that provenance
+// matches, so restore and verification still open the advertised leaf.
+func preferredPoints(points map[SnapshotRef]*TimelinePoint) []*TimelinePoint {
+	hidden := make(map[SnapshotRef]bool)
+	for _, p := range points {
+		if p.Kind != vault.KindSavepoint || p.MetadataState == "conflict" || len(p.Copies) == 0 {
+			continue
+		}
+		cp := p.Copies[0]
+		vid, ok := vault.PromotionSource(cp.Metadata)
+		if !ok || vid == p.SnapshotRef.VaultID {
+			continue
+		}
+		ref := SnapshotRef{VaultID: vid, SnapshotID: p.SnapshotRef.SnapshotID}
+		source := points[ref]
+		if source != nil && source.Kind == vault.KindAuto && source.MetadataState != "conflict" &&
+			source.RecordedInstanceID == p.RecordedInstanceID && len(source.Copies) != 0 &&
+			cp.HeaderDigest != "" && cp.HeaderDigest == source.Copies[0].HeaderDigest {
+			fresh := false
+			for _, candidate := range p.Copies {
+				fresh = fresh || candidate.Observation.Status == "fresh"
+			}
+			if fresh {
+				hidden[ref] = true
+			} else {
+				// A cached or partially copied promotion must not hide the
+				// currently readable automatic backup.
+				hidden[p.SnapshotRef] = true
+			}
+		}
+	}
+	out := make([]*TimelinePoint, 0, len(points))
+	for ref, point := range points {
+		if !hidden[ref] {
+			out = append(out, point)
+		}
+	}
 	return out
 }

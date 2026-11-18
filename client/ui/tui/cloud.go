@@ -215,6 +215,9 @@ func (c *cloudScreen) update(m *Model, msg tea.Msg) (tea.Cmd, bool) {
 				}, true
 			}
 			if c.cursor < len(rows) && rows[c.cursor].remote != nil {
+				if vault.IsSavepointLeaf(rows[c.cursor].leaf) {
+					return nil, true
+				}
 				return confirmLeafDelete(m, c.host, rows[c.cursor].leaf, p.name, func(m *Model) tea.Cmd {
 					return tea.Batch(m.loadServer(c.host), c.list(m, p.name))
 				}), true

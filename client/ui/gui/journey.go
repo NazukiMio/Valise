@@ -6,11 +6,17 @@ import (
 	"valise/core/journey"
 )
 
+const (
+	monthListThreshold = 12
+	monthListHeight    = 440
+)
+
 // journey shows the saved points of one agent: the newest on the gold line,
 // then all of them along a thin line, newest first, grouped by month; a
 // point opens its details. Only successful backups are points (docs/UI.md
 // 10.2). An agent that migrated also has its route (docs/UI.md 7.1).
 func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoint) {
+	points = filterJourney(points, a.journeyFilter)
 	if a.point != "" {
 		a.journeyReadNotes(c)
 		a.journeyFailedLocations(c)
@@ -33,6 +39,8 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 			return
 		}
 	}
+	ui.Row(c).Children(func() { ui.Segmented(c, &a.journeyFilter, T("savepoint.filter.all"), T("savepoint.filter.only")) })
+	a.promotionResult(c)
 	if a.timeline.err != nil {
 		errorBox(c, a.timeline.err, a.fold("timeline-err"))
 	}
@@ -41,7 +49,11 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		if a.timeline.busy {
 			ui.Spinner(c)
 		} else {
-			muted(ui.Text(c, T("journey.empty"))).FontSize(14)
+			empty := T("journey.empty")
+			if a.journeyFilter == 1 {
+				empty = T("savepoint.filter.empty")
+			}
+			muted(ui.Text(c, empty)).FontSize(fsBody)
 		}
 		return
 	}
@@ -62,9 +74,15 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 	for mi, m := range months {
 		open := a.foldDefault("month-"+row.Server+row.Instance+m, mi == 0)
 		ui.Collapsible(c.Key("m"+m), T("journey.month", "month", m, "n", len(byMonth[m])), open, func() {
+			list := byMonth[m]
+			if len(list) > monthListThreshold {
+				ui.List(c, nil, len(list), func(i int) {
+					a.pointLine(c.Key(pointKey(list[i])), list[i], i == 0, i == len(list)-1)
+				}).Height(monthListHeight)
+				return
+			}
 			// One column without gaps, so the line runs unbroken.
 			ui.Column(c).Gap(0).Children(func() {
-				list := byMonth[m]
 				for i, p := range list {
 					a.pointLine(c.Key(pointKey(p)), p, i == 0, i == len(list)-1)
 				}
@@ -94,6 +112,7 @@ func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool
 		box.OnClick(func() { a.point = pointKey(p) }).Children(func() {
 			ui.Text(c, when(p.CreatedAt, c.Now())).FontSize(13).Bold().Width(cur.Sizes.TimeWidth).Wrap()
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
+				pointKind(c, p)
 				muted(ui.Text(c, tierText(p.Scope.Tier)))
 				muted(ui.Text(c, pointLocations(p))).FontSize(fsCaption).Wrap()
 			})
@@ -120,6 +139,10 @@ func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int, 
 	})
 	pageHead(c, when(p.CreatedAt, c.Now()), p.CreatedAt.Local().Format("2006-01-02 15:04:05"))
 	card(ui.Column(c)).Children(func() {
+		pointKindLabel(c, p.Kind)
+		if p.Note != "" {
+			fact(c, T("savepoint.note.label"), p.Note)
+		}
 		ui.Text(c, T("point.carried")).Bold()
 		fact(c, T("point.scope"), tierText(p.Scope.Tier))
 		fact(c, T("point.content"), T("point.files", "n", p.FileCount, "size", size(p.PlainBytes)))
@@ -155,6 +178,7 @@ func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int, 
 	} else if p.MetadataState != "conflict" {
 		muted(ui.Text(c, T("restore.source_unavailable"))).Wrap()
 	}
+	a.promotePoint(c, p)
 	ui.Collapsible(c, T("error.tech_info"), a.fold("point-tech"), func() {
 		muted(ui.Text(c, T("point.ids", "snapshot", p.SnapshotRef.SnapshotID, "vault", p.SnapshotRef.VaultID))).Font(cur.Fonts.Mono)
 	})

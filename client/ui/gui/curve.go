@@ -63,9 +63,42 @@ var hairs = func() []hair {
 	return out
 }()
 
-// paintHairs draws the strands (in the strands variant) and the spine into
-// r; the gold variant is the spine alone, a little stronger.
-func paintHairs(p *ui.Painter, r ui.Rect, t float32) {
+// curveViewport calculates the horizontal scroll window, draw bounds, and
+// visible point index range (including 1 buffer item on each side) for a strip
+// of n points.
+func curveViewport(n int, scroll ui.ScrollState, boxW float32) (scrollX, viewW, maxScroll, viewLeft, viewRight float32, iMin, iMax int) {
+	totalW := float32(n) * curvePointWidth
+	if n <= curvePoints {
+		w := max(boxW, totalW)
+		return 0, w, 0, 0, w, 0, n - 1
+	}
+	viewW = boxW
+	if viewW <= 0 && scroll.MaxX > 0 && totalW > scroll.MaxX {
+		viewW = totalW - scroll.MaxX
+	}
+	if viewW <= 0 {
+		viewW = float32(curvePoints) * curvePointWidth
+	}
+	maxScroll = max(totalW-viewW, 0)
+	scrollX = min(max(scroll.X, 0), maxScroll)
+	firstVis := int(math.Floor(float64(scrollX / curvePointWidth)))
+	lastVis := int(math.Floor(float64(max(scrollX+viewW-1, 0) / curvePointWidth)))
+	iMin = max(firstVis-1, 0)
+	iMax = min(lastVis+1, n-1)
+	viewLeft = max(scrollX-curvePointWidth, 0)
+	viewRight = min(scrollX+viewW+curvePointWidth, totalW)
+	return scrollX, viewW, maxScroll, viewLeft, viewRight, iMin, iMax
+}
+
+// paintHairs draws the strands (in the strands variant) and the spine within
+// [viewLeft, viewRight] into r; the gold variant is the spine alone, a little
+// stronger.
+func paintHairs(p *ui.Painter, r ui.Rect, viewLeft, viewRight, t float32) {
+	viewLeft = max(viewLeft, 0)
+	if viewRight <= 0 {
+		viewRight = r.W
+	}
+	viewRight = min(max(viewRight, viewLeft), r.W)
 	span := float32(1.2 + 0.56 + 0.27)
 	unit := min(r.W, 880)
 	if unit <= 0 {
@@ -73,18 +106,23 @@ func paintHairs(p *ui.Painter, r ui.Rect, t float32) {
 	}
 	tiles := max(int(math.Ceil(float64(r.W/unit))), 1)
 	if cur.Timeline == TimelineStrands {
-		for m := range tiles {
+		mMin := max(int(math.Floor(float64((viewLeft-1.8*unit)/unit))), 0)
+		mMax := min(int(math.Ceil(float64((viewRight+0.9*unit)/unit))), tiles-1)
+		for m := mMin; m <= mMax; m++ {
 			base := float32(m) * unit
 			for _, h := range hairs {
 				x0 := h.start + float32(m)*0.37 + h.speed*t/0.54
 				x0 = float32(math.Mod(float64(x0+0.83), float64(span))) - 0.83
-				pxA := max(base+x0*unit, 0)
-				pxB := min(base+(x0+h.length)*unit, r.W)
+				rawA := max(base+x0*unit, 0)
+				rawB := min(base+(x0+h.length)*unit, r.W)
+				pxA := max(rawA, viewLeft)
+				pxB := min(rawB, viewRight)
 				if pxB <= pxA || h.length*unit <= 0 {
 					continue
 				}
 				var path ui.Path
 				first := true
+				lastX := pxA
 				for x := pxA; x <= pxB; x += 6 {
 					y := spineY(x, r.W, r.H, t) + h.offset + h.amp*float32(math.Sin(float64(x*h.freq+t*0.4+h.phase)))
 					if first {
@@ -93,21 +131,32 @@ func paintHairs(p *ui.Painter, r ui.Rect, t float32) {
 					} else {
 						path.LineTo(r.X+x, r.Y+y)
 					}
+					lastX = x
+				}
+				if !first && lastX < pxB {
+					y := spineY(pxB, r.W, r.H, t) + h.offset + h.amp*float32(math.Sin(float64(pxB*h.freq+t*0.4+h.phase)))
+					path.LineTo(r.X+pxB, r.Y+y)
 				}
 				// Strands fade toward their tips: thinner and lighter where short.
-				fade := min(1, (pxB-pxA)/(h.length*unit)*1.4)
+				fade := min(1, (rawB-rawA)/(h.length*unit)*1.4)
 				p.StrokePath(&path, h.width, palette.Strand.Alpha(h.alpha*fade))
 			}
 		}
 	}
+	startX := max(float32(math.Floor(float64(viewLeft/4)))*4, 0)
 	var spine ui.Path
-	for x := float32(0); x <= r.W; x += 4 {
+	lastX := startX
+	for x := startX; x <= viewRight; x += 4 {
 		y := spineY(x, r.W, r.H, t)
-		if x == 0 {
-			spine.MoveTo(r.X, r.Y+y)
+		if x == startX {
+			spine.MoveTo(r.X+x, r.Y+y)
 		} else {
 			spine.LineTo(r.X+x, r.Y+y)
 		}
+		lastX = x
+	}
+	if viewRight > startX && lastX < viewRight {
+		spine.LineTo(r.X+viewRight, r.Y+spineY(viewRight, r.W, r.H, t))
 	}
 	if cur.Timeline == TimelineGold {
 		p.StrokePath(&spine, 2.4, palette.Gold)
@@ -141,7 +190,29 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 	still = still || cur.Timeline == TimelinePlain
 	box := ui.Box(c).Height(curveHeight).Radius(radCard).Background(palette.Canvas).Border(1, palette.CardBorder).Clip()
 	box.Children(func() {
-		ui.ScrollHorizontal(c.Key("curve-" + scope)).TrackScroll(&a.curveScroll).Fill().Children(func() {
+		scroller := ui.ScrollHorizontal(c.Key("curve-" + scope)).TrackScroll(&a.curveScroll).Fill()
+		boxW := scroller.LayoutBounds().W
+		if boxW <= 0 {
+			boxW = box.LayoutBounds().W
+		}
+		scrollX, viewW, maxScroll, _, _, iMin, iMax := curveViewport(n, a.curveScroll, boxW)
+		if n > curvePoints && (scrollX > 2 || scrollX < maxScroll-2) {
+			edge := min(24/max(viewW, 240), 0.08)
+			black := ui.RGB(0, 0, 0)
+			var stops []ui.GradientStop
+			if scrollX > 2 {
+				stops = append(stops, ui.GradientStop{Color: ui.Transparent, At: 0}, ui.GradientStop{Color: black, At: edge})
+			} else {
+				stops = append(stops, ui.GradientStop{Color: black, At: 0})
+			}
+			if scrollX < maxScroll-2 {
+				stops = append(stops, ui.GradientStop{Color: black, At: 1 - edge}, ui.GradientStop{Color: ui.Transparent, At: 1})
+			} else {
+				stops = append(stops, ui.GradientStop{Color: black, At: 1})
+			}
+			scroller.MaskLinearGradient(ui.LinearGradient{Angle: 90, Stops: stops})
+		}
+		scroller.Children(func() {
 			strip := ui.Row(c).Height(curveHeight).Grow(1)
 			if n > curvePoints {
 				strip.MinWidth(float32(n) * curvePointWidth).Shrink(0)
@@ -152,8 +223,13 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 					t = float32(float64(p.Now().UnixMilli()%3_600_000)/1000) * 0.54
 					p.After(33 * time.Millisecond)
 				}
-				paintHairs(p, r, t)
-				for i, pt := range shown {
+				_, _, _, drawLeft, drawRight, drawMin, drawMax := curveViewport(n, a.curveScroll, boxW)
+				if n <= curvePoints {
+					drawLeft, drawRight = 0, r.W
+				}
+				paintHairs(p, r, drawLeft, drawRight, t)
+				for i := drawMin; i <= drawMax; i++ {
+					pt := shown[i]
 					px := r.W * (float32(i) + 0.5) / float32(n)
 					x, y := r.X+px, r.Y+spineY(px, r.W, r.H, t)
 					stem := r.Y + curveBand
@@ -173,10 +249,19 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 				}
 			})
 			strip.Children(func() {
-				for i, pt := range shown {
-					col := ui.Column(c.Key(pointKey(pt))).Grow(1).Basis(0).FillHeight().AlignItems(ui.Center).Padding(12, 6)
+				if n > curvePoints && iMin > 0 {
+					ui.Box(c.Key("pad-left")).Width(float32(iMin) * curvePointWidth).Shrink(0).FillHeight()
+				}
+				for i := iMin; i <= iMax; i++ {
+					pt := shown[i]
+					col := ui.Column(c.Key(pointKey(pt))).FillHeight().AlignItems(ui.Center).Padding(12, 6)
 					if n > curvePoints {
-						col.MinWidth(curvePointWidth)
+						col.Width(curvePointWidth).Shrink(0)
+					} else {
+						col.Grow(1).Basis(0)
+					}
+					if !still {
+						col.Transition(ui.ElementTransition{Duration: motionBase, Enter: &ui.Motion{Y: 6}})
 					}
 					if i%2 == 0 {
 						col.Justify(ui.Start)
@@ -184,6 +269,9 @@ func (a *App) curveStrip(c *ui.Context, points []journey.TimelinePoint) {
 						col.Justify(ui.End)
 					}
 					col.Children(func() { a.curveCard(c, pt) })
+				}
+				if n > curvePoints && iMax < n-1 {
+					ui.Box(c.Key("pad-right")).Width(float32(n-1-iMax) * curvePointWidth).Shrink(0).FillHeight()
 				}
 			})
 		})
@@ -204,6 +292,7 @@ func (a *App) curveCard(c *ui.Context, pt journey.TimelinePoint) {
 	})
 	card.OnClick(func() { a.lightPoint(id) }).Children(func() {
 		ui.Text(c, when(pt.CreatedAt, c.Now())).FontSize(fsSub).Bold().MaxLines(1)
+		pointKind(c, pt)
 		muted(ui.Text(c, tierShort(pt.Scope.Tier))).MaxLines(1)
 		muted(ui.Text(c, pointLocations(pt))).MaxLines(2)
 	})

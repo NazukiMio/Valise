@@ -110,6 +110,7 @@ var conditionalMethods = map[string]bool{
 // ownerMethods are basic operations that write into the agent or change
 // where backups go: the daily key plus the owner proof.
 var ownerMethods = map[string]bool{
+	"snapshot_promote":      true,
 	"instance_write":        true,
 	"server_rename":         true,
 	"agent_label_set":       true,

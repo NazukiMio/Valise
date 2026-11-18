@@ -57,6 +57,8 @@ type TimelinePoint struct {
 	CreatedAt          time.Time   `json:"created_at"`
 	RecordedInstanceID string      `json:"recorded_instance_id"`
 	Scope              Scope       `json:"scope"`
+	Kind               string      `json:"kind,omitempty"`
+	Note               string      `json:"note,omitempty"`
 	MetadataState      string      `json:"metadata_state"`
 	PlainBytes         int64       `json:"plain_bytes"`
 	FileCount          int         `json:"file_count"`

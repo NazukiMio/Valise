@@ -91,7 +91,7 @@ func (c *cleanupScreen) items(m *Model) []cleanItem {
 	}
 	if st := m.server(host).status; st != nil {
 		for _, l := range st.Leaves {
-			if l.Current {
+			if l.Current || vault.IsSavepointLeaf(l.Leaf) {
 				continue
 			}
 			l := l

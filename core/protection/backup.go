@@ -6,6 +6,7 @@ import (
 
 	"valise/core/identity"
 	"valise/core/valise"
+	"valise/core/vault"
 )
 
 const (
@@ -39,10 +40,14 @@ type BackupParams struct {
 type BackupSelection struct {
 	Tier       string `json:"tier"`
 	SkipCopies bool   `json:"skip_copies,omitempty"`
+	Note       string `json:"note,omitempty"`
 }
 
 func (s BackupSelection) Validate() error {
-	if s == (BackupSelection{}) {
+	if _, err := vault.NormalizeNote(s.Note); err != nil {
+		return err
+	}
+	if s.Tier == "" && !s.SkipCopies {
 		return nil
 	}
 	switch s.Tier {
@@ -145,6 +150,14 @@ func (p BackupParams) Normalize() (BackupParams, error) {
 	if !ValidID(p.RunID) || p.ExpectedRevision == 0 {
 		return p, valise.New("request_invalid", "备份运行标识或计划版本无效", "使用随机 128 位十六进制运行标识并重新读取保护计划")
 	}
+	note, err := vault.NormalizeNote(p.Selection.Note)
+	if err != nil {
+		return p, err
+	}
+	if p.Reason != "manual" && note != "" {
+		return p, valise.New("request_invalid", "定时备份不接受备注", "手动建立存档点时填写备注")
+	}
+	p.Selection.Note = note
 	if p.Detach && p.Reason != "manual" {
 		return p, valise.New("request_invalid", "只有手动备份可以交给一次性单元执行", "定时备份在自己的进程内执行")
 	}

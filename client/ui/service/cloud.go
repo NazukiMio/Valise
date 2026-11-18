@@ -32,6 +32,9 @@ func (s *Service) PeriodSet(ctx context.Context, host, instance string, setting 
 
 // LeafDelete deletes one whole period on the server.
 func (s *Service) LeafDelete(ctx context.Context, host, leaf string) (*vaultrpc.LeafDeleteResult, error) {
+	if vault.IsSavepointLeaf(leaf) {
+		return nil, permanentLeaf()
+	}
 	var res vaultrpc.LeafDeleteResult
 	err := s.call(ctx, host, vaultrpc.MethodLeafDelete, vaultrpc.LeafDeleteParams{Leaf: leaf}, &res)
 	return &res, err
@@ -50,10 +53,17 @@ func (s *Service) TargetList(ctx context.Context, host, target string) (*vaultrp
 
 // TargetLeafDelete deletes one whole period on a cloud backup.
 func (s *Service) TargetLeafDelete(ctx context.Context, host, target, leaf string) error {
+	if vault.IsSavepointLeaf(leaf) {
+		return permanentLeaf()
+	}
 	if s.IsStation(target) {
 		return s.stationLeafDelete(ctx, host, target, leaf)
 	}
 	return s.call(ctx, host, vaultrpc.MethodTargetLeafDel, vaultrpc.TargetLeafDeleteParams{Target: target, Leaf: leaf}, nil)
+}
+
+func permanentLeaf() error {
+	return valise.New("leaf_permanent", "手动存档点永久保留，不能整组删除", "选择已结束的日期周期")
 }
 
 // TimerSet turns an instance's timed seal on or off.

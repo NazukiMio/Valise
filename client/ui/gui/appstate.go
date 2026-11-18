@@ -80,6 +80,8 @@ type journeyView struct {
 	glow             string    // point lit on the journey's line, opening next
 	glowAt           time.Time // when its glow started
 	journeyMode      int       // 0 points, 1 route
+	journeyFilter    int       // 0 all, 1 savepoints
+	pointPromotion   *pointPromotion
 	timelinePending  []journey.LocationRef
 	timelineScanID   uint64
 	timelineCancel   context.CancelFunc

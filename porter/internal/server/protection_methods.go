@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"valise/core/enroll"
 	"valise/core/identity"
@@ -13,6 +14,7 @@ import (
 	porterenroll "valise/porter/internal/enroll"
 	porteridentity "valise/porter/internal/identity"
 	porterprotection "valise/porter/internal/protection"
+	"valise/porter/internal/seal"
 )
 
 // validateAgent checks the current generation and dossier facts. A stable ID
@@ -44,11 +46,20 @@ func init() {
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
 		}
-		return (backuprun.Store{Home: s.cfg.Home}).SnapshotBinding(ctx, p)
+		store := backuprun.Store{Home: s.cfg.Home}
+		binding, err := store.SnapshotBinding(ctx, p)
+		if err != nil || binding.State != "unknown" {
+			return binding, err
+		}
+		ref, err := seal.OriginalSnapshot(seal.Paths{Home: s.cfg.Home}, p.SnapshotRef)
+		if err != nil || ref == p.SnapshotRef {
+			return binding, err
+		}
+		return store.SnapshotBinding(ctx, protection.SnapshotBindingParams{SnapshotRef: ref})
 	}
 	methods[protection.MethodBackup] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p protection.BackupParams
-		if err := json.Unmarshal(raw, &p); err != nil {
+		if err := json.Unmarshal(raw, &p); err != nil || strings.TrimSpace(p.Reason) == "timer" {
 			return nil, errInvalidParams
 		}
 		st := backuprun.Store{Home: s.cfg.Home, Env: s.loginEnv(ctx), ValidateAgent: s.validateAgent}

@@ -87,7 +87,7 @@ type DedupeParams struct {
 	ChunkerPol string `json:"chunker_pol"`
 }
 
-// Index lists the blobs a seal added.
+// Index lists new blobs, or the full dependency set for an automatic snapshot.
 type Index struct {
 	Format     string      `json:"format"`
 	SnapshotID string      `json:"snapshot_id"`
@@ -179,19 +179,27 @@ type Symlink struct {
 	Target string `json:"target"`
 }
 
+const (
+	KindAuto      = "auto"
+	KindSavepoint = "savepoint"
+)
+
 // Meta is the plaintext <snapshot_id>.meta.json. It never contains paths or
 // file names.
 type Meta struct {
-	Format     string    `json:"format"`
-	SnapshotID string    `json:"snapshot_id"`
-	InstanceID string    `json:"instance_id"`
-	Tier       string    `json:"tier"`
-	CreatedAt  time.Time `json:"created_at"`
-	FileCount  int       `json:"file_count"`
-	PlainBytes int64     `json:"plain_bytes"`
-	AddedBytes int64     `json:"added_bytes"`
-	Epoch      int       `json:"epoch"`
-	ProfileID  string    `json:"profile_id"`
+	Format       string    `json:"format"`
+	SnapshotID   string    `json:"snapshot_id"`
+	InstanceID   string    `json:"instance_id"`
+	Tier         string    `json:"tier"`
+	CreatedAt    time.Time `json:"created_at"`
+	FileCount    int       `json:"file_count"`
+	PlainBytes   int64     `json:"plain_bytes"`
+	AddedBytes   int64     `json:"added_bytes"`
+	Epoch        int       `json:"epoch"`
+	ProfileID    string    `json:"profile_id"`
+	Kind         string    `json:"kind,omitempty"`
+	Note         string    `json:"note,omitempty"`
+	PromotedFrom string    `json:"promoted_from,omitempty"`
 }
 
 // TierCategories are the categories each tier seals

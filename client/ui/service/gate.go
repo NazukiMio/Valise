@@ -214,7 +214,9 @@ func (s *Service) repoPlaces(host string, st *vaultrpc.StatusResult) []offsitePl
 		}
 		for leaf, ids := range rs.Leaves {
 			for _, id := range ids {
-				p.leaf[id] = leaf
+				if p.leaf[id] == "" || vault.IsSavepointLeaf(leaf) {
+					p.leaf[id] = leaf
+				}
 			}
 		}
 		out = append(out, p)

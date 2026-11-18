@@ -42,13 +42,16 @@ func TestNextPeriod(t *testing.T) {
 
 func TestLeafNames(t *testing.T) {
 	for leaf, ok := range map[string]bool{
-		"oc/2026-10-01_2026-10-31": true, "-": true,
+		"oc/2026-10-01_2026-10-31": true, "-": true, "oc/savepoints": true,
 		"oc/2026-10-31_2026-10-01": false, "Oc/2026-10-01_2026-10-31": false,
 		"oc/../x": false, "oc": false, "oc/2026-10-01": false, "oc/2026-13-01_2026-13-02": false,
 	} {
 		if _, _, got := SplitLeaf(leaf); got != ok {
 			t.Errorf("%s: %v", leaf, got)
 		}
+	}
+	if !IsSavepointLeaf("oc/savepoints") || IsSavepointLeaf("-") || IsSavepointLeaf("oc/../savepoints") {
+		t.Fatal("savepoint leaf classification")
 	}
 	if (PeriodSetting{Unit: "day", TZ: "UTC"}).Validate() == nil || (PeriodSetting{Unit: UnitWeek, TZ: "Mars/Base"}).Validate() == nil {
 		t.Fatal("invalid setting accepted")

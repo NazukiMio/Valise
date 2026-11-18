@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"valise/core/identity"
 	"valise/core/protection"
+	"valise/core/vaultrpc"
 	"valise/ui/service"
 )
 
@@ -30,12 +32,13 @@ type protState struct {
 	changeJ job
 	task    *service.ProtectionTask
 
-	backup           *backupRun
-	otherBackups     []*backupRun
-	backupReadErr    error
-	newBackupConfirm bool
-	oneOff           *oneOffBackup
-	oneOffSupported  bool
+	backup              *backupRun
+	otherBackups        []*backupRun
+	backupReadErr       error
+	newBackupConfirm    bool
+	oneOff              *oneOffBackup
+	oneOffSupported     bool
+	savepointsSupported bool
 }
 
 // schedEdit is the schedule being edited.
@@ -43,6 +46,7 @@ type schedEdit struct {
 	on, catchUp bool
 	at, tz      string
 	period      string
+	keep        string
 }
 
 func (a *App) protOf(row *agentRow) *protState {
@@ -76,18 +80,19 @@ func (a *App) readProt(host string, ps *protState) {
 	var v protection.View
 	var tasks []service.BackupTask
 	var tasksErr error
-	var once bool
+	var once, savepoints bool
 	a.start(&ps.read, time.Minute, func(ctx context.Context) (err error) {
 		tasks, tasksErr = a.svc.ListBackupTasks(ctx)
 		v, err = a.svc.GetProtection(ctx, host, protection.GetParams{AgentRef: ref})
 		if err == nil {
 			caps, e := a.svc.BackupCapabilities(ctx, host)
 			once = e == nil && slices.Contains(caps, protection.BackupCapabilityV3)
+			savepoints = e == nil && slices.Contains(caps, vaultrpc.SavepointsCapability)
 		}
 		return err
 	}, func(err error) {
 		ps.err = err
-		ps.oneOffSupported = once
+		ps.oneOffSupported, ps.savepointsSupported = once, savepoints
 		ps.backupReadErr = tasksErr
 		if tasksErr == nil {
 			a.restoreBackupCards(ps, host, tasks)
@@ -157,6 +162,13 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 			ui.Button(c, T("protect.change")).OnClick(func() { ps.sched = newSchedEdit(d) })
 		})
 		settingRow(c, T("protect.period"), T("protect.period."+orText(d.Period.Unit, "month")), "", nil)
+		if ps.savepointsSupported {
+			keep := T("protect.retention.off")
+			if d.Period.KeepAutoPeriods > 0 {
+				keep = T("protect.retention.count", "n", d.Period.KeepAutoPeriods)
+			}
+			settingRow(c, T("protect.retention"), keep, "", nil)
+		}
 		settingRow(c, T("protect.copies"), a.copiesText(ps), "", func() {
 			ui.Button(c, T("protect.change")).OnClick(func() { a.openCopyTo(row, ps) })
 		})
@@ -257,7 +269,7 @@ func (a *App) copiesText(ps *protState) string {
 
 func newSchedEdit(d protection.Desired) *schedEdit {
 	e := &schedEdit{at: orText(d.Schedule.DailyAt, "04:40"), tz: orText(d.Schedule.Timezone, localZone()),
-		catchUp: d.Schedule.CatchUpEnabled(), period: orText(d.Period.Unit, "month")}
+		catchUp: d.Schedule.CatchUpEnabled(), period: orText(d.Period.Unit, "month"), keep: strconv.Itoa(d.Period.KeepAutoPeriods)}
 	e.on = d.Schedule.Enabled != nil && *d.Schedule.Enabled
 	return e
 }
@@ -284,9 +296,17 @@ func (a *App) scheduleDialog(c *ui.Context, row *agentRow, ps *protState) {
 				}).Row().Gap(16).Label(T("protect.period"))
 			})
 			muted(ui.Text(c, T("protect.period_note"))).Wrap()
+			valid := true
+			if ps.savepointsSupported {
+				labeled(c, T("protect.retention"), func() {
+					ui.TextInput(c, &e.keep).Label(T("protect.retention")).Placeholder("0")
+				})
+				_, valid = parseRetention(e.keep)
+				muted(ui.Text(c, T("protect.retention.why"))).Wrap()
+			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).OnClick(func() { ps.sched = nil })
-				ui.PrimaryButton(c, T("protect.save")).OnClick(func() { a.saveSchedule(row, ps) })
+				ui.PrimaryButton(c, T("protect.save")).Disabled(!valid).OnClick(func() { a.saveSchedule(row, ps) })
 			})
 		})
 	}).Dismissed() {
@@ -305,6 +325,13 @@ func (a *App) saveSchedule(row *agentRow, ps *protState) {
 		d.Schedule.DailyAt, d.Schedule.Timezone, d.Schedule.CatchUp = strings.TrimSpace(e.at), strings.TrimSpace(e.tz), &catch
 	}
 	d.Period.Unit = e.period
+	if ps.savepointsSupported {
+		var ok bool
+		d.Period.KeepAutoPeriods, ok = parseRetention(e.keep)
+		if !ok {
+			return
+		}
+	}
 	if d.Period.Timezone == "" {
 		d.Period.Timezone = orText(d.Schedule.Timezone, localZone())
 	}

@@ -121,7 +121,7 @@ func TestOneOffBackupOverFakeSSHLeavesPlanUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.BackupReview = approveBackup
-	selection := protection.BackupSelection{Tier: "soul", SkipCopies: true}
+	selection := protection.BackupSelection{Tier: "soul", SkipCopies: true, Note: "升级前留档"}
 	p, err := s.PrepareOneOffBackup(ctx, "box", ref, selection)
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestOneOffBackupOverFakeSSHLeavesPlanUnchanged(t *testing.T) {
 		t.Fatalf("copy ran despite selection: %+v", task.Run)
 	}
 	status, err := s.VaultStatus(ctx, "box")
-	if err != nil || len(status.Snapshots) != 1 || status.Snapshots[0].Tier != "soul" {
+	if err != nil || len(status.Snapshots) != 1 || status.Snapshots[0].Tier != "soul" || status.Snapshots[0].Note != selection.Note || status.Snapshots[0].Kind != vault.KindSavepoint {
 		t.Fatalf("scope %+v %v", status, err)
 	}
 	after, err := s.GetProtection(ctx, "box", protection.GetParams{AgentRef: ref})

@@ -165,7 +165,7 @@ func (a *App) periodLine(c *ui.Context, l location, host string, r periodRow) {
 			})
 		}
 		ui.Button(c, T("loc.verify_open")).OnClick(func() { a.startVerify(host, r.leaf, l.Name, false) })
-		if l.Kind != locRepo && (r.server == nil || !r.server.Current) {
+		if l.Kind != locRepo && !vault.IsSavepointLeaf(r.leaf) && (r.server == nil || !r.server.Current) {
 			ui.Button(c, T("loc.delete_open")).OnClick(func() { a.startVerify(host, r.leaf, l.Name, true) })
 		}
 	})
@@ -195,6 +195,9 @@ func (a *App) hereText(l location, host string, r periodRow) string {
 func periodText(leaf string) string {
 	if leaf == vault.LegacyLeaf {
 		return T("loc.legacy")
+	}
+	if vault.IsSavepointLeaf(leaf) {
+		return T("savepoint.kind.manual")
 	}
 	_, period, _ := vault.SplitLeaf(leaf)
 	from, to, ok := strings.Cut(period, "_")

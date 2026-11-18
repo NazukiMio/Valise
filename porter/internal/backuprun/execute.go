@@ -45,7 +45,12 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 	if r.Request.Selection.Tier != "" {
 		tier = r.Request.Selection.Tier
 	}
-	rep, err := seal.SealPlanned(ctx, s.Env, paths, vaultrpc.SealParams{InstanceID: r.AgentRef.InstanceID, Tier: tier, Reason: r.Request.Reason}, "planned")
+	initiator := "planned"
+	if r.Request.Reason == "timer" {
+		initiator = vaultrpc.InitiatorTimer
+	}
+	rep, err := seal.SealPlanned(ctx, s.Env, paths, vaultrpc.SealParams{InstanceID: r.AgentRef.InstanceID, Tier: tier,
+		Reason: r.Request.Reason, Note: r.Request.Selection.Note}, initiator)
 	if err != nil {
 		// A failed call can have crossed the snapshot publication boundary. Never
 		// retry it or claim no snapshot exists without fixed-executor evidence.
@@ -146,6 +151,14 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 		if err := s.persist(r); err != nil {
 			return err
 		}
+	}
+	if !cancelled && ctx.Err() == nil && initiator == vaultrpc.InitiatorTimer && r.Plan.Period.KeepAutoPeriods > 0 {
+		component := cp.BackupComponent{Kind: "leaf_retire", State: "succeeded"}
+		if err := seal.RetireExpiredAutoLeaves(paths, r.AgentRef.InstanceID, r.Plan.Period.KeepAutoPeriods); err != nil {
+			component.State, component.ErrorCode = "failed", "leaf_retire_failed"
+			partial = true
+		}
+		r.Components = append(r.Components, component)
 	}
 	r.Stage = ""
 	r.StageTarget = nil

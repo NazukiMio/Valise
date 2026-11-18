@@ -65,8 +65,9 @@ type Schedule struct {
 func (s Schedule) CatchUpEnabled() bool { return s.CatchUp != nil && *s.CatchUp }
 
 type Period struct {
-	Unit     string `json:"unit"`
-	Timezone string `json:"timezone"`
+	Unit            string `json:"unit"`
+	Timezone        string `json:"timezone"`
+	KeepAutoPeriods int    `json:"keep_auto_periods,omitempty"`
 }
 type LocationRef struct {
 	Kind        string `json:"kind"`

@@ -11,12 +11,14 @@ import (
 
 // Method names.
 const (
-	MethodRecipientAdd = "recipient_add"
-	MethodSeal         = "seal"
-	MethodStatus       = "vault_status"
-	MethodVerify       = "vault_verify"
-	MethodFiles        = "vault_files"
-	MethodTargetSet    = "target_set"
+	MethodRecipientAdd    = "recipient_add"
+	MethodSeal            = "seal"
+	MethodSnapshotPromote = "snapshot_promote"
+	SavepointsCapability  = "savepoints/1"
+	MethodStatus          = "vault_status"
+	MethodVerify          = "vault_verify"
+	MethodFiles           = "vault_files"
+	MethodTargetSet       = "target_set"
 	// MethodTargetRemove forgets a copy location on the server: its line
 	// in targets.json and its sync state, never the files saved there
 	// (docs/ARCHITECTURE.md section 7; capability TargetRemoveCapability).
@@ -66,6 +68,20 @@ type SealParams struct {
 	InstanceID string `json:"instance_id"`
 	Tier       string `json:"tier"`
 	Reason     string `json:"reason,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Note       string `json:"note,omitempty"`
+}
+
+type SnapshotPromoteParams struct {
+	InstanceID string `json:"instance_id"`
+	SnapshotID string `json:"snapshot_id"`
+	Note       string `json:"note,omitempty"`
+}
+
+type SnapshotPromoteResult struct {
+	SnapshotID string `json:"snapshot_id"`
+	Leaf       string `json:"leaf"`
+	AddedBytes int64  `json:"added_bytes"`
 }
 
 // Tally is a file count and byte total.
@@ -253,14 +269,21 @@ type LeafState struct {
 
 // LeafOf returns the leaf holding a snapshot, "" when unknown.
 func (s *StatusResult) LeafOf(snapshotID string) string {
+	first := ""
 	for _, l := range s.Leaves {
 		for _, id := range l.Snapshots {
-			if id == snapshotID {
+			if id != snapshotID {
+				continue
+			}
+			if vault.IsSavepointLeaf(l.Leaf) {
 				return l.Leaf
+			}
+			if first == "" {
+				first = l.Leaf
 			}
 		}
 	}
-	return ""
+	return first
 }
 
 // VerifyResult is a no-key verification.

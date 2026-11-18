@@ -76,7 +76,7 @@ func Scan(ctx context.Context, sources []Source) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	for _, p := range points {
+	for _, p := range preferredPoints(points) {
 		out.Points = append(out.Points, *p)
 	}
 	sort.Slice(out.Points, func(i, j int) bool {
@@ -171,6 +171,13 @@ func scanLeaf(ctx context.Context, root *os.Root, leaf string, loc LocationRef, 
 		p := points[ref]
 		if p == nil {
 			p = &TimelinePoint{SnapshotRef: ref, CreatedAt: m.CreatedAt.UTC(), RecordedInstanceID: m.InstanceID, Scope: Scope{"preset", m.Tier}, MetadataState: "metadata_only", PlainBytes: m.PlainBytes, FileCount: m.FileCount, Copies: []Copy{}}
+			p.Kind = m.Kind
+			if p.Kind == "" && path.Base(leaf) == vault.SavepointsPeriod {
+				p.Kind = vault.KindSavepoint
+			}
+			if p.Kind == vault.KindSavepoint {
+				p.Note, _ = vault.NormalizeNote(m.Note)
+			}
 			p.Warnings = []string{"snapshot_time_uses_source_clock"}
 			points[ref] = p
 		} else if p.Copies[0].MetadataDigest != copy.MetadataDigest || p.Copies[0].HeaderDigest != copy.HeaderDigest {

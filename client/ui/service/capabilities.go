@@ -49,6 +49,10 @@ func n2Compatibility(hello *rpc.HelloResult, method string, params any) error {
 			capability = protection.BackupCapabilityV3
 		}
 	}
+	if (method == vaultrpc.MethodSnapshotPromote || usesSavepointFields(method, params)) &&
+		(hello == nil || !slices.Contains(hello.Capabilities, vaultrpc.SavepointsCapability)) {
+		return valise.New("unsupported_capability", "服务器搬运工还不支持手动存档点或自动快照退役", "更新服务器上的搬运工后重试")
+	}
 	if capability != "" && (hello == nil || !slices.Contains(hello.Capabilities, capability)) {
 		return valise.New("unsupported_capability", "服务器 porter 尚不支持这项能力："+capability, "更新服务器 porter 后重新准备操作")
 	}
@@ -83,4 +87,16 @@ func usesBackupSelection(params any) bool {
 		Selection protection.BackupSelection `json:"selection"`
 	}
 	return json.Unmarshal(b, &p) != nil || p.Selection != (protection.BackupSelection{})
+}
+
+func usesSavepointFields(method string, params any) bool {
+	switch p := params.(type) {
+	case protection.PrepareParams:
+		return method == protection.MethodPrepare && p.Desired.Period.KeepAutoPeriods != 0
+	case protection.BackupParams:
+		return method == protection.MethodBackup && p.Selection.Note != ""
+	case vaultrpc.SealParams:
+		return method == vaultrpc.MethodSeal && (p.Note != "" || p.Kind != "")
+	}
+	return false
 }

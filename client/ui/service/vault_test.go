@@ -55,7 +55,7 @@ func TestSealPullVerifyOverFakeSSH(t *testing.T) {
 		t.Fatalf("%+v %v", rep2, err)
 	}
 	st, err := s.VaultStatus(ctx, "box")
-	if err != nil || len(st.Snapshots) != 2 || len(st.Leaves) != 1 || st.LeafOf(rep.SnapshotID) != rep.Leaf || !st.Leaves[0].Current {
+	if err != nil || len(st.Snapshots) != 2 || len(st.Leaves) != 1 || st.LeafOf(rep.SnapshotID) != rep.Leaf || !vault.IsSavepointLeaf(st.Leaves[0].Leaf) {
 		t.Fatal(st, err)
 	}
 	// Period setting, server name and server-side deletion over RPC.
@@ -69,9 +69,9 @@ func TestSealPullVerifyOverFakeSSH(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.LeafDelete(ctx, "box", rep.Leaf); err == nil {
-		t.Fatal("deleted the current period")
+		t.Fatal("deleted the permanent savepoint leaf")
 	} else {
-		wantCode(t, err, "leaf_current")
+		wantCode(t, err, "leaf_permanent")
 	}
 	if cr, err := s.VerifyCopies(ctx, "box", rep.Leaf, VerifyOptions{Packs: true}); err != nil || len(cr.Checks) != 1 || cr.Checks[0].State != CopyComplete {
 		t.Fatal(cr, err)

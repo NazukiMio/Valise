@@ -34,6 +34,17 @@ func Seal(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.Sea
 // cloud backup after the lock is released.
 func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.SealParams, initiator string) (rep *vaultrpc.SealReport, err error) {
 	start := time.Now()
+	kind := vault.KindSavepoint
+	if initiator == vaultrpc.InitiatorTimer {
+		kind = vault.KindAuto
+	}
+	note, err := vault.NormalizeNote(params.Note)
+	if err != nil {
+		return nil, err
+	}
+	if (params.Kind != "" && params.Kind != kind) || (note != "" && (kind != vault.KindSavepoint || initiator == vaultrpc.InitiatorAgentMCP)) {
+		return nil, valise.New("request_invalid", "备份类型或备注与发起方式不符", "通过定时任务建立自动快照，手动备份时可填写备注")
+	}
 	if _, ok := vault.TierCategories[params.Tier]; !ok {
 		return nil, valise.New("tier_invalid", "未知的封存档位："+params.Tier, "可选 soul、soul-secrets、full")
 	}
@@ -127,7 +138,12 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 			fmt.Sprintf("在 %s 所在的分区释放至少 %d MiB 空间后重试", p.Tmp(), (dbBytes*2>>20)+64))
 	}
 
-	leaf, err := leafForSeal(p, params.InstanceID, now())
+	var leaf LeafInfo
+	if kind == vault.KindAuto {
+		leaf, err = leafForSeal(p, params.InstanceID, now())
+	} else {
+		leaf, err = savepointLeafForSeal(p, params.InstanceID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +242,7 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		ProfileDoc: prof, Provenance: rec.Provenance, LocalOverrides: rec.LocalOverrides, Roots: rec.Roots, SQLite: rep.SQLite,
 		Name: rec.Name, Env: rec.Env,
 		Notes: vault.Notes{Unstable: rep.Unstable, UnclassifiedCount: rep.UnclassifiedCount}}
-	meta, err := w.Commit(snap, files, vault.Meta{})
+	meta, err := w.Commit(snap, files, vault.Meta{Kind: kind, Note: note})
 	if err != nil {
 		return nil, err
 	}

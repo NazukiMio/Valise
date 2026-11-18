@@ -213,7 +213,7 @@ func SetPeriodSetting(p Paths, instance string, s vault.PeriodSetting) error {
 type LeafInfo struct {
 	Leaf     string
 	Dir      string
-	Period   *vault.Period // nil for the legacy leaf
+	Period   *vault.Period // nil for the legacy and permanent leaves
 	Deleting bool
 }
 
@@ -241,13 +241,17 @@ func Leaves(p Paths) ([]LeafInfo, error) {
 		}
 		names := []string{}
 		for _, pe := range periods {
-			if pe.IsDir() && vault.ValidPeriodName(pe.Name()) {
+			if pe.IsDir() && (vault.ValidPeriodName(pe.Name()) || pe.Name() == vault.SavepointsPeriod) {
 				names = append(names, pe.Name())
 			}
 		}
 		sort.Strings(names)
 		for _, n := range names {
 			dir := filepath.Join(p.Vaults(), in.Name(), n)
+			if n == vault.SavepointsPeriod {
+				out = append(out, leafInfo(in.Name()+"/"+n, dir, nil))
+				continue
+			}
 			var per *vault.Period
 			if b, err := os.ReadFile(filepath.Join(dir, vault.PeriodFile)); err == nil {
 				var pp vault.Period
@@ -316,4 +320,20 @@ func leafForSeal(p Paths, instance string, t time.Time) (LeafInfo, error) {
 		return LeafInfo{}, err
 	}
 	return LeafInfo{Leaf: per.Leaf(), Dir: dir, Period: &per}, nil
+}
+
+func savepointLeafForSeal(p Paths, instance string) (LeafInfo, error) {
+	leaf := instance + "/" + vault.SavepointsPeriod
+	dir, err := p.LeafDir(leaf)
+	if err != nil {
+		return LeafInfo{}, err
+	}
+	info := leafInfo(leaf, dir, nil)
+	if info.Deleting {
+		return LeafInfo{}, valise.New("leaf_deleting", "存档点目录带有删除标记", "核对服务器备份目录后重试")
+	}
+	if err := ensureTree(p); err != nil {
+		return LeafInfo{}, err
+	}
+	return info, nil
 }

@@ -40,6 +40,9 @@ func (d Desired) Validate() error {
 	if d.Schedule.Enabled == nil || !dailyRE.MatchString(d.Schedule.DailyAt) || !ValidTimezone(d.Schedule.Timezone) {
 		return valise.New("schedule_invalid", "必须明确选择启用状态、每日时间与 IANA 时区", "填写 HH:mm 时间及有效时区")
 	}
+	if d.Period.KeepAutoPeriods < 0 {
+		return valise.New("period_setting_invalid", "自动快照保留周期数不能为负数", "填 0 关闭退役，或填写正整数")
+	}
 	if !ValidTimezone(d.Period.Timezone) || (vault.PeriodSetting{Unit: d.Period.Unit, TZ: d.Period.Timezone}).Validate() != nil {
 		return valise.New("period_setting_invalid", "周期设置无效", "选择 week、month 或 quarter 及有效时区")
 	}
