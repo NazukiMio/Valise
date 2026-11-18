@@ -12,6 +12,12 @@
 
 B3 测试包位于 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261118-b3/`，真机验收按包内 `TESTING.md` 执行。测试范围见 [N4 验收记录第 8 节](acceptance/N4.md)。B2 包保留在同级目录 `stage-test-20261118-b2/`。
 
+- **真机反馈修复（`659d9c0`，2026-11-18）**：
+  1. **操作级 PIN 临时租约**：`client/ui/service/owner.go` 新增 `BeginOperation()`，并接入 GUI `job.go` / `serverdetail.go` 及服务层多步操作，启用 6 位 PIN 时单次组合操作内最多弹窗 1 次，操作结束立即清空缓存且仍不显示解锁倒计时。
+  2. **云盘重新登录流程**：`porter/internal/seal/cloud.go`、`client/ui/service/cloud_{here,server,form}.go` 与 `client/ui/gui/{locdetail,cloudadd}.go` 为 `locCloud` 增加「重新登录…」，支持对已有 `rclone` 云盘位置重新授权并保留 `Target.Auto` 与同步状态，本机配置原地更新不重复追加。
+  3. **我的 Agent 按服务器分组**：`client/ui/gui/{home,homeagents}.go` 在卡片/列表视图均按服务器分组，异常所在服务器排前，组头展示服务器状态与详情跳转。
+  4. **旅程曲线自适应铺满**：`client/ui/gui/curve.go` 节点未超密度上限时不套横向滚动容器，直接铺满卡片全宽并均匀分散；超出后切回横向滚动与 O(1) 视口裁剪。
+
 ## 0a. 界面整理第二阶段（2026-11-17，分支 `design/gui-polish-phase2`，已完成）
 
 依据第一阶段只读审计（[acceptance/VALISE_DESIGN_AUDIT.html](acceptance/VALISE_DESIGN_AUDIT.html)）与用户授权（“你自己决定”），先改规范再改代码。本轮只动 `client/ui/gui` 与文档，不改 `client/ui/service`。
@@ -44,10 +50,13 @@ B3 测试包位于 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-202
 - **已定，后续独立阶段处理**：管理员通行证界面仍要求另设“管理口令”，与 AGENTS.md 第 3 节“默认用 Valise 口令”不一致；用户 2026-11-17 确认本分支不改，留给后续安全阶段。
 - **实机前端验收（2026-11-18）**：用户已在真实桌面窗口使用 `stage-test-20261117-ui`（`23bdcc8`）完成前两轮界面整理及第 3 批体验优化验收，前端功能通过；实测暴露“备份数量很多时旅程页动效全量渲染卡顿”及对应的“备份退役机制”设计缺口，已纳入下方 `0b` 节交由新会话推进。
 
-### 0b. 后续验收与反馈
+### 0b. 后续验收与反馈（交接必看）
 
-1. 在真实桌面窗口与 Linux 测试服务器核对 B3 的定时备份、自动退役、晋升、独立恢复与长旅程交互。
-2. 等用户提供此前实测发现的问题清单后逐项复现和修复。
+1. **首要阻塞（`stage-test-20261118-b3` 打包漏注公钥，待新会话先重打再继续实测）**：
+   - **现象**：用户打开测试包的云盘重新登录界面时报错「已安装的资料包没有云盘清单」（`kit_tools_none`）。
+   - **根因**：重打 `659d9c0` 的 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261118-b3/` 客户端二进制时，`-ldflags` 只传了 `-X main.version=0.0.0-dev+stage-test-20261118-b3`，漏传了 `-X valise/client/porter.ReleasePublicKey=RWQbaFToOWjIZQaMqdyF2N8SK/TEdbXwi9vnUHzVx2MlhSRXQYPVppps`。`ReleasePublicKey` 为空导致 `profiles.Load` 无法验签本机已装的 `2026.11.10` 资料包，`set.Kit` 为 `nil`。
+   - **下一步**：新会话接手后先补全 `-ldflags "-X main.version=0.0.0-dev+stage-test-20261118-b3 -X valise/client/porter.ReleasePublicKey=RWQbaFToOWjIZQaMqdyF2N8SK/TEdbXwi9vnUHzVx2MlhSRXQYPVppps"` 重新编译 `valise` 与 `Valise Test.app`（并重签与刷新 `SHA256SUMS`），再交给用户继续验证。
+2. 随后由用户在真实桌面窗口与 Linux 测试服务器核对：B3（定时备份、自动退役、晋升、独立恢复、长/短旅程曲线）、单次操作 PIN 弹窗次数、首页服务器分组以及重新登录云盘（需同步更新测试包内 `valise-porter_linux_*` 至服务器）。
 
 ## 0c. 架构收敛、前端整固与 Phase B1 实施记录
 
