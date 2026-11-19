@@ -105,6 +105,11 @@ func read(path string, v any) error {
 	}
 	return nil
 }
+
+// LoadPlan reads the instance's accepted ServerPlan without modifying state;
+// returns (nil, nil) if unset.
+func (s Store) LoadPlan(instance string) (*cp.ServerPlan, error) { return s.load(instance) }
+
 func (s Store) load(instance string) (*cp.ServerPlan, error) {
 	if enroll.ValidInstanceID(instance) != nil {
 		return nil, fail("instance_invalid", "实例名无效")

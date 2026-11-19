@@ -14,12 +14,14 @@ import (
 	"valise/core/agentkit"
 	"valise/core/enroll"
 	"valise/core/profile"
+	cp "valise/core/protection"
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
 	"valise/porter/internal/checkup"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/kit"
+	porterprotection "valise/porter/internal/protection"
 	"valise/porter/internal/seal"
 )
 
@@ -39,10 +41,10 @@ var toolList = []map[string]any{
 		"inputSchema": schema(map[string]any{})},
 	{"name": "valise_checkup", "description": "Run the code-only memory checkup and return metrics and finding ids (long_session, cost_growth, memory_bloat, session_pileup, no_memory_mechanism). At most once every 10 minutes.",
 		"inputSchema": schema(map[string]any{})},
-	{"name": "valise_seal", "description": "Seal the soul tier (persona, memory, skills, sessions, state; no credentials) into the vault. " +
+	{"name": "valise_seal", "description": "Create a rolling soul-tier backup (persona, memory, skills, sessions, state; no credentials; stored as kind: auto in the current date period so it follows period retention and can be promoted by the user). " +
 		"Call this FIRST, before you: save, edit or delete any memory (including remembering a new fact about the user); edit your persona, rules or " +
 		"instructions; install or remove skills or plugins; change configuration; upgrade the harness; or edit/clean up many files. " +
-		"At most once every 10 minutes (if you sealed minutes ago for the same work, continue). The reason is written to the audit log.",
+		"At most once every 10 minutes (if rate limited and a snapshot from minutes ago covers your change, cite its id and continue). The reason is written to the audit log.",
 		"inputSchema": schema(map[string]any{"reason": map[string]any{"type": "string", "description": "What you are about to change and why"}}, "reason")},
 	{"name": "valise_propose_enrollment", "description": "Propose how files this instance uses should be classified (e.g. a notes directory the user asked you to keep). Code validates each item; the user confirms in the Valise client. " +
 		"Categories: identity, memory, skills, sessions, state, config, workspace, secrets, cache, body, ignore. Moving files to cache/body/ignore takes them out of the soul tier and needs separate user confirmation.",
@@ -75,7 +77,8 @@ type Tools struct {
 	Env      func(context.Context) *porterenroll.Env
 	Now      func() time.Time
 
-	autoSealed bool // the safety-net seal of this connection is done
+	autoSealed     bool   // the safety-net seal of this connection is done
+	lastAutoSealID string // returned once on status so callers know the fresh snapshot
 }
 
 func (t *Tools) now() time.Time {
@@ -107,10 +110,13 @@ func (t *Tools) audit(op, result, snapshot, reason string) {
 		Result: result, SnapshotID: snapshot, Reason: reason})
 }
 
-func rateLimited(last, now time.Time) error {
+func rateLimited(last, now time.Time, lastID string) error {
 	if wait := kit.MinInterval - now.Sub(last); !last.IsZero() && wait > 0 {
-		return valise.New("rate_limited", fmt.Sprintf("距离上一次调用不到 10 分钟，还需等待 %d 分钟", int(wait.Minutes())+1),
-			"稍后再试；如果刚封存过，可以直接继续操作")
+		hint := "稍后再试；如果刚备份过，可以直接继续操作"
+		if lastID != "" {
+			hint = "刚刚已建立备份 " + lastID + "，如果是同一次修改可以直接继续并告诉用户这个快照 id"
+		}
+		return valise.New("rate_limited", fmt.Sprintf("距离上一次调用不到 10 分钟，还需等待 %d 分钟", int(wait.Minutes())+1), hint)
 	}
 	return nil
 }
@@ -168,17 +174,28 @@ func (t *Tools) Call(ctx context.Context, name string, args json.RawMessage) (an
 	return nil, errUnknownTool
 }
 
+type statusPlan struct {
+	Enabled         bool     `json:"enabled"`
+	Tier            string   `json:"tier"`
+	Schedule        string   `json:"schedule,omitempty"`
+	PeriodUnit      string   `json:"period_unit"`
+	KeepAutoPeriods int      `json:"keep_auto_periods"`
+	Targets         []string `json:"targets"`
+}
+
 type statusResult struct {
 	Instance      string      `json:"instance"`
 	Profile       string      `json:"profile"`
 	ProfileStatus string      `json:"profile_status"`
 	LastSeal      *vault.Meta `json:"last_seal,omitempty"`
+	AutoSealed    string      `json:"auto_sealed_snapshot,omitempty"`
 	SyncedTo      []string    `json:"last_seal_synced_to"`
 	// The protection state, split so nothing is guessed from an empty
 	// list (review F10): the targets this server copies to, the newest
 	// escape pod that reached one, the pods still waiting, and one plain
 	// sentence written by code for the agent to pass on as it is.
 	Targets         []string                   `json:"configured_targets"`
+	ProtectionPlan  *statusPlan                `json:"protection_plan,omitempty"`
 	LastOffsite     *offsitePod                `json:"last_offsite,omitempty"`
 	WaitingSync     int                        `json:"pods_waiting_sync"`
 	Protection      string                     `json:"protection_summary"`
@@ -191,6 +208,37 @@ type statusResult struct {
 	HandoffTargets  []string                   `json:"handoff_targets"`
 	HandoffOpen     string                     `json:"handoff_open_snapshot,omitempty"`
 	Notes           []string                   `json:"notes,omitempty"`
+}
+
+func summarizePlan(p *cp.ServerPlan) *statusPlan {
+	if p == nil {
+		return nil
+	}
+	enabled := p.Schedule.Enabled != nil && *p.Schedule.Enabled
+	sched := "off"
+	if enabled {
+		sched = p.Schedule.DailyAt
+		if p.Schedule.Timezone != "" {
+			sched += " (" + p.Schedule.Timezone + ")"
+		}
+	}
+	var targets []string
+	for _, sc := range p.ServerCopies {
+		if sc.Enabled != nil && *sc.Enabled {
+			targets = append(targets, sc.TargetRef.ID)
+		}
+	}
+	if targets == nil {
+		targets = []string{}
+	}
+	return &statusPlan{
+		Enabled:         enabled,
+		Tier:            p.Scope.Tier,
+		Schedule:        sched,
+		PeriodUnit:      p.Period.Unit,
+		KeepAutoPeriods: p.Period.KeepAutoPeriods,
+		Targets:         targets,
+	}
 }
 
 type offsitePod struct {
@@ -218,7 +266,7 @@ func protection(r *statusResult) string {
 	default:
 		b.WriteString("备份都只在服务器上，还没有复制到别处。")
 	}
-	b.WriteString("用户电脑上的本机仓库由 Valise 客户端管理，这里看不到。")
+	b.WriteString("用户电脑上的本机文件夹由 Valise 客户端管理，这里看不到。")
 	return b.String()
 }
 
@@ -285,8 +333,15 @@ func (t *Tools) status(ctx context.Context) (any, error) {
 		res.Targets = []string{}
 	}
 	res.Protection = protection(&res)
+	if t.lastAutoSealID != "" {
+		res.AutoSealed = t.lastAutoSealID
+		t.lastAutoSealID = ""
+	}
+	if plan, err := (porterprotection.Store{Home: t.Home}).LoadPlan(t.Instance); err == nil && plan != nil {
+		res.ProtectionPlan = summarizePlan(plan)
+	}
 	if res.LastSeal == nil {
-		res.Notes = append(res.Notes, "这个实例还没有封存过")
+		res.Notes = append(res.Notes, "这个实例还没有备份过")
 	}
 	rep, err := porterenroll.Scan(ctx, t.Env(ctx), enroll.ScanParams{Profile: *p, StateDir: rec.Roots[profile.StateRoot],
 		InstanceID: t.Instance, Overrides: rec.LocalOverrides}, rec)
@@ -336,7 +391,7 @@ func (t *Tools) checkup() (any, error) {
 		return nil, err
 	}
 	now := t.now()
-	if err := rateLimited(st.LastCheckup, now); err != nil {
+	if err := rateLimited(st.LastCheckup, now, ""); err != nil {
 		return nil, err
 	}
 	res := checkup.Run(rec, p, now)
@@ -368,7 +423,7 @@ func (t *Tools) seal(ctx context.Context, reason string) (any, error) {
 		return nil, err
 	}
 	now := t.now()
-	if err := rateLimited(st.LastSeal, now); err != nil {
+	if err := rateLimited(st.LastSeal, now, st.LastSealID); err != nil {
 		t.audit("seal", "rate_limited", "", reason)
 		return nil, err
 	}
@@ -376,9 +431,9 @@ func (t *Tools) seal(ctx context.Context, reason string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	st.LastSeal = now.UTC()
+	st.LastSeal, st.LastSealID = now.UTC(), rep.SnapshotID
 	return sealResult{SnapshotID: rep.SnapshotID, Files: rep.Files, Bytes: rep.PlainBytes,
-		Note: "已封存 soul 档（不含凭据）；需要时用户可以在客户端用这个快照复活或回滚"}, kit.SaveState(t.Home, t.Instance, st)
+		Note: "已建立 soul 档滚动备份（不含凭据，按日期周期保存）；需要时用户可以在 Valise 客户端用这个快照恢复或钉为手动存档点"}, kit.SaveState(t.Home, t.Instance, st)
 }
 
 func (t *Tools) propose(items []kit.ProposalItem) (any, error) {
@@ -394,7 +449,7 @@ func (t *Tools) propose(items []kit.ProposalItem) (any, error) {
 		return nil, err
 	}
 	return map[string]any{"results": lines,
-		"next": "请用户在 Valise 客户端运行 valise proposals <服务器> " + t.Instance + " 查看并确认"}, nil
+		"next": "请用户在 Valise 客户端「健康 › 归档建议」或运行 valise proposals <服务器> " + t.Instance + " 查看并确认"}, nil
 }
 
 type handoffBegin struct {
@@ -423,7 +478,7 @@ func (t *Tools) handoffBegin(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	now := t.now()
-	st.LastSeal = now.UTC()
+	st.LastSeal, st.LastSealID = now.UTC(), rep.SnapshotID
 	st.Handoff = &kit.HandoffState{SnapshotID: rep.SnapshotID, Started: now.UTC(), Targets: targets}
 	if err := kit.SaveState(t.Home, t.Instance, st); err != nil {
 		return nil, err
@@ -486,10 +541,12 @@ func (t *Tools) autoSeal(ctx context.Context, tool string) {
 		return
 	}
 	reason := "auto: first tool call (" + tool + ")"
-	if _, err := seal.Seal(ctx, t.Env(ctx), t.paths(), vaultrpc.SealParams{InstanceID: t.Instance, Tier: vault.TierSoul, Reason: reason}, vaultrpc.InitiatorAgentMCP); err != nil {
+	rep, err := seal.Seal(ctx, t.Env(ctx), t.paths(), vaultrpc.SealParams{InstanceID: t.Instance, Tier: vault.TierSoul, Reason: reason}, vaultrpc.InitiatorAgentMCP)
+	if err != nil {
 		t.audit("seal", "auto_failed", "", reason)
 		return
 	}
-	st.LastSeal = now.UTC()
+	t.lastAutoSealID = rep.SnapshotID
+	st.LastSeal, st.LastSealID = now.UTC(), rep.SnapshotID
 	kit.SaveState(t.Home, t.Instance, st)
 }

@@ -15,10 +15,13 @@ import (
 
 	"valise/core/agentkit"
 	"valise/core/enroll"
+	"valise/core/identity"
 	"valise/core/profile"
+	cp "valise/core/protection"
 	"valise/core/vault"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/kit"
+	porterprotection "valise/porter/internal/protection"
 	"valise/porter/internal/seal"
 )
 
@@ -121,12 +124,30 @@ func TestProtocolAndTools(t *testing.T) {
 		}
 	}
 
-	// The first tool call of a connection seals first (safety net).
-	if _, text, isErr := c.tool("valise_status", map[string]any{}); isErr {
+	// The first tool call of a connection seals first (safety net) as KindAuto
+	// in a rolling date-period leaf and exposes its id on valise_status.
+	sc, text, isErr := c.tool("valise_status", map[string]any{})
+	if isErr {
 		t.Fatalf("%s", text)
+	}
+	autoID, _ := sc["auto_sealed_snapshot"].(string)
+	if !strings.HasPrefix(autoID, "s_") {
+		t.Fatalf("missing auto_sealed_snapshot on first valise_status: %+v", sc)
+	}
+	vs, _ := seal.Status(seal.Paths{Home: home})
+	if len(vs.Snapshots) != 1 || vs.Snapshots[0].Kind != vault.KindAuto {
+		t.Fatalf("expected 1 auto snapshot in rolling period leaf, got %+v", vs.Snapshots)
+	}
+	for _, lf := range vs.Leaves {
+		if vault.IsSavepointLeaf(lf.Leaf) {
+			t.Fatalf("autoSeal wrote to savepoints leaf: %+v", lf)
+		}
 	}
 	if audit, _ := os.ReadFile(seal.Paths{Home: home}.Audit()); !strings.Contains(string(audit), "auto: first tool call (valise_status)") {
 		t.Fatalf("no safety-net seal: %s", audit)
+	}
+	if _, sealErrText, sealIsErr := c.tool("valise_seal", map[string]any{"reason": "edit immediately"}); !sealIsErr || !strings.Contains(sealErrText, autoID) {
+		t.Fatalf("immediate seal after autoSeal should rate limit citing %q, got isErr=%v text=%q", autoID, sealIsErr, sealErrText)
 	}
 	// valise_declare: recorded as said, validated, rate limited.
 	if _, text, isErr := c.tool("valise_declare", map[string]any{"security_skills": []any{}, "approval_mode": "maybe"}); !isErr || !strings.Contains(text, "approval_mode") {
@@ -148,7 +169,7 @@ func TestProtocolAndTools(t *testing.T) {
 	if _, text, isErr := c.tool("valise_seal", map[string]any{"reason": ""}); !isErr || !strings.Contains(text, "原因") {
 		t.Fatalf("empty reason accepted: %s", text)
 	}
-	sc, text, isErr := c.tool("valise_seal", map[string]any{"reason": "about to edit SOUL.md"})
+	sc, text, isErr = c.tool("valise_seal", map[string]any{"reason": "about to edit SOUL.md"})
 	if isErr || !strings.HasPrefix(sc["snapshot_id"].(string), "s_") {
 		t.Fatalf("%s", text)
 	}
@@ -258,9 +279,52 @@ func TestProtectionSummary(t *testing.T) {
 	r := &statusResult{Targets: []string{"nas"}, LastSeal: &vault.Meta{SnapshotID: "s_new"}, SyncedTo: []string{},
 		LastOffsite: &offsitePod{SnapshotID: "s_old", CreatedAt: now, Targets: []string{"nas"}}, WaitingSync: 1}
 	got := protection(r)
-	for _, want := range []string{"已配置 1 个同步位置（nas）", "还只在服务器上", "1 个在等同步", "别处最新的一份", "本机仓库"} {
+	for _, want := range []string{"已配置 1 个同步位置（nas）", "还只在服务器上", "1 个在等同步", "别处最新的一份", "本机文件夹"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("%q lacks %q", got, want)
 		}
+	}
+}
+
+func TestStatusIncludesProtectionPlan(t *testing.T) {
+	c, home, _, _ := setup(t)
+	enabled := true
+	copyOn := true
+	plan := cp.ServerPlan{
+		SchemaVersion: cp.Schema,
+		AgentRef:      identity.AgentRef{ServerUID: "srv-1", InstallID: "demo", InstanceID: "demo", Generation: "1"},
+		Revision:      1,
+		Desired: cp.Desired{
+			Scope:    cp.Scope{Kind: "preset", Tier: vault.TierFull},
+			Schedule: cp.Schedule{Enabled: &enabled, DailyAt: "03:30", Timezone: "Asia/Shanghai"},
+			Period:   cp.Period{Unit: "month", Timezone: "Asia/Shanghai", KeepAutoPeriods: 3},
+			ServerCopies: []cp.ServerCopy{{
+				TargetRef:       cp.LocationRef{Kind: "legacy_target", ID: "nas", AuthorityID: "srv-1"},
+				Enabled:         &copyOn,
+				MinimumInterval: "24h",
+			}},
+		},
+		AcceptedAt: time.Now().UTC(),
+	}
+	b, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(home, ".config", "valise", "protection", "demo.json"), string(b))
+	if lp, lerr := (porterprotection.Store{Home: home}).LoadPlan("demo"); lerr != nil || lp == nil {
+		t.Fatalf("LoadPlan failed: lp=%+v err=%v json=%s", lp, lerr, b)
+	}
+
+	sc, text, isErr := c.tool("valise_status", map[string]any{})
+	if isErr {
+		t.Fatalf("%s", text)
+	}
+	pp, ok := sc["protection_plan"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing protection_plan in status: %+v", sc)
+	}
+	if pp["enabled"] != true || pp["tier"] != vault.TierFull || pp["period_unit"] != "month" ||
+		pp["keep_auto_periods"] != float64(3) || !strings.Contains(pp["schedule"].(string), "03:30") {
+		t.Fatalf("unexpected protection_plan: %+v", pp)
 	}
 }

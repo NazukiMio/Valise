@@ -75,9 +75,9 @@ func New(svc *service.Service) *App {
 	a.agentData = agentData{harness: map[string]string{}, hasSessionCLI: map[string]bool{}, display: map[string]*profile.Display{}, vaultNames: map[string]string{},
 		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{}}
 	a.prefs = prefs{View: "cards", Dismissed: map[string]string{}}
-	a.entries, a.natives = map[string]*entryState{}, map[string]*nativeState{}
+	a.entries, a.natives, a.agentKits = map[string]*entryState{}, map[string]*nativeState{}, map[string]*agentKitState{}
 	a.timelineScope = service.TimelineScanRequest{LocalOnly: true}
-	a.health = map[string]*healthState{}
+	a.health, a.proposals = map[string]*healthState{}, map[string]*proposalsState{}
 	a.prots = map[string]*protState{}
 	a.serversView = serversView{scans: map[string]*serverScan{}, installs: map[string]*installRun{},
 		customInstalls: map[string]*customInstallRun{}, passes: map[string]*passState{},

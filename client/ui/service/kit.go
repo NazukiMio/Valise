@@ -8,6 +8,7 @@ import (
 
 	agentkitfiles "valise/agentkit"
 	"valise/core/agentkit"
+	"valise/core/profile"
 	"valise/core/valise"
 )
 
@@ -31,6 +32,8 @@ func (s *Service) Proposals(ctx context.Context, host, instance string) ([]agent
 
 // DecideProposals applies the user's decisions.
 func (s *Service) DecideProposals(ctx context.Context, host string, d agentkit.DecideParams) (*agentkit.DecideResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	var res agentkit.DecideResult
 	err := s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, agentkit.MethodProposalsDecide, d, &res)
@@ -55,6 +58,70 @@ func KitFiles() ([]agentkit.SkillFile, error) {
 	return out, err
 }
 
+// KitGuide is the daily-tier MCP wiring and conversation prompt guide for an instance.
+type KitGuide struct {
+	HasSkillsDir  bool     `json:"has_skills_dir"`
+	PorterPath    string   `json:"porter_path"`
+	ServerCmd     string   `json:"server_cmd"`
+	MCPCommand    []string `json:"mcp_command,omitempty"`
+	MCPDoc        string   `json:"mcp_doc,omitempty"`
+	MCPSnippet    string   `json:"mcp_snippet,omitempty"`
+	MCPRemoveCmd  []string `json:"mcp_remove_command,omitempty"`
+	MCPRemoveNote bool     `json:"mcp_remove_snippet"`
+	AgentLine     string   `json:"agent_line"`
+	EnrollSay     string   `json:"enroll_say"`
+	UpkeepSay     string   `json:"upkeep_say"`
+	CheckupSay    string   `json:"checkup_say"`
+	HandoffSay    string   `json:"handoff_say"`
+}
+
+func buildKitGuide(target *LoginTarget, porterPath, instance string) *KitGuide {
+	serverCmd := porterPath + " mcp --instance " + instance
+	enrollSay := "我给你装了 Valise 保护技能，你学习一下。"
+	g := &KitGuide{
+		PorterPath: porterPath,
+		ServerCmd:  serverCmd,
+		EnrollSay:  enrollSay,
+		UpkeepSay:  "按 valise-upkeep 检查并整理一下你的长期记忆和文件归类。",
+		CheckupSay: "用 valise-checkup 帮我做一次健康体检并解读结果。",
+		HandoffSay: "准备新开会话，请按 valise-handoff 写好交接。",
+		AgentLine: "Add an MCP server named \"valise\" (stdio) that runs: " + serverCmd +
+			" — then use the valise-enroll skill: " + enrollSay,
+	}
+	var ak *profile.AgentKit
+	if target != nil {
+		ak = target.Profile.AgentKit
+	}
+	if ak != nil {
+		g.HasSkillsDir = ak.SkillsDir != nil
+		g.MCPDoc = ak.MCPConfigDoc
+		g.MCPSnippet = strings.NewReplacer("${PORTER}", porterPath, "${INSTANCE}", instance).Replace(ak.MCPConfigSnippet)
+		for _, a := range ak.MCPAddArgv {
+			a = strings.ReplaceAll(a, "${PORTER}", porterPath)
+			a = strings.ReplaceAll(a, "${INSTANCE}", instance)
+			g.MCPCommand = append(g.MCPCommand, a)
+		}
+		for _, a := range ak.MCPRemoveArgv {
+			g.MCPRemoveCmd = append(g.MCPRemoveCmd, strings.ReplaceAll(a, "${INSTANCE}", instance))
+		}
+		g.MCPRemoveNote = len(ak.MCPRemoveArgv) == 0 && ak.MCPConfigSnippet != ""
+	}
+	return g
+}
+
+// KitGuide builds the MCP wiring and prompt guide using only daily-tier RPCs.
+func (s *Service) KitGuide(ctx context.Context, host, instance string) (*KitGuide, error) {
+	target, err := s.LoginMethods(ctx, host, instance)
+	if err != nil {
+		return nil, err
+	}
+	porterPath, err := s.porterAbsPath(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	return buildKitGuide(target, porterPath, instance), nil
+}
+
 // KitPlan is what installing the skills will do, and how to wire MCP.
 type KitPlan struct {
 	Result     *agentkit.KitInstallResult `json:"result,omitempty"`
@@ -68,6 +135,10 @@ type KitPlan struct {
 // KitInstall installs the skills into an instance's skills_dir (dryRun only
 // reports) and prepares the MCP instructions.
 func (s *Service) KitInstall(ctx context.Context, host, instance string, dryRun bool) (*KitPlan, error) {
+	if !dryRun {
+		stopOp := s.BeginOperation()
+		defer stopOp()
+	}
 	files, err := KitFiles()
 	if err != nil {
 		return nil, err
@@ -93,18 +164,11 @@ func (s *Service) KitInstall(ctx context.Context, host, instance string, dryRun 
 	default:
 		return nil, err
 	}
-	serverCmd := porterPath + " mcp --instance " + instance
-	plan.AgentLine = "Add an MCP server named \"valise\" (stdio) that runs: " + serverCmd +
-		" — then use the valise-enroll skill: 我给你装了 Valise 保护技能，你学习一下。"
-	if ak := target.Profile.AgentKit; ak != nil {
-		plan.MCPDoc = ak.MCPConfigDoc
-		plan.MCPSnippet = strings.NewReplacer("${PORTER}", porterPath, "${INSTANCE}", instance).Replace(ak.MCPConfigSnippet)
-		for _, a := range ak.MCPAddArgv {
-			a = strings.ReplaceAll(a, "${PORTER}", porterPath)
-			a = strings.ReplaceAll(a, "${INSTANCE}", instance)
-			plan.MCPCommand = append(plan.MCPCommand, a)
-		}
-	}
+	guide := buildKitGuide(target, porterPath, instance)
+	plan.AgentLine = guide.AgentLine
+	plan.MCPDoc = guide.MCPDoc
+	plan.MCPSnippet = guide.MCPSnippet
+	plan.MCPCommand = guide.MCPCommand
 	return plan, nil
 }
 
@@ -133,6 +197,10 @@ type KitRemovalPlan struct {
 // KitUninstall removes the installed skills (dryRun only reports). Modified
 // skills are kept unless force.
 func (s *Service) KitUninstall(ctx context.Context, host, instance string, force, dryRun bool) (*KitRemovalPlan, error) {
+	if !dryRun {
+		stopOp := s.BeginOperation()
+		defer stopOp()
+	}
 	files, err := KitFiles()
 	if err != nil {
 		return nil, err
@@ -147,12 +215,11 @@ func (s *Service) KitUninstall(ctx context.Context, host, instance string, force
 	}); err != nil {
 		return nil, err
 	}
-	plan := &KitRemovalPlan{Result: &res, MCPServerName: "valise"}
-	if ak := target.Profile.AgentKit; ak != nil {
-		for _, a := range ak.MCPRemoveArgv {
-			plan.MCPCommand = append(plan.MCPCommand, strings.ReplaceAll(a, "${INSTANCE}", instance))
-		}
-		plan.MCPSnippet = len(ak.MCPRemoveArgv) == 0 && ak.MCPConfigSnippet != ""
-	}
-	return plan, nil
+	guide := buildKitGuide(target, "", instance)
+	return &KitRemovalPlan{
+		Result:        &res,
+		MCPCommand:    guide.MCPRemoveCmd,
+		MCPSnippet:    guide.MCPRemoveNote,
+		MCPServerName: "valise",
+	}, nil
 }

@@ -94,7 +94,12 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 		if st.busy {
 			ui.Spinner(c).Size(14, 14)
 		}
-		ui.Button(c, T("health.recheck")).Disabled(st.busy).OnClick(func() { a.readHealth(row.Server, row.Instance) })
+		ui.Button(c, T("health.recheck")).Disabled(st.busy).OnClick(func() {
+			a.readHealth(row.Server, row.Instance)
+			if !row.Retired() {
+				a.readProposals(row.Server, row.Instance)
+			}
+		})
 	})
 	if st.err != nil {
 		errorBox(c, st.err, a.fold("health-err-"+key))
@@ -104,6 +109,9 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 	}
 	if st.report == nil {
 		a.looseReports(c, row, st, false, false)
+		if !row.Retired() {
+			a.proposalsCard(c, row)
+		}
 		return
 	}
 	items := append([]service.HealthItem(nil), st.report.Items...)
@@ -114,6 +122,9 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 	fixPlaced, sysPlaced := a.healthItems(c, row, st, items)
 	a.looseReports(c, row, st, fixPlaced, sysPlaced)
 	a.actualRestoreEvidence(c, row)
+	if !row.Retired() {
+		a.proposalsCard(c, row)
+	}
 	muted(ui.Text(c, T("health.scope_note")))
 }
 

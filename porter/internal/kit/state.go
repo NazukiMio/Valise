@@ -22,6 +22,7 @@ const MinInterval = 10 * time.Minute
 // findings and the open handoff.
 type State struct {
 	LastSeal     time.Time     `json:"last_seal,omitzero"`
+	LastSealID   string        `json:"last_seal_id,omitempty"`
 	LastCheckup  time.Time     `json:"last_checkup,omitzero"`
 	LastFindings []string      `json:"last_findings,omitempty"`
 	Handoff      *HandoffState `json:"handoff,omitempty"`

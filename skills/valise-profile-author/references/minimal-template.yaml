@@ -1,0 +1,51 @@
+# Starter Harness Profile Template (valise-profile/1)
+# Keep status: draft until every entry and capability has real verification evidence.
+schema: valise-profile/1
+id: example-harness
+display_name: Example Harness
+profile_version: 1
+status: draft
+harness_versions_tested: []
+docs: https://example.com/docs
+
+detect:
+  binaries: [example-harness]
+  version_argv: [example-harness, --version]
+  state_dir_candidates: ["${env:EXAMPLE_HOME}", "${HOME}/.example-harness"]
+  markers_any: [config.yaml]
+
+roots: []
+
+paths:
+  - { root: state, glob: ".env", category: secrets, verify: pending }
+  - { root: state, glob: "config.yaml", category: config }
+  - { root: state, glob: "MEMORY.md", category: memory, verify: pending }
+  - { root: state, glob: "skills/**", category: skills, verify: pending }
+  - { root: state, glob: "sessions/**", category: sessions, verify: pending }
+  - { root: state, glob: "cache/**", category: cache, verify: pending }
+
+consistency:
+  sqlite: []
+  quiesce: none
+
+provenance:
+  kind: binary
+  binary: { name: example-harness }
+
+body:
+  paths: []
+  bootstrap_argv: []
+  fresh_install_doc: https://example.com/docs/install
+
+relocation: null
+service:
+  candidates: []
+entries: []
+
+health:
+  grace_seconds: 15
+  checks: []
+
+capabilities:
+  backup: { status: untested }
+  restore: { status: untested, note: "恢复尚未在此版本演练" }

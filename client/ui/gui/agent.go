@@ -58,6 +58,9 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 				a.healthTab(c, row)
 			case tabManage:
 				a.manageTab(c, row)
+				if !row.Retired() {
+					a.agentKitCard(c, row)
+				}
 			default:
 				a.overview(c, row, points)
 			}

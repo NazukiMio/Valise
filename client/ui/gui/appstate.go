@@ -68,12 +68,14 @@ type homeView struct {
 
 // agentView is one agent's page, apart from its journey and health.
 type agentView struct {
-	agentTab    int                    // tabOverview, tabJourney, tabHealth, tabManage
-	iconErr     error                  // choosing an agent's picture failed
-	entries     map[string]*entryState // admin page tunnels by server/instance
-	natives     map[string]*nativeState
-	native      *nativeRun
-	agentRename *agentRenameState
+	agentTab     int                    // tabOverview, tabJourney, tabHealth, tabManage
+	iconErr      error                  // choosing an agent's picture failed
+	entries      map[string]*entryState // admin page tunnels by server/instance
+	natives      map[string]*nativeState
+	native       *nativeRun
+	agentRename  *agentRenameState
+	agentKits    map[string]*agentKitState
+	agentKitHook *agentKitOps
 }
 
 // journeyView is the timeline and the point open in it.
@@ -100,8 +102,10 @@ func (v *journeyView) closePoint() { v.point = "" }
 
 // healthView is the health pages and the restore test started from them.
 type healthView struct {
-	health      map[string]*healthState // by server/instance
-	restoreTest *restoreTestFlow
+	health        map[string]*healthState // by server/instance
+	restoreTest   *restoreTestFlow
+	proposals     map[string]*proposalsState
+	proposalsHook *proposalsOps
 }
 
 // protectView is the protection plans.

@@ -35,7 +35,7 @@ func Seal(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.Sea
 func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.SealParams, initiator string) (rep *vaultrpc.SealReport, err error) {
 	start := time.Now()
 	kind := vault.KindSavepoint
-	if initiator == vaultrpc.InitiatorTimer {
+	if initiator == vaultrpc.InitiatorTimer || initiator == vaultrpc.InitiatorAgentMCP {
 		kind = vault.KindAuto
 	}
 	note, err := vault.NormalizeNote(params.Note)

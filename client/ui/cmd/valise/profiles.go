@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"valise/client/profiles"
+	"valise/core/profile"
+	"valise/core/valise"
 	"valise/ui/service"
 )
 
@@ -87,6 +89,76 @@ func (c *cli) profilesCmd(ctx context.Context, args []string) error {
 			fmt.Fprintf(c.out, "已写入 %s\n", p)
 		}
 		return nil
+	case "lint":
+		return c.profilesLintCmd(args[1:])
 	}
 	return errUsage
+}
+
+type profileLintReport struct {
+	File    string   `json:"file"`
+	ID      string   `json:"id,omitempty"`
+	Status  string   `json:"status,omitempty"`
+	Pending int      `json:"pending"`
+	OK      bool     `json:"ok"`
+	Issues  []string `json:"issues,omitempty"`
+}
+
+func (c *cli) profilesLintCmd(args []string) error {
+	fs := flag.NewFlagSet("profiles lint", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "")
+	paths, err := parseArgsRange(fs, args, 1, 1024)
+	if err != nil {
+		return err
+	}
+	failed := 0
+	var reports []profileLintReport
+	var docs []*profile.Document
+	for _, p := range paths {
+		d, err := profile.LoadFile(p)
+		if err != nil {
+			failed++
+			reports = append(reports, profileLintReport{File: p, OK: false, Issues: []string{err.Error()}})
+			if !*asJSON {
+				fmt.Fprintf(c.errOut, "FAIL %v\n", err)
+			}
+			continue
+		}
+		docs = append(docs, d)
+	}
+	for _, r := range profile.Lint(docs) {
+		rep := profileLintReport{
+			File:    r.Doc.Path,
+			ID:      r.Doc.Profile.ID,
+			Status:  r.Doc.Profile.Status,
+			Pending: len(r.Doc.Pending),
+			OK:      len(r.Issues) == 0,
+		}
+		if len(r.Issues) > 0 {
+			failed++
+			if !*asJSON {
+				fmt.Fprintf(c.errOut, "FAIL %s\n", r.Doc.Path)
+			}
+			for _, iss := range r.Issues {
+				s := iss.String()
+				rep.Issues = append(rep.Issues, s)
+				if !*asJSON {
+					fmt.Fprintf(c.errOut, "  %s\n", s)
+				}
+			}
+		} else if !*asJSON {
+			fmt.Fprintf(c.out, "OK   %s  id=%s status=%s pending=%d\n", r.Doc.Path, r.Doc.Profile.ID, r.Doc.Profile.Status, len(r.Doc.Pending))
+		}
+		reports = append(reports, rep)
+	}
+	if *asJSON {
+		if err := c.printJSON(reports); err != nil {
+			return err
+		}
+	}
+	if failed > 0 {
+		return valise.New("profile_lint_failed", fmt.Sprintf("%d 个 profile 文件未通过校验", failed),
+			"按上面的字段提示修正后重新运行 valise profiles lint")
+	}
+	return nil
 }

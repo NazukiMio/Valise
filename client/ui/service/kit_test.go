@@ -26,6 +26,17 @@ func TestKitInstallAndCheckup(t *testing.T) {
 	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
 		t.Fatal(err)
 	}
+	guide, err := s.KitGuide(ctx, "box", "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gcmd := strings.Join(guide.MCPCommand, " ")
+	if !guide.HasSkillsDir || !strings.Contains(gcmd, "/.local/bin/valise-porter") || !strings.HasSuffix(gcmd, "--arg=demo") || strings.Contains(gcmd, "${") {
+		t.Fatalf("unexpected guide: %+v", guide)
+	}
+	if !strings.Contains(guide.AgentLine, "mcp --instance demo") || guide.EnrollSay == "" || guide.UpkeepSay == "" || guide.CheckupSay == "" || guide.HandoffSay == "" {
+		t.Fatalf("missing guide prompts: %+v", guide)
+	}
 	dry, err := s.KitInstall(ctx, "box", "demo", true)
 	if err != nil || len(dry.Result.Written) != 4 {
 		t.Fatalf("%+v %v", dry, err)

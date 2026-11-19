@@ -42,7 +42,7 @@ capabilities:
   - **schema**（M12 实现，2026-11-02 用户同意）：`approval_check: { argv, each, bypass_when, ask_when, verify }`。`argv` 是一条只读命令（只能引用 `${HOME}`），输出 JSON，由 porter 按服务器上保存的 profile 副本执行，走日常钥匙；`each` 可选，指向一个数组，逐项判断、取最差的结果；`bypass_when` 是"字段路径: 值"，全部相等才算无需批准；`ask_when` 是若干组条件，任一组全部相等就算需要批准；都不匹配为"不确定"。只做相等比较，不是解释器。读配置键的方式（不运行命令）留待需要时再加。
   - **出厂设置与修复**（2026-11-02 决定，2026-11-04 修订）：`default_when` 可选，形式同 `ask_when`（若干组“字段路径: 值”）；Bypass 结果命中时，界面注明“这是 harness 的出厂设置，不是你改的”。`remedy` 可选，是改为“执行前询问”的文字步骤，在没有可执行修复时继续用于手动引导。取消“不提供一键修改、不得登记审批修改动作”的旧限制：允许通过已核实的 profile 管理动作修复审批设置，遵循 INSTALL.md 第 5 节，执行前说明行为变化及必要的服务中断，执行后重新运行审批检查。健康发现与动作的关联字段、需要停止/重启时的编排与失败恢复方式，必须先明确 schema 和验收，再实现；本条不视为这些能力已经存在。
 - **安装摘要**（2026-11-02 用户决定）：`install` 可以写 `where`（装到哪里）、`takes`（大概多久）与 `notes`（装之前要知道的事，例如 harness 出厂即为 Bypass），与 `summary` 一起组成方案开头的摘要（UI.md 9.6）。
-- **agent 的名字**（2026-11-02 用户决定）：profile 可以声明 `identity: { argv, path, verify }`：一条只读命令（只能引用 `${HOME}` 与 `${STATE_DIR}`）输出 JSON，`path` 指向 harness 里给 agent 起的名字（例如 OpenClaw 的 `identity.name`）。只读这一项，不扫描、不解析其他文件内容。界面上的显示名优先用用户在 Valise 里起的（记在实例档案的 agent 条目 `display_name`），其次用这里读出的名字，都没有时只显示实例 id；实例 id 不随名字改变（UI.md 9 节"名字"）。
+- **agent 的名字**（2026-11-02 用户决定）：profile 可以声明 `identity: { argv, each, pick, name, verify }`：一条只读命令（只能引用 `${HOME}` 与 `${STATE_DIR}`）输出 JSON，`each`（可选，点分路径）指向对象数组，`pick`（可选，字段相等匹配）选中当前实例所属条目，`name`（必填，点分路径）指向 harness 里给 agent 起的名字（例如 OpenClaw 的 `identityName`）。只读这一项，不扫描、不解析其他文件内容。界面上的显示名优先用用户在 Valise 里起的（记在实例档案的 agent 条目 `display_name`），其次用这里读出的名字，都没有时只显示实例 id；实例 id 不随名字改变（UI.md 9 节"名字"）。
 - **一个状态目录里的多个 agent**（2026-11-02 用户决定）：有的 harness 在一个状态目录里放多个 agent（OpenClaw 的 `agents.entries`，共用设置与网关）。暂时仍以一个状态目录为一个 Valise agent 备份与恢复，界面只列出其中的 agent 名单；是否拆开，等在靶机上研究清楚再定。
   - **与声明对照**：核实结果优先；agent 的声明与设置不符时两者都显示（设置为 Bypass 时红色，设置为需要批准而 agent 声称无需批准时黄色）。
   - **OpenClaw**：`openclaw exec-policy show --json` 的 `effectivePolicy.scopes[]`，`security.effective = full` 且 `ask.effective = off` 为无需批准。2026.10.9 默认即为此状态；预设 cautious（allowlist / on-miss）、deny-all（deny / off）以及 allowlist / off、full / always 都读作需要批准（均在 debian-vm 上读出，修改设置时需先停止网关）。
@@ -105,11 +105,12 @@ when: null                       # 子 profile 的生效条件，例如 { exists
 detect:
   binaries: [example]
   version_argv: [example, --version]
+  bin_dirs: ["${HOME}/.example/bin"]   # 可选：私有安装目录下的可执行文件夹，在登录 PATH 前查找
   state_dir_candidates: ["${env:EXAMPLE_HOME}", "${HOME}/.example"]   # 按顺序，取第一个存在的
   markers_any: [config.yaml]     # 状态目录中至少要存在其中一个
   home_env: EXAMPLE_HOME          # 可选：harness 自己的家目录变量，设置时代替候选与 named 中的 ${HOME}
   named:                          # 可选：同一份安装里的其他实例（多实例，见下）
-    - { glob: "${HOME}/.example-*", env: { EXAMPLE_STATE_DIR: "${STATE_DIR}" } }
+    - { glob: "${HOME}/.example-*", service: shared, env: { EXAMPLE_STATE_DIR: "${STATE_DIR}" } }   # service 可选 shared 或省略
 
 roots:                           # 除 state 之外的其他根目录
   - id: workspace
@@ -128,7 +129,9 @@ consistency:
 
 provenance:
   kind: npm_global               # npm_global | git | uv_tool | pipx | binary
-  npm: { package: example }      # kind: npm_global 时必填
+  npm:
+    package: example             # kind: npm_global 时必填
+    roots: ["${HOME}/.example/node_modules"]   # 可选：私有安装器存放 node_modules 的目录列表（${HOME} / ${STATE_DIR}）
   git: { root: state, path: "example-agent" }   # kind: git 时必填
   uv: { package: example }       # kind: uv_tool 时必填
   pipx: { package: example }     # kind: pipx 时必填
@@ -142,9 +145,14 @@ body:
 install:                         # 可选：官方方案（INSTALL.md 第 3 节），只写已核实的版本
   id: npm-user-prefix
   summary: "安装 Example 1.2.3，约 300 MB，不需要管理员权限"
+  where: "${HOME}/.example"      # 可选：展示安装位置摘要
+  takes: "约 1–3 分钟"            # 可选：展示大致耗时
+  notes:                         # 可选：装前需知（例如出厂审批默认模式）
+    - "默认开启独立配置目录"
   requires:
     - binary: node
       version: ">=22"
+      why: "运行主程序"           # 可选：说明依赖用途
       install:                   # 可选：只在高级模式下由 Valise 代为执行（INSTALL.md 4.1），按发行版区分
         - { os_id: [ubuntu, debian], argv: [sudo, apt-get, install, -y, nodejs] }
   steps:
@@ -160,12 +168,12 @@ native_session_cli: [example, tui]   # 可选：原生会话命令，用于日�
 native_hints:                    # 可选：打开原生界面前显示的提示（INSTALL.md 第 2 节），只是文字
   - "引导最后会等待控制台登录：另开终端运行 valise open <服务器> <实例>"
 
-actions:                         # 可选：管理动作（INSTALL.md 第 5 节；M12 定稿）
+actions:                         # 可选：管理动作（INSTALL.md 第 5 节；M12 定稿；B03 补配置事务）
   - id: status                   # 小写字母、数字和连字符，profile 内唯一
     name: 查看状态                # 界面上的名称
     explain: "显示服务是否在运行"   # 对用户的解释：会发生什么
     risk: read                   # read | manage | config | danger
-    argv: [example, status]      # 只能引用 ${HOME}
+    argv: [example, status]      # 单步动作只能引用 ${HOME}；与 steps/transaction 互斥
     output: text                 # text | none | secret
   - id: copy-token
     name: 复制控制台令牌
@@ -182,6 +190,46 @@ actions:                         # 可选：管理动作（INSTALL.md 第 5 节�
     argv: [example, token, --rotate]
     output: none
     terminal: false              # 可选：true 时在独立交互终端运行，输出不经 Valise，不能是 secret
+  - id: enable-approval          # B03 配置事务示例（1–16 步；config + none + undo）
+    name: 开启危险命令前确认
+    explain: "写入要求确认的审批配置（暂存核对后切换，支持回退）"
+    undo: "恢复前保留旧状态目录，失败可直接回退"
+    risk: config
+    output: none
+    steps:
+      - { id: write, argv: [example, config, set, approval, ask] }
+    transaction:
+      root: state
+      env: { EXAMPLE_HOME: "${STAGE_DIR}" }
+      writes: [config.yaml]
+      scratch: [logs]
+    verification:
+      versions: ["1.2.3"]
+      env: "Debian 13 arm64"
+      date: "2026-11-05"
+    verify: pending              # 未在当前精确版本实机核实时标 pending（有 verify: pending 时不开放入口）
+
+approval_check:                  # 可选：读取运行时的风险命令审批模式（PROFILES.md 1.2）
+  argv: [example, exec-policy, show, --json]
+  each: scopes                   # 可选：点分路径指向对象数组，逐项检查取最坏结果
+  bypass_when: { security: full, ask: off }
+  ask_when:
+    - { security: allowlist, ask: on-miss }
+  default_when:                  # 可选：出厂设置即为 Bypass 的条件组合
+    - { security: full, ask: off }
+  remedy: ["运行 example config set approval ask"]
+  repair_action: enable-approval # 可选：关联本 profile 已核实的 B03 配置事务动作
+  repair_expect: { security: allowlist, ask: on-miss }
+  verify: pending
+
+identity:                        # 可选：从只读 JSON 读取 harness 给 agent 起的名字
+  argv: [example, agents, list, --json]
+  each: agents                   # 可选：列表字段名；输出本身就是 JSON 数组时省略
+  pick: { isDefault: "true" }    # 可选：相等匹配字段
+  name: name                     # 必填：名字字段的点分路径
+  verify: pending
+
+terms: { agent: agent }          # 可选：harness 对单个 agent 的自有称呼（如 profile），不超过 20 字
 
 relocation: { env: EXAMPLE_HOME }   # 状态目录可以通过此变量改到别处；不支持时写 null（同机副本需另有已核实的命名实例/隔离方案，否则只能到另一用户或服务器）
 
@@ -203,7 +251,7 @@ entries:
       url_suffix: null           # 例如 "#token=${TOKEN}"，只能引用 ${TOKEN}
       hint: "…"                  # 没法自动取得时给用户看的说明（例如"运行 example token --show，粘贴到页面的密钥栏"）
     port_change:                 # 可选：本机端口被占用时"两边一起改端口"（LOGIN_RELAY.md 4.2）
-      steps:                     # harness 自己的改端口命令，按顺序运行；argv 只能引用 ${PORT} 与 ${HOME}
+      steps:                     # harness 自己的改端口命令，按顺序运行；argv 只能引用 ${PORT}
         - [example, config, set, port, "${PORT}"]
       restart_service: true      # 改完是否还需要 Valise 重启服务（命令自己会重装/重启服务时填 false）
     # 改过端口后，新端口记在实例记录的 entry_ports 里（按入口 id），打开管理页、健康检查都用它；
@@ -362,6 +410,7 @@ checkup:
 1. **放在哪里**：这台电脑上 Valise 数据目录下的 `profiles/<id>.yaml`（`<id>` 用小写字母、数字和连字符）。这里的资料叫“本机资料”，界面标“未经审核”，与签名资料包里的官方资料分开。
 2. **从最小骨架开始**：照着仓库里的 `profiles/dsh.yaml` 写，它是最短的一份。至少要有：`schema: valise-profile/1`、`id`、`display_name`、`profile_version: 1`、`status: draft`、`detect`（可执行文件名、取版本号的命令、状态目录的候选位置、能确认是它的标记文件）、`paths`（每类文件的 glob 与类别：identity、memory、skills、config、sessions、state、secrets、workspace、cache）、`provenance`（它是怎么装上的）、`service` 与 `entries`（没有就写空）。第 2 节逐项说明了每个字段。
 3. **没亲眼核实的条目标 `verify: pending`**（第 1.2 节）。不要猜凭据文件：凭据只按你在 `paths` 里明确写成 `secrets` 的条目处理。
-4. **检查**：运行 `valise profiles status`。资料有问题时这里会列出它被拒绝的原因（与仓库的 profilelint 同一套规则）。
-5. **回到 Valise 重新扫描**：桌面版“这台服务器上的 Agent”点“重新扫描”，认出来就能接入。恢复能力还没核实的资料用于恢复时，界面会写明“恢复尚未在此版本测试”及影响。
-6. **想让它进官方资料包**：按第 5 节的贡献要求提交，附上在真实机器上核实的记录。
+4. **检查**：运行 `valise profiles lint <你的文件>.yaml`（如有子 profile，连同父 profile 一起传入）及 `valise profiles status`。资料有问题时会列出与仓库 `profilelint` 一致的拒绝原因。
+5. **借助编程 Agent 编写**：仓库根目录 `skills/valise-profile-author/` 提供给开发/编程 Agent（Claude Code / Codex / Antigravity / OpenClaw）使用的标准编写技能与最小模板，引导其用只读探测编写不猜凭据、可通过 `lint` 的初稿。
+6. **回到 Valise 重新扫描**：桌面版“这台服务器上的 Agent”点“重新扫描”，认出来就能接入。恢复能力还没核实的资料用于恢复时，界面会写明“恢复尚未在此版本测试”及影响。
+7. **想让它进官方资料包**：按第 5 节的贡献要求提交，附上在真实机器上核实的记录。

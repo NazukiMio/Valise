@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"valise/client/config"
+	"valise/core/agentkit"
 	"valise/core/enroll"
 	"valise/core/identity"
 	"valise/core/journey"
@@ -27,6 +28,19 @@ func world(t *testing.T) (*App, *ui.Tester) {
 	a.scanTimeline = func(_ context.Context, _ service.TimelineScanRequest, emit func(service.TimelineUpdate)) error {
 		emit(service.TimelineUpdate{Page: a.timeline.value, Done: true})
 		return nil
+	}
+	a.agentKitHook = &agentKitOps{
+		status: func(context.Context, string, string) (*agentkit.KitStatusResult, error) {
+			return &agentkit.KitStatusResult{}, nil
+		},
+		guide: func(context.Context, string, string) (*service.KitGuide, error) {
+			return &service.KitGuide{}, nil
+		},
+	}
+	a.proposalsHook = &proposalsOps{
+		list: func(context.Context, string, string) ([]agentkit.Proposal, error) {
+			return nil, nil
+		},
 	}
 	a.harness["openclaw"] = "OpenClaw"
 	// Today at 09:00, so that “今天” and “昨天” hold whenever tests run.

@@ -171,3 +171,40 @@ func TestRetirementLeavesHistoricalCycles(t *testing.T) {
 		t.Fatalf("client requested an automatic snapshot: %v", err)
 	}
 }
+
+func TestAgentMCPSealsWriteRollingAutoLeaves(t *testing.T) {
+	w := newWorld(t)
+	now = func() time.Time { return time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { now = time.Now })
+
+	rep, err := Seal(context.Background(), w.env, w.p, vaultrpc.SealParams{
+		InstanceID: "demo", Tier: vault.TierSoul, Reason: "agent upkeep",
+	}, vaultrpc.InitiatorAgentMCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vault.IsSavepointLeaf(rep.Leaf) {
+		t.Fatalf("agent-mcp seal wrote into savepoints leaf %q, want date-period leaf", rep.Leaf)
+	}
+	dir, err := w.p.LeafDir(rep.Leaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(vault.MetaPath(rep.SnapshotID))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m vault.Meta
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Kind != vault.KindAuto {
+		t.Fatalf("agent-mcp meta kind = %q, want auto", m.Kind)
+	}
+	p, err := PromoteSnapshot(context.Background(), w.p, vaultrpc.SnapshotPromoteParams{
+		InstanceID: "demo", SnapshotID: rep.SnapshotID, Note: "保留",
+	}, vaultrpc.InitiatorClient)
+	if err != nil || !vault.IsSavepointLeaf(p.Leaf) || p.SnapshotID != rep.SnapshotID {
+		t.Fatalf("promote agent-mcp snapshot failed: %+v %v", p, err)
+	}
+}

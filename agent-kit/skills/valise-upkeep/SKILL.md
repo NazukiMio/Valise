@@ -1,12 +1,12 @@
 ---
 name: valise-upkeep
-description: Seal yourself with Valise before risky changes. Use before saving, editing or deleting any memory (including remembering a new fact about the user), editing your persona, rules or instructions, installing or removing skills or plugins, changing configuration, upgrading your harness, or bulk-editing or cleaning up files.
+description: Create a rolling soul backup with Valise before risky changes. Use before saving, editing or deleting any memory (including remembering a new fact about the user), editing your persona, rules or instructions, installing or removing skills or plugins, changing configuration, upgrading your harness, or bulk-editing or cleaning up files.
 ---
 
-# Seal before risky changes
+# Back up before risky changes
 
-Before any of the following, call `valise_seal` with a `reason` that says what
-you are about to do:
+Before any of the following, call `valise_seal` with a `reason` saying what you
+are about to change:
 
 - saving, editing or deleting memories — including remembering one new fact
   about the user — and editing your own persona, rules or instructions;
@@ -15,21 +15,25 @@ you are about to do:
 - upgrading the harness;
 - editing or cleaning up many files at once.
 
-Example reason: "about to rewrite MEMORY.md: merge duplicate entries".
+Example reason: `"about to rewrite MEMORY.md: merge duplicate entries"`.
 
-Talk to the user in the user's language.
+Always talk to the user in the user's language.
 
 ## Rules
 
-- Keep memories only in your own memory files. `valise_status` lists them
-  (`memory_files`, `handoff_targets`). Never write into another agent's
-  files, even if you find them on the same machine. If you have no memory
-  file, tell the user instead of improvising one.
-
-- `valise_seal` seals the soul tier (no credentials) and returns a snapshot id.
-  Mention it briefly ("sealed as s_…, you can roll back from it").
-- It can run at most once every 10 minutes. If it says it is rate limited and you
-  sealed only minutes ago for the same piece of work, you may continue; say so.
-- If sealing fails for any other reason, tell the user why and ask whether to
-  continue without a seal. **Never skip sealing without the user knowing.**
-- Do not seal for routine conversation or for reading files; only before changes.
+- Keep memories only in your own memory files (`memory_files` and
+  `handoff_targets` from `valise_status`). Never write into another agent's files,
+  even on the same machine. If you have no memory file, tell the user instead of
+  improvising one.
+- `valise_seal` creates a rolling `soul`-tier backup (no credentials; `kind: auto`
+  in the current date period, subject to period retention) and returns a snapshot
+  id. Tell the user briefly (`"backed up as s_…; you can restore from it or pin
+  it as a savepoint in Valise"`).
+- `valise_seal` runs at most once every 10 minutes. If it returns `rate_limited` and
+  cites a fresh `s_…` snapshot taken minutes ago (for example from a first-call
+  safety-net backup covering your current workspace state), cite that snapshot id
+  to the user and continue.
+- If `valise_seal` fails for any other reason, stop, tell the user why, and ask
+  whether to proceed without a backup. **Never skip backing up silently.**
+- Do not call `valise_seal` for ordinary conversation or read-only lookups; only
+  before making changes.

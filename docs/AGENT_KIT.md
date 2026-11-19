@@ -37,12 +37,12 @@ agent-kit 是可选的保护与健康辅助，**不是灾难恢复的依赖**。
 
 | 工具 | 输入 | 行为 | 限制 |
 | :--- | :--- | :--- | :--- |
-| `valise_status` | 无 | 返回实例 id、profile 及其核实状态、最近一次封存的时间和档位、保护状态（2026-11-03，检测报告 F10：`configured_targets` 已配置的同步位置、`last_offsite` 别处最新的一份、`pods_waiting_sync` 还在等同步的个数，以及由代码写成的一句话 `protection_summary`，agent 原样转述，不从空列表推断"没有配置"）、当前的体检 finding id 列表、实例自己的记忆文件与交接目标位置（M6 验收中 DSH agent 因不知道自己的记忆在哪里，写进了同机 OpenClaw 的记忆文件），以及归类线索：未分类文件的路径、以及在本应稳定的类别（identity、config、skills）中连续多次封存都发生变化的文件路径（来自服务器端的变动统计，见 ARCHITECTURE.md 第 6 节） | 只读；只返回路径与计数，不返回任何文件内容 |
+| `valise_status` | 无 | 返回实例 id、profile 及其核实状态、服务器保护计划摘要 `protection_plan`（是否开启定时、默认档位、周期、保留策略与自动复制位置）、最近一次备份的时间和档位、本连接首次调用触发兜底备份时返回的 `auto_sealed_snapshot`、保护状态（2026-11-03，检测报告 F10：`configured_targets` 已配置的备份位置、`last_offsite` 别处最新的一份、`pods_waiting_sync` 还在等同步的个数，以及由代码写成的一句话 `protection_summary`，agent 原样转述，不从空列表推断"没有配置"）、当前的体检 finding id 列表、实例自己的记忆文件与交接目标位置（M6 验收中 DSH agent 因不知道自己的记忆在哪里，写进了同机 OpenClaw 的记忆文件），以及归类线索：未分类文件的路径、以及在本应稳定的类别（identity、config、skills）中连续多次封存都发生变化的文件路径（来自服务器端的变动统计，见 ARCHITECTURE.md 第 6 节） | 只读；只返回路径与计数，不返回任何文件内容 |
 | `valise_checkup` | 无 | 运行代码体检（见 ARCHITECTURE.md 第 9 节），返回各项指标和 finding id | 只读，最短间隔 10 分钟 |
-| `valise_seal` | `{ "reason": string }` | 封存一次 `soul` 档，返回快照 id | 只能封存 `soul` 档，最短间隔 10 分钟，`reason` 写入审计记录 |
-| `valise_propose_enrollment` | `{ "items": [{ "root", "path", "category", "reason" }] }` | 由代码校验路径确实存在、没有路径穿越、类别合法，然后以"待确认"状态保存；确认后写入该实例的 `local_overrides` | 不得提议 `secrets` 以外的类别去覆盖已有的 `secrets` 规则；把文件移出 `soul` 档的提议（改为 `ignore`、`cache`、`body`）标记为"降级"；所有提议都需要用户在客户端确认 |
-| `valise_declare`（2026-11-02 用户决定，M12 实现） | `{ "security_skills": [{ "name", "purpose" }], "approval_mode": "ask" \| "bypass" \| "unknown" }` | agent 申报自己装了哪些安全类技能、执行风险命令是否需要用户批准；声明连同时间保存在服务器上，界面一律标"agent 声明（未经核实）"；profile 有 `approval_check` 时以核实结果为准 | 只写声明本身；最短间隔 10 分钟；Agent 保护技能在体检时提醒 agent 更新 |
-| `valise_handoff_begin` | 无 | 先封存一次 `soul` 档（包含当前会话），再返回快照 id、当前会话的统计数据、profile 中的 `handoff.targets`、每个目标的行数上限，以及 `new_session_hint` | 每次交接只能调用一次 |
+| `valise_seal` | `{ "reason": string }` | 写入一条 `soul` 档滚动备份（`kind: auto` 存入当前日期周期，参与周期保留策略，用户可在客户端按需晋升为永久存档点），返回快照 id | 只能备份 `soul` 档，最短间隔 10 分钟；命中限流时返回最近一次刚建立的快照 id 供同一修改复用，`reason` 写入审计记录 |
+| `valise_propose_enrollment` | `{ "items": [{ "root", "path", "category", "reason" }] }` | 由代码校验路径确实存在、没有路径穿越、类别合法，然后以"待确认"状态保存；确认后写入该实例的 `local_overrides` | 不得提议 `secrets` 以外的类别去覆盖已有的 `secrets` 规则；把文件移出 `soul` 档的提议（改为 `ignore`、`cache`、`body`）标记为"降级"；所有提议都需要用户在客户端（桌面「健康 › 归档建议」或 CLI `valise proposals`）确认 |
+| `valise_declare`（2026-11-02 用户决定，M12 实现） | `{ "security_skills": [{ "name", "purpose" }], "approval_mode": "ask" \| "bypass" \| "unknown" }` | agent 申报自己装了哪些安全类技能、执行风险命令是否需要用户批准；声明连同时间保存在服务器上，界面一律标"agent 声明（未经核实）"；profile 有 `approval_check` 时以核实结果为准 | 只写声明本身；最短间隔 10 分钟；Agent 保护技能在初次学习与体检时更新 |
+| `valise_handoff_begin` | 无 | 先建立一次包含当前会话的 `soul` 档滚动备份，再返回快照 id、当前会话的统计数据、profile 中的 `handoff.targets`、每个目标的行数上限，以及 `new_session_hint` | 每次交接只能调用一次 |
 | `valise_handoff_finish` | `{ "snapshot_id" }` | 由代码检查交接目标文件确实被修改、没有超过行数上限，并且只有指定的区段发生了变化；写入审计记录，返回给用户看的下一步提示 | 检查失败时返回具体原因，原文件可以从快照中恢复 |
 
 ### 3.1 由 agent 补充归类（M6）
@@ -67,10 +67,11 @@ agent-kit 是可选的保护与健康辅助，**不是灾难恢复的依赖**。
 
 步骤：
 
-1. 调用 `valise_status`，了解自己是哪个实例、受到什么保护。
-2. 用一两句话向用户说明：哪些东西已经受到保护（灵魂，以及是否包含凭据），最近一次封存是什么时候，是否已经同步到异地。
-3. 如果 agent 知道自己还使用了 profile 没有覆盖的目录（例如用户让它自建的笔记目录），就调用 `valise_propose_enrollment` 提出来，并提醒用户去客户端确认。
-4. 记住 4.2 中的习惯规则。如果 harness 支持，把规则写进自己的常驻指令，但只写一行引用，例如"风险操作前遵循 valise-upkeep 技能"。
+1. 调用 `valise_status`，了解自己是哪个实例、服务器保护计划是否开启定时备份（通常默认含凭据完整备份与日期周期，另有手动存档点）、最近一次备份与异地同步情况；记住 `auto_sealed_snapshot`（首次调用兜底备份的快照 id，如有）。
+2. 用一两句话向用户说明：哪些东西已经受到保护（包括用户保护计划的定时/存档点覆盖与 MCP 触发的 `soul` 档滚动备份不含凭据），最近一次备份是什么时候，是否已经复制到异地位置。
+3. 调用 `valise_declare` 如实申报当前已知的安全类技能与审批模式（`ask` / `bypass` / `unknown`），让健康页一开始就有声明信息。
+4. 如果 agent 知道自己还使用了 profile 没有覆盖的目录（例如用户让它自建的笔记目录），就调用 `valise_propose_enrollment` 提出来，并提醒用户到 Valise 桌面端「健康 › 归档建议」或命令行 `valise proposals` 确认。
+5. 记住 4.2 中的习惯规则。如果 harness 支持，把规则写进自己的常驻指令，但只写一行引用，例如"风险操作前遵循 valise-upkeep 技能"。写常驻指令前先确保刚建立过覆盖当前工作的备份：若第 1 步已返回 `auto_sealed_snapshot`（或数分钟内已有覆盖快照），直接引用该快照 id 继续；否则先调用 `valise_seal`。
 
 ### 4.2 `valise-upkeep`（日常习惯）
 
@@ -139,7 +140,7 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 - 工具结果同时放在 `structuredContent`（JSON 对象）和一段 `text` 中；用户错误（频率限制、校验失败等）以 `isError: true` 返回"原因 + 建议"，不中断会话。
 - 审计记录的发起者为 `agent-mcp`；被频率限制挡回的封存尝试也记一条（结果 `rate_limited`，附原因）。频率限制与交接状态保存在 `~/.local/state/valise/mcp/<实例>.json`。
 - MCP 进程以实例在服务器上的 profile 副本为准（与封存相同），不需要客户端在线。
-- **代码兜底**（用户决定，2026-10-31）：同一个 MCP 连接中，agent 第一次调用任何工具（`valise_seal` 与 `valise_handoff_begin` 本身会封存，除外）时，如果距上次封存已超过 10 分钟，先自动封存一次 `soul` 档，审计原因为 `auto: first tool call (<工具名>)`，并计入频率限制。原因：M6 验收中观察到，模型在写记忆、改人格前并不可靠地调用 `valise_seal`。局限：只覆盖调用了 Valise 工具的会话；不依赖 agent 的定时封存属于 M8。
+- **代码兜底**（用户决定，2026-10-31；2026-11-19 修订归档轨）：同一个 MCP 连接中，agent 第一次调用任何工具（`valise_seal` 与 `valise_handoff_begin` 本身会备份，除外）时，如果距上次备份已超过 10 分钟，先自动建立一次 `soul` 档滚动备份（`kind: auto`，写入日期周期叶子，并记下 `LastSealID` 随本次 `valise_status` 返回及作为限流提示，避免随后立即调用 `valise_seal` 时误报无法绕过的限流障碍），审计原因为 `auto: first tool call (<工具名>)`，并计入频率限制。原因：M6 验收中观察到，模型在写记忆、改人格前并不可靠地调用 `valise_seal`；随日期周期落盘可跟随用户保留策略退役，不污染永久手动存档点。局限：只覆盖调用了 Valise 工具的会话；不依赖 agent 的定时备份由保护计划负责。
 
 ### 8.2 归类提议
 
@@ -232,7 +233,7 @@ tools:
 
 ### 8.5 安装 Agent 保护技能
 
-- `valise kit install <服务器> <实例>`：先列出将要写入的文件，用户确认后由 porter 把 `agent-kit/skills/` 下的四个技能写到 profile 的 `agent_kit.skills_dir`（每个技能一个子目录，已存在且内容不同时先备份为 `SKILL.md.valise-bak-<时间>`）。技能文件随客户端分发。
+- 客户端（桌面「管理与设置 › Agent 保护技能」或 `valise kit install <服务器> <实例>`）：先列出将要写入的文件，用户确认后由 porter 把 `agent-kit/skills/` 下的四个技能写到 profile 的 `agent_kit.skills_dir`（每个技能一个子目录，已存在且内容不同时先备份为 `SKILL.md.valise-bak-<时间>`）。技能文件随客户端分发；未写入配置文件的 MCP 接入方式（`mcp_add_argv`、`mcp_config_snippet`、`mcp_config_doc` 与可直接复制的话术）可在桌面端折叠面板随时直接查看复制，无需解锁 Valise 口令。
 - 然后打印 MCP 的接入方法：profile 有 `agent_kit.mcp_add_argv` 时，展开 `${PORTER}`、`${INSTANCE}` 后打印 harness 自己的命令供用户执行；没有命令、只有 `agent_kit.mcp_config_snippet` 时打印展开后的配置片段；同时打印一句可以转告 agent 的话。
 - `format: jsonl` 的会话文件以 `.zst` 或 `.zstd` 结尾时先解压；大小按磁盘上的字节计，token 估算按解压后的字节计。Valise 不执行这条命令，也不修改 harness 配置。
 - 技能正文用英文书写，并要求 agent 用用户的语言与用户交流；触发说明同时列出中英文说法。
