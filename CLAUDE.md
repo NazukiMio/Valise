@@ -3,7 +3,7 @@ The user picks the session model. If a task clearly fits a different tier than t
 - Sonnet: everyday features, fixes, review, docs, and tests.
 - Haiku: classification, summarization, search.
 - Opus: multi-file changes, long agent runs, production-critical code.
-- Fable: migrations, big refactors, hard research, bugs that Opus already failed.
+- Fable (Temporarily prohibited, no usage left): migrations, big refactors, hard research, bugs that Opus already failed.
 When you start a subagent, give it the cheapest tier above that fits its job.
 
 ## Working style
