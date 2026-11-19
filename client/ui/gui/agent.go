@@ -1,6 +1,10 @@
 package gui
 
 import (
+	"context"
+	"strings"
+	"time"
+
 	"github.com/egoist/mygo/ui"
 
 	"valise/core/journey"
@@ -59,6 +63,65 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 			}
 		}},
 	})
+	a.agentRenameDialog(c, row)
+}
+
+type agentRenameState struct {
+	server, instance, value string
+	j                       job
+}
+
+func (a *App) agentRenameDialog(c *ui.Context, row *agentRow) {
+	rn := a.agentRename
+	if rn == nil || rn.server != row.Server || rn.instance != row.Instance {
+		return
+	}
+	open := true
+	if ui.Modal(c, &open, func() {
+		dialog(ui.Column(c), 420).Children(func() {
+			dialogTitle(ui.Text(c, T("agent.rename_title")))
+			muted(ui.Text(c, T("agent.rename_hint"))).FontSize(fsSub).Wrap()
+			labeled(c, T("agent.rename_label"), func() {
+				ui.TextInput(c, &rn.value).Label(T("agent.rename_label")).Placeholder(row.Instance).AutoFocus()
+			})
+			if rn.j.busy {
+				a.jobLine(c, &rn.j)
+				return
+			}
+			if rn.j.err != nil {
+				errorBox(c, rn.j.err, a.fold("agent-rename-"+rn.server+rn.instance))
+			}
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Justify(ui.End).Children(func() {
+				needTag(c, T("need.valise"))
+				ui.Button(c, T("common.cancel")).OnClick(func() { a.agentRename = nil })
+				ui.PrimaryButton(c, T("agent.rename_save")).OnClick(func() {
+					val := strings.TrimSpace(rn.value)
+					fn := a.setAgentLabel
+					if fn == nil {
+						fn = a.svc.SetAgentLabel
+					}
+					a.start(&rn.j, time.Minute, func(ctx context.Context) error {
+						return fn(ctx, rn.server, rn.instance, val)
+					}, func(err error) {
+						if err == nil {
+							for i := range a.agents.value.Items {
+								it := &a.agents.value.Items[i]
+								if it.ConnectionID == rn.server && it.Instance.InstanceID == rn.instance {
+									it.Instance.Label = val
+								}
+							}
+							a.agentRename = nil
+							if a.setAgentLabel == nil {
+								a.refreshAgents()
+							}
+						}
+					})
+				})
+			})
+		})
+	}).Dismissed() && !rn.j.busy {
+		a.agentRename = nil
+	}
 }
 
 // agentHeader is who it is, one sentence about it, and the page's one
@@ -74,7 +137,14 @@ func (a *App) agentHeader(c *ui.Context, row *agentRow) {
 			a.iconChoice(c, row)
 		})
 		ui.Column(c).Grow(1).Gap(6).Children(func() {
-			ui.Text(c, row.Name).FontSize(32).Bold().Font(cur.Fonts.Display)
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
+				ui.Text(c, row.Name).FontSize(32).Bold().Font(cur.Fonts.Display)
+				if !row.Retired() {
+					quietButton(c, T("agent.rename_open")).OnClick(func() {
+						a.agentRename = &agentRenameState{server: row.Server, instance: row.Instance, value: row.Label}
+					})
+				}
+			})
 			label := row.Server
 			if row.Harness != "" {
 				label = row.Harness + " · " + row.Server

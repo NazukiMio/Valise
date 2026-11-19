@@ -16,14 +16,14 @@ import (
 // agentRow is one agent as the pages show it. Service state and the admin
 // page's port are kept apart (AGENTS.md 7.5: no merged green badge).
 type agentRow struct {
-	Server, Instance, Name, Initial, Harness string
-	Service, ServiceTone                     string // tone: ok, stop, warn
-	Entry                                    string // "" when the harness has no admin page
-	Note                                     string // migrated or superseded
-	Roots                                    []string
-	HasService                               bool
-	HasNative                                bool
-	Profile                                  string // profile id, for its display
+	Server, Instance, Name, Label, Initial, Harness string
+	Service, ServiceTone                            string // tone: ok, stop, warn
+	Entry                                           string // "" when the harness has no admin page
+	Note                                            string // migrated or superseded
+	Roots                                           []string
+	HasService                                      bool
+	HasNative                                       bool
+	Profile                                         string // profile id, for its display
 }
 
 // Retired is an agent no longer in use here: migrated away or superseded.
@@ -37,7 +37,7 @@ func (a *App) agentRows(res service.AgentListResult) []agentRow {
 		if name == "" {
 			name = in.InstanceID
 		}
-		r := agentRow{Server: it.ConnectionID, Instance: in.InstanceID, Name: name, Initial: initial(name),
+		r := agentRow{Server: it.ConnectionID, Instance: in.InstanceID, Name: name, Label: in.Label, Initial: initial(name),
 			Harness: a.harness[in.ProfileID]}
 		if r.Harness == "" {
 			r.Harness = in.ProfileID

@@ -49,7 +49,8 @@ type settingsState struct {
 
 	regJ job // registering the key
 
-	leave *leaveState
+	cleanup cleanupState
+	leave   *leaveState
 }
 
 func (a *App) settingsOf(host string) *settingsState {
@@ -65,6 +66,7 @@ func (a *App) readSettings(host string) {
 	ss := a.settingsOf(host)
 	ss.vaultBusy, ss.vaultErr, ss.read = true, nil, true
 	a.readKitTools(host)
+	a.readCleanup(host)
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
@@ -125,6 +127,7 @@ func (a *App) settingsTab(c *ui.Context, name string, row *serverRow, ps *passSt
 		}
 	})
 	a.toolsCard(c, name, ss)
+	a.cleanupCard(c, name, ss)
 	card(ui.Column(c)).Gap(8).Border(1, palette.TroubleBorder).Children(func() {
 		ui.Row(c).Gap(14).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).Gap(4).Children(func() {

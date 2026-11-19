@@ -31,6 +31,7 @@ func (a *App) settingsPage(c *ui.Context) {
 		ui.Button(c, T("restore.history")).OnClick(func() { a.readRestoreTasks(); a.navigate("/restore/tasks") })
 	default:
 		a.keySettings(c)
+		a.configTransferCard(c)
 	}
 	a.debugSettings(c)
 }

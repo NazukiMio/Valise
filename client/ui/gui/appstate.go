@@ -29,6 +29,7 @@ type hooks struct {
 	newTerminal           func(io.ReadWriteCloser) (*terminal.Terminal, error) // nil: output shows as text
 	newNativeTestTerminal func(io.ReadWriteCloser) (io.Closer, error)          // tests only
 	copyText              func(string) error                                   // the system clipboard; nil hides 复制
+	setAgentLabel         func(context.Context, string, string, string) error  // tests only; nil uses svc
 }
 
 // agentData is what was read about the agents, shared by every page.
@@ -67,11 +68,12 @@ type homeView struct {
 
 // agentView is one agent's page, apart from its journey and health.
 type agentView struct {
-	agentTab int                    // tabOverview, tabJourney, tabHealth, tabManage
-	iconErr  error                  // choosing an agent's picture failed
-	entries  map[string]*entryState // admin page tunnels by server/instance
-	natives  map[string]*nativeState
-	native   *nativeRun
+	agentTab    int                    // tabOverview, tabJourney, tabHealth, tabManage
+	iconErr     error                  // choosing an agent's picture failed
+	entries     map[string]*entryState // admin page tunnels by server/instance
+	natives     map[string]*nativeState
+	native      *nativeRun
+	agentRename *agentRenameState
 }
 
 // journeyView is the timeline and the point open in it.
@@ -145,6 +147,7 @@ type serversView struct {
 	forgetErr      error
 	serverShell    *serverShellRun // the server command line, nil when none
 	kitHook        *kitOps         // tests only
+	cleanupHook    *cleanupOps     // tests only
 }
 
 // closeInstall lets go of one install screen's plan, output and result.
@@ -158,12 +161,13 @@ func (v *serversView) forgetServer(name string) {
 
 // keysView is the settings page's keys, backup, personalization and profiles.
 type keysView struct {
-	setTab   int           // 0 keys, 1 backup, 2 personalization, 3 profiles
-	keyFlow  *keyFlow      // the key dialog, nil when closed
-	keyNote  string        // a done key action, said once
-	lockOff  bool          // the backup lock's off confirmation is open
-	recover  *recoverState // finding the passphrase again, nil when not
-	profiles *profilesState
+	setTab      int           // 0 keys, 1 backup, 2 personalization, 3 profiles
+	keyFlow     *keyFlow      // the key dialog, nil when closed
+	keyNote     string        // a done key action, said once
+	lockOff     bool          // the backup lock's off confirmation is open
+	recover     *recoverState // finding the passphrase again, nil when not
+	profiles    *profilesState
+	cfgTransfer *configTransferState
 }
 
 // restoreView is restoring, migrating and copying.
