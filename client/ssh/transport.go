@@ -305,6 +305,13 @@ func (t *Transport) TTYCommand(ctx context.Context, remoteCmd string) *exec.Cmd 
 	return cmd
 }
 
+// ForceTTYShellCommand is ForceTTYShellArgs as a command bound to ctx.
+func (t *Transport) ForceTTYShellCommand(ctx context.Context) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, t.opts.Binary, t.ForceTTYShellArgs()...)
+	cmd.Env = t.Environ()
+	return cmd
+}
+
 // ForwardCommand is ForwardArgs as a command bound to ctx.
 func (t *Transport) ForwardCommand(ctx context.Context, host string, port int) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, t.opts.Binary, t.ForwardArgs(host, port)...)

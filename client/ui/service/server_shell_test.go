@@ -21,7 +21,7 @@ import (
 func shellWrap(t *testing.T, s *Service) (dir string) {
 	t.Helper()
 	dir = t.TempDir()
-	body := "#!/bin/sh\ncase \" $* \" in\n *\" -tt \"*)\n  echo \"$*\" > " + dir + "/argv\n" +
+	body := "#!/bin/sh\ncase \" $* \" in\n *\" -tt \"*)\n  echo \"$*\" > " + dir + "/argv\n  env > " + dir + "/env\n" +
 		"  if [ -f " + dir + "/hang ]; then sleep 60 & echo $! > " + dir + "/child; wait; exit 0; fi\n" +
 		"  cat\n  exit $(cat " + dir + "/code)\n  ;;\nesac\nexec " + s.Config.SSHBinary + " \"$@\"\n"
 	wrap := filepath.Join(dir, "ssh-wrap.sh")
@@ -136,5 +136,31 @@ func TestServerShellCancelKillsProcessGroup(t *testing.T) {
 	if !gone {
 		syscall.Kill(child, syscall.SIGKILL)
 		t.Fatal("the shell's child survived the cancel")
+	}
+}
+
+func TestServerShellPropagatesAskpassEnv(t *testing.T) {
+	s, _ := enrollWorld(t)
+	dir := shellWrap(t, s)
+	s.NoTerminalLogin = true
+	s.PasswordAuth.Prompt = func(string) (string, error) { return "pw", nil }
+	var out bytes.Buffer
+	code, err := s.RunServerShell(context.Background(), "box", NativeIO{
+		Stdin:  strings.NewReader(""),
+		Stdout: &out,
+		Stderr: &out,
+	})
+	if err != nil || code != 0 {
+		t.Fatalf("%d %v", code, err)
+	}
+	envBytes, err := os.ReadFile(filepath.Join(dir, "env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	envStr := string(envBytes)
+	for _, want := range []string{"SSH_ASKPASS=", "SSH_ASKPASS_REQUIRE=force"} {
+		if !strings.Contains(envStr, want) {
+			t.Fatalf("missing %q in spawned ssh env:\n%s", want, envStr)
+		}
 	}
 }

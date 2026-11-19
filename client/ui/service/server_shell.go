@@ -30,7 +30,7 @@ func (s *Service) RunServerShell(ctx context.Context, host string, streams Nativ
 	var closeOnce sync.Once
 	defer closeOnce.Do(func() { closeMasterAsync(done) })
 
-	cmd := exec.CommandContext(ctx, t.Binary(), t.ForceTTYShellArgs()...)
+	cmd := t.ForceTTYShellCommand(ctx)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil || cmd.Process.Pid <= 0 {

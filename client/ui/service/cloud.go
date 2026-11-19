@@ -117,7 +117,9 @@ func (s *Service) ShellCommand(ctx context.Context, host, profileID string) (cmd
 		return nil, nil, err
 	}
 	if profileID == "" {
-		return exec.CommandContext(ctx, t.Binary(), t.ShellArgs()...), done, nil
+		cmd := exec.CommandContext(ctx, t.Binary(), t.ShellArgs()...)
+		cmd.Env = t.Environ()
+		return cmd, done, nil
 	}
 	// The harness terminal (docs/INSTALL.md section 2): the user's own
 	// shell with the harness's bin dirs on PATH, nothing edited on the
