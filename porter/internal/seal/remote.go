@@ -40,7 +40,7 @@ func (p Paths) StationKey(name string) string {
 
 // withRemote runs op on the target, falling back from rsync to sftp.
 func withRemote(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.Target, op func(stationsync.Remote) error) (method, note string, err error) {
-	st, done, err := stationOf(p, t)
+	st, done, err := stationOf(p, e, t)
 	if err != nil {
 		return "", "", err
 	}
@@ -51,16 +51,17 @@ func withRemote(ctx context.Context, e *porterenroll.Env, p Paths, t *vaultrpc.T
 // stationOf is how porter reaches a target: a managed station with its
 // recorded host keys and the server's station key (and certificate,
 // <key>-cert.pub, which ssh loads by itself).
-func stationOf(p Paths, t *vaultrpc.Target) (stationsync.Station, func(), error) {
+func stationOf(p Paths, e *porterenroll.Env, t *vaultrpc.Target) (stationsync.Station, func(), error) {
 	st := stationsync.Station{Name: t.Name, Kind: t.Kind, Host: strings.SplitN(t.Dest, ":", 2)[0], Tmp: p.Tmp()}
 	if t.Kind == stationsync.MethodRclone {
-		if _, err := os.Stat(p.Rclone()); err != nil {
-			return st, nil, valise.New("rclone_missing", "服务器上没有 Valise 安装的 rclone", "先在服务器设置的工具里安装 rclone，再登录云盘")
+		rc, err := p.ResolveRclone(e)
+		if err != nil {
+			return st, nil, err
 		}
 		if err := os.MkdirAll(p.Tmp(), 0o700); err != nil {
 			return st, nil, err
 		}
-		st.Rclone, st.RcloneConfig = p.Rclone(), p.RcloneConfig()
+		st.Rclone, st.RcloneConfig = rc, p.RcloneConfig()
 		return st, func() {}, nil
 	}
 	c := t.Station
@@ -103,7 +104,7 @@ func StationProbe(ctx context.Context, e *porterenroll.Env, p Paths, name string
 	if t.Station == nil {
 		return "", valise.New("station_unmanaged", name+" 不是 Valise 管理的远程备份位置", "")
 	}
-	st, done, err := stationOf(p, t)
+	st, done, err := stationOf(p, e, t)
 	if err != nil {
 		return "", err
 	}

@@ -14,6 +14,7 @@ import (
 
 	"valise/core/valise"
 	"valise/porter/internal/actionjournal"
+	porterenroll "valise/porter/internal/enroll"
 )
 
 // Paths are the porter's files under HOME (docs/ARCHITECTURE.md section 1).
@@ -123,4 +124,18 @@ func (p Paths) AppendAudit(e AuditEntry) {
 	defer f.Close()
 	b, _ := json.Marshal(e)
 	fmt.Fprintf(f, "%s\n", b)
+}
+
+// ResolveRclone prefers the Kit-installed rclone and falls back to the
+// server's login PATH.
+func (p Paths) ResolveRclone(e *porterenroll.Env) (string, error) {
+	if st, err := os.Stat(p.Rclone()); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
+		return p.Rclone(), nil
+	}
+	if e != nil {
+		if path, err := e.LookPath("rclone"); err == nil {
+			return path, nil
+		}
+	}
+	return "", valise.New("rclone_missing", "服务器上没有找到 rclone", "在服务器设置或云盘登录页安装 rclone，或在服务器命令行自行安装后再试")
 }

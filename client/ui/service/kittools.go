@@ -129,6 +129,45 @@ func (s *Service) RunKitToolBatch(ctx context.Context, host string, b *Requireme
 	return s.runAdvancedBatch(ctx, host, "kit", b, tio)
 }
 
+// KitBinaryPlan is what installing an enhanced tool would download and
+// where it would land, for showing before the user confirms.
+type KitBinaryPlan struct {
+	Tool        KitTool `json:"tool"`
+	Arch        string  `json:"arch"`
+	Version     string  `json:"version"`
+	URL         string  `json:"url"`
+	SHA256      string  `json:"sha256"`
+	InstallPath string  `json:"install_path"`
+}
+
+// PlanKitBinary is a read-only daily probe: it names the official download
+// for the server's architecture and changes nothing.
+func (s *Service) PlanKitBinary(ctx context.Context, host, id string) (*KitBinaryPlan, error) {
+	k, err := s.kitTool(ctx, host, id)
+	if err != nil {
+		return nil, err
+	}
+	if k.Tier != kittools.TierEnhanced {
+		return nil, valise.New("kit_tool_tier", k.Name+" 是专家级工具，要在高级模式里安装", "")
+	}
+	if k.Why != "" {
+		return nil, valise.New("kit_tool_unavailable", k.Name+" 不能在这里安装："+k.Why, "打开服务器终端自己安装")
+	}
+	var chk agentkit.KitToolsCheckResult
+	if err := s.call(ctx, host, agentkit.MethodKitToolsCheck, agentkit.KitToolsCheckParams{}, &chk); err != nil {
+		return nil, err
+	}
+	var a *kittools.Archive
+	if k.Binary != nil {
+		a = k.Binary.Archive(chk.Arch)
+	}
+	if a == nil {
+		return nil, valise.New("kit_tool_unavailable", k.Name+" 没有适合这台服务器（"+chk.Arch+"）的官方构建", "打开服务器终端自己安装")
+	}
+	return &KitBinaryPlan{Tool: *k, Arch: chk.Arch, Version: k.Binary.Version, URL: a.URL, SHA256: a.SHA256,
+		InstallPath: "~/.local/bin/" + k.Check.Binary}, nil
+}
+
 // InstallKitBinary downloads an enhanced tool's official build, checks its
 // SHA-256, and has porter write it to ~/.local/bin.
 func (s *Service) InstallKitBinary(ctx context.Context, host, id string) (*KitTool, error) {

@@ -73,8 +73,9 @@ func TestRcloneTarget(t *testing.T) {
 	}
 	// Without Valise's rclone the location says so instead of guessing.
 	os.Remove(w.p.Rclone())
-	if _, err := Sync(ctx, w.env, w.p, "gd", "client"); err == nil {
-		t.Fatal("synced without rclone")
+	w.env = w.env.With(map[string]string{"PATH": t.TempDir()})
+	if _, err := Sync(ctx, w.env, w.p, "gd", "client"); err == nil || !strings.Contains(err.Error(), "rclone_missing") {
+		t.Fatalf("synced without rclone: %v", err)
 	}
 }
 
@@ -176,5 +177,128 @@ func TestCloudStep(t *testing.T) {
 	}
 	if _, err := CloudStep(ctx, w.env, w.p, vaultrpc.CloudStepParams{Name: "gd", Cloud: gd, App: kittools.App{ClientSecret: "x"}}); err == nil {
 		t.Fatal("secret without id accepted")
+	}
+}
+
+// pathRclone puts a logging fake rclone alone on a fresh PATH dir (no Kit
+// rclone) and returns the log file of the argv lines it was run with.
+func pathRclone(t *testing.T, w *world) string {
+	t.Helper()
+	dir, log := t.TempDir(), filepath.Join(t.TempDir(), "argv.log")
+	script := "#!/bin/sh\necho \"$@\" >> " + log + "\ncase \"$1\" in listremotes) echo valise-gd: ;; esac\n"
+	if err := os.WriteFile(filepath.Join(dir, "rclone"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	w.env = w.env.With(map[string]string{"PATH": dir + ":/usr/bin:/bin"})
+	os.MkdirAll(filepath.Dir(w.p.RcloneConfig()), 0o700)
+	os.WriteFile(w.p.RcloneConfig(), []byte("[valise-gd]\ntype = alias\nremote = "+t.TempDir()+"\n"), 0o600)
+	return log
+}
+
+func fakeBin(t *testing.T, path string) {
+	t.Helper()
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResolveRclone(t *testing.T) {
+	w := newWorld(t)
+	dir := t.TempDir()
+	pathBin := filepath.Join(dir, "rclone")
+	fakeBin(t, pathBin)
+	w.env = w.env.With(map[string]string{"PATH": dir})
+	got, err := w.p.ResolveRclone(w.env)
+	if err != nil || got != pathBin {
+		t.Fatalf("PATH fallback: %q %v", got, err)
+	}
+	fakeBin(t, w.p.Rclone())
+	got, err = w.p.ResolveRclone(w.env)
+	if err != nil || got != w.p.Rclone() {
+		t.Fatalf("Kit should win: %q %v", got, err)
+	}
+	// A non-executable Kit file is ignored.
+	os.Chmod(w.p.Rclone(), 0o644)
+	if got, _ := w.p.ResolveRclone(w.env); got != pathBin {
+		t.Fatalf("non-executable Kit rclone used: %q", got)
+	}
+	os.Remove(w.p.Rclone())
+	os.Remove(pathBin)
+	if _, err := w.p.ResolveRclone(w.env); err == nil || !strings.Contains(err.Error(), "rclone_missing") {
+		t.Fatalf("want rclone_missing: %v", err)
+	}
+	if _, err := w.p.ResolveRclone(nil); err == nil || !strings.Contains(err.Error(), "rclone_missing") {
+		t.Fatalf("nil env: %v", err)
+	}
+}
+
+func TestRcloneFromPath(t *testing.T) {
+	w := newWorld(t)
+	log := pathRclone(t, w)
+	ctx := context.Background()
+	w.seal(t, vault.TierSoul)
+	if err := SetServerName(w.p, "box"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetTarget(w.p, vaultrpc.Target{Name: "gd", Kind: "rclone", Dest: "valise-gd:valise-vault/"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(w.p.Rclone()); err == nil {
+		t.Fatal("Kit rclone should not exist")
+	}
+	notMissing := func(what string, err error) {
+		t.Helper()
+		if err != nil && strings.Contains(err.Error(), "rclone_missing") {
+			t.Fatalf("%s: PATH rclone not used: %v", what, err)
+		}
+	}
+	_, err := CheckTarget(ctx, w.env, w.p, vaultrpc.TargetCheckParams{Name: "gd"})
+	notMissing("check", err)
+	_, err = Sync(ctx, w.env, w.p, "gd", "client")
+	notMissing("sync", err)
+	gd := kittools.Cloud{ID: "gdrive", Name: "Google Drive", RcloneType: "drive", Params: map[string]string{"scope": "drive.file"},
+		Access: kittools.AccessFolder, AccessNote: "n", AskApp: true}
+	res, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "drive2", Cloud: gd, Fallback: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Argv[0] == w.p.Rclone() || !strings.HasSuffix(res.Argv[0], "/rclone") || res.Argv[len(res.Argv)-2] != "--config" ||
+		res.Argv[len(res.Argv)-1] != w.p.RcloneConfig() {
+		t.Fatalf("%v", res.Argv)
+	}
+	_, err = CloudStep(ctx, w.env, w.p, vaultrpc.CloudStepParams{Name: "drive3", Cloud: gd})
+	notMissing("step", err)
+	if err := SetTarget(w.p, vaultrpc.Target{Name: "gd", Kind: "rclone", Dest: "valise-gd:valise-vault/"}); err != nil {
+		t.Fatal(err)
+	}
+	notMissing("forget", CloudForget(ctx, w.env, w.p, "gd", true))
+	b, _ := os.ReadFile(log)
+	for _, want := range []string{"listremotes --config " + w.p.RcloneConfig(), "config delete valise-gd --config " + w.p.RcloneConfig()} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("fake rclone never ran %q:\n%s", want, b)
+		}
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if !strings.Contains(line, "--config "+w.p.RcloneConfig()) {
+			t.Fatalf("rclone run without our config: %q", line)
+		}
+	}
+}
+
+func TestRcloneMissingEverywhere(t *testing.T) {
+	w := newWorld(t)
+	w.env = w.env.With(map[string]string{"PATH": t.TempDir()})
+	ctx := context.Background()
+	gd := kittools.Cloud{ID: "gdrive", Name: "Google Drive", RcloneType: "drive", Params: map[string]string{"scope": "drive.file"},
+		Access: kittools.AccessFolder, AccessNote: "n", AskApp: true}
+	if _, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "x", Cloud: gd}); err == nil || !strings.Contains(err.Error(), "rclone_missing") {
+		t.Fatalf("prepare: %v", err)
+	}
+	if _, err := CloudStep(ctx, w.env, w.p, vaultrpc.CloudStepParams{Name: "x", Cloud: gd}); err == nil || !strings.Contains(err.Error(), "rclone_missing") {
+		t.Fatalf("step: %v", err)
+	}
+	if err := CloudForget(ctx, w.env, w.p, "x", false); err == nil || !strings.Contains(err.Error(), "rclone_missing") {
+		t.Fatalf("forget: %v", err)
 	}
 }

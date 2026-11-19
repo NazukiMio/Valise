@@ -36,7 +36,11 @@ func (p Paths) ensureRcloneConfig() error {
 // rcloneRemotes lists the remote names of Valise's rclone config (names
 // only, through rclone itself).
 func rcloneRemotes(ctx context.Context, e *porterenroll.Env, p Paths) ([]string, error) {
-	code, out, stderr, err := envRunner{e, p.Home}.Run(ctx, 30*time.Second, p.Rclone(), "listremotes", "--config", p.RcloneConfig())
+	rc, rerr := p.ResolveRclone(e)
+	if rerr != nil {
+		return nil, rerr
+	}
+	code, out, stderr, err := envRunner{e, p.Home}.Run(ctx, 30*time.Second, rc, "listremotes", "--config", p.RcloneConfig())
 	if err != nil || code != 0 {
 		return nil, valise.New("rclone_failed", "无法运行服务器上的 rclone", "在服务器设置的工具里重新安装 rclone").WithDetail(lastLine(string(stderr)))
 	}
@@ -61,8 +65,9 @@ func cloudFresh(ctx context.Context, e *porterenroll.Env, p Paths, name string, 
 	if probs := cloud.Problems(); len(probs) > 0 {
 		return valise.New("cloud_invalid", "云盘条目无效："+strings.Join(probs, "；"), "更新 harness 资料包后重试")
 	}
-	if _, err := os.Stat(p.Rclone()); err != nil {
-		return valise.New("rclone_missing", "服务器上没有 Valise 安装的 rclone", "先在服务器设置的工具里安装 rclone，再登录云盘")
+	rc, rerr := p.ResolveRclone(e)
+	if rerr != nil {
+		return rerr
 	}
 	if t, _ := findTarget(p, name); t != nil && !isSameCloudTarget(t, name) {
 		return valise.New("target_exists", "服务器上已经有名为 "+name+" 的备份位置", "换一个名字，或先移除它")
@@ -82,7 +87,7 @@ func cloudFresh(ctx context.Context, e *porterenroll.Env, p Paths, name string, 
 		if n != remote {
 			continue
 		}
-		code, _, stderr, err := envRunner{e, p.Home}.Run(ctx, 30*time.Second, p.Rclone(), "config", "delete", remote, "--config", p.RcloneConfig())
+		code, _, stderr, err := envRunner{e, p.Home}.Run(ctx, 30*time.Second, rc, "config", "delete", remote, "--config", p.RcloneConfig())
 		if err != nil || code != 0 {
 			return valise.New("rclone_failed", "没能清除上次没有完成的 "+name+" 云盘登录", "稍后重试，或运行 valise cloud remove <服务器> "+name).WithDetail(lastLine(string(stderr)))
 		}
@@ -132,7 +137,11 @@ func CloudPrepare(ctx context.Context, e *porterenroll.Env, p Paths, q vaultrpc.
 		}
 		args = q.Cloud.CreateArgs(remote, !q.Fallback)
 	}
-	argv := append(append([]string{p.Rclone()}, args...), "--config", p.RcloneConfig())
+	rc, err := p.ResolveRclone(e)
+	if err != nil {
+		return nil, err
+	}
+	argv := append(append([]string{rc}, args...), "--config", p.RcloneConfig())
 	return porterlogin.PrepareArgv(e, "cloud:"+q.Cloud.ID, argv)
 }
 
@@ -160,7 +169,11 @@ func CloudStep(ctx context.Context, e *porterenroll.Env, p Paths, q vaultrpc.Clo
 		args = kittools.ContinueArgs(remote, q.State, q.Result)
 	}
 	args = append(args, "--config", p.RcloneConfig())
-	code, out, stderr, err := envRunner{e, p.Home}.Run(ctx, time.Minute, append([]string{p.Rclone()}, args...)...)
+	rc, err := p.ResolveRclone(e)
+	if err != nil {
+		return nil, err
+	}
+	code, out, stderr, err := envRunner{e, p.Home}.Run(ctx, time.Minute, append([]string{rc}, args...)...)
 	if err != nil || code != 0 {
 		return nil, valise.New("rclone_failed", "服务器上的 rclone 没能继续登录", "重新开始登录").WithDetail(lastLine(string(stderr)))
 	}
@@ -185,10 +198,11 @@ func CloudForget(ctx context.Context, e *porterenroll.Env, p Paths, name string,
 			return err
 		}
 	}
-	if _, err := os.Stat(p.Rclone()); err != nil {
-		return valise.New("rclone_missing", "服务器上没有 Valise 安装的 rclone", "安装 rclone 后再移除登录")
+	rc, err := p.ResolveRclone(e)
+	if err != nil {
+		return err
 	}
-	code, _, stderr, err := envRunner{e, p.Home}.Run(ctx, 30*time.Second, p.Rclone(), "config", "delete", vaultrpc.CloudRemote(name), "--config", p.RcloneConfig())
+	code, _, stderr, err := envRunner{e, p.Home}.Run(ctx, 30*time.Second, rc, "config", "delete", vaultrpc.CloudRemote(name), "--config", p.RcloneConfig())
 	if err != nil || code != 0 {
 		return valise.New("rclone_failed", "没能删除服务器上的云盘登录", "稍后重试").WithDetail(lastLine(string(stderr)))
 	}

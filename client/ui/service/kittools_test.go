@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,5 +80,50 @@ tools:
 	}
 	if _, err := os.Stat(filepath.Join(home, ".local/bin/demotool")); !os.IsNotExist(err) {
 		t.Fatal("not removed")
+	}
+}
+
+func TestPlanKitBinary(t *testing.T) {
+	s, home, _, _ := sealedWorld(t)
+	ctx := context.Background()
+	kit := filepath.Join(t.TempDir(), "tools.yaml")
+	sha := strings.Repeat("ab", 32)
+	os.WriteFile(kit, []byte(`schema: valise-kit-tools/1
+tools:
+  - id: demotool
+    tier: enhanced
+    name: demotool
+    purpose: test
+    without: nothing
+    check: { binary: demotool }
+    binary:
+      version: "1.0"
+      archives:
+        - { arch: amd64, url: "https://example.invalid/demotool-1.0-amd64.tar.gz", sha256: "`+sha+`", member: "demotool-1.0/demotool" }
+        - { arch: arm64, url: "https://example.invalid/demotool-1.0-arm64.tar.gz", sha256: "`+sha+`", member: "demotool-1.0/demotool" }
+`), 0o644)
+	signer := minisigntest.New()
+	tgz, err := profiles.Build("../../../profiles", kit, "2026.11.02", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Release.PublicKey = signer.PublicKey
+	if err := s.InstallPack(&PackFile{Data: tgz, Sig: signer.Sign(tgz, "file:"+profiles.PackAsset)}); err != nil {
+		t.Fatal(err)
+	}
+	// No owner passphrase is set: a plan must not need the owner login.
+	plan, err := s.PlanKitBinary(ctx, "box", "demotool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Tool.ID != "demotool" || plan.Version != "1.0" || plan.SHA256 != sha || plan.InstallPath != "~/.local/bin/demotool" ||
+		plan.Arch == "" || !strings.Contains(plan.URL, plan.Arch) {
+		t.Fatalf("%+v", plan)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".local/bin/demotool")); !os.IsNotExist(err) {
+		t.Fatal("plan installed something")
+	}
+	if _, err := s.PlanKitBinary(ctx, "box", "nope"); err == nil || !strings.Contains(err.Error(), "kit_tool_unknown") {
+		t.Fatalf("unknown tool: %v", err)
 	}
 }

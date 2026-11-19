@@ -222,6 +222,12 @@ func (t *Transport) ShellArgs() []string {
 	return append(t.base("-t"), "--", t.host)
 }
 
+// ForceTTYShellArgs is ShellArgs with a terminal forced even when the local
+// stdin is not one (the desktop terminal's pipe).
+func (t *Transport) ForceTTYShellArgs() []string {
+	return append(t.base("-tt"), "--", t.host)
+}
+
 // ForwardArgs connects stdin/stdout to host:port as seen from the server
 // (ssh -W), one connection of a tunnel.
 func (t *Transport) ForwardArgs(host string, port int) []string {
