@@ -24,28 +24,35 @@ type cloudAdd struct {
 	err     error
 	id      string
 	name    string
-	host    string
 	local   *service.LocalRclone
 	localOK bool // the search for rclone here finished
 	dl      *service.RcloneDownload
 	dlJ     job
 	login   *cloudLogin
 	saved   []string // where it is logged in now: hosts, or “here”
-	appID   string   // the user's own app, passed to rclone once
-	appKey  string
+	appID   string   // the user's own app, kept in memory only while this page is open
+	appKey  string   // cleared on leaving the page, Done and closing the window
+
+	hostTools map[string]*cloudHostRclone // rclone on each server, by host
 }
+
+// cloudAddRoute is the page whose session holds the user's own app key.
+const cloudAddRoute = "/locations/add/cloud"
 
 // cloudLogin is one login running in the terminal.
 type cloudLogin struct {
-	where  string // a host, or "" for this computer
-	conn   *installConn
-	term   *terminal.Terminal
-	text   string
-	status string
-	ask    *cloudAsk
-	form   bool          // rclone's questions come as a form
-	q      *formQuestion // the question waiting for an answer
-	j      job
+	where   string // a host, or "" for this computer
+	conn    *installConn
+	term    *terminal.Terminal
+	text    string
+	status  string
+	ask     *cloudAsk
+	hosts   []string // a batch of servers, one after another
+	index   int      // the server being logged in, in hosts
+	results []cloudBatchResult
+	form    bool          // rclone's questions come as a form
+	q       *formQuestion // the question waiting for an answer
+	j       job
 }
 
 // cloudAsk is a question the login waits on.
@@ -65,7 +72,7 @@ func (q *cloudAsk) reply(ok bool) {
 
 func (a *App) openCloudAdd() {
 	a.cloudAdding = &cloudAdd{name: "gdrive"}
-	a.router.Push("/locations/add/cloud")
+	a.router.Push(cloudAddRoute)
 }
 
 func (a *App) openCloudRelogin(name string) {
@@ -74,11 +81,14 @@ func (a *App) openCloudRelogin(name string) {
 		id = a.svc.CloudIDOf(name)
 	}
 	a.cloudAdding = &cloudAdd{name: name, id: id, relogin: true}
-	a.router.Push("/locations/add/cloud")
+	a.router.Push(cloudAddRoute)
 }
 
 func (a *App) cloudAddPage(c *ui.Context) {
 	if a.cloudAdding == nil {
+		if a.router.Path() != cloudAddRoute {
+			return // leaving: the page is only still on screen for its exit
+		}
 		a.cloudAdding = &cloudAdd{name: "gdrive"}
 	}
 	ca := a.cloudAdding
@@ -94,7 +104,12 @@ func (a *App) cloudAddPage(c *ui.Context) {
 		doneTarget = backTarget
 	}
 	backLink(c, backLabel, backTarget)
-	pageHead(c, title, "")
+	ui.Row(c).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).Children(func() { pageHead(c, title, "") })
+		if len(ca.saved) > 0 && ca.login == nil {
+			ui.PrimaryButton(c, T("common.done")).OnClick(func() { a.closeAdding(); a.router.Push(doneTarget) })
+		}
+	})
 	if ca.err != nil {
 		errorBox(c, ca.err, a.fold("clouds-err"))
 	}
@@ -128,11 +143,6 @@ func (a *App) cloudAddPage(c *ui.Context) {
 			muted(ui.Text(c, T("loc.cloud_details"))).Wrap()
 		})
 	})
-	if len(ca.saved) > 0 {
-		ui.Row(c).Justify(ui.End).Children(func() {
-			ui.PrimaryButton(c, T("common.done")).OnClick(func() { a.closeAdding(); a.router.Push(doneTarget) })
-		})
-	}
 }
 
 func (a *App) readClouds(ca *cloudAdd) {
@@ -144,6 +154,9 @@ func (a *App) readClouds(ca *cloudAdd) {
 		local := a.svc.FindLocalRclone(ctx)
 		a.update(func() {
 			ca.clouds, ca.err, ca.local, ca.localOK = list, err, local, true
+			for _, h := range a.hosts() {
+				a.probeRclone(ca, h)
+			}
 			for _, cl := range list {
 				if ca.id == "" && !cl.Pending() {
 					ca.id = cl.ID
@@ -183,27 +196,6 @@ func (a *App) cloudChoice(c *ui.Context, ca *cloudAdd, cl kittools.Cloud) {
 			note = T("loc.cloud_pending")
 		}
 		muted(ui.Text(c, note)).Wrap().Grow(1)
-	})
-}
-
-func (a *App) serverLoginRow(c *ui.Context, ca *cloudAdd, cl *kittools.Cloud) {
-	hosts := a.hosts()
-	if ca.host == "" && len(hosts) > 0 {
-		ca.host = hosts[0]
-	}
-	settingRow(c, T("loc.cloud_on_server"), T("loc.cloud_on_server_what"), "", func() {
-		if len(hosts) > 1 {
-			ui.RadioGroup(c, func() {
-				for _, h := range hosts {
-					ui.Radio(c.Key("ch-"+h), &ca.host, h, h)
-				}
-			}).Row().Gap(10).Label(T("loc.cloud_on_server"))
-		}
-		b := ui.Button(c, T("loc.cloud_login_on", "host", ca.host))
-		b.OnClick(func() { a.startCloudLogin(ca, cl, ca.host) })
-		if ca.host == "" || !validName(ca.name) {
-			b.Disabled(true)
-		}
 	})
 }
 

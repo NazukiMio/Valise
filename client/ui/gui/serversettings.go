@@ -24,6 +24,9 @@ type settingsState struct {
 	vaultBusy bool
 	read      bool
 
+	tools     load[[]service.KitTool] // the server tools, read apart from the vault
+	toolInsts map[string]*kitInstall  // by tool id
+
 	naming bool // the first-name field is open
 	name   string
 	nameJ  job
@@ -61,6 +64,7 @@ func (a *App) settingsOf(host string) *settingsState {
 func (a *App) readSettings(host string) {
 	ss := a.settingsOf(host)
 	ss.vaultBusy, ss.vaultErr, ss.read = true, nil, true
+	a.readKitTools(host)
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
@@ -120,6 +124,7 @@ func (a *App) settingsTab(c *ui.Context, name string, row *serverRow, ps *passSt
 			errorBox(c, ss.vaultErr, a.fold("set-err-"+name))
 		}
 	})
+	a.toolsCard(c, name, ss)
 	card(ui.Column(c)).Gap(8).Border(1, palette.TroubleBorder).Children(func() {
 		ui.Row(c).Gap(14).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).Gap(4).Children(func() {

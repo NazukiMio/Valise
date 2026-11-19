@@ -214,6 +214,8 @@ func (a *App) pageSlot(c *ui.Context, n *Node) {
 						a.migratePage(c, r.Param("name"))
 					case r.Match("/servers/{name}/porter"):
 						a.porterPage(c, r.Param("name"))
+					case r.Match("/servers/{name}/shell"):
+						a.serverShellPage(c, r.Param("name"))
 					case r.Match("/servers/{name}"):
 						a.serverPage(c, r.Param("name"))
 					case r.Match("/settings"):

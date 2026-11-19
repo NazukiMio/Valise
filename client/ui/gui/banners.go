@@ -12,6 +12,7 @@ func (a *App) banners(c *ui.Context) {
 	ui.Column(c).AlignItems(ui.Stretch).Gap(0).Children(func() {
 		a.recoveryBanner(c.Key("b-recover"))
 		a.nativeBanner(c.Key("b-native"))
+		a.serverShellBanner(c.Key("b-shell"))
 		a.restoreBanner(c.Key("b-restore"))
 		a.restoreTestBanner(c.Key("b-test"))
 		a.appearanceWarnings(c.Key("b-look"))

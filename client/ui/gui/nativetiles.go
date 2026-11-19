@@ -9,8 +9,7 @@ import (
 	"valise/ui/service"
 )
 
-// nativeDailyCard is everyday use: talking to the agent and the server's
-// command line, as tiles side by side. A tile is the whole choice, so the
+// nativeDailyCard is everyday use: talking to the agent, as a tile. A tile is the whole choice, so the
 // page keeps its one primary button for the setup wizard below.
 func (a *App) nativeDailyCard(c *ui.Context, server, instance string, info *install.NativeInfo) {
 	card(ui.Column(c)).Gap(spItem).Children(func() {
@@ -19,11 +18,6 @@ func (a *App) nativeDailyCard(c *ui.Context, server, instance string, info *inst
 			if len(info.SessionArgv) > 0 {
 				nativeTile(c.Key("session"), icons.chat, T("native.session"), T("native.session_hint"), func() {
 					a.startNative(server, instance, service.NativeSession, false)
-				})
-			}
-			if info.Shell {
-				nativeTile(c.Key("shell"), icons.terminal, T("native.shell"), T("native.shell_hint"), func() {
-					a.startNative(server, instance, service.NativeShell, false)
 				})
 			}
 		})

@@ -115,7 +115,18 @@ type locationsView struct {
 }
 
 // closeAdding ends adding a location, a cloud drive's login with it.
-func (v *locationsView) closeAdding() { v.locAdding, v.cloudAdding = nil, nil }
+func (v *locationsView) closeAdding() {
+	v.clearCloudSecret()
+	v.locAdding, v.cloudAdding = nil, nil
+}
+
+// clearCloudSecret forgets the user's own app key held only in memory for
+// this login session.
+func (v *locationsView) clearCloudSecret() {
+	if v.cloudAdding != nil {
+		v.cloudAdding.appKey = ""
+	}
+}
 
 // serversView is the servers pages: the list, adding, installing, settings.
 type serversView struct {
@@ -131,6 +142,8 @@ type serversView struct {
 	rebuild        *rebuildState // rebuilding the admin passes
 	forgetting     string        // the removed server whose record is being forgotten
 	forgetErr      error
+	serverShell    *serverShellRun // the server command line, nil when none
+	kitHook        *kitOps         // tests only
 }
 
 // closeInstall lets go of one install screen's plan, output and result.

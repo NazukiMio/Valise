@@ -246,24 +246,39 @@ func (a *App) restoreSafeExit(r *restoreFlow) {
 	}
 }
 
+// dropAllAsks closes the window's management-login prompts that may still
+// be waiting; a cancelled context cannot answer that UI channel.
+func (a *App) dropAllAsks() {
+	for _, p := range a.asks {
+		p.value = ""
+		select {
+		case p.reply <- passReply{err: errStopped}:
+		default:
+		}
+	}
+	a.asks = nil
+}
+
 // RequestClose coordinates a normal close with this process's recovery work.
 func (a *App) RequestClose(exit func()) bool {
+	a.clearCloudSecret()
+	if r := a.serverShell; r != nil && r.running {
+		r.exit = func() {
+			if a.RequestClose(exit) {
+				exit()
+			}
+		}
+		a.dropAllAsks()
+		a.stopServerShell(r)
+		return false
+	}
 	if n := a.native; n != nil && n.running {
 		n.exit = func() {
 			if a.RequestClose(exit) {
 				exit()
 			}
 		}
-		// Closing the window also cancels a management-login prompt that may
-		// still be waiting; a cancelled context cannot answer that UI channel.
-		for _, p := range a.asks {
-			p.value = ""
-			select {
-			case p.reply <- passReply{err: errStopped}:
-			default:
-			}
-		}
-		a.asks = nil
+		a.dropAllAsks()
 		a.stopNative(n)
 		return false
 	}

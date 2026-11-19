@@ -27,7 +27,7 @@ func (a *App) debugAction(action, detail string) {
 // trackRoute records route transitions once per distinct path after
 // stripping query parameters, fragments, and any embedded credentials.
 func (a *App) trackRoute() {
-	if a == nil || a.router == nil || a.svc == nil {
+	if a == nil || a.router == nil {
 		return
 	}
 	cur := sanitizeGUIRoute(a.router.Path())
@@ -36,6 +36,17 @@ func (a *App) trackRoute() {
 	}
 	prev := a.lastRoute
 	a.lastRoute = cur
+	if prev == cloudAddRoute && cur != cloudAddRoute {
+		// Leaving the cloud login page ends the session of the user's own
+		// app key; a login still running keeps its own copy.
+		a.clearCloudSecret()
+		if ca := a.cloudAdding; ca != nil && ca.login == nil {
+			a.cloudAdding = nil
+		}
+	}
+	if a.svc == nil {
+		return
+	}
 	if prev == "" {
 		a.svc.LogUIEvent("route", cur)
 		return

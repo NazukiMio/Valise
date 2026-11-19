@@ -183,7 +183,7 @@ func TestNativePauseServiceOnboardAndRestoreFlow(t *testing.T) {
 	w.wait(t, "native card", func() bool { return w.tt.HasText(T("native.open")) })
 	w.click(t, T("native.open"))
 	w.wait(t, "prepare view", func() bool { return w.tt.HasText(T("native.stop_and_onboard")) })
-	hasAll(t, w.tt.Texts(), T("native.daily_title"), T("native.session"), T("native.shell"),
+	hasAll(t, w.tt.Texts(), T("native.daily_title"), T("native.session"),
 		T("native.onboard_title"), T("native.onboard_service_warn", "units", "demo.service"))
 
 	// Without offsite backup, clicking stop-and-onboard hits the gate BEFORE stopping demo.service.

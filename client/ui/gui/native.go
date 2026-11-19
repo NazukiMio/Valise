@@ -93,7 +93,7 @@ func (a *App) nativeCard(c *ui.Context, row *agentRow) {
 }
 
 func hasNativeEntry(info *install.NativeInfo) bool {
-	return info != nil && (len(info.Argv) > 0 || len(info.SessionArgv) > 0 || info.Shell)
+	return info != nil && (len(info.Argv) > 0 || len(info.SessionArgv) > 0)
 }
 
 func (a *App) nativePage(c *ui.Context, server, instance string) {
@@ -123,7 +123,7 @@ func (a *App) nativePage(c *ui.Context, server, instance string) {
 	}
 	muted(ui.Text(c, T("native.privacy"))).Wrap()
 	a.nativePausedBanner(c, server, instance, n)
-	if len(n.info.SessionArgv) > 0 || n.info.Shell {
+	if len(n.info.SessionArgv) > 0 {
 		a.nativeDailyCard(c, server, instance, n.info)
 	}
 	if len(n.info.Argv) > 0 {
@@ -227,8 +227,6 @@ func nativeRunningText(r *nativeRun) string {
 	switch r.mode {
 	case service.NativeSession:
 		return T("native.session_running")
-	case service.NativeShell:
-		return T("native.shell_running")
 	default:
 		return T("native.running")
 	}
@@ -238,8 +236,6 @@ func nativeExitedText(mode service.NativeMode, code int) string {
 	switch mode {
 	case service.NativeSession:
 		return T("native.session_exited", "code", code)
-	case service.NativeShell:
-		return T("native.shell_exited", "code", code)
 	default:
 		return T("native.exited", "code", code)
 	}
@@ -306,9 +302,6 @@ func (a *App) nativeRunBar(c *ui.Context, r *nativeRun, n *nativeState, info *in
 			}
 			if info != nil && len(info.SessionArgv) > 0 && r.mode != service.NativeSession {
 				ui.Button(c, T("native.use_session")).OnClick(func() { a.startNative(r.server, r.instance, service.NativeSession, false) })
-			}
-			if info != nil && info.Shell && r.mode != service.NativeShell {
-				ui.Button(c, T("native.use_shell")).OnClick(func() { a.startNative(r.server, r.instance, service.NativeShell, false) })
 			}
 			if info != nil && len(info.Argv) > 0 && r.mode != service.NativeCLI {
 				ui.Button(c, T("native.use_cli")).OnClick(func() { a.startNative(r.server, r.instance, service.NativeCLI, false) })

@@ -48,35 +48,26 @@ func (a *App) ownApp(c *ui.Context, ca *cloudAdd, cl *kittools.Cloud) {
 	})
 }
 
-// startCloudLogin logs in on a server, or on this computer when where is
-// "": the form first, the terminal when the form cannot be used.
+// startCloudLogin logs in on this computer when where is "", else on that
+// one server. The user's own app key stays in memory for this page.
 func (a *App) startCloudLogin(ca *cloudAdd, cl *kittools.Cloud, where string) {
-	lg := &cloudLogin{where: where, form: true}
+	if where != "" {
+		a.startCloudBatchLogin(ca, cl, []string{where})
+		return
+	}
+	lg := &cloudLogin{form: true}
 	ca.login = lg
 	name, id := strings.TrimSpace(ca.name), cl.ID
 	app := kittools.App{ClientID: strings.TrimSpace(ca.appID), ClientSecret: strings.TrimSpace(ca.appKey)}
-	ca.appKey = ""
 	a.start(&lg.j, 20*time.Minute, func(ctx context.Context) error {
-		f := service.CloudForm{App: app,
-			Ask:    func(q kittools.Question) (string, error) { return a.askForm(ctx, lg, q) },
-			Status: func(s service.LoginStatus) { a.update(func() { lg.status = loginStatusText(s) }) },
-			ConfirmOpen: func(link, domain string) bool {
-				return a.askYes(ctx, lg, T("loc.open_ask", "domain", domain), T("loc.open_go"))
-			},
-			OpenBrowser: a.openURL}
-		var err error
-		if where == "" {
-			err = a.svc.CloudLoginHereForm(ctx, name, id, f)
-		} else {
-			_, err = a.svc.CloudLoginServerForm(ctx, where, name, id, f)
-		}
+		err := a.svc.CloudLoginHereForm(ctx, name, id, a.cloudForm(ctx, lg, app))
 		if !errors.Is(err, service.ErrFormUnavailable) {
 			return err
 		}
-		return a.terminalLogin(ctx, lg, where, name, id)
+		return a.terminalLogin(ctx, lg, "", name, id)
 	}, func(err error) {
 		if err == nil {
-			ca.saved = append(ca.saved, orText(where, T("loc.here")))
+			ca.saved = appendUniq(ca.saved, T("loc.here"))
 			a.locs().read = false
 		}
 	})
@@ -176,6 +167,9 @@ func (a *App) cloudLoginView(c *ui.Context, ca *cloudAdd) {
 	lg := ca.login
 	card(ui.Column(c)).Gap(10).Children(func() {
 		where := orText(lg.where, T("loc.here"))
+		if len(lg.hosts) > 1 {
+			ui.Text(c, T("loc.cloud_batch_step", "cur", lg.index+1, "total", len(lg.hosts), "where", lg.where)).FontSize(12).TextColor(palette.TextSub)
+		}
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, T("loc.cloud_logging", "where", where)).Bold().Grow(1)
 			if lg.j.busy {
@@ -205,15 +199,18 @@ func (a *App) cloudLoginView(c *ui.Context, ca *cloudAdd) {
 				ui.PrimaryButton(c, q.yes).OnClick(func() { q.reply(true) })
 			})
 		}
+		a.batchResultsView(c, lg)
 		if lg.j.busy {
 			ui.Row(c).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.stop")).OnClick(func() { a.stopJob(&lg.j) })
 			})
 			return
 		}
-		if lg.j.err != nil {
+		switch {
+		case lg.j.err != nil:
 			errorBox(c, lg.j.err, a.fold("cloudlogin-err"))
-		} else {
+		case len(lg.hosts) > 1:
+		default:
 			ui.Text(c, T("loc.cloud_saved", "where", where, "name", ca.name)).TextColor(palette.Ok).Bold()
 		}
 		ui.Row(c).Justify(ui.End).Children(func() {

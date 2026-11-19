@@ -33,7 +33,7 @@ func (a *App) nativeOnboardCard(c *ui.Context, server, instance string, n *nativ
 				muted(ui.Text(c, T("native.stop_and_onboard_note"))).FontSize(12).Wrap()
 			})
 			ui.Row(c).Gap(8).Children(func() {
-				if len(info.SessionArgv) == 0 && !info.Shell {
+				if len(info.SessionArgv) == 0 {
 					ui.PrimaryButton(c, T("native.stop_and_onboard")).OnClick(func() { a.startNative(server, instance, service.NativeCLI, true) })
 				} else {
 					ui.Button(c, T("native.stop_and_onboard")).OnClick(func() { a.startNative(server, instance, service.NativeCLI, true) })
@@ -43,7 +43,7 @@ func (a *App) nativeOnboardCard(c *ui.Context, server, instance string, n *nativ
 			return
 		}
 		ui.Row(c).Gap(8).Children(func() {
-			if len(info.SessionArgv) == 0 && !info.Shell {
+			if len(info.SessionArgv) == 0 {
 				ui.PrimaryButton(c, T("native.connect")).OnClick(func() { a.startNative(server, instance, service.NativeCLI, false) })
 			} else {
 				ui.Button(c, T("native.connect")).OnClick(func() { a.startNative(server, instance, service.NativeCLI, false) })

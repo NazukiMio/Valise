@@ -65,7 +65,10 @@ func (a *App) serverPage(c *ui.Context, name string) {
 		if a.agents.busy {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c); muted(ui.Text(c, T("server.connecting", "name", name))) })
 		} else {
-			ui.Button(c, T("server.reconnect")).OnClick(func() { a.refreshAgents(); a.readDoctor(name); a.readSettings(name) })
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Button(c, T("server.shell_open")).OnClick(func() { a.navigate("/servers/" + name + "/shell") })
+				ui.Button(c, T("server.reconnect")).OnClick(func() { a.refreshAgents(); a.readDoctor(name); a.readSettings(name) })
+			})
 		}
 	})
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
