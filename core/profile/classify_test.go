@@ -45,6 +45,21 @@ func TestClassifyPrecedence(t *testing.T) {
 	if _, ok := c.Sidecar("state", "x/a.sqlite-wal"); ok {
 		t.Error("sidecar of an undeclared db")
 	}
+
+	cSQL := c.WithSQLite([]SQLiteRef{
+		{Root: "state", Glob: "db/*.sqlite", SecretTables: []string{"extra"}},
+		{Root: "state", Glob: "plugins/mem.db"},
+	})
+	s, ok := cSQL.SQLite("state", "db/a.sqlite")
+	if !ok || len(s.SecretTables) != 2 || s.SecretTables[0] != "t" || s.SecretTables[1] != "extra" {
+		t.Fatalf("union secret tables failed: %+v ok=%v", s, ok)
+	}
+	if _, ok := cSQL.SQLite("state", "plugins/mem.db"); !ok {
+		t.Fatal("extra local_sqlite not matched")
+	}
+	if db, ok := cSQL.Sidecar("state", "plugins/mem.db-wal"); !ok || db != "plugins/mem.db" {
+		t.Fatalf("local_sqlite sidecar = %q %v", db, ok)
+	}
 }
 
 func TestParseOverride(t *testing.T) {

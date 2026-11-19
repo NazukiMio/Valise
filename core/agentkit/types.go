@@ -94,16 +94,43 @@ type CheckupParams struct {
 	InstanceID string `json:"instance_id"`
 }
 
-// Proposal is an agent's classification proposal awaiting the user.
+// Proposal kinds (docs/AGENT_KIT.md section 3 & 8.2).
+const (
+	ProposalKindClassify    = "classify"
+	ProposalKindSQLite      = "sqlite"
+	ProposalKindExternalRef = "external_ref"
+
+	ExternalRefDir     = "external_dir"
+	ExternalRefSymlink = "symlink_target"
+)
+
+// ExternalRefSpec identifies an out-of-root directory or symlink target.
+type ExternalRefSpec struct {
+	Path    string `json:"path"`
+	RefKind string `json:"ref_kind"` // external_dir | symlink_target
+}
+
+// Proposal is an agent's dossier proposal awaiting user confirmation.
 type Proposal struct {
-	ID       string           `json:"id"`
-	Rule     profile.Override `json:"rule"`
-	Reason   string           `json:"reason"`
-	Demotion bool             `json:"demotion"` // moves files out of the soul tier
+	ID          string             `json:"id"`
+	Kind        string             `json:"kind,omitempty"` // "" or "classify" | "sqlite" | "external_ref"
+	Rule        profile.Override   `json:"rule,omitempty"`
+	SQLite      *profile.SQLiteRef `json:"sqlite,omitempty"`
+	ExternalRef *ExternalRefSpec   `json:"external_ref,omitempty"`
+	Reason      string             `json:"reason"`
+	Demotion    bool               `json:"demotion"` // moves files out of the soul tier
 	// Unclassified counts files now unclassified (sealed with the secrets
 	// layer) that the rule would move into the soul tier.
 	Unclassified int       `json:"unclassified,omitempty"`
 	Created      time.Time `json:"created"`
+}
+
+// EffectiveKind returns the proposal kind, defaulting legacy empty values to classify.
+func (p Proposal) EffectiveKind() string {
+	if p.Kind == "" {
+		return ProposalKindClassify
+	}
+	return p.Kind
 }
 
 // ProposalsParams names the instance.
@@ -134,7 +161,7 @@ type DecideResult struct {
 
 // SkillFile is one file of an agent-kit skill.
 type SkillFile struct {
-	Skill   string `json:"skill"` // directory name, e.g. valise-upkeep
+	Skill   string `json:"skill"` // directory name, e.g. valise-onboard
 	Name    string `json:"name"`  // file name, e.g. SKILL.md
 	Content []byte `json:"content"`
 }
@@ -146,13 +173,16 @@ type KitInstallParams struct {
 	DryRun     bool        `json:"dry_run"`
 }
 
-// KitInstallResult lists what was (or would be) written.
+// KitInstallResult lists what was (or would be) written and any unmodified
+// legacy skills removed on cleanup.
 type KitInstallResult struct {
-	Dir     string   `json:"dir"`
-	Written []string `json:"written"`
-	Backups []string `json:"backups,omitempty"`
-	Same    []string `json:"unchanged,omitempty"`
-	Porter  string   `json:"porter"` // absolute porter path, for MCP config
+	Dir           string   `json:"dir"`
+	Written       []string `json:"written"`
+	Backups       []string `json:"backups,omitempty"`
+	Same          []string `json:"unchanged,omitempty"`
+	LegacyRemoved []string `json:"legacy_removed,omitempty"`
+	LegacyKept    []string `json:"legacy_kept,omitempty"`
+	Porter        string   `json:"porter"` // absolute porter path, for MCP config
 }
 
 // IsDemotion reports whether a category takes files out of the soul tier.
@@ -187,8 +217,6 @@ type KitStatusResult struct {
 	Skills   []SkillState `json:"skills"`
 	LastMCP  *time.Time   `json:"last_mcp_call,omitempty"`
 	MCPCalls int          `json:"mcp_calls"`
-	// Declaration is the agent's latest valise_declare, never verified.
-	Declaration *Declaration `json:"declaration,omitempty"`
 }
 
 // Approval modes an agent declares (docs/AGENT_KIT.md section 3).

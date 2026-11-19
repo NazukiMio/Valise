@@ -4,7 +4,7 @@
 
 ## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-19）
 
-- **分支状态**：`feat/cloud-rclone-and-server-shell`（含 B3.1 与 B3.2 提交 `c098ce9`、`28b6696`，测试包 `stage-test-20261119-b3.2`）已通过全部真机验收并经 `--ff-only` 合入 `main`；当前工作分支 **`feat/v01-recovery-closure`** 已完成 v0.1 条目 1（`5152107`）、条目 2（`cef529f`）及 `v01r2` 真机反馈修复（`4420a56`，已实机验收通过），现已完成发版前收口批次（`1A` MCP 滚存周期与状态汇总 + 四件套技能同步 + `2A` 桌面端保护技能与归档建议管理 + `PROFILES.md` 校验规则对齐 / `valise profiles lint` CLI / 独立 `skills/valise-profile-author/`），通过 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`），并打好真机验收测试包 `stage-test-20261119-v01r3`。
+- **分支状态**：`feat/cloud-rclone-and-server-shell`（含 B3.1 与 B3.2 提交 `c098ce9`、`28b6696`，测试包 `stage-test-20261119-b3.2`）已通过全部真机验收并经 `--ff-only` 合入 `main`；当前工作分支 **`feat/v01-recovery-closure`** 已完成 v0.1 条目 1（`5152107`）、条目 2（`cef529f`）、`v01r2` 真机反馈修复（`4420a56`，已实机验收通过）与 `v01r3`（`a4f1bd1`），现已完成 **Valise v0.1 受管技能二件套、4 工具 MCP 与 Profile/Dossier 新契约收敛批次**，通过 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`），并打好真机验收测试包 `stage-test-20261119-v01r4`。
 - **B3 / B3.1 / B3.2 真机验收结论（2026-11-19，用户实机确认「全部通过」）**：
   1. **备份双轨与寿命闭环（B3）**：定时日期周期、永久手动存档点 `savepoints/`、主人级快照晋升、默认关闭的服务器自动退役与长旅程曲线视口虚拟化；原版恢复脚本验证源周期退役后仍可恢复。
   2. **服务器 `rclone` 与多服务器云盘登录（B3.1）**：`porter` 优先使用 `~/.local/bin/rclone` 并回退服务器 `PATH`；GUI 接通无 `sudo` Kit 安装（展示版本/URL/SHA-256 并显式确认）；云盘添加/重登录支持多选服务器串行登录（共享单次操作级 PIN 租约），`client_id`/`client_secret` 仅在当前页面内存会话保留并在离开/完成/关闭窗口时清零。
@@ -12,10 +12,10 @@
 - **已通过真机验收（`feat/v01-recovery-closure`，`v01r2`）**：
   1. **条目 1 · 桌面零 CLI 维护收口**：Agent 详情页「改名…」（`SetAgentLabel`）、服务器设置「空间清理」（`PrevList`/`PrevDrop` 恢复前旧目录与 `OldList`/`OldCleanup` 已被取代旧实例；支持单项确认与**多选/全选单会话批量清理**，批量发起时统一弹出一次 PIN 或 Valise 口令验证、按 7 天/旧实例显示最高权限标签并诚实报告部分失败）及「设置 › 钥匙与口令 › 配置导入与导出」（`ExportConfig`/`ImportConfig`，不含私钥且支持缺通行证一键跳转重装）。
   2. **条目 2 · 低门槛云盘存储（WebDAV 与 S3 兼容）**：扩展 `kit/tools.yaml` 与 `core/kittools` 支持非浏览器凭证表单云盘（`browser: false`，不依赖回环端口 `53682`）与存储桶路径（`needs_bucket: true`，目标记为 `valise-<名>:<bucket>/valise-vault/`）；桌面与 CLI（`--bucket`）打通 WebDAV / S3 兼容云盘登录、长选项滚动与 `verify: pending` 显式确认试用，并在「设置 › 资料包」预览与已装卡片展示内置云盘清单、在「添加云盘」资料包缺失/未更新报错下提供直达「设置 › 资料包」按钮（同修 `v01r1` 仅安装到隔离 `$HOME` 导致真实宿主 `~/.config` / `~/Library/Application Support/valise` 仍停在旧资料包的问题）。
-- **新增已完成并待真机验收（`v01r3`）**：
-  1. **MCP `1A` 滚存语义与 Agent 四件套更新**：受管 Agent 通过 MCP 发起的封存（`valise_seal`、`valise_handoff_begin` 与首次调用 `autoSeal`）统一写入 `kind: auto` 滚动日期周期叶并遵循保护计划保留/退役策略（不再污染永久手动存档点 `savepoints/`）；`valise_status` 返回 `protection_plan` 与 `auto_sealed_snapshot`，`kit/state` 持久化 `last_seal_id` 以消除 `valise-enroll` 刚接入后触发 `valise_seal` 报 `rate_limited` 却无法复用快照 ID 的死胡同；同步更新 `agent-kit/skills/valise-{enroll,upkeep,handoff,checkup}/SKILL.md` 及 `docs/{VAULT_FORMAT,AGENT_KIT}.md`。
-  2. **桌面端 `2A` Agent 保护技能与归档建议**：`service` 新增日常模式 `KitGuide` 并为 `DecideProposals` / `KitInstall` / `KitUninstall` 补齐操作级租约；桌面「Agent › 管理与设置」新增「Agent 保护技能（四件套）」卡片（仅用日常权限读取技能状态与 MCP 接线指南、先预览后确认再触发一次验证、安装后自动展开可复制命令与 4 句对 Agent 提示词、卸载支持保留已修改或强制删除及解除 MCP 提醒）；「Agent › 健康」新增「归档建议」卡片（无待处理时保持安静、未分类进轻装档标黄提示、常规建议支持批量确认、降级建议强制逐条弹窗核对并发出 `AcceptDemotions`）。
-  3. **Harness Profile 编写工具链**：对齐 [PROFILES.md](PROFILES.md) 与 `core/profile/lint.go`（修复 `identity` 对象结构、`port_change` `${PORT}` 占位、补齐 6 组现行字段），新增 `valise profiles lint [--json] <profile.yaml>...` CLI 子命令，并新建独立开发者技能包 `skills/valise-profile-author/`（`SKILL.md`、`references/schema-v1.md`、`references/minimal-template.yaml`）。
+- **新增已完成并待真机验收（`v01r4`，含 `v01r3` 保留项与本批收敛更新）**：
+  1. **受管技能二件套与旧四件套安全清理**（取代 `v01r3` 四件套）：移除 `agent-kit/skills/valise-{enroll,upkeep,handoff,checkup}/`，新增 `valise-onboard`（23 行，低频档案报备与覆盖缺口）与 `valise-backup`（20 行，状态查询与高风险改前留底）；`porter/internal/kit` 内置 14 个历史版本 SHA-256 摘要，安装/卸载时自动清理未修改旧技能与 `.valise-bak-*` 并删除空目录、保留用户自行修改的文件。
+  2. **4 工具 MCP 工具面与 `autoSeal` 移除**（在 `1A` 滚存语义之上收口）：`tools/list` 仅暴露 `valise_status`、`valise_seal`、`valise_onboard_context`、`valise_propose_dossier`（旧工具名仅在 `Call()` 静默兼容）；彻底移除首次调用隐式 `autoSeal`，只读与提议工具补写轻量 `agent-mcp` 审计时间戳；`valise_seal` 按已确认保护计划档位（默认 `full`）写入 `kind: auto` 滚动周期叶（未确认旧实例保守走 `soul` 并返回 `plan_warning`，限流返回 `last_seal_id` 与 `last_seal_at`）；`valise_onboard_context` 返回 `effective_rules`、`pending_proposals` 与 5 项 `layout_facts`（含仅检查文件头 16 字节魔数的 `untracked_sqlite`）。
+  3. **Dossier / Profile 契约与桌面端同步**（含 `2A` 与 Profile 工具链保留项）：`valise-dossier/1` 向后兼容扩展 `local_sqlite` 与 `external_refs`（人类在桌面端/CLI 确认后入档并在迁移/分身中随快照携带）；`valise-profile/1` 标记 `handoff`/`checkup` 为 `deprecated`，移除 `Declaration`（`valise_declare`）自报叠加，审批状态统一以确定性 `approval_check` 为准；保留 `PROFILES.md` 校验对齐、`valise profiles lint [--json]` CLI 与独立 `skills/valise-profile-author/`；桌面「Agent 保护技能」精简为 2 技能 + 3 句复制提示词（无 `Declaration` / 无 `AGENTS.md` 提醒），「健康 › 归档建议」与 CLI/TUI 支持三类提案审批（`classify` 常规 & `cache`/`ignore` 降级单独弹窗确认、`sqlite`、`external_ref`）。
 - **明确冻结（延后至 v0.2+）**：主题引擎扩展（`valise-theme/2`、主题文件 `material` 字段）与 TUI 1:1 对齐在 `v0.1` 冻结；通用页面转发与 OAuth 中继完善、macOS Keychain/Touch ID、`hermes.yaml` 真机消 pending、`pi.yaml` 与兄弟项目 [ValiseMemo](../../ValiseMemo/docs/README.md) 集成（仅桌面侧只读浏览与按需控制面）归入 `v0.2–v0.3`（`Valise Client`）。
 - **测试包打包触发标准（2026-11-19 用户约定）**：满足以下任一条件即打新 `stage-test-*` 测试包交由用户验收，否则先继续合并至下一批更新：
   1. 更新可能引发性能倒退或致命错误；
@@ -32,7 +32,7 @@
 
 ### 必须保留的环境与基线事实
 
-- **当前待验收测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261119-v01r3/Valise Test.app`（`0.0.0-dev+stage-test-20261119-v01r3`，构建自 `feat/v01-recovery-closure`，含 `darwin/arm64` 客户端、`valise` CLI 与 `valise-porter_linux_{arm64,amd64}`；具体提交见包内 `BUILD.json`）。打包验收门禁中执行 `profiles install` / `profiles status` / `cloud list` 必须显式指定真实宿主 `HOME=/Users/nazukimio`（避免仅写入隔离沙盒 `$HOME`）。已通过真机验收的历史包 `stage-test-20261119-v01r2`、`stage-test-20261119-b3.2` 等均保留未动。
+- **当前待验收测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261119-v01r4/Valise Test.app`（`0.0.0-dev+stage-test-20261119-v01r4`，构建自 `feat/v01-recovery-closure`，含 `darwin/arm64` 客户端、`valise` CLI 与 `valise-porter_linux_{arm64,amd64}`；具体提交见包内 `BUILD.json`）。打包验收门禁中执行 `profiles install` / `profiles status` / `cloud list` 必须显式指定真实宿主 `HOME=/Users/nazukimio`（避免仅写入隔离沙盒 `$HOME`）。历史包 `stage-test-20261119-v01r3`、`stage-test-20261119-v01r2`、`stage-test-20261119-b3.2` 等均保留未动。
 - **默认资料包与演练公钥**：当前开发资料包位于 `~/.cache/valise-drill/devpack`（`2026.11.19`：`dsh v4`、`hermes v11`、`openclaw v24`，`kit-tools.yaml` 含 `webdav`/`s3`，公钥 `RWSFvljhQMWMsDJdlOcX+EhDZWostM2MqU1HJKwffgq1JQb5ImJiYZQS`）；演练配置 `~/.cache/valise-drill/drillpack` 独立保留，不得混用或覆盖。
 - **构建与检查环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；构建发布/测试包时 `-ldflags` 必须同时注入 `main.version` 与 `valise/client/porter.ReleasePublicKey`；禁止执行 `rm -f`（清空用 `: > file`，测试用 `t.TempDir()`）；未经用户明确要求不执行 `git push`。
 

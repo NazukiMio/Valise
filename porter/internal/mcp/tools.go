@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,37 +35,23 @@ func schema(props map[string]any, required ...string) map[string]any {
 }
 
 var toolList = []map[string]any{
-	{"name": "valise_status", "description": "Show how this instance is protected: last seal (time, tier), whether it is synced off-site, " +
-		"current checkup findings, and classification hints (unclassified paths; files in identity/config/skills that change on every seal). Paths and counts only, never file contents.",
+	{"name": "valise_status", "description": "Fast read-only backup status: active Protection Plan summary, last backup, verbatim protection_summary, and pending_proposals count. Never scans files or writes backups.",
 		"inputSchema": schema(map[string]any{})},
-	{"name": "valise_checkup", "description": "Run the code-only memory checkup and return metrics and finding ids (long_session, cost_growth, memory_bloat, session_pileup, no_memory_mechanism). At most once every 10 minutes.",
+	{"name": "valise_seal", "description": "Create a rolling kind:auto backup right before high-risk self-edits (core config, plugins/skills, major persona/rule/memory rewrites, bulk workspace edits, or harness upgrade) or on user request. Uses the instance's Protection Plan tier (full by default), or conservative soul tier with plan_warning. Rate-limited to once per 10 minutes.",
+		"inputSchema": schema(map[string]any{"reason": map[string]any{"type": "string", "description": "Optional short reason for the audit log (no secrets)"}})},
+	{"name": "valise_onboard_context", "description": "Read-only onboarding context for valise-onboard: instance roots, Protection Plan, effective dossier rules, 5-part layout_facts (unclassified_dirs, largest_dirs, external_symlinks, churn_files, untracked_sqlite), and pending_proposals. Never triggers a backup.",
 		"inputSchema": schema(map[string]any{})},
-	{"name": "valise_seal", "description": "Create a rolling soul-tier backup (persona, memory, skills, sessions, state; no credentials; stored as kind: auto in the current date period so it follows period retention and can be promoted by the user). " +
-		"Call this FIRST, before you: save, edit or delete any memory (including remembering a new fact about the user); edit your persona, rules or " +
-		"instructions; install or remove skills or plugins; change configuration; upgrade the harness; or edit/clean up many files. " +
-		"At most once every 10 minutes (if rate limited and a snapshot from minutes ago covers your change, cite its id and continue). The reason is written to the audit log.",
-		"inputSchema": schema(map[string]any{"reason": map[string]any{"type": "string", "description": "What you are about to change and why"}}, "reason")},
-	{"name": "valise_propose_enrollment", "description": "Propose how files this instance uses should be classified (e.g. a notes directory the user asked you to keep). Code validates each item; the user confirms in the Valise client. " +
-		"Categories: identity, memory, skills, sessions, state, config, workspace, secrets, cache, body, ignore. Moving files to cache/body/ignore takes them out of the soul tier and needs separate user confirmation.",
+	{"name": "valise_propose_dossier", "description": "Queue validated dossier proposals (classify, sqlite, external_ref) for user approval in Valise desktop. Never modifies the dossier directly.",
 		"inputSchema": schema(map[string]any{"items": map[string]any{"type": "array", "items": schema(map[string]any{
-			"root":     map[string]any{"type": "string", "description": "Root id, e.g. state or workspace"},
-			"path":     map[string]any{"type": "string", "description": "Path relative to the root (file or directory)"},
-			"category": map[string]any{"type": "string"},
-			"reason":   map[string]any{"type": "string"},
-		}, "root", "path", "category", "reason")}}, "items")},
-	{"name": "valise_declare", "description": "Declare your own safety settings so the user sees them in Valise: the security skills you have, and whether you ask the user before running risky commands " +
-		"(approval_mode: ask = you ask first; bypass = you run them without asking, e.g. a full-access or auto-approve mode; unknown = you cannot tell). Shown to the user as your declaration, unverified. Update it when this changes. At most once every 10 minutes.",
-		"inputSchema": schema(map[string]any{
-			"security_skills": map[string]any{"type": "array", "items": schema(map[string]any{
-				"name":    map[string]any{"type": "string"},
-				"purpose": map[string]any{"type": "string", "description": "One sentence: what it protects against"},
-			}, "name", "purpose")},
-			"approval_mode": map[string]any{"type": "string", "enum": []string{"ask", "bypass", "unknown"}},
-		}, "security_skills", "approval_mode")},
-	{"name": "valise_handoff_begin", "description": "Start a handoff to a new session: seals the soul tier (including this session), then returns the snapshot id, current session statistics, the memory files to append the handoff to, their line limits and how the user starts a new session.",
-		"inputSchema": schema(map[string]any{})},
-	{"name": "valise_handoff_finish", "description": "Finish a handoff after appending one dated section to the handoff target(s). Code checks that only an appended section changed and the line limit holds.",
-		"inputSchema": schema(map[string]any{"snapshot_id": map[string]any{"type": "string"}}, "snapshot_id")},
+			"kind":          map[string]any{"type": "string", "enum": []string{"classify", "sqlite", "external_ref"}},
+			"root":          map[string]any{"type": "string"},
+			"glob":          map[string]any{"type": "string"},
+			"path":          map[string]any{"type": "string"},
+			"category":      map[string]any{"type": "string", "enum": []string{"memory", "workspace", "state", "skills", "config", "secrets", "cache", "ignore"}},
+			"secret_tables": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"ref_kind":      map[string]any{"type": "string", "enum": []string{"external_dir", "symlink_target"}},
+			"reason":        map[string]any{"type": "string"},
+		}, "kind", "reason")}}, "items")},
 }
 
 // Tools implements the agent-kit tools for one instance.
@@ -76,9 +61,6 @@ type Tools struct {
 	Version  string
 	Env      func(context.Context) *porterenroll.Env
 	Now      func() time.Time
-
-	autoSealed     bool   // the safety-net seal of this connection is done
-	lastAutoSealID string // returned once on status so callers know the fresh snapshot
 }
 
 func (t *Tools) now() time.Time {
@@ -112,34 +94,38 @@ func (t *Tools) audit(op, result, snapshot, reason string) {
 
 func rateLimited(last, now time.Time, lastID string) error {
 	if wait := kit.MinInterval - now.Sub(last); !last.IsZero() && wait > 0 {
-		hint := "稍后再试；如果刚备份过，可以直接继续操作"
+		hint := "稍后再试"
 		if lastID != "" {
-			hint = "刚刚已建立备份 " + lastID + "，如果是同一次修改可以直接继续并告诉用户这个快照 id"
+			hint = fmt.Sprintf("最近一次留底为 %s（时间 %s），若覆盖当前修改可直接复用该快照 ID，无需重试",
+				lastID, last.UTC().Format(time.RFC3339))
 		}
 		return valise.New("rate_limited", fmt.Sprintf("距离上一次调用不到 10 分钟，还需等待 %d 分钟", int(wait.Minutes())+1), hint)
 	}
 	return nil
 }
 
-// Call runs one tool. The first tool call of a connection seals first when
-// the last seal is older than MinInterval (docs/AGENT_KIT.md 8.1): models do
-// not reliably call valise_seal before changing their memory.
+// Call runs one MCP tool. Only the four current tools appear in tools/list;
+// hidden legacy tool names stay silently compatible in Call() for v0.1.
 func (t *Tools) Call(ctx context.Context, name string, args json.RawMessage) (any, error) {
-	if !t.autoSealed && name != "valise_seal" && name != "valise_handoff_begin" && slices.ContainsFunc(toolList, func(m map[string]any) bool { return m["name"] == name }) {
-		t.autoSealed = true
-		t.autoSeal(ctx, name)
-	}
 	switch name {
 	case "valise_status":
-		return t.status(ctx)
-	case "valise_checkup":
-		return t.checkup()
+		return t.status()
 	case "valise_seal":
 		var a struct {
 			Reason string `json:"reason"`
 		}
-		json.Unmarshal(args, &a)
+		_ = json.Unmarshal(args, &a)
 		return t.seal(ctx, a.Reason)
+	case "valise_onboard_context":
+		return t.onboardContext(ctx)
+	case "valise_propose_dossier":
+		var a struct {
+			Items []kit.DossierProposalItem `json:"items"`
+		}
+		if err := json.Unmarshal(args, &a); err != nil || len(a.Items) == 0 {
+			return nil, valise.New("invalid_arguments", "items 不能为空", "按工具说明传入 kind、reason 及对应字段")
+		}
+		return t.proposeDossier(a.Items)
 	case "valise_propose_enrollment":
 		var a struct {
 			Items []kit.ProposalItem `json:"items"`
@@ -148,6 +134,8 @@ func (t *Tools) Call(ctx context.Context, name string, args json.RawMessage) (an
 			return nil, valise.New("invalid_arguments", "items 不能为空", "按工具说明传入 root、path、category、reason")
 		}
 		return t.propose(a.Items)
+	case "valise_checkup":
+		return t.checkup()
 	case "valise_declare":
 		var d agentkit.Declaration
 		if err := json.Unmarshal(args, &d); err != nil {
@@ -161,58 +149,48 @@ func (t *Tools) Call(ctx context.Context, name string, args json.RawMessage) (an
 			return nil, err
 		}
 		t.audit("declare", "ok", "", "approval_mode="+out.ApprovalMode)
-		return map[string]any{"recorded": out, "note": "已记录；Valise 向用户显示为 agent 的声明（未经核实）"}, nil
+		return map[string]any{"recorded": out, "note": "已记录"}, nil
 	case "valise_handoff_begin":
 		return t.handoffBegin(ctx)
 	case "valise_handoff_finish":
 		var a struct {
 			SnapshotID string `json:"snapshot_id"`
 		}
-		json.Unmarshal(args, &a)
+		_ = json.Unmarshal(args, &a)
 		return t.handoffFinish(a.SnapshotID)
 	}
 	return nil, errUnknownTool
 }
 
 type statusPlan struct {
+	Adopted         bool     `json:"adopted"`
 	Enabled         bool     `json:"enabled"`
 	Tier            string   `json:"tier"`
 	Schedule        string   `json:"schedule,omitempty"`
-	PeriodUnit      string   `json:"period_unit"`
+	PeriodUnit      string   `json:"period_unit,omitempty"`
 	KeepAutoPeriods int      `json:"keep_auto_periods"`
 	Targets         []string `json:"targets"`
 }
 
-type statusResult struct {
-	Instance      string      `json:"instance"`
-	Profile       string      `json:"profile"`
-	ProfileStatus string      `json:"profile_status"`
-	LastSeal      *vault.Meta `json:"last_seal,omitempty"`
-	AutoSealed    string      `json:"auto_sealed_snapshot,omitempty"`
-	SyncedTo      []string    `json:"last_seal_synced_to"`
-	// The protection state, split so nothing is guessed from an empty
-	// list (review F10): the targets this server copies to, the newest
-	// escape pod that reached one, the pods still waiting, and one plain
-	// sentence written by code for the agent to pass on as it is.
-	Targets         []string                   `json:"configured_targets"`
-	ProtectionPlan  *statusPlan                `json:"protection_plan,omitempty"`
-	LastOffsite     *offsitePod                `json:"last_offsite,omitempty"`
-	WaitingSync     int                        `json:"pods_waiting_sync"`
-	Protection      string                     `json:"protection_summary"`
-	Findings        []string                   `json:"findings"`
-	LastCheckup     *time.Time                 `json:"last_checkup,omitempty"`
-	Unclassified    []enroll.UnclassifiedGroup `json:"unclassified"`
-	ChangingStable  []string                   `json:"changing_stable_files"`
-	PendingProposal int                        `json:"pending_proposals"`
-	MemoryFiles     []string                   `json:"memory_files"` // where this instance keeps its memory (absolute paths)
-	HandoffTargets  []string                   `json:"handoff_targets"`
-	HandoffOpen     string                     `json:"handoff_open_snapshot,omitempty"`
-	Notes           []string                   `json:"notes,omitempty"`
+type statusSeal struct {
+	SnapshotID string    `json:"snapshot_id"`
+	CreatedAt  time.Time `json:"created_at"`
+	Tier       string    `json:"tier"`
+	Kind       string    `json:"kind,omitempty"`
 }
 
-func summarizePlan(p *cp.ServerPlan) *statusPlan {
+type statusResult struct {
+	Instance        string      `json:"instance"`
+	ProtectionPlan  statusPlan  `json:"protection_plan"`
+	LastSeal        *statusSeal `json:"last_seal,omitempty"`
+	Protection      string      `json:"protection_summary"`
+	PendingProposal int         `json:"pending_proposals"`
+	Notes           []string    `json:"notes,omitempty"`
+}
+
+func summarizePlan(p *cp.ServerPlan) statusPlan {
 	if p == nil {
-		return nil
+		return statusPlan{Adopted: false, Enabled: false, Tier: vault.TierSoul, Targets: []string{}}
 	}
 	enabled := p.Schedule.Enabled != nil && *p.Schedule.Enabled
 	sched := "off"
@@ -231,7 +209,8 @@ func summarizePlan(p *cp.ServerPlan) *statusPlan {
 	if targets == nil {
 		targets = []string{}
 	}
-	return &statusPlan{
+	return statusPlan{
+		Adopted:         true,
 		Enabled:         enabled,
 		Tier:            p.Scope.Tier,
 		Schedule:        sched,
@@ -247,8 +226,16 @@ type offsitePod struct {
 	Targets    []string  `json:"targets"`
 }
 
+type protectionRaw struct {
+	Targets     []string
+	LastSeal    *vault.Meta
+	SyncedTo    []string
+	LastOffsite *offsitePod
+	WaitingSync int
+}
+
 // protection is the plain sentence of the protection state.
-func protection(r *statusResult) string {
+func protection(r *protectionRaw) string {
 	var b strings.Builder
 	if len(r.Targets) == 0 {
 		b.WriteString("这台服务器没有配置远程备份位置或其他同步位置。")
@@ -270,37 +257,24 @@ func protection(r *statusResult) string {
 	return b.String()
 }
 
-func (t *Tools) status(ctx context.Context) (any, error) {
-	rec, p, err := t.load()
-	if err != nil {
-		return nil, err
-	}
-	st, err := kit.LoadState(t.Home, t.Instance)
-	if err != nil {
-		return nil, err
-	}
-	res := statusResult{Instance: t.Instance, Profile: fmt.Sprintf("%s v%d", p.ID, p.ProfileVersion), ProfileStatus: p.Status,
-		SyncedTo: []string{}, Findings: append([]string{}, st.LastFindings...), Unclassified: []enroll.UnclassifiedGroup{}, ChangingStable: []string{}}
-	if !st.LastCheckup.IsZero() {
-		lc := st.LastCheckup
-		res.LastCheckup = &lc
-	}
+func (t *Tools) protectionSnapshot() (*statusSeal, string) {
+	raw := protectionRaw{SyncedTo: []string{}, Targets: []string{}}
 	if vs, err := seal.Status(t.paths()); err == nil {
 		for i := range vs.Snapshots {
 			m := vs.Snapshots[i]
-			if m.InstanceID == t.Instance && (res.LastSeal == nil || m.CreatedAt.After(res.LastSeal.CreatedAt)) {
-				res.LastSeal = &m
+			if m.InstanceID == t.Instance && (raw.LastSeal == nil || m.CreatedAt.After(raw.LastSeal.CreatedAt)) {
+				raw.LastSeal = &m
 			}
 		}
-		if res.LastSeal != nil {
+		if raw.LastSeal != nil {
 			for _, tg := range vs.Targets {
-				if slices.Contains(tg.LastSynced, res.LastSeal.SnapshotID) {
-					res.SyncedTo = append(res.SyncedTo, tg.Name)
+				if slices.Contains(tg.LastSynced, raw.LastSeal.SnapshotID) {
+					raw.SyncedTo = append(raw.SyncedTo, tg.Name)
 				}
 			}
 		}
 		for _, tg := range vs.Targets {
-			res.Targets = append(res.Targets, tg.Name)
+			raw.Targets = append(raw.Targets, tg.Name)
 		}
 		for _, m := range vs.Snapshots {
 			if m.InstanceID != t.Instance {
@@ -314,70 +288,55 @@ func (t *Tools) status(ctx context.Context) (any, error) {
 			}
 			switch {
 			case len(where) == 0:
-				res.WaitingSync++
-			case res.LastOffsite == nil || m.CreatedAt.After(res.LastOffsite.CreatedAt):
-				res.LastOffsite = &offsitePod{SnapshotID: m.SnapshotID, CreatedAt: m.CreatedAt, Targets: where}
+				raw.WaitingSync++
+			case raw.LastOffsite == nil || m.CreatedAt.After(raw.LastOffsite.CreatedAt):
+				raw.LastOffsite = &offsitePod{SnapshotID: m.SnapshotID, CreatedAt: m.CreatedAt, Targets: where}
 			}
 		}
-		if res.LastOffsite != nil {
-			// Only pods newer than the last offsite one are waiting.
-			res.WaitingSync = 0
+		if raw.LastOffsite != nil {
+			raw.WaitingSync = 0
 			for _, m := range vs.Snapshots {
-				if m.InstanceID == t.Instance && m.CreatedAt.After(res.LastOffsite.CreatedAt) {
-					res.WaitingSync++
+				if m.InstanceID == t.Instance && m.CreatedAt.After(raw.LastOffsite.CreatedAt) {
+					raw.WaitingSync++
 				}
 			}
 		}
 	}
-	if res.Targets == nil {
-		res.Targets = []string{}
+	var slim *statusSeal
+	if raw.LastSeal != nil {
+		slim = &statusSeal{
+			SnapshotID: raw.LastSeal.SnapshotID,
+			CreatedAt:  raw.LastSeal.CreatedAt,
+			Tier:       raw.LastSeal.Tier,
+			Kind:       raw.LastSeal.Kind,
+		}
 	}
-	res.Protection = protection(&res)
-	if t.lastAutoSealID != "" {
-		res.AutoSealed = t.lastAutoSealID
-		t.lastAutoSealID = ""
+	return slim, protection(&raw)
+}
+
+func (t *Tools) status() (any, error) {
+	if _, _, err := t.load(); err != nil {
+		return nil, err
 	}
-	if plan, err := (porterprotection.Store{Home: t.Home}).LoadPlan(t.Instance); err == nil && plan != nil {
-		res.ProtectionPlan = summarizePlan(plan)
+	plan, _ := (porterprotection.Store{Home: t.Home}).LoadPlan(t.Instance)
+	planSummary := summarizePlan(plan)
+	lastSeal, protectionSummary := t.protectionSnapshot()
+	res := statusResult{
+		Instance:       t.Instance,
+		ProtectionPlan: planSummary,
+		LastSeal:       lastSeal,
+		Protection:     protectionSummary,
 	}
 	if res.LastSeal == nil {
 		res.Notes = append(res.Notes, "这个实例还没有备份过")
 	}
-	rep, err := porterenroll.Scan(ctx, t.Env(ctx), enroll.ScanParams{Profile: *p, StateDir: rec.Roots[profile.StateRoot],
-		InstanceID: t.Instance, Overrides: rec.LocalOverrides}, rec)
-	if err == nil {
-		res.Unclassified = rep.UnclassGroups
-		if len(res.Unclassified) > 20 {
-			res.Unclassified = res.Unclassified[:20]
-		}
-	}
-	for path, e := range seal.ReadSeen(t.paths(), t.Instance) {
-		if e.Streak >= 2 {
-			res.ChangingStable = append(res.ChangingStable, path)
-		}
-	}
-	slices.Sort(res.ChangingStable)
-	res.MemoryFiles, res.HandoffTargets = []string{}, []string{}
-	abs := func(root, glob string) string { return filepath.Join(rec.Roots[root], filepath.FromSlash(glob)) }
-	if ck := p.Checkup; ck != nil {
-		for _, m := range ck.MemoryFiles {
-			res.MemoryFiles = append(res.MemoryFiles, abs(m.Root, m.Glob))
-		}
-	}
-	if h := p.Handoff; h != nil {
-		for _, t := range h.Targets {
-			res.HandoffTargets = append(res.HandoffTargets, abs(t.Root, t.Glob))
-		}
-	}
-	if len(res.MemoryFiles) == 0 {
-		res.Notes = append(res.Notes, "profile 没有声明记忆文件：这个实例可能没有长期记忆机制，不要把记忆写到其他 agent 的文件里")
+	if !planSummary.Adopted {
+		res.Notes = append(res.Notes, "当前尚未在 Valise 桌面端确认保护计划；自动留底暂按保守 soul 档处理")
 	}
 	if ps, err := kit.LoadProposals(t.Home, t.Instance); err == nil {
 		res.PendingProposal = len(ps)
 	}
-	if st.Handoff != nil && !st.Handoff.Stale(t.now()) {
-		res.HandoffOpen = st.Handoff.SnapshotID
-	}
+	t.audit("status", "ok", "", "")
 	return res, nil
 }
 
@@ -404,16 +363,19 @@ func (t *Tools) checkup() (any, error) {
 }
 
 type sealResult struct {
-	SnapshotID string `json:"snapshot_id"`
-	Files      int    `json:"files"`
-	Bytes      int64  `json:"plain_bytes"`
-	Note       string `json:"note"`
+	SnapshotID  string `json:"snapshot_id"`
+	Tier        string `json:"tier"`
+	Kind        string `json:"kind"`
+	Files       int    `json:"files"`
+	Bytes       int64  `json:"plain_bytes"`
+	PlanWarning string `json:"plan_warning,omitempty"`
+	Note        string `json:"note"`
 }
 
 func (t *Tools) seal(ctx context.Context, reason string) (any, error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		return nil, valise.New("reason_required", "封存需要写明原因", "在 reason 中写明你将要做的修改")
+		reason = "agent mcp backup"
 	}
 	if _, _, err := t.load(); err != nil {
 		return nil, err
@@ -427,13 +389,46 @@ func (t *Tools) seal(ctx context.Context, reason string) (any, error) {
 		t.audit("seal", "rate_limited", "", reason)
 		return nil, err
 	}
-	rep, err := seal.Seal(ctx, t.Env(ctx), t.paths(), vaultrpc.SealParams{InstanceID: t.Instance, Tier: vault.TierSoul, Reason: reason}, vaultrpc.InitiatorAgentMCP)
+	tier := vault.TierSoul
+	planWarning := "当前实例尚未确认保护计划，本次仅按保守 soul 档备份（不含凭据和工作区）；建议在 Valise 桌面端确认保护计划以覆盖核心配置与工作区。"
+	if plan, _ := (porterprotection.Store{Home: t.Home}).LoadPlan(t.Instance); plan != nil && plan.Scope.Tier != "" {
+		tier = plan.Scope.Tier
+		planWarning = ""
+	}
+	rep, err := seal.Seal(ctx, t.Env(ctx), t.paths(), vaultrpc.SealParams{InstanceID: t.Instance, Tier: tier, Reason: reason}, vaultrpc.InitiatorAgentMCP)
 	if err != nil {
 		return nil, err
 	}
 	st.LastSeal, st.LastSealID = now.UTC(), rep.SnapshotID
-	return sealResult{SnapshotID: rep.SnapshotID, Files: rep.Files, Bytes: rep.PlainBytes,
-		Note: "已建立 soul 档滚动备份（不含凭据，按日期周期保存）；需要时用户可以在 Valise 客户端用这个快照恢复或钉为手动存档点"}, kit.SaveState(t.Home, t.Instance, st)
+	if err := kit.SaveState(t.Home, t.Instance, st); err != nil {
+		return nil, err
+	}
+	return sealResult{
+		SnapshotID:  rep.SnapshotID,
+		Tier:        tier,
+		Kind:        vault.KindAuto,
+		Files:       rep.Files,
+		Bytes:       rep.PlainBytes,
+		PlanWarning: planWarning,
+		Note:        "已建立 " + tier + " 档滚动备份（kind: auto，按日期周期保存）；需要时可在 Valise 客户端恢复或钉为手动存档点",
+	}, nil
+}
+
+func (t *Tools) proposeDossier(items []kit.DossierProposalItem) (any, error) {
+	rec, p, err := t.load()
+	if err != nil {
+		return nil, err
+	}
+	if len(items) > 50 {
+		return nil, valise.New("too_many_items", "一次最多提议 50 项", "分批提议")
+	}
+	lines, err := kit.ProposeDossier(t.Home, rec, p, items, t.now())
+	if err != nil {
+		return nil, err
+	}
+	t.audit("propose_dossier", "ok", "", "n="+strconv.Itoa(len(items)))
+	return map[string]any{"results": lines,
+		"next": "请用户在 Valise 客户端「健康 › 归档建议」或运行 valise proposals <服务器> " + t.Instance + " 查看并确认"}, nil
 }
 
 func (t *Tools) propose(items []kit.ProposalItem) (any, error) {
@@ -448,6 +443,7 @@ func (t *Tools) propose(items []kit.ProposalItem) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	t.audit("propose_enrollment", "ok", "", "n="+strconv.Itoa(len(items)))
 	return map[string]any{"results": lines,
 		"next": "请用户在 Valise 客户端「健康 › 归档建议」或运行 valise proposals <服务器> " + t.Instance + " 查看并确认"}, nil
 }
@@ -524,29 +520,4 @@ func (t *Tools) handoffFinish(snapshotID string) (any, error) {
 	}
 	return map[string]any{"checks": checks, "snapshot_id": snapshotID, "next_for_user": hint,
 		"note": "旧会话保存在快照 " + snapshotID + " 中"}, nil
-}
-
-// autoSeal is the safety-net seal; failures are audited and never block the
-// tool the agent asked for.
-func (t *Tools) autoSeal(ctx context.Context, tool string) {
-	if _, _, err := t.load(); err != nil {
-		return
-	}
-	st, err := kit.LoadState(t.Home, t.Instance)
-	if err != nil {
-		return
-	}
-	now := t.now()
-	if !st.LastSeal.IsZero() && now.Sub(st.LastSeal) < kit.MinInterval {
-		return
-	}
-	reason := "auto: first tool call (" + tool + ")"
-	rep, err := seal.Seal(ctx, t.Env(ctx), t.paths(), vaultrpc.SealParams{InstanceID: t.Instance, Tier: vault.TierSoul, Reason: reason}, vaultrpc.InitiatorAgentMCP)
-	if err != nil {
-		t.audit("seal", "auto_failed", "", reason)
-		return
-	}
-	t.lastAutoSealID = rep.SnapshotID
-	st.LastSeal, st.LastSealID = now.UTC(), rep.SnapshotID
-	kit.SaveState(t.Home, t.Instance, st)
 }

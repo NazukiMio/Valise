@@ -79,10 +79,8 @@ func TestHealthUnsupportedAndUnknownApproval(t *testing.T) {
 		vault:     func() (*vaultrpc.StatusResult, error) { return &vaultrpc.StatusResult{}, nil },
 		instances: func() ([]enroll.InstanceSummary, error) { return []enroll.InstanceSummary{{InstanceID: "demo"}}, nil },
 		timer:     func() (*vaultrpc.TimerStatus, error) { return &vaultrpc.TimerStatus{}, nil },
-		kit: func() (*agentkit.KitStatusResult, error) {
-			return &agentkit.KitStatusResult{Declaration: &agentkit.Declaration{ApprovalMode: agentkit.ApprovalAsk}}, nil
-		},
-		approval: func() (*action.ApprovalResult, error) { return chk, nil },
+		kit:       func() (*agentkit.KitStatusResult, error) { return &agentkit.KitStatusResult{}, nil },
+		approval:  func() (*action.ApprovalResult, error) { return chk, nil },
 	}
 	r := s.collectHealth("box", "demo", src)
 	if r.Incomplete() != 0 || r.Checks[4].State != "unsupported" {

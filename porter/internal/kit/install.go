@@ -45,7 +45,9 @@ func Install(home string, p agentkit.KitInstallParams, now time.Time) (*agentkit
 	if self, err := os.Executable(); err == nil {
 		res.Porter = self
 	}
+	skipLegacy := map[string]bool{}
 	for _, f := range p.Files {
+		skipLegacy[f.Skill] = true
 		if !skillNameRe.MatchString(f.Skill) || f.Name != "SKILL.md" {
 			return nil, valise.New("kit_bad_file", "技能文件名无效："+f.Skill+"/"+f.Name, "使用客户端自带的技能")
 		}
@@ -78,6 +80,12 @@ func Install(home string, p agentkit.KitInstallParams, now time.Time) (*agentkit
 		}
 		res.Written = append(res.Written, path)
 	}
+	rem, kept, err := cleanLegacySkills(dir, skipLegacy, false, p.DryRun)
+	if err != nil {
+		return nil, err
+	}
+	res.LegacyRemoved = rem
+	res.LegacyKept = kept
 	return res, nil
 }
 
@@ -143,9 +151,6 @@ func Status(home string, p agentkit.KitStatusParams) (*agentkit.KitStatusResult,
 			}
 		}
 	}
-	if st, err := LoadState(home, p.InstanceID); err == nil {
-		res.Declaration = st.Declaration
-	}
 	return res, nil
 }
 
@@ -171,7 +176,9 @@ func Uninstall(home string, p agentkit.KitUninstallParams) (*agentkit.KitUninsta
 		res.Removed = append(res.Removed, path)
 		return nil
 	}
+	skipLegacy := map[string]bool{}
 	for _, f := range p.Files {
+		skipLegacy[f.Skill] = true
 		if !skillNameRe.MatchString(f.Skill) || f.Name != "SKILL.md" {
 			return nil, valise.New("kit_bad_file", "技能文件名无效："+f.Skill+"/"+f.Name, "使用客户端自带的技能")
 		}
@@ -193,5 +200,11 @@ func Uninstall(home string, p agentkit.KitUninstallParams) (*agentkit.KitUninsta
 			os.Remove(sdir)
 		}
 	}
+	rem, kept, err := cleanLegacySkills(dir, skipLegacy, p.Force, p.DryRun)
+	if err != nil {
+		return res, err
+	}
+	res.Removed = append(res.Removed, rem...)
+	res.Kept = append(res.Kept, kept...)
 	return res, nil
 }

@@ -191,9 +191,7 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 	}
 	k, err := src.kit()
 	r.read("kit", "Agent 保护技能", err)
-	var declaration *agentkit.Declaration
 	if err == nil {
-		declaration = k.Declaration
 		stale := 0
 		for _, sk := range k.Skills {
 			if sk.State != agentkit.SkillCurrent {
@@ -212,16 +210,16 @@ func (s *Service) collectHealth(host, instance string, src healthSources) *Healt
 		switch {
 		case !chk.Declared:
 			r.Checks[len(r.Checks)-1].State = "unsupported"
-			r.Checks[len(r.Checks)-1].Reason = "harness 资料未声明审批检查；仅展示 agent 声明（如有）"
+			r.Checks[len(r.Checks)-1].Reason = "harness 资料未声明审批检查"
 		case chk.Mode == profile.ApprovalUnknown:
 			r.Checks[len(r.Checks)-1].State = "failed"
 			r.Checks[len(r.Checks)-1].Reason = "未能判定审批设置，请检查 harness 资料与服务器上的程序版本后刷新"
-			chk = nil // never expose raw failed command details or turn a declaration green
+			chk = nil // never expose raw failed command details
 		}
 	} else {
 		chk = nil
 	}
-	it := approvalItem(chk, declaration)
+	it := approvalItem(chk)
 	if r.Checks[len(r.Checks)-1].State == "failed" && it.Level == HealthOK {
 		it.Level = HealthInfo
 	}
@@ -368,61 +366,27 @@ func serviceItem(svc []enroll.ServiceState, entries []enroll.EntryState) HealthI
 	return it
 }
 
-// approvalItem: the harness's own settings (the profile's approval_check)
-// come first; the agent's declaration fills in when there is no check, and
-// is shown against the settings when they disagree.
-func approvalItem(chk *action.ApprovalResult, d *agentkit.Declaration) HealthItem {
+// approvalItem renders the harness's deterministic approval_check setting.
+func approvalItem(chk *action.ApprovalResult) HealthItem {
 	it := HealthItem{ID: "approval", Group: HealthAgent, Title: "审批"}
 	bypassDetail := "agent 可以不经你同意删除文件、改配置或运行命令；被注入的指令也会直接执行。要改的话，可在 harness 的审批设置中改为执行前询问；本版本尚未提供审批设置的执行入口，修改后刷新复核；不改也可以按 i 忽略。"
-	declared := ""
-	if d != nil {
-		declared = d.ApprovalMode
+	if chk == nil || !chk.Declared || chk.Mode == profile.ApprovalUnknown {
+		it.Level, it.Text = HealthInfo, "未能从 harness 设置判定审批模式"
+		return it
 	}
-	if chk != nil && chk.Declared && chk.Mode != profile.ApprovalUnknown {
-		src := "harness 设置读出"
-		if chk.Pending {
-			src += "，读法尚未核实"
-		}
-		src += "：" + chk.Detail
-		switch chk.Mode {
-		case profile.ApprovalBypass:
-			it.Level, it.Text, it.Detail = HealthBad, "agent 执行风险命令无需批准（Bypass）（"+src+"）", bypassDetail
-			if chk.Default {
-				it.Detail = "这是 harness 的出厂设置，不是你改的。" + bypassDetail
-			}
-			if declared == agentkit.ApprovalAsk {
-				it.Text += "；agent 声称需要批准，与设置不符"
-			}
-		default:
-			it.Level, it.Text = HealthOK, "执行风险命令前需要你批准（"+src+"）"
-			if declared == agentkit.ApprovalBypass {
-				it.Level = HealthWarn
-				it.Text += "；agent 声称无需批准，与设置不符"
-				it.Detail = "可能还有设置没被读到（例如某个会话里临时放开）。让 agent 说明它在哪里看到自己无需批准。"
-			}
-		}
-		return withSkills(it, d)
+	src := "harness 设置读出"
+	if chk.Pending {
+		src += "，读法尚未核实"
 	}
-	switch {
-	case d == nil:
-		it.Level, it.Text = HealthInfo, "agent 还没有声明执行风险命令前是否需要你批准"
-	case d.ApprovalMode == agentkit.ApprovalBypass:
-		it.Level, it.Text, it.Detail = HealthBad, "agent 执行风险命令无需批准（Bypass）（agent 声明，未经核实）", bypassDetail
-	case d.ApprovalMode == agentkit.ApprovalAsk:
-		it.Level, it.Text = HealthOK, "执行风险命令前需要你批准（agent 声明，未经核实）"
+	src += "：" + chk.Detail
+	switch chk.Mode {
+	case profile.ApprovalBypass:
+		it.Level, it.Text, it.Detail = HealthBad, "agent 执行风险命令无需批准（Bypass）（"+src+"）", bypassDetail
+		if chk.Default {
+			it.Detail = "这是 harness 的出厂设置，不是你改的。" + bypassDetail
+		}
 	default:
-		it.Level, it.Text = HealthInfo, "agent 说不清执行风险命令前是否需要你批准"
-	}
-	return withSkills(it, d)
-}
-
-func withSkills(it HealthItem, d *agentkit.Declaration) HealthItem {
-	if d != nil && len(d.SecuritySkills) > 0 {
-		var names []string
-		for _, sk := range d.SecuritySkills {
-			names = append(names, sk.Name)
-		}
-		it.Text += "；声明的安全技能：" + strings.Join(names, "、")
+		it.Level, it.Text = HealthOK, "执行风险命令前需要你批准（"+src+"）"
 	}
 	return it
 }

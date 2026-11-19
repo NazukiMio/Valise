@@ -70,7 +70,11 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 	for _, n := range nested {
 		r.Warnings = append(r.Warnings, "状态目录里嵌着另一个 agent："+n+"；它不会装进这个 agent 的备份，要单独接入")
 	}
-	classify(r, p, params.Overrides, nested)
+	var localSQLite []profile.SQLiteRef
+	if previous != nil {
+		localSQLite = previous.LocalSQLite
+	}
+	classify(r, p, params.Overrides, localSQLite, nested)
 	r.Provenance = Provenance(ctx, e, p, r.Roots)
 	r.Service = services(ctx, e, p, &r.Warnings)
 	r.Entries = entries(p)
@@ -222,8 +226,8 @@ func Walk(roots []enroll.Root, skip []string, c *profile.Classifier, fn func(Ite
 }
 
 // classify tallies every file into the report.
-func classify(r *enroll.Report, p *profile.Profile, overrides []profile.Override, skip []string) {
-	c := profile.NewClassifier(p, overrides)
+func classify(r *enroll.Report, p *profile.Profile, overrides []profile.Override, localSQLite []profile.SQLiteRef, skip []string) {
+	c := profile.NewClassifier(p, overrides).WithSQLite(localSQLite)
 	groups := map[[2]string]*enroll.UnclassifiedGroup{}
 	sqlite := map[enroll.FileRef]*enroll.SQLiteFile{}
 	sidecars := map[enroll.FileRef][]string{}

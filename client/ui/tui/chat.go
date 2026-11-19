@@ -28,10 +28,9 @@ func agentTabs(rest ...tab) []tab {
 
 // skillPrompts are the words that start each Valise skill (agent-kit/skills).
 var skillPrompts = []struct{ skill, label, say string }{
-	{"valise-enroll", "让 agent 认识它的保护技能", "我给你装了 Valise 保护技能，你学习一下"},
-	{"valise-checkup", "检查会话与记忆", "请用 valise-checkup 技能检查会话与记忆，提出建议，等我确认后再修改"},
-	{"valise-handoff", "交接到一个新会话", "交接一下，我们换个新会话"},
-	{"valise-upkeep", "提醒它改动前先建立备份", "以后改记忆、设置或装插件之前，先用 Valise 给自己建一个备份"},
+	{"valise-onboard", "连接验收与报备目录布局", "用 valise-onboard 验收连接并报备你的目录布局。"},
+	{"valise-backup", "查询当前 Valise 备份状态", "用 valise-backup 看看你现在的 Valise 备份状态。"},
+	{"valise-backup", "高风险改动前先留个底", "动手改之前，先用 valise-backup 帮我留个底。"},
 }
 
 type chatEntry struct {

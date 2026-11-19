@@ -13,7 +13,7 @@ import (
 var findingInfo = map[string]struct{ title, why, generic string }{
 	agentkit.FindingLongSession: {"有一个会话太长了",
 		"会话越长，agent 每次回复要读的上下文越多：回复变慢、花费变高，也更容易忘记早期的约定。",
-		"开一个新会话；想保留上下文就先让 agent 做一次交接（Agent 保护技能 valise-handoff）"},
+		"开一个新会话；重要会话建议先做好笔记再切换"},
 	agentkit.FindingCostGrowth: {"花费连续几天在涨",
 		"最近几天每天用掉的 token 越来越多，通常是会话越积越长，或 agent 在反复读大文件。",
 		"看看最近的会话是否过长；需要时开新会话，并让 agent 交接"},
@@ -35,7 +35,7 @@ func findingTitle(id string) string {
 	return id
 }
 
-const agentAsk = "请用 valise-checkup 技能看一下健康页中的会话与记忆检查结果，提出整理方案，等我确认后再做。"
+const agentAsk = "请对照健康页中的检查结果提出整理建议，等我确认后再做；大改前先用 valise-backup 留个底。"
 
 // findingBars draws the measured value against its threshold.
 func findingBars(ck *agentkit.CheckupResult, id string, th *profile.Thresholds) string {

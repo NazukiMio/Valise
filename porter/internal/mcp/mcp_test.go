@@ -3,15 +3,18 @@ package mcp
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"filippo.io/age"
+	_ "modernc.org/sqlite"
 
 	"valise/core/agentkit"
 	"valise/core/enroll"
@@ -29,6 +32,19 @@ func write(t *testing.T, path, content string) {
 	t.Helper()
 	os.MkdirAll(filepath.Dir(path), 0o755)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSQLite(t *testing.T, path, table, val string) {
+	t.Helper()
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("CREATE TABLE "+table+" (v TEXT); INSERT INTO "+table+" VALUES (?)", val); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -65,27 +81,46 @@ func (c *client) tool(name string, args any) (map[string]any, string, bool) {
 	return sc, text, r["isError"] == true
 }
 
-func setup(t *testing.T) (*client, string, string, *time.Time) {
+func setup(t *testing.T) (*client, string, string, string, *time.Time) {
 	t.Helper()
 	home := t.TempDir()
 	state := filepath.Join(home, ".demo")
+	extDir := filepath.Join(home, "external-notes")
+	os.MkdirAll(extDir, 0o755)
+
 	write(t, filepath.Join(state, "SOUL.md"), "soul")
 	write(t, filepath.Join(state, ".env"), "API_KEY=secret")
 	write(t, filepath.Join(state, "MEMORY.md"), "# Memory\n\n- fact one\n")
 	write(t, filepath.Join(state, "notes/a.md"), "user notes")
 	write(t, filepath.Join(state, "runtime.lock"), "1")
-	p := profile.Profile{ID: "demo", ProfileVersion: 1, Status: "draft",
+	writeSQLite(t, filepath.Join(state, "db/core.sqlite"), "tokens", "core_token=secret")
+	writeSQLite(t, filepath.Join(state, "plugins/mem.db"), "notes", "do_not_leak")
+	os.Symlink(extDir, filepath.Join(state, "ext_link"))
+
+	p := profile.Profile{
+		ID: "demo", ProfileVersion: 1, Status: "draft",
 		Paths: []profile.PathRule{
 			{Root: "state", Glob: ".env", Category: "secrets"},
 			{Root: "state", Glob: "SOUL.md", Category: "identity"},
 			{Root: "state", Glob: "MEMORY.md", Category: "memory"},
+			{Root: "state", Glob: "db/*.sqlite", Category: "state"},
 		},
-		Checkup: &profile.Checkup{MemoryFiles: []profile.MemoryFile{{Root: "state", Glob: "MEMORY.md", WarnLines: 100}},
-			MemoryMechanismMarkers: []profile.PathRef{{Root: "state", Glob: "MEMORY.md"}}},
-		Handoff: &profile.Handoff{Targets: []profile.HandoffTarget{{Root: "state", Glob: "MEMORY.md", Mode: "append_section", MaxLines: 10}},
-			NewSessionHint: "send /new"},
+		Consistency: &profile.Consistency{
+			SQLite: []profile.SQLiteRef{{Root: "state", Glob: "db/*.sqlite", SecretTables: []string{"tokens"}}},
+		},
+		Checkup: &profile.Checkup{
+			MemoryFiles:            []profile.MemoryFile{{Root: "state", Glob: "MEMORY.md", WarnLines: 100}},
+			MemoryMechanismMarkers: []profile.PathRef{{Root: "state", Glob: "MEMORY.md"}},
+		},
+		Handoff: &profile.Handoff{
+			Targets:        []profile.HandoffTarget{{Root: "state", Glob: "MEMORY.md", Mode: "append_section", MaxLines: 10}},
+			NewSessionHint: "send /new",
+		},
 	}
-	rec := enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": state}, LocalOverrides: []profile.Override{}}
+	rec := enroll.Record{
+		InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1,
+		Roots: map[string]string{"state": state}, LocalOverrides: []profile.Override{},
+	}
 	if _, err := porterenroll.WriteRecord(home, rec, p); err != nil {
 		t.Fatal(err)
 	}
@@ -95,207 +130,203 @@ func setup(t *testing.T) (*client, string, string, *time.Time) {
 	}
 	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
 	env := &porterenroll.Env{Home: home, Vars: []string{"PATH=/usr/bin:/bin"}}
-	tools := &Tools{Home: home, Instance: "demo", Version: "test", Env: func(context.Context) *porterenroll.Env { return env },
-		Now: func() time.Time { return now }}
+	tools := &Tools{
+		Home: home, Instance: "demo", Version: "test",
+		Env: func(context.Context) *porterenroll.Env { return env },
+		Now: func() time.Time { return now },
+	}
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	go func() { Serve(context.Background(), inR, outW, tools); outW.Close() }()
 	t.Cleanup(func() { inW.Close() })
-	return &client{t: t, in: inW, out: bufio.NewScanner(outR)}, home, state, &now
+	return &client{t: t, in: inW, out: bufio.NewScanner(outR)}, home, state, extDir, &now
 }
 
 func TestProtocolAndTools(t *testing.T) {
-	c, home, state, now := setup(t)
+	c, home, state, extDir, now := setup(t)
 	init := c.call("initialize", map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "t"}})
 	if init["protocolVersion"] != "2025-03-26" {
 		t.Fatalf("%v", init)
 	}
 	c.in.Write([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n"))
+
 	tools := c.call("tools/list", nil)["tools"].([]any)
-	if len(tools) != 7 {
-		t.Fatalf("%d tools", len(tools))
-	}
+	var toolNames []string
 	for _, tl := range tools {
 		name := tl.(map[string]any)["name"].(string)
+		toolNames = append(toolNames, name)
 		for _, banned := range []string{"revive", "delete", "secret", "write", "read_file"} {
 			if strings.Contains(name, banned) {
-				t.Fatalf("tool %s exceeds the MCP capability boundary", name)
+				t.Fatalf("tool %s exceeds MCP boundary", name)
 			}
 		}
 	}
+	slices.Sort(toolNames)
+	wantTools := []string{"valise_onboard_context", "valise_propose_dossier", "valise_seal", "valise_status"}
+	if !slices.Equal(toolNames, wantTools) {
+		t.Fatalf("tools/list = %v, want %v", toolNames, wantTools)
+	}
 
-	// The first tool call of a connection seals first (safety net) as KindAuto
-	// in a rolling date-period leaf and exposes its id on valise_status.
+	// Read-only calls never trigger autoSeal, stay compact, and log lightweight MCP audit timestamps.
 	sc, text, isErr := c.tool("valise_status", map[string]any{})
 	if isErr {
 		t.Fatalf("%s", text)
 	}
-	autoID, _ := sc["auto_sealed_snapshot"].(string)
-	if !strings.HasPrefix(autoID, "s_") {
-		t.Fatalf("missing auto_sealed_snapshot on first valise_status: %+v", sc)
+	if _, hasScan := sc["unclassified"]; hasScan {
+		t.Fatalf("valise_status must stay slim without Scan fields: %s", text)
 	}
 	vs, _ := seal.Status(seal.Paths{Home: home})
-	if len(vs.Snapshots) != 1 || vs.Snapshots[0].Kind != vault.KindAuto {
-		t.Fatalf("expected 1 auto snapshot in rolling period leaf, got %+v", vs.Snapshots)
+	if len(vs.Snapshots) != 0 {
+		t.Fatalf("autoSeal must be removed; read-only status created snapshots: %+v", vs.Snapshots)
 	}
-	for _, lf := range vs.Leaves {
-		if vault.IsSavepointLeaf(lf.Leaf) {
-			t.Fatalf("autoSeal wrote to savepoints leaf: %+v", lf)
-		}
+	if !strings.Contains(sc["protection_summary"].(string), "没有配置") {
+		t.Fatalf("protection_summary = %s", text)
 	}
-	if audit, _ := os.ReadFile(seal.Paths{Home: home}.Audit()); !strings.Contains(string(audit), "auto: first tool call (valise_status)") {
-		t.Fatalf("no safety-net seal: %s", audit)
+	ks, err := kit.Status(home, agentkit.KitStatusParams{InstanceID: "demo"})
+	if err != nil || ks.MCPCalls != 1 || ks.LastMCP == nil {
+		t.Fatalf("read call not audited for LastMCP: %+v %v", ks, err)
 	}
-	if _, sealErrText, sealIsErr := c.tool("valise_seal", map[string]any{"reason": "edit immediately"}); !sealIsErr || !strings.Contains(sealErrText, autoID) {
-		t.Fatalf("immediate seal after autoSeal should rate limit citing %q, got isErr=%v text=%q", autoID, sealIsErr, sealErrText)
-	}
-	// valise_declare: recorded as said, validated, rate limited.
-	if _, text, isErr := c.tool("valise_declare", map[string]any{"security_skills": []any{}, "approval_mode": "maybe"}); !isErr || !strings.Contains(text, "approval_mode") {
-		t.Fatalf("bad mode accepted: %s", text)
-	}
-	if _, text, isErr := c.tool("valise_declare", map[string]any{"security_skills": []any{map[string]any{"name": "guard\nrail", "purpose": "blocks rm -rf"}}, "approval_mode": "bypass"}); isErr {
-		t.Fatalf("%s", text)
-	}
-	if _, text, isErr := c.tool("valise_declare", map[string]any{"security_skills": []any{}, "approval_mode": "ask"}); !isErr || !strings.Contains(text, "10 分钟") {
-		t.Fatalf("declare not rate limited: %s", text)
-	}
-	st, _ := kit.LoadState(home, "demo")
-	if st.Declaration == nil || st.Declaration.ApprovalMode != "bypass" || st.Declaration.SecuritySkills[0].Name != "guard rail" {
-		t.Fatalf("%+v", st.Declaration)
-	}
-	*now = now.Add(11 * time.Minute)
 
-	// Seal, then the rate limit.
-	if _, text, isErr := c.tool("valise_seal", map[string]any{"reason": ""}); !isErr || !strings.Contains(text, "原因") {
-		t.Fatalf("empty reason accepted: %s", text)
+	// valise_onboard_context returns all 5 blocks including untracked_sqlite & external_symlinks, without reading table data.
+	sc, text, isErr = c.tool("valise_onboard_context", map[string]any{})
+	if isErr {
+		t.Fatalf("onboard context failed: %s", text)
 	}
-	sc, text, isErr = c.tool("valise_seal", map[string]any{"reason": "about to edit SOUL.md"})
-	if isErr || !strings.HasPrefix(sc["snapshot_id"].(string), "s_") {
-		t.Fatalf("%s", text)
+	if strings.Contains(text, "API_KEY=secret") || strings.Contains(text, "do_not_leak") || strings.Contains(text, "user notes") {
+		t.Fatalf("file/sqlite content leaked into onboard context: %s", text)
 	}
-	if _, text, isErr := c.tool("valise_seal", map[string]any{"reason": "again"}); !isErr || !strings.Contains(text, "10 分钟") {
-		t.Fatalf("rate limit missing: %s", text)
+	facts := sc["layout_facts"].(map[string]any)
+	sqliteList := facts["untracked_sqlite"].([]any)
+	if len(sqliteList) != 1 || sqliteList[0].(map[string]any)["path"] != "plugins/mem.db" {
+		t.Fatalf("unexpected untracked_sqlite: %+v", sqliteList)
+	}
+	extList := facts["external_symlinks"].([]any)
+	if len(extList) != 1 || extList[0].(map[string]any)["link_path"] != "state:ext_link" {
+		t.Fatalf("unexpected external_symlinks: %+v", extList)
+	}
+	vs, _ = seal.Status(seal.Paths{Home: home})
+	if len(vs.Snapshots) != 0 {
+		t.Fatalf("valise_onboard_context triggered seal: %+v", vs.Snapshots)
+	}
+
+	// valise_seal allows empty reason, writes KindAuto rolling leaf conservatively (soul + plan_warning) when no plan exists.
+	sc, text, isErr = c.tool("valise_seal", map[string]any{})
+	if isErr || sc["tier"] != vault.TierSoul || sc["kind"] != vault.KindAuto {
+		t.Fatalf("unplanned seal failed: isErr=%v text=%s", isErr, text)
+	}
+	if _, ok := sc["plan_warning"].(string); !ok {
+		t.Fatalf("missing plan_warning on legacy soul seal: %s", text)
+	}
+	sid := sc["snapshot_id"].(string)
+	// Rate limit returns last_seal_id & timestamp.
+	if _, errText, errFlag := c.tool("valise_seal", map[string]any{"reason": "again"}); !errFlag || !strings.Contains(errText, sid) || !strings.Contains(errText, "2026-10-31T12:00:00Z") {
+		t.Fatalf("rate limit should cite snapshot id and timestamp: isErr=%v text=%q", errFlag, errText)
 	}
 	if audit, _ := os.ReadFile(seal.Paths{Home: home}.Audit()); !strings.Contains(string(audit), `"result":"rate_limited"`) {
 		t.Fatalf("rate-limited attempt not audited: %s", audit)
 	}
+
+	// With an adopted full Protection Plan, valise_seal uses full tier and omits plan_warning.
 	*now = now.Add(11 * time.Minute)
-	if _, text, isErr := c.tool("valise_seal", map[string]any{"reason": "later"}); isErr {
-		t.Fatalf("%s", text)
+	writePlanFile(t, home, "demo", vault.TierFull)
+	sc, text, isErr = c.tool("valise_seal", map[string]any{"reason": "before editing config"})
+	if isErr || sc["tier"] != vault.TierFull || sc["plan_warning"] != nil {
+		t.Fatalf("planned full seal unexpected: isErr=%v text=%s", isErr, text)
 	}
-	audit, _ := os.ReadFile(seal.Paths{Home: home}.Audit())
-	if !strings.Contains(string(audit), `"initiator":"agent-mcp"`) || !strings.Contains(string(audit), "about to edit SOUL.md") {
-		t.Fatalf("audit: %s", audit)
+	vs, _ = seal.Status(seal.Paths{Home: home})
+	if len(vs.Snapshots) != 2 || vs.Snapshots[0].Kind != vault.KindAuto || vs.Snapshots[1].Kind != vault.KindAuto {
+		t.Fatalf("expected 2 KindAuto rolling snapshots: %+v", vs.Snapshots)
 	}
-
-	// Status: last seal, unclassified hints, no contents.
-	sc, text, _ = c.tool("valise_status", map[string]any{})
-	if sc["last_seal"] == nil || len(sc["unclassified"].([]any)) == 0 || strings.Contains(text, "API_KEY=secret") || strings.Contains(text, "user notes") {
-		t.Fatalf("%s", text)
-	}
-	if sc["configured_targets"] == nil || !strings.Contains(sc["protection_summary"].(string), "没有配置") {
-		t.Fatalf("protection: %s", text)
+	for _, lf := range vs.Leaves {
+		if vault.IsSavepointLeaf(lf.Leaf) {
+			t.Fatalf("MCP seal must not write savepoints leaf: %+v", lf)
+		}
 	}
 
-	// Checkup runs, then is rate limited.
-	sc, text, isErr = c.tool("valise_checkup", map[string]any{})
-	if isErr || sc["memory_mechanism"] != true {
-		t.Fatalf("%s", text)
-	}
-	if _, _, isErr := c.tool("valise_checkup", map[string]any{}); !isErr {
-		t.Fatal("checkup not rate limited")
-	}
-
-	// Proposals: validated by code; a demotion is flagged; secrets are protected.
-	sc, text, _ = c.tool("valise_propose_enrollment", map[string]any{"items": []map[string]any{
-		{"root": "state", "path": "notes", "category": "memory", "reason": "the user's notes"},
-		{"root": "state", "path": "runtime.lock", "category": "ignore", "reason": "lock file"},
-		{"root": "state", "path": ".env", "category": "memory", "reason": "x"},
-		{"root": "state", "path": "../outside", "category": "memory", "reason": "x"},
-		{"root": "state", "path": "missing.md", "category": "memory", "reason": "x"},
+	// valise_propose_dossier: classify, sqlite, and external_ref validation + Decide persistence.
+	sc, text, isErr = c.tool("valise_propose_dossier", map[string]any{"items": []map[string]any{
+		{"kind": "classify", "root": "state", "path": "notes", "category": "memory", "reason": "user custom notes"},
+		{"kind": "classify", "root": "state", "path": "runtime.lock", "category": "ignore", "reason": ""},
+		{"kind": "classify", "root": "state", "path": "runtime.lock", "category": "ignore", "reason": "ephemeral runtime lock"},
+		{"kind": "classify", "root": "state", "path": ".env", "category": "memory", "reason": "bad"},
+		{"kind": "sqlite", "root": "state", "glob": "plugins/mem.db", "reason": "plugin memory db"},
+		{"kind": "sqlite", "root": "state", "glob": "db/core.sqlite", "secret_tables": []string{}, "reason": "strip tables attempt"},
+		{"kind": "external_ref", "path": state, "ref_kind": "external_dir", "reason": "inside root"},
+		{"kind": "external_ref", "path": extDir, "ref_kind": "symlink_target", "reason": "external notes directory"},
 	}})
+	if isErr {
+		t.Fatalf("propose_dossier failed: %s", text)
+	}
 	results := sc["results"].([]any)
-	if len(results) != 5 || !strings.Contains(results[0].(string), "notes/**") || !strings.Contains(results[1].(string), "降级") ||
-		!strings.Contains(results[2].(string), "拒绝") || !strings.Contains(results[3].(string), "拒绝") || !strings.Contains(results[4].(string), "拒绝") {
-		t.Fatalf("%s", text)
+	if len(results) != 8 ||
+		!strings.Contains(results[0].(string), "notes/**") ||
+		!strings.Contains(results[1].(string), "拒绝") ||
+		!strings.Contains(results[2].(string), "降级") ||
+		!strings.Contains(results[3].(string), "拒绝") ||
+		!strings.Contains(results[4].(string), "sqlite:state:plugins/mem.db") ||
+		!strings.Contains(results[5].(string), "secret_tables") ||
+		!strings.Contains(results[6].(string), "拒绝") ||
+		!strings.Contains(results[7].(string), "symlink_target") {
+		t.Fatalf("propose_dossier results = %v", results)
 	}
 	ps, _ := kit.LoadProposals(home, "demo")
-	if len(ps) != 2 {
-		t.Fatalf("%+v", ps)
+	if len(ps) != 4 {
+		t.Fatalf("expected 4 pending proposals, got %+v", ps)
 	}
-	for _, p := range ps {
-		if p.Rule.Glob == "notes/**" && p.Unclassified != 1 {
-			t.Fatalf("unclassified files moving into soul not counted: %+v", p)
-		}
-	}
-	// "all" never accepts a demotion.
 	res, err := kit.Decide(home, agentkit.DecideParams{InstanceID: "demo", Accept: []string{"all"}})
-	if err != nil || len(res.Accepted) != 1 || res.Remaining != 1 {
-		t.Fatalf("%+v %v", res, err)
+	if err != nil || len(res.Accepted) != 3 || res.Remaining != 1 {
+		t.Fatalf("Decide Accept=all = %+v %v", res, err)
 	}
-	demo := ps[1].ID
-	if ps[0].Demotion {
-		demo = ps[0].ID
-	}
-	if res, err = kit.Decide(home, agentkit.DecideParams{InstanceID: "demo", AcceptDemotions: []string{demo}}); err != nil || len(res.Accepted) != 1 {
-		t.Fatalf("%+v %v", res, err)
+	if res, err = kit.Decide(home, agentkit.DecideParams{InstanceID: "demo", AcceptDemotions: []string{ps[1].ID}}); err != nil || len(res.Accepted) != 1 || res.Remaining != 0 {
+		t.Fatalf("Decide demotion = %+v %v", res, err)
 	}
 	rec, _ := porterenroll.ReadRecord(home, "demo")
-	if len(rec.LocalOverrides) != 2 {
-		t.Fatalf("%+v", rec.LocalOverrides)
+	if len(rec.LocalOverrides) != 2 || len(rec.LocalSQLite) != 1 || len(rec.ExternalRefs) != 1 {
+		t.Fatalf("dossier updates missing: ov=%+v sql=%+v ext=%+v", rec.LocalOverrides, rec.LocalSQLite, rec.ExternalRefs)
 	}
 
-	// Handoff: an edit above the new section is refused; a dated appended
-	// section within the limit passes.
+	// After accepting plugins/mem.db, onboard context excludes it from untracked_sqlite and includes it in effective_rules.
+	sc, text, isErr = c.tool("valise_onboard_context", map[string]any{})
+	if isErr {
+		t.Fatalf("%s", text)
+	}
+	if got := sc["layout_facts"].(map[string]any)["untracked_sqlite"].([]any); len(got) != 0 {
+		t.Fatalf("accepted local_sqlite still shown in untracked_sqlite: %+v", got)
+	}
+
+	// Hidden legacy tools stay compatible in Call() even though removed from tools/list.
 	*now = now.Add(11 * time.Minute)
-	sc, text, isErr = c.tool("valise_handoff_begin", map[string]any{})
-	if isErr || sc["new_session_hint"] != "send /new" {
-		t.Fatalf("%s", text)
+	if _, text, isErr := c.tool("valise_declare", map[string]any{"security_skills": []any{}, "approval_mode": "ask"}); isErr {
+		t.Fatalf("hidden valise_declare failed: %s", text)
 	}
-	sid := sc["snapshot_id"].(string)
-	mem := filepath.Join(state, "MEMORY.md")
-	write(t, mem, "# Memory (edited)\n\n- fact one\n## Handoff 2026-10-31\n- next: x\n")
-	if _, text, isErr := c.tool("valise_handoff_finish", map[string]any{"snapshot_id": sid}); !isErr || !strings.Contains(text, "原有内容被修改") {
-		t.Fatalf("%s", text)
+	if sc, text, isErr := c.tool("valise_propose_enrollment", map[string]any{"items": []map[string]any{
+		{"root": "state", "path": "notes/a.md", "category": "memory", "reason": "legacy compat"},
+	}}); isErr || !strings.Contains(sc["results"].([]any)[0].(string), "notes/a.md") {
+		t.Fatalf("hidden valise_propose_enrollment compat failed: %v %s", isErr, text)
 	}
-	write(t, mem, "# Memory\n\n- fact one\n"+strings.Repeat("- x\n", 12))
-	if _, text, isErr := c.tool("valise_handoff_finish", map[string]any{"snapshot_id": sid}); !isErr || !strings.Contains(text, "标题") && !strings.Contains(text, "超过") {
-		t.Fatalf("%s", text)
+	if sc, text, isErr := c.tool("valise_checkup", map[string]any{}); isErr || sc["memory_mechanism"] != true {
+		t.Fatalf("hidden valise_checkup failed: %v %s", isErr, text)
 	}
-	write(t, mem, "# Memory\n\n- fact one\n\n## Handoff 2026-10-31\n- in progress: tidy notes\n- next: review\n")
-	sc, text, isErr = c.tool("valise_handoff_finish", map[string]any{"snapshot_id": sid})
-	if isErr || sc["next_for_user"] != "send /new" {
-		t.Fatalf("%s", text)
-	}
-	if _, _, isErr := c.tool("valise_handoff_finish", map[string]any{"snapshot_id": sid}); !isErr {
-		t.Fatal("finished twice")
-	}
-}
-
-// The case the review found (F10): a target is configured and older pods
-// reached it, only the newest is still on the server.
-func TestProtectionSummary(t *testing.T) {
-	now := time.Date(2026, 11, 3, 13, 0, 0, 0, time.UTC)
-	r := &statusResult{Targets: []string{"nas"}, LastSeal: &vault.Meta{SnapshotID: "s_new"}, SyncedTo: []string{},
-		LastOffsite: &offsitePod{SnapshotID: "s_old", CreatedAt: now, Targets: []string{"nas"}}, WaitingSync: 1}
-	got := protection(r)
-	for _, want := range []string{"已配置 1 个同步位置（nas）", "还只在服务器上", "1 个在等同步", "别处最新的一份", "本机文件夹"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("%q lacks %q", got, want)
+	if sc, text, isErr := c.tool("valise_handoff_begin", map[string]any{}); isErr || sc["new_session_hint"] != "send /new" {
+		t.Fatalf("hidden handoff_begin failed: %v %s", isErr, text)
+	} else {
+		hsid := sc["snapshot_id"].(string)
+		write(t, filepath.Join(state, "MEMORY.md"), "# Memory\n\n- fact one\n\n## Handoff 2026-10-31\n- next\n")
+		if sc, text, isErr := c.tool("valise_handoff_finish", map[string]any{"snapshot_id": hsid}); isErr || sc["next_for_user"] != "send /new" {
+			t.Fatalf("hidden handoff_finish failed: %v %s", isErr, text)
 		}
 	}
 }
 
-func TestStatusIncludesProtectionPlan(t *testing.T) {
-	c, home, _, _ := setup(t)
-	enabled := true
-	copyOn := true
+func writePlanFile(t *testing.T, home, instance, tier string) {
+	t.Helper()
+	enabled, copyOn := true, true
 	plan := cp.ServerPlan{
 		SchemaVersion: cp.Schema,
-		AgentRef:      identity.AgentRef{ServerUID: "srv-1", InstallID: "demo", InstanceID: "demo", Generation: "1"},
+		AgentRef:      identity.AgentRef{ServerUID: "srv-1", InstallID: instance, InstanceID: instance, Generation: "1"},
 		Revision:      1,
 		Desired: cp.Desired{
-			Scope:    cp.Scope{Kind: "preset", Tier: vault.TierFull},
+			Scope:    cp.Scope{Kind: "preset", Tier: tier},
 			Schedule: cp.Schedule{Enabled: &enabled, DailyAt: "03:30", Timezone: "Asia/Shanghai"},
 			Period:   cp.Period{Unit: "month", Timezone: "Asia/Shanghai", KeepAutoPeriods: 3},
 			ServerCopies: []cp.ServerCopy{{
@@ -310,10 +341,29 @@ func TestStatusIncludesProtectionPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, filepath.Join(home, ".config", "valise", "protection", "demo.json"), string(b))
-	if lp, lerr := (porterprotection.Store{Home: home}).LoadPlan("demo"); lerr != nil || lp == nil {
-		t.Fatalf("LoadPlan failed: lp=%+v err=%v json=%s", lp, lerr, b)
+	write(t, filepath.Join(home, ".config", "valise", "protection", instance+".json"), string(b))
+	if lp, lerr := (porterprotection.Store{Home: home}).LoadPlan(instance); lerr != nil || lp == nil {
+		t.Fatalf("LoadPlan failed: lp=%+v err=%v", lp, lerr)
 	}
+}
+
+// The case the review found (F10): a target is configured and older pods
+// reached it, only the newest is still on the server.
+func TestProtectionSummary(t *testing.T) {
+	now := time.Date(2026, 11, 3, 13, 0, 0, 0, time.UTC)
+	r := &protectionRaw{Targets: []string{"nas"}, LastSeal: &vault.Meta{SnapshotID: "s_new"}, SyncedTo: []string{},
+		LastOffsite: &offsitePod{SnapshotID: "s_old", CreatedAt: now, Targets: []string{"nas"}}, WaitingSync: 1}
+	got := protection(r)
+	for _, want := range []string{"已配置 1 个同步位置（nas）", "还只在服务器上", "1 个在等同步", "别处最新的一份", "本机文件夹"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("%q lacks %q", got, want)
+		}
+	}
+}
+
+func TestStatusIncludesProtectionPlan(t *testing.T) {
+	c, home, _, _, _ := setup(t)
+	writePlanFile(t, home, "demo", vault.TierFull)
 
 	sc, text, isErr := c.tool("valise_status", map[string]any{})
 	if isErr {
@@ -323,7 +373,7 @@ func TestStatusIncludesProtectionPlan(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing protection_plan in status: %+v", sc)
 	}
-	if pp["enabled"] != true || pp["tier"] != vault.TierFull || pp["period_unit"] != "month" ||
+	if pp["adopted"] != true || pp["enabled"] != true || pp["tier"] != vault.TierFull || pp["period_unit"] != "month" ||
 		pp["keep_auto_periods"] != float64(3) || !strings.Contains(pp["schedule"].(string), "03:30") {
 		t.Fatalf("unexpected protection_plan: %+v", pp)
 	}

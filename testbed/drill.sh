@@ -490,7 +490,7 @@ import json, sys
 out, secret = open(sys.argv[1]).read(), sys.argv[2]
 resp = {r["id"]: r for r in (json.loads(l) for l in out.splitlines() if l.strip())}
 tools = sorted(t["name"] for t in resp[2]["result"]["tools"])
-assert tools == ["valise_checkup", "valise_handoff_begin", "valise_handoff_finish", "valise_propose_enrollment", "valise_seal", "valise_status"], tools
+assert tools == ["valise_onboard_context", "valise_propose_dossier", "valise_seal", "valise_status"], tools
 assert secret not in out, "secret value appeared in MCP output"
 results = resp[4]["result"]["structuredContent"]["results"]
 assert all("拒绝" in r for r in results), results

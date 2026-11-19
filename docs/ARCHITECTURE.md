@@ -199,16 +199,16 @@ Valise 口令加密这台电脑的加密钥匙（`keystore.age`）。忘了口�
 3. **来源记录**：按 `provenance` 规则读出身体的安装来源与版本，包括 npm 包名、精确版本、registry 和 integrity，git 的 remote、commit 和是否 dirty，uv/pipx 工具的包名与版本，以及二进制的哈希。如果 git 工作树是 dirty 状态，把差异记录为 `body_patch`，随灵魂一起封存。
 4. **服务与入口**：确认 service 候选单元是否存在，入口端口是否在监听。
 5. **登记报告**：客户端展示各类别的文件数量与大小、未分类文件、凭据文件清单（只列路径）、身体与来源、服务、入口、哪些 profile 条目未核实。用户确认安装事实后写入记录。未知项已在默认备份范围时汇总说明并按敏感内容保存，不要求逐文件分类；不可读内容、目录外引用和实际遗漏单列为覆盖缺口，不把接入成功当作已备份。
-6. **agent 补充**（可选）：agent 通过 MCP 提议额外的路径和类别，这些提议以"待确认"状态保存。用户在客户端确认后，才合入实例记录的 `local_overrides`。
+6. **agent 补充**（可选）：agent 通过 MCP `valise_propose_dossier` 提议额外的分类规则（`classify`）、未纳管 SQLite（`sqlite`）及 `roots` 外已知参考目录（`external_ref`），以"待确认"状态保存。用户在客户端确认后，才分别合入实例档案的 `local_overrides`、`local_sqlite` 与 `external_refs`（`external_refs` 在 v0.1 仅作覆盖缺口提示，不自动扩封）。
 
-实例记录包含：`instance_id`、`profile_id`、`profile_version`、`roots`（解析后的绝对路径）、`provenance`、`service`、`entries`、`local_overrides`、`enrolled_at`，以及被取代时的 `superseded`（见 8.2.1）。harness 升级后再次登记时，展示与上次的差异。实例记录现在是实例档案里一个 agent 的视图（4.1 节）。
+实例记录包含：`instance_id`、`profile_id`、`profile_version`、`roots`（解析后的绝对路径）、`provenance`、`service`、`entries`、`local_overrides`、`local_sqlite`、`external_refs`、`enrolled_at`，以及被取代时的 `superseded`（见 8.2.1）。harness 升级或重接入时保留既有人类确认的个性化字段；实例记录现在是实例档案里一个 agent 的视图（4.1 节）。
 
-### 4.1 实例档案（dossier，2026-11-02 用户决定）
+### 4.1 实例档案（dossier，2026-11-02 用户决定；2026-11-19 向后兼容扩展）
 
-两套资料协作：**通用 profile** 写规则（按官方文档编写、在靶机上核实、随签名资料包分发）；**实例档案**写这台机器上一个 harness 安装的事实（porter 按 profile 的规则检测生成，用户确认后保存，不随任何包分发）。冲突时规则听 profile，事实听档案。
+两套资料协作：**通用 profile** 写规则（按官方文档编写、在靶机上核实、随签名资料包分发）；**实例档案**写这台机器上一个 harness 安装的事实（porter 按 profile 的规则检测生成，用户确认后保存，不随任何包分发）。冲突时规则听 profile（含 `secrets` 与 `secret_tables` 硬底线），事实听档案。
 
 - **文件**：服务器上 `~/.config/valise/dossiers/<install_id>.json`（schema `valise-dossier/1`，0600），旁边 `<install_id>.profile.json` 是登记时通用 profile 的原样副本（不按 agent 改动）。`install_id` 目前等于 profile id（一台服务器上一个 harness 一个安装）。不含任何凭据。
-- **内容**：`profile`（id 与版本）、`updated_at`；安装级事实：`provenance`（程序与来源）、`service`、`entries`（以默认 agent 的检测为准）；`agents[]`：每个 agent 的 `instance_id`、`name`、`env`（多实例，PROFILES.md 1.3）、`roots`、`local_overrides`、`entry_ports`、`enrolled_at`、`superseded`，以及之后加入的 `evidence`（在这里成功过的操作，PROFILES.md 1 的核实证据）与读到的审批状态。
+- **内容**：`profile`（id 与版本）、`updated_at`；安装级事实：`provenance`（程序与来源）、`service`、`entries`（以默认 agent 的检测为准）；`agents[]`：每个 agent 的 `instance_id`、`name`、`env`（多实例，PROFILES.md 1.3）、`roots`、`local_overrides`、`local_sqlite`（用户确认纳入 `VACUUM INTO` 的实例专属库规则，不能削弱 Profile `secret_tables`）、`external_refs`（用户确认已知的 `roots` 外目录/软链缺口，不自动纳入备份）、`entry_ports`、`enrolled_at`、`superseded`，以及之后加入的 `evidence`（在这里成功过的操作，PROFILES.md 1 的核实证据）与读到的审批状态。
 - **按 agent 的有效 profile**：由通用 profile 与档案现算（`profile.ForAgent`）：命名 agent 不带 `entries`、`body`、`provenance`，服务只在 `named[].service: shared` 时保留。封存、管理动作、审批检查、登录、恢复都用它。
 - **旧记录只读兼容（2026-11-14）**：列表、记录和 profile 查询只读；已有档案优先，没有已提交档案的旧 Agent 仍从 `instances/<id>.json` 及旧 profile 投影，保持未绑定身份，不建立或改写档案。明确的接入/记录写入、改端口等既有写操作才在原互斥内转换其所属安装的旧记录。旧文件改名保留，已有归档不覆盖；显式移除记录时也封存其重复旧记录，避免查询令已移除的 Agent 重新出现。
 - **重新检测**：结果与保存的档案不同时，客户端列出差异（版本、新出现的 agent、审批状态等），用户确认后才保存（UI.md 9.x）。
@@ -222,7 +222,7 @@ Valise 口令加密这台电脑的加密钥匙（`keystore.age`）。忘了口�
 - **instance_id**：默认等于 profile id，可用 `--id` 指定，命名规则与 profile id 相同。
 - **嵌套 root**：一个文件只属于包含它的最深的 root。例如工作区位于状态目录内部时，工作区中的文件只按 `workspace` root 的规则分类。
 - **分类优先级**：凭据规则（profile 与 `local_overrides` 中的 `secrets`）> `local_overrides` > `body.paths` > `paths` 中第一条命中的规则。
-- **SQLite 附属文件**：`consistency.sqlite` 声明的数据库，其 `-wal`、`-shm`、`-journal` 附属文件归入该数据库，不单独分类、不单独计数（封存时由 `VACUUM INTO` 覆盖）。
+- **SQLite 附属文件**：`consistency.sqlite` 与档案 `local_sqlite` 声明的数据库，其 `-wal`、`-shm`、`-journal` 附属文件归入该数据库，不单独分类、不单独计数（封存时由 `VACUUM INTO` 覆盖）。若同一数据库同时命中 profile 与 `local_sqlite`，`secret_tables` 取并集（档案永不能削弱 profile 声明的 `secret_tables`）。
 - **符号链接**：root 内部的符号链接只记录，不跟随。root 自身的路径是（或经过）符号链接时（例如把状态目录软链到另一块磁盘），按解析后的真实目录扫描，报告中同时展示两者。**M4 待定**：这种情况下复活的目录交换应该作用于链接还是目标。
 - **确认**：`valise enroll` 默认只展示报告；加 `--accept` 才写入实例记录。未分类文件可用 `--assign <root>:<glob>=<类别>` 归类，写进 `local_overrides`；其余保持未分类并计数。
 - **npm 来源**：全局安装没有锁文件。包名与版本取自已安装包的 `package.json`；registry 取自 `npm config get registry`；integrity 用 `npm view <包>@<版本> dist.integrity` 向该 registry 查询。查不到时如实记录缺失，并给出警告。
@@ -480,7 +480,7 @@ profile 负责通用规则，档案记录这台服务器实际探测并经用户
 - **其他进程**：服务单元之外仍在使用状态目录的进程（工作目录或打开的文件位于 root 内，Linux 上通过 `/proc` 判断），会在交换期间按路径重新创建活动目录。计划阶段发现就列为阻断项；服务停止后、移走活动目录之前再检查一次，仍有就停止并退回。Valise 不会替用户结束这些进程。（M4 在靶机上发现：Hermes 的 dashboard 进程独立于网关服务运行。）
 - **路径被重新创建**：交换或退回时，如果目标路径已被其他进程重新创建，先把它改名挪到 `.valise-intruder-<op>-<root>` 保留（不删除），再完成改名，并在改名后核实；结果中提示用户检查。`valise prev drop` 一并清理。
 - **健康检查**：按 profile 的 `health.checks` 执行（`systemd_active`、`tcp`、`http`、`argv`）。没有服务单元的实例（前台运行）不由 Valise 启动：计划中说明，交换完成后结果为"已恢复、未启动"，不做健康检查。
-- **新实例的记录**：迁移与克隆成功后，在目标服务器写入实例记录和 profile 副本。`roots` 取目标路径；`provenance`、`service`、`entries` 在目标上重新探测（快照里的记录描述的是原服务器，例如 npm 前缀、二进制路径）；目标上的身体与快照的来源种类不同时，保留快照的来源记录。`local_overrides` 沿用快照头中记录的封存时规则（迁移和克隆都沿用；规则使用相对 root 的路径，跨服务器仍然成立；不依赖原服务器还活着）。
+- **新实例的记录**：迁移与克隆成功后，在目标服务器写入实例记录和 profile 副本。`roots` 取目标路径；`provenance`、`service`、`entries` 在目标上重新探测（快照里的记录描述的是原服务器，例如 npm 前缀、二进制路径）；目标上的身体与快照的来源种类不同时，保留快照的来源记录。`local_overrides` 与 `local_sqlite` 沿用快照头中记录的封存时规则（迁移和克隆都沿用；规则使用相对 root 的路径，跨服务器仍然成立；不依赖原服务器还活着）。
 - **被取代的实例**：迁移或克隆的目标路径与目标服务器上另一个已登记实例的 root 相同，或那个实例的 root 位于目标路径之内（交换会把它的文件换走）时，计划中列出该实例并说明后果（警告，不阻断）。目标路径位于另一个已登记实例的 root 之内时（2026-11-07 用户决定）：如果目标 state 目录是本 profile 声明的命名实例位置（`detect.named` 的 glob，例如 Hermes 的 `profiles/*`），这是正常的命名实例布局，不取代、不阻断，按嵌套规则处理；其他情况一律阻断（不能把一个实例放进另一个实例的目录里），计划写明冲突的实例与办法（换一个目标目录）。交换成功后不删除它的记录，而是标记为"已被取代"（`superseded`：取代它的实例、op_id、时间）；它原来的目录按流程保留为 prev。被取代的实例不能再封存，也不能作为回滚目标；用同一 id 重新登记会清除标记。实例 id 不改名，因为备份库中的快照按 id 关联。
 - **旧实例清理**：`valise old list <服务器>` 列出被取代的实例、取代它的操作，以及那次操作保留的旧目录和大小。`valise old cleanup <服务器> <实例>` 在用户再次确认后删除这个实例的记录、profile 副本，以及取代它的那次操作保留的旧目录（与 `prev drop` 相同）。只能由用户显式执行，porter 在 Go 代码中删除。备份库中该实例的备份不受影响（按周期删除见 VAULT_FORMAT.md 10.4）。
 - **交换日志**：`~/.local/state/valise/journal/<op_id>.json`，每次状态变化原子写入并 fsync，内容包括模式、实例、各 root 的 live / stage / prev 路径、已搬动的身体目录、npm 身体的原版本、当前状态与时间。结束（`HEALTHY` 或 `ROLLED_BACK`）后移到 `journal/done/`，`hello` 只报告未完成的日志。

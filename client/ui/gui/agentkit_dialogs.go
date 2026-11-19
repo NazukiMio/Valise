@@ -131,6 +131,9 @@ func (a *App) runKitInstall(server, instance string, st *agentKitState) {
 			st.note = T("kit.installed_no_skills", "reason", plan.NoSkills)
 		} else if plan.Result != nil {
 			st.note = T("kit.installed_note", "written", len(plan.Result.Written), "same", len(plan.Result.Same))
+			if len(plan.Result.LegacyRemoved) > 0 {
+				st.note += T("kit.legacy_cleaned", "n", len(plan.Result.LegacyRemoved))
+			}
 		}
 		*a.fold("kit-guide-" + server + "/" + instance) = true
 		a.readAgentKit(server, instance)
@@ -168,15 +171,4 @@ func skillStateMeta(s agentkit.SkillState) (tone, text string) {
 		text += T("kit.skill.backups", "n", s.Backups)
 	}
 	return tone, text
-}
-
-func approvalModeLabel(mode string) string {
-	switch mode {
-	case agentkit.ApprovalAsk:
-		return T("kit.approval.ask")
-	case agentkit.ApprovalBypass:
-		return T("kit.approval.bypass")
-	default:
-		return T("kit.approval.unknown")
-	}
 }

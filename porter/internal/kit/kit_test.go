@@ -1,6 +1,8 @@
 package kit
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -125,5 +127,55 @@ func TestStatusAndUninstall(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(ws, "skills")); err != nil {
 		t.Fatal("the skills directory itself must stay")
+	}
+}
+
+func TestInstallAndUninstallCleanLegacySkills(t *testing.T) {
+	home := t.TempDir()
+	ws := filepath.Join(home, "ws")
+	p := profile.Profile{ID: "demo", ProfileVersion: 1, Roots: []profile.Root{{ID: "workspace"}},
+		AgentKit: &profile.AgentKit{SkillsDir: &profile.RootPath{Root: "workspace", Path: "skills/"}}}
+	rec := enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": home, "workspace": ws}}
+	if _, err := porterenroll.WriteRecord(home, rec, p); err != nil {
+		t.Fatal(err)
+	}
+	sdir := filepath.Join(ws, "skills")
+	os.MkdirAll(filepath.Join(sdir, "valise-handoff"), 0o755)
+	unmodifiedContent := []byte("synthetic-legacy-handoff-content")
+	sum := sha256.Sum256(unmodifiedContent)
+	sumHex := hex.EncodeToString(sum[:])
+	legacySkillDigests["valise-handoff"][sumHex] = true
+	t.Cleanup(func() { delete(legacySkillDigests["valise-handoff"], sumHex) })
+	os.WriteFile(filepath.Join(sdir, "valise-handoff/SKILL.md"), unmodifiedContent, 0o644)
+	os.WriteFile(filepath.Join(sdir, "valise-handoff/SKILL.md.valise-bak-20261101T000000Z"), []byte("bak"), 0o644)
+	os.MkdirAll(filepath.Join(sdir, "valise-enroll"), 0o755)
+	os.WriteFile(filepath.Join(sdir, "valise-enroll/SKILL.md"), []byte("user customized enroll"), 0o644)
+
+	newKit := []agentkit.SkillFile{
+		{Skill: "valise-onboard", Name: "SKILL.md", Content: []byte("onboard v1")},
+		{Skill: "valise-backup", Name: "SKILL.md", Content: []byte("backup v1")},
+	}
+	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	ins, err := Install(home, agentkit.KitInstallParams{InstanceID: "demo", Files: newKit}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ins.Written) != 2 || len(ins.LegacyRemoved) != 2 || len(ins.LegacyKept) != 1 {
+		t.Fatalf("unexpected legacy cleanup result: %+v", ins)
+	}
+	if _, err := os.Stat(filepath.Join(sdir, "valise-handoff")); !os.IsNotExist(err) {
+		t.Fatal("empty legacy skill directory with only backup was not removed")
+	}
+	if _, err := os.Stat(filepath.Join(sdir, "valise-enroll/SKILL.md")); err != nil {
+		t.Fatal("user-modified legacy skill should be kept")
+	}
+
+	rm, err := Uninstall(home, agentkit.KitUninstallParams{InstanceID: "demo", Files: newKit, Force: false})
+	if err != nil || len(rm.Removed) != 2 || len(rm.Kept) != 1 {
+		t.Fatalf("uninstall keep modified failed: %+v %v", rm, err)
+	}
+	rmForce, err := Uninstall(home, agentkit.KitUninstallParams{InstanceID: "demo", Files: newKit, Force: true})
+	if err != nil || len(rmForce.Removed) != 1 || len(rmForce.Kept) != 0 {
+		t.Fatalf("uninstall force failed: %+v %v", rmForce, err)
 	}
 }

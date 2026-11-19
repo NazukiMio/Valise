@@ -69,24 +69,22 @@ type KitGuide struct {
 	MCPRemoveCmd  []string `json:"mcp_remove_command,omitempty"`
 	MCPRemoveNote bool     `json:"mcp_remove_snippet"`
 	AgentLine     string   `json:"agent_line"`
-	EnrollSay     string   `json:"enroll_say"`
-	UpkeepSay     string   `json:"upkeep_say"`
-	CheckupSay    string   `json:"checkup_say"`
-	HandoffSay    string   `json:"handoff_say"`
+	OnboardSay    string   `json:"onboard_say"`
+	StatusSay     string   `json:"status_say"`
+	BackupSay     string   `json:"backup_say"`
 }
 
 func buildKitGuide(target *LoginTarget, porterPath, instance string) *KitGuide {
 	serverCmd := porterPath + " mcp --instance " + instance
-	enrollSay := "我给你装了 Valise 保护技能，你学习一下。"
+	onboardSay := "用 valise-onboard 验收连接并报备你的目录布局。"
 	g := &KitGuide{
 		PorterPath: porterPath,
 		ServerCmd:  serverCmd,
-		EnrollSay:  enrollSay,
-		UpkeepSay:  "按 valise-upkeep 检查并整理一下你的长期记忆和文件归类。",
-		CheckupSay: "用 valise-checkup 帮我做一次健康体检并解读结果。",
-		HandoffSay: "准备新开会话，请按 valise-handoff 写好交接。",
+		OnboardSay: onboardSay,
+		StatusSay:  "用 valise-backup 看看你现在的 Valise 备份状态。",
+		BackupSay:  "动手改之前，先用 valise-backup 帮我留个底。",
 		AgentLine: "Add an MCP server named \"valise\" (stdio) that runs: " + serverCmd +
-			" — then use the valise-enroll skill: " + enrollSay,
+			" — then run valise-onboard: " + onboardSay,
 	}
 	var ak *profile.AgentKit
 	if target != nil {

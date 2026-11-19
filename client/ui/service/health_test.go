@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 	"valise/core/action"
-	"valise/core/agentkit"
 	"valise/core/profile"
 )
 
@@ -129,29 +128,23 @@ func TestHealthDismiss(t *testing.T) {
 	}
 }
 
-// Approval: the harness's settings win; a declaration that disagrees is
-// shown against them.
+// Approval: driven solely by deterministic profile approval_check results.
 func TestApprovalItem(t *testing.T) {
-	bypass := &action.ApprovalResult{Declared: true, Mode: profile.ApprovalBypass, Detail: "security.effective=full ask.effective=off", Pending: true}
+	bypass := &action.ApprovalResult{Declared: true, Mode: profile.ApprovalBypass, Detail: "security.effective=full ask.effective=off", Pending: true, Default: true}
 	ask := &action.ApprovalResult{Declared: true, Mode: profile.ApprovalAsk, Detail: "ask.effective=always"}
-	saysAsk := &agentkit.Declaration{ApprovalMode: agentkit.ApprovalAsk}
-	saysBypass := &agentkit.Declaration{ApprovalMode: agentkit.ApprovalBypass}
 	for _, tc := range []struct {
 		chk   *action.ApprovalResult
-		d     *agentkit.Declaration
 		level string
 		has   string
 	}{
-		{bypass, saysAsk, HealthBad, "与设置不符"},
-		{bypass, nil, HealthBad, "读法尚未核实"},
-		{ask, saysBypass, HealthWarn, "与设置不符"},
-		{ask, nil, HealthOK, "harness 设置读出"},
-		{&action.ApprovalResult{}, saysBypass, HealthBad, "未经核实"},
-		{&action.ApprovalResult{Declared: true, Mode: profile.ApprovalUnknown}, nil, HealthInfo, "还没有声明"},
+		{bypass, HealthBad, "出厂设置"},
+		{ask, HealthOK, "harness 设置读出"},
+		{&action.ApprovalResult{}, HealthInfo, "未能"},
+		{&action.ApprovalResult{Declared: true, Mode: profile.ApprovalUnknown}, HealthInfo, "未能"},
 	} {
-		it := approvalItem(tc.chk, tc.d)
-		if it.Level != tc.level || !strings.Contains(it.Text, tc.has) {
-			t.Errorf("%+v %+v → %s %q", tc.chk, tc.d, it.Level, it.Text)
+		it := approvalItem(tc.chk)
+		if it.Level != tc.level || !strings.Contains(it.Text+it.Detail, tc.has) {
+			t.Errorf("%+v -> %s %q / %q", tc.chk, it.Level, it.Text, it.Detail)
 		}
 	}
 }

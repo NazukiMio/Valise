@@ -63,13 +63,13 @@ All top-level fields are parsed with `yaml.Decoder.KnownFields(true)` — any mi
 - `identity`: `{ argv (${HOME}, ${STATE_DIR}), each, pick, name (required), verify }` (NOTE: there is NO `path` key!)
 - `terms`: `{ agent }` (<= 20 chars)
 
-## 6. Interactive, Install, Checkup & Agent Kit
+## 6. Interactive, Install, Agent Kit & Deprecated Legacy Fields
 - `native_cli`, `native_session_cli` (argv using `${HOME}`), `native_hints` (requires `native_cli`)
 - `native`: `{ export_argv }` (argv using `${HOME}`, `${STATE_DIR}`, `${OUT}`)
-- `checkup`:
+- `checkup` *(deprecated optional compatibility; deferred to ValiseMemo / v0.2+)*:
   - `sessions`: `{ root, glob, format: jsonl|sqlite, usage_fields, time_field, sqlite: { table, session_column, time_column, time_unit: s|ms, tokens_column, tokens_json: {column, path}, size_column, bytes_columns, usage: {table, session_column, tokens_columns, time_column, time_unit} } }`
   - `thresholds`, `remedies` (keys: `long_session`, `cost_growth`, `memory_bloat`, `session_pileup`, `no_memory_mechanism`), `memory_files` (`warn_lines > 0`), `memory_mechanism_markers`, `native_options_doc`
-- `handoff`: `{ targets: [{ root, glob, mode: append_section, max_lines > 0 }], new_session_hint }`
+- `handoff` *(deprecated optional compatibility; deferred to ValiseMemo / v0.2+)*: `{ targets: [{ root, glob, mode: append_section, max_lines > 0 }], new_session_hint }`
 - `agent_kit`: `{ skills_dir: { root, path }, mcp_config_doc, mcp_add_argv (${PORTER}, ${INSTANCE}), mcp_config_snippet (${PORTER}, ${INSTANCE}), mcp_remove_argv (${INSTANCE}) }`
 - `install`: `{ id, summary, where, takes, notes, requires: [{binary, version: ">=x.y.z", why, install: [{os_id, argv}]}], steps: [npm_global | script | argv | path_add] }`
   - `script` step requires `https://` `url`, 64-hex `sha256`, `interpreter`, `runtime_downloads` (`""` when verified none)

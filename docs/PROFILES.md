@@ -38,13 +38,12 @@ capabilities:
 - 用户本地 profile 不用笼统的"未验证"制造压力：展示来源（本地、未经审核）、已测试与未测试的能力、失败项及具体影响。
 - **恢复保护按能力判断**（2026-11-02 用户决定）：只看 `capabilities.restore`。它是 `tested` 时直接恢复，不因整份 profile 仍是 `status: draft`（例如体检条目还有 `verify: pending`）而拦截；不是 `tested` 时，复活必须显式传入 `--allow-draft-profile`；技能安装同理只看 `kit`，且属于主人操作（ARCHITECTURE.md 2.2）。核实证据的细化（官方测试、在用户这里成功过、用户标记通过）另行讨论；界面写明"恢复尚未在此版本测试"与可能的影响，而不是只写"未核实"。旧 profile 没有 `capabilities` 时，按 `status` 推断：`verified` 视为全部 `tested`，`draft` 视为全部 `untested`。
 
-- **审批状态检查**（2026-11-02 用户决定）：profile 可以声明 `approval_check`，用一条只读命令或一个配置键读出 harness 执行风险命令时是否需要用户批准，结果为"需要批准"或"无需批准（Bypass）"；与其他条目一样，未在靶机上核实时标 `verify: pending`。没有声明时，退回到 agent 经 MCP `valise_declare` 的申报（AGENT_KIT.md 第 3 节），界面标"未经核实"。
+- **审批状态检查**（2026-11-02 用户决定；2026-11-19 收口）：profile 可以声明 `approval_check`，用一条只读命令或一个配置键读出 harness 执行风险命令时是否需要用户批准，结果为"需要批准"或"无需批准（Bypass）"；与其他条目一样，未在靶机上核实时标 `verify: pending`。没有声明 `approval_check` 时在健康页诚实标为不支持该项检查，不再采信 agent 经 `valise_declare` 的自报声明。
   - **schema**（M12 实现，2026-11-02 用户同意）：`approval_check: { argv, each, bypass_when, ask_when, verify }`。`argv` 是一条只读命令（只能引用 `${HOME}`），输出 JSON，由 porter 按服务器上保存的 profile 副本执行，走日常钥匙；`each` 可选，指向一个数组，逐项判断、取最差的结果；`bypass_when` 是"字段路径: 值"，全部相等才算无需批准；`ask_when` 是若干组条件，任一组全部相等就算需要批准；都不匹配为"不确定"。只做相等比较，不是解释器。读配置键的方式（不运行命令）留待需要时再加。
   - **出厂设置与修复**（2026-11-02 决定，2026-11-04 修订）：`default_when` 可选，形式同 `ask_when`（若干组“字段路径: 值”）；Bypass 结果命中时，界面注明“这是 harness 的出厂设置，不是你改的”。`remedy` 可选，是改为“执行前询问”的文字步骤，在没有可执行修复时继续用于手动引导。取消“不提供一键修改、不得登记审批修改动作”的旧限制：允许通过已核实的 profile 管理动作修复审批设置，遵循 INSTALL.md 第 5 节，执行前说明行为变化及必要的服务中断，执行后重新运行审批检查。健康发现与动作的关联字段、需要停止/重启时的编排与失败恢复方式，必须先明确 schema 和验收，再实现；本条不视为这些能力已经存在。
 - **安装摘要**（2026-11-02 用户决定）：`install` 可以写 `where`（装到哪里）、`takes`（大概多久）与 `notes`（装之前要知道的事，例如 harness 出厂即为 Bypass），与 `summary` 一起组成方案开头的摘要（UI.md 9.6）。
 - **agent 的名字**（2026-11-02 用户决定）：profile 可以声明 `identity: { argv, each, pick, name, verify }`：一条只读命令（只能引用 `${HOME}` 与 `${STATE_DIR}`）输出 JSON，`each`（可选，点分路径）指向对象数组，`pick`（可选，字段相等匹配）选中当前实例所属条目，`name`（必填，点分路径）指向 harness 里给 agent 起的名字（例如 OpenClaw 的 `identityName`）。只读这一项，不扫描、不解析其他文件内容。界面上的显示名优先用用户在 Valise 里起的（记在实例档案的 agent 条目 `display_name`），其次用这里读出的名字，都没有时只显示实例 id；实例 id 不随名字改变（UI.md 9 节"名字"）。
 - **一个状态目录里的多个 agent**（2026-11-02 用户决定）：有的 harness 在一个状态目录里放多个 agent（OpenClaw 的 `agents.entries`，共用设置与网关）。暂时仍以一个状态目录为一个 Valise agent 备份与恢复，界面只列出其中的 agent 名单；是否拆开，等在靶机上研究清楚再定。
-  - **与声明对照**：核实结果优先；agent 的声明与设置不符时两者都显示（设置为 Bypass 时红色，设置为需要批准而 agent 声称无需批准时黄色）。
   - **OpenClaw**：`openclaw exec-policy show --json` 的 `effectivePolicy.scopes[]`，`security.effective = full` 且 `ask.effective = off` 为无需批准。2026.10.9 默认即为此状态；预设 cautious（allowlist / on-miss）、deny-all（deny / off）以及 allowlist / off、full / always 都读作需要批准（均在 debian-vm 上读出，修改设置时需先停止网关）。
 - **核实证据**（2026-11-02 用户决定，细节随 profile 专题与 M17 定稿）："已核实"按能力看三种证据：官方测试过（维护者在靶机上的记录，随资料包签名）、在用户这里成功过（Valise 自动记录这个 profile 版本与 harness 版本下的成功操作，如恢复或恢复演练）、用户标记通过（用户亲自试过后手动确认，与前两种区分显示）。官方 profile 与第三方 profile 同样适用，后者只是没有官方签名。
 
@@ -66,7 +65,7 @@ capabilities:
 - 按 profile 发现通用结构，由用户接受的 dossier 核对真实 roots、来源、共享服务及安装布局；剩余未知项继续按既有分类优先级处理。分类优先级仍以 ARCHITECTURE.md 第 4 节为准，不能把“先看档案”解释为覆盖 secrets 声明。
 - 官方 profile 不枚举每台机器的绝对链接或安装路径。布局探测只提供证据，用户接受不等于已验证管理命令的暂存隔离性；未知外部目标不自动跟随。具体 dossier 扩展及 B03 链接处置仍待定稿，不能把候选提案当已实现能力。
 - 新计划 full 范围包含既有 roots 内的 unclassified，并按敏感层保存；用户可以确认接入而不逐文件归类。不可读项、roots 外内容与外部引用单列为覆盖缺口，不能把已保存链接文本称为已保存目标。
-- 保护计划、自定义包含/排除与类别是不同模型。`local_overrides` 仍只补充分类；不得为实现“自定义备份”伪造类别、放宽 secrets 优先级或改写 raw 的原含义。
+- 保护计划、自定义包含/排除与类别是不同模型。Dossier 的 `local_overrides`、`local_sqlite` 与 `external_refs` 仅在人类审批 `valise_propose_dossier` 提案或显式 CLI 参数时更新（详情见 ARCHITECTURE.md 第 4.1 节）；不得为实现“自定义备份”伪造类别、放宽 secrets / `secret_tables` 优先级或改写 raw 的原含义。
 - N1 / N5b 在引入新范围前定稿匹配、SQLite 单位、快照范围记录、回滚携带/删除语义及旧工具拒绝策略；本文件 schema 和 lint 未扩展前不在 YAML 中使用假定字段。
 - full / raw 不等于可重建所有程序。来源记录与能力核实继续逐项检查，目录外程序、版本不可得与架构限制如实报告；通过备份测试不自动将 restore 标为 tested。
 
@@ -272,7 +271,9 @@ exclusive_secrets: [ { root: state, glob: "channels/**" } ]
 native:
   export_argv: null              # 可选：调用 harness 自带的导出功能，产物作为附加文件存入备份库（${OUT} 为输出路径）
 
-checkup:
+# checkup 与 handoff 自 2026-11-19 起标为 deprecated 可选兼容字段：记忆与跨会话治理交由独立套件 ValiseMemo / v0.2+；
+# 已发布 profile 与历史资料包保留向后兼容解析，新编写 profile 不再要求配置这两节。
+checkup:                         # deprecated (可选兼容)
   sessions: { root: state, glob: "sessions/*.jsonl", format: jsonl, usage_fields: null, time_field: null }
   # format: sqlite 时改用 sqlite 子项（标识符只能是字母、数字、下划线）：
   # sessions: { root: state, glob: "state.db", format: sqlite,
@@ -282,14 +283,14 @@ checkup:
   # token 在 JSON 列里时，用 tokens_json: { column, path }（点分路径，经 json_extract 读取），与 tokens_column 二选一。
   # token 按会话汇总在另一张表时，加 usage: { table, session_column, tokens_columns: [...], time_column, time_unit }，
   # 用它代替每行的 tokens_column 与字节估算；每日用量按 time_column（最后更新时间）归日。
-  thresholds: {}                 # 可选，覆盖体检默认阈值（AGENT_KIT.md 8.4）
-  remedies:                      # 可选：每种发现对应的 harness 原生处理方式，只展示给用户（AGENT_KIT.md 8.6）
-    long_session: ["在对话中发送 /new 开始新会话；想保留上下文就先让 agent 做一次交接"]
+  thresholds: {}                 # 可选，覆盖体检默认阈值
+  remedies:                      # 可选：每种发现对应的 harness 原生处理方式
+    long_session: ["在对话中发送 /new 开始新会话"]
   memory_files: [ { root: state, glob: "MEMORY.md", warn_lines: 800 } ]
   memory_mechanism_markers: [ { root: state, glob: "memories/*.md" } ]
-  native_options_doc: https://…  # 官方文档中关于记忆、压缩、冷存档功能的说明页
+  native_options_doc: https://…  # 可选
 
-handoff:
+handoff:                         # deprecated (可选兼容)
   targets: [ { root: state, glob: "MEMORY.md", mode: append_section, max_lines: 120 } ]
   new_session_hint: "在对话中发送 /new"
 

@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -141,13 +142,35 @@ func (a *App) proposalsCard(c *ui.Context, row *agentRow) {
 				if prop.Reason != "" {
 					ui.Text(c, prop.Reason).FontSize(fsSub).Wrap()
 				}
-				if prop.Unclassified > 0 {
-					notice(c, "warn", T("prop.unclassified_warn", "n", prop.Unclassified))
+				switch prop.EffectiveKind() {
+				case agentkit.ProposalKindSQLite:
+					if prop.SQLite != nil && len(prop.SQLite.SecretTables) > 0 {
+						muted(ui.Text(c, T("prop.sqlite_tables", "tables", strings.Join(prop.SQLite.SecretTables, ", ")))).FontSize(fsSub).Wrap()
+					}
+				case agentkit.ProposalKindExternalRef:
+					if prop.ExternalRef != nil {
+						kindLabel := T("prop.ext_dir")
+						if prop.ExternalRef.RefKind == agentkit.ExternalRefSymlink {
+							kindLabel = T("prop.ext_symlink")
+						}
+						muted(ui.Text(c, kindLabel)).FontSize(fsSub)
+						notice(c, "warn", T("prop.ext_note"))
+					}
+				default:
+					if prop.Unclassified > 0 {
+						notice(c, "warn", T("prop.unclassified_warn", "n", prop.Unclassified))
+					}
 				}
 				if !st.actJ.busy {
+					acceptBtn := T("prop.accept")
+					if prop.EffectiveKind() == agentkit.ProposalKindSQLite {
+						acceptBtn = T("prop.sqlite_accept")
+					} else if prop.EffectiveKind() == agentkit.ProposalKindExternalRef {
+						acceptBtn = T("prop.ext_accept")
+					}
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 						needTag(c, T("need.valise"))
-						ui.PrimaryButton(c, T("prop.accept")).OnClick(func() {
+						ui.PrimaryButton(c, acceptBtn).OnClick(func() {
 							a.runProposalsDecide(row.Server, row.Instance, st, agentkit.DecideParams{InstanceID: row.Instance, Accept: []string{prop.ID}})
 						})
 						quietButton(c, T("prop.reject")).OnClick(func() {
@@ -184,10 +207,29 @@ func (a *App) proposalsCard(c *ui.Context, row *agentRow) {
 }
 
 func proposalHead(c *ui.Context, prop agentkit.Proposal) {
-	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		mono(ui.Text(c, prop.Rule.Root+":"+prop.Rule.Glob+" -> "+prop.Rule.Category)).FontSize(fsSub).Grow(1).Wrap()
-		muted(ui.Text(c, when(prop.Created, c.Now()))).FontSize(fsSub)
-	})
+	switch prop.EffectiveKind() {
+	case agentkit.ProposalKindSQLite:
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			plainTag(c, T("prop.sqlite_tag"))
+			muted(ui.Text(c, when(prop.Created, c.Now()))).FontSize(fsSub)
+		})
+		if prop.SQLite != nil {
+			mono(ui.Text(c, prop.SQLite.Root+":"+prop.SQLite.Glob)).FontSize(fsSub).Wrap()
+		}
+	case agentkit.ProposalKindExternalRef:
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			plainTag(c, T("prop.ext_tag"))
+			muted(ui.Text(c, when(prop.Created, c.Now()))).FontSize(fsSub)
+		})
+		if prop.ExternalRef != nil {
+			mono(ui.Text(c, prop.ExternalRef.Path)).FontSize(fsSub).Wrap()
+		}
+	default:
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			mono(ui.Text(c, prop.Rule.Root+":"+prop.Rule.Glob+" -> "+prop.Rule.Category)).FontSize(fsSub).Grow(1).Wrap()
+			muted(ui.Text(c, when(prop.Created, c.Now()))).FontSize(fsSub)
+		})
+	}
 }
 
 func (a *App) demotionConfirmModal(c *ui.Context, row *agentRow, st *proposalsState) {

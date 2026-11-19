@@ -26,14 +26,16 @@ type Dossier struct {
 
 // DossierAgent is one agent of the installation.
 type DossierAgent struct {
-	InstanceID     string             `json:"instance_id"`
-	Name           string             `json:"name,omitempty"`
-	Env            map[string]string  `json:"env,omitempty"`
-	Roots          map[string]string  `json:"roots"`
-	LocalOverrides []profile.Override `json:"local_overrides"`
-	EntryPorts     map[string]int     `json:"entry_ports,omitempty"`
-	EnrolledAt     time.Time          `json:"enrolled_at"`
-	Superseded     *Supersession      `json:"superseded,omitempty"`
+	InstanceID     string              `json:"instance_id"`
+	Name           string              `json:"name,omitempty"`
+	Env            map[string]string   `json:"env,omitempty"`
+	Roots          map[string]string   `json:"roots"`
+	LocalOverrides []profile.Override  `json:"local_overrides"`
+	LocalSQLite    []profile.SQLiteRef `json:"local_sqlite,omitempty"`
+	ExternalRefs   []ExternalRef       `json:"external_refs,omitempty"`
+	EntryPorts     map[string]int      `json:"entry_ports,omitempty"`
+	EnrolledAt     time.Time           `json:"enrolled_at"`
+	Superseded     *Supersession       `json:"superseded,omitempty"`
 	// Service and Entries are a named agent's own (empty unless its
 	// service is shared, see profile.ForAgent).
 	Service []ServiceState `json:"service,omitempty"`
@@ -63,6 +65,12 @@ func (d *Dossier) Record(id string) *Record {
 		Provenance: d.Provenance, Service: d.Service, Entries: d.Entries, LocalOverrides: a.LocalOverrides,
 		EntryPorts: a.EntryPorts, EnrolledAt: a.EnrolledAt, Superseded: a.Superseded, Name: a.Name, Env: a.Env,
 		DisplayName: a.DisplayName, HarnessName: a.HarnessName, HarnessAgents: a.HarnessAgents}
+	if len(a.LocalSQLite) > 0 {
+		r.LocalSQLite = append([]profile.SQLiteRef(nil), a.LocalSQLite...)
+	}
+	if len(a.ExternalRefs) > 0 {
+		r.ExternalRefs = append([]ExternalRef(nil), a.ExternalRefs...)
+	}
 	if a.Name != "" {
 		r.Provenance, r.Service, r.Entries = Provenance{}, a.Service, []EntryState{}
 	}
@@ -82,6 +90,12 @@ func (d *Dossier) Put(r Record, now time.Time) {
 	a := DossierAgent{InstanceID: r.InstanceID, Name: r.Name, Env: r.Env, Roots: r.Roots, LocalOverrides: r.LocalOverrides,
 		EntryPorts: r.EntryPorts, EnrolledAt: r.EnrolledAt, Superseded: r.Superseded,
 		DisplayName: r.DisplayName, HarnessName: r.HarnessName, HarnessAgents: r.HarnessAgents}
+	if len(r.LocalSQLite) > 0 {
+		a.LocalSQLite = append([]profile.SQLiteRef(nil), r.LocalSQLite...)
+	}
+	if len(r.ExternalRefs) > 0 {
+		a.ExternalRefs = append([]ExternalRef(nil), r.ExternalRefs...)
+	}
 	if r.Name == "" {
 		d.Provenance, d.Service, d.Entries = r.Provenance, r.Service, r.Entries
 	} else {
@@ -90,6 +104,12 @@ func (d *Dossier) Put(r Record, now time.Time) {
 	if old := d.Agent(r.InstanceID); old != nil {
 		if a.DisplayName == "" {
 			a.DisplayName = old.DisplayName // a re-enrollment keeps the user's name
+		}
+		if r.LocalSQLite == nil && len(old.LocalSQLite) > 0 {
+			a.LocalSQLite = append([]profile.SQLiteRef(nil), old.LocalSQLite...)
+		}
+		if r.ExternalRefs == nil && len(old.ExternalRefs) > 0 {
+			a.ExternalRefs = append([]ExternalRef(nil), old.ExternalRefs...)
 		}
 		*old = a
 		return

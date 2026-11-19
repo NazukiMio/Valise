@@ -118,7 +118,7 @@
 
 `profile_doc` 是封存时使用的完整 profile（已合并子 profile，JSON 形式，与实例的 `<id>.profile.json` 相同），可选。客户端没有同一 id 与版本的 profile 时，复活可以改用它（见 ARCHITECTURE.md 8.2.1）。
 
-`local_overrides` 是封存时这个实例生效的补充归类规则（与实例记录中的同名字段相同），可选；没有这个字段的快照按空列表处理。
+`local_overrides` 是封存时这个实例生效的补充归类规则（与实例记录中的同名字段相同），可选；没有这个字段的快照按空列表处理。`local_sqlite` 与 `external_refs` 同为可选字段，记录封存时来自实例档案的本地 SQLite 一致性备份规则与 `roots` 外已知参考路径。
 
 `name` 与 `env`（可选，2026-11-02 起）：命名实例的名字，以及让 harness 的命令针对这个实例的环境变量（PROFILES.md 第 2 节"多实例"）。没有这两个字段的快照是默认实例。
 
@@ -214,7 +214,7 @@ vaults/
 
 ### 10.2 周期
 
-- 定时任务（`timer`）与受管方 MCP 触发的滚动备份（`agent-mcp`：`valise_seal`、`valise_handoff_begin` 与首次调用兜底自动备份）产生 `kind: auto` 快照，写入按日期滚动的周期叶子（`<start>_<end>`），可按保护计划的周期保留策略参与自动退役，也可由用户在需要时晋升为永久存档点。人类用户发起的手动备份与操作前保护备份写入独立的 `savepoints/`（`kind: savepoint`），每个实例一个，历次直接封存的存档点在叶子内按 epoch 去重。
+- 定时任务（`timer`）与受管方 MCP 触发的滚动备份（`agent-mcp`：`valise_seal` 及兼容期间的 `valise_handoff_begin`）产生 `kind: auto` 快照，写入按日期滚动的周期叶子（`<start>_<end>`），可按保护计划的周期保留策略参与自动退役，也可由用户在需要时晋升为永久存档点。人类用户发起的手动备份与操作前保护备份写入独立的 `savepoints/`（`kind: savepoint`），每个实例一个，历次直接封存的存档点在叶子内按 epoch 去重。
 - `unit` 取 `week`（周一开始）、`month`（自然月，默认）、`quarter`（自然季度）。`tz` 是设置周期时客户端所在的 IANA 时区。设置保存在服务器的 `~/.config/valise/instances/<id>.vault.json`（`{"unit": "month", "tz": "…"}`），没有这个文件时按 `month` 与 UTC 处理。
 - 叶子目录名为 `<start>_<end>`（`tz` 下的日期，首尾都包含）。封存时按封存时刻在 `tz` 下的日期选择叶子：落在现有叶子范围内就写入它，否则新建叶子。
 - 新叶子的 `start` 取"上一个叶子 `end` 的次日"与"封存日期所在周期的第一天"中较晚的一个（没有上一个叶子时取后者），`end` 是 `start` 所在周期的最后一天。因此修改周期设置只影响下一个叶子，已有叶子永不改名；长时间没有封存也不会产生不包含封存日期的叶子。

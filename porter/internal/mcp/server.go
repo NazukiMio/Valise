@@ -1,5 +1,5 @@
 // Package mcp is `valise-porter mcp --instance <id>`: a minimal MCP server
-// on stdio with the six agent-kit tools (docs/AGENT_KIT.md sections 3 and
+// on stdio with the four agent-kit tools (docs/AGENT_KIT.md sections 3 and
 // 8.1). One process serves one instance.
 package mcp
 
@@ -67,9 +67,9 @@ func handle(ctx context.Context, t *Tools, req rpc.Request) rpc.Response {
 			"protocolVersion": v,
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
 			"serverInfo":      map[string]any{"name": "valise", "version": t.Version},
-			"instructions": "Valise protects this agent instance (" + t.Instance + "): it seals the agent's soul " +
-				"(persona, memory, skills, sessions, state) into an encrypted vault. Call valise_seal before risky " +
-				"changes, valise_handoff_begin/finish to hand over to a new session, valise_checkup when asked how you are.",
+			"instructions": "Valise protects this agent instance (" + t.Instance + ") with rolling and scheduled encrypted backups. " +
+				"Use valise_status for fast read-only backup status, valise_seal before high-risk self-edits, " +
+				"valise_onboard_context to inspect dossier layout clues, and valise_propose_dossier to queue classification, SQLite, or external_ref proposals for user approval.",
 		})
 	case "ping":
 		return okResp(req.ID, map[string]any{})

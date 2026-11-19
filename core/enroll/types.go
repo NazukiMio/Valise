@@ -232,6 +232,14 @@ type BinaryRecord struct {
 	SHA256 string `json:"sha256"`
 }
 
+// ExternalRef records a user-confirmed reference outside the instance's roots
+// (reported as a coverage gap in v0.1, without implicit sealing).
+type ExternalRef struct {
+	Path   string `json:"path"`
+	Kind   string `json:"ref_kind"` // "external_dir" | "symlink_target"
+	Reason string `json:"reason,omitempty"`
+}
+
 // Record is the instance record at ~/.config/valise/instances/<id>.json.
 type Record struct {
 	InstanceID     string             `json:"instance_id"`
@@ -242,6 +250,10 @@ type Record struct {
 	Service        []ServiceState     `json:"service"`
 	Entries        []EntryState       `json:"entries"`
 	LocalOverrides []profile.Override `json:"local_overrides"`
+	// LocalSQLite holds user-confirmed SQLite VACUUM INTO rules supplementing the profile.
+	LocalSQLite []profile.SQLiteRef `json:"local_sqlite,omitempty"`
+	// ExternalRefs holds user-confirmed out-of-root paths noted by onboard.
+	ExternalRefs []ExternalRef `json:"external_refs,omitempty"`
 	// EntryPorts override the profile's entry ports for this instance after
 	// a port change (docs/LOGIN_RELAY.md 4.2).
 	EntryPorts map[string]int `json:"entry_ports,omitempty"`
@@ -285,10 +297,21 @@ func RecordFrom(r *Report, now time.Time) Record {
 	if ov == nil {
 		ov = []profile.Override{}
 	}
+	var localSQLite []profile.SQLiteRef
+	var externalRefs []ExternalRef
+	if r.Previous != nil {
+		if len(r.Previous.LocalSQLite) > 0 {
+			localSQLite = append([]profile.SQLiteRef(nil), r.Previous.LocalSQLite...)
+		}
+		if len(r.Previous.ExternalRefs) > 0 {
+			externalRefs = append([]ExternalRef(nil), r.Previous.ExternalRefs...)
+		}
+	}
 	return Record{
 		InstanceID: r.InstanceID, ProfileID: r.ProfileID, ProfileVersion: r.ProfileVersion,
 		Roots: roots, Provenance: r.Provenance, Service: r.Service, Entries: r.Entries,
-		LocalOverrides: ov, EntryPorts: r.EntryPorts, EnrolledAt: now.UTC(),
+		LocalOverrides: ov, LocalSQLite: localSQLite, ExternalRefs: externalRefs,
+		EntryPorts: r.EntryPorts, EnrolledAt: now.UTC(),
 		Name: r.Name, Env: r.Env, HarnessName: r.HarnessName, HarnessAgents: r.HarnessAgents,
 	}
 }

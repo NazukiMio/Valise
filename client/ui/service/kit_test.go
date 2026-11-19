@@ -34,22 +34,22 @@ func TestKitInstallAndCheckup(t *testing.T) {
 	if !guide.HasSkillsDir || !strings.Contains(gcmd, "/.local/bin/valise-porter") || !strings.HasSuffix(gcmd, "--arg=demo") || strings.Contains(gcmd, "${") {
 		t.Fatalf("unexpected guide: %+v", guide)
 	}
-	if !strings.Contains(guide.AgentLine, "mcp --instance demo") || guide.EnrollSay == "" || guide.UpkeepSay == "" || guide.CheckupSay == "" || guide.HandoffSay == "" {
+	if !strings.Contains(guide.AgentLine, "mcp --instance demo") || guide.OnboardSay == "" || guide.StatusSay == "" || guide.BackupSay == "" {
 		t.Fatalf("missing guide prompts: %+v", guide)
 	}
 	dry, err := s.KitInstall(ctx, "box", "demo", true)
-	if err != nil || len(dry.Result.Written) != 4 {
+	if err != nil || len(dry.Result.Written) != 2 {
 		t.Fatalf("%+v %v", dry, err)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".demo/skills/valise-upkeep/SKILL.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".demo/skills/valise-backup/SKILL.md")); !os.IsNotExist(err) {
 		t.Fatal("dry run wrote files")
 	}
 	plan, err := s.KitInstall(ctx, "box", "demo", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(filepath.Join(home, ".demo/skills/valise-upkeep/SKILL.md"))
-	if err != nil || !strings.HasPrefix(string(b), "---\nname: valise-upkeep\n") {
+	b, err := os.ReadFile(filepath.Join(home, ".demo/skills/valise-backup/SKILL.md"))
+	if err != nil || !strings.HasPrefix(string(b), "---\nname: valise-backup\n") {
 		t.Fatalf("%q %v", b, err)
 	}
 	cmd := strings.Join(plan.MCPCommand, " ")
@@ -69,12 +69,12 @@ func TestKitInstallAndCheckup(t *testing.T) {
 	}
 
 	st, err := s.KitStatus(ctx, "box", "demo")
-	if err != nil || len(st.Skills) != 4 || st.Skills[0].State != "current" || st.LastMCP != nil {
+	if err != nil || len(st.Skills) != 2 || st.Skills[0].State != "current" || st.LastMCP != nil {
 		t.Fatalf("%+v %v", st, err)
 	}
-	os.WriteFile(filepath.Join(home, ".demo/skills/valise-checkup/SKILL.md"), []byte("edited"), 0o644)
+	os.WriteFile(filepath.Join(home, ".demo/skills/valise-onboard/SKILL.md"), []byte("edited"), 0o644)
 	rm, err := s.KitUninstall(ctx, "box", "demo", false, false)
-	if err != nil || len(rm.Result.Removed) != 3 || len(rm.Result.Kept) != 1 || !rm.MCPSnippet && len(rm.MCPCommand) != 0 {
+	if err != nil || len(rm.Result.Removed) != 1 || len(rm.Result.Kept) != 1 || !rm.MCPSnippet && len(rm.MCPCommand) != 0 {
 		t.Fatalf("%+v %v", rm.Result, err)
 	}
 	if insts, err := s.Instances(ctx, "box"); err != nil || len(insts) != 1 || insts[0].InstanceID != "demo" {
@@ -98,9 +98,9 @@ func TestServerList(t *testing.T) {
 	}
 }
 
-func TestKitFilesShipFourSkills(t *testing.T) {
+func TestKitFilesShipTwoSkills(t *testing.T) {
 	files, err := KitFiles()
-	if err != nil || len(files) != 4 {
+	if err != nil || len(files) != 2 {
 		t.Fatalf("%v %v", files, err)
 	}
 	for _, f := range files {

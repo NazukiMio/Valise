@@ -28,7 +28,7 @@ Collect facts about the target harness (`<harness>`) from official docs or an in
 - Separate roots beyond `state` (e.g. `workspace` via `discover_argv` or `default`);
 - File map split honestly into Valise categories (`secrets`, `identity`, `memory`, `skills`, `config`, `sessions`, `state`, `body`, `cache`, `ignore`);
 - Exact installation provenance (`npm_global`, `git`, `uv_tool`, `pipx`, or `binary`);
-- Optional runtime details: systemd user unit (`scope: user`), local web entry (`127.0.0.1` port/path & auth token readout), read-only `health` checks, `checkup` session store (JSONL or SQLite schema), `handoff` target file, and `agent_kit` skills directory + MCP add/remove command or snippet.
+- Optional runtime details: systemd user unit (`scope: user`), local web entry (`127.0.0.1` port/path & auth token readout), read-only `health` checks, `agent_kit` skills directory + MCP add/remove command or snippet (and optional deprecated compatibility blocks `checkup` / `handoff` only if targeting legacy session governance).
 
 ### Step 2: Draft from the Minimal Template
 Copy [references/minimal-template.yaml](references/minimal-template.yaml) and fill in only verified facts plus explicitly marked `verify: pending` hypotheses where needed for initial discovery/classification. Follow [references/schema-v1.md](references/schema-v1.md) strictly (`profilelint` uses YAML `KnownFields(true)` and rejects any unknown key, including mistyped fields like `identity.path` instead of `identity.name`).

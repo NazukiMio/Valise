@@ -1,6 +1,6 @@
 # agent-kit：让 Agent 认识自己的保护
 
-> 2026-11-05 同步产品重整：两种 AI 角色和权限继续隔离。下文现有受管方 MCP 的 soul 范围保持兼容，保护计划迁移及管理方接口按 N1 / N5a 单独设计；不能因新默认 full 已定就声称两侧已经支持。界面使用“Agent 保护技能”，技能 ID 与命令名不变。
+> 2026-11-19 收口（Valise Recovery v0.1 定稿）：受管 Agent 技能收口为极简二件套（`valise-onboard` + `valise-backup`），替代原四件套（`valise-enroll`、`valise-upkeep`、`valise-handoff`、`valise-checkup`）；`tools/list` 仅暴露 4 个单一职责工具（`valise_status`、`valise_seal`、`valise_onboard_context`、`valise_propose_dossier`），彻底移除首次调用隐式 `autoSeal`，旧工具名仅在 `Call()` 中静默向后兼容；`valise_seal` 在已确认保护计划时按计划档位（默认 `full`）封存；彻底取消 `valise_declare` 自报流程，审批状态只看 profile 确定性的 `approval_check`；记忆管理与跨会话交接整体延后至独立套件 ValiseMemo / v0.2+。界面使用“Agent 保护技能”。边界由代码执行，不靠技能文本。
 >
 > - **受管方**：被 Valise 管理的 harness / agent。技能与服务器上的 porter（`valise-porter mcp` 的受限工具）对接。本文第 1–8 节即受管方，**现有 agent-kit 全部属于这一侧**。
 > - **管理方**：代表用户操作 Valise、管理服务器与 harness 的 agent。技能与用户侧的 Valise 客户端对接。**项目目前没有管理方技能**，见第 9 节，属于规划。
@@ -9,98 +9,66 @@
 
 ## 1. 定位与原则（受管方）
 
-agent-kit 是可选的保护与健康辅助，**不是灾难恢复的依赖**。用户接入后可明确选择“安装 Agent 保护技能”，再对自己的 agent 说一句：
+agent-kit 是可选的档案报备与操作前备份辅助，**不是灾难恢复的依赖**。用户接入后可明确选择“安装 Agent 保护技能”，再对自己的 agent 说一句：
 
-> 我用 Valise 给你设置了备份保护，你学习一下。
+> 用 valise-onboard 验收连接并报备你的目录布局。
 
-此后，agent 就知道自己被保护着：做风险操作前会先封存，会话太长时会提议交接，用户问起"你还好吗"时可以做一次体检。
+此后，agent 在初次报备、查备份状态、执行高风险自我修改前可以按最小边界使用 Valise MCP 工具。
 
 原则：
 
-1. **执行交给代码，LLM 只做三件事**：补充登记信息、撰写交接内容、用自然语言解读体检结果。
-2. **MCP 工具只开放最小权限**：不提供复活、删除、读取凭据或写入任意文件的能力。agent 修改自己的记忆文件时，使用它自己原有的文件工具；Valise 只负责告诉它"该写到哪里"，并在写完后用代码检查结果。
-3. **不越俎代庖**：凡是修改记忆的操作，都必须先封存，经用户同意后才执行，并且可以撤销。
-4. **不背书**：只推荐该 harness 官方文档中的原生选项，以及通用的选择标准。
+1. **执行交给代码，LLM 只做档案补充与沟通**：服务器探测、扫描、SQLite 魔数识别、备份校验、恢复与权限边界全部由 Go 代码执行；agent 不写档案、不执行恢复、不改动自己的常驻指令文件（如 `AGENTS.md`）。
+2. **MCP 工具只开放最小权限**：不提供复活、删除、读取凭据或写入任意文件的能力；agent 禁止运行 shell 或读写未知目录去探查文件（零额外权限弹窗）。
+3. **不越俎代庖**：高风险自修改前留底由用户发起或高风险条件明确触发；所有 Dossier 补充与排除建议均需用户在 Valise 桌面端或 CLI 确认后才落盘。
+4. **不背书**：只做备份保护与布局覆盖排查，不替用户挑选或修改记忆框架。
 
 ## 2. 安装
 
 客户端中的“安装 Agent 保护技能”会做两件事，并在执行前明确告诉用户：
 
-- 把 `agent-kit/skills/` 下的四个技能复制到 profile 中 `agent_kit.skills_dir` 指定的位置。
-- 展示该 harness 配置 MCP Server 的方法。MCP 的启动命令为 `valise-porter mcp --instance <id>`。Valise **不自动修改 harness 的配置文件**，而是给出可以直接复制的配置片段，或者给出一句可以直接转告 agent 的话。
+- 把 `agent-kit/skills/` 下的二件套技能（`valise-onboard`、`valise-backup`）复制到 profile 中 `agent_kit.skills_dir` 指定的位置；同时安全检查并清理旧四件套残留目录（`valise-enroll`、`valise-upkeep`、`valise-handoff`、`valise-checkup`）：与历史官方发布内容一致的 `SKILL.md` 及 `.valise-bak-*` 自动清理并删除空目录，用户自行修改过的文件原样保留并列出。
+- 展示该 harness 配置 MCP Server 的方法。MCP 的启动命令为 `valise-porter mcp --instance <id>`。Valise **不自动修改 harness 的配置文件**，而是给出可以直接复制的配置片段，或者可以直接拷贝执行的 CLI 命令。
 
-技能目录为空（profile 未提供）的 harness，暂不支持安装技能。
+技能目录为空（profile 未提供）的 harness，暂不支持安装技能，仍可单独接入 MCP。
 
 ## 3. MCP 工具（`valise-porter mcp`，stdio 模式）
 
-一个 MCP 进程只服务于启动时 `--instance` 参数指定的那个实例。
+一个 MCP 进程只服务于启动时 `--instance` 参数指定的那个实例。`tools/list` **仅暴露以下 4 个单一职责工具**以压低上下文开销（旧工具名 `valise_propose_enrollment`、`valise_checkup`、`valise_handoff_begin`、`valise_handoff_finish`、`valise_declare` 从 `tools/list` 隐藏，仅在 v0.1 `Call()` 中静默向后兼容，其中 `valise_propose_enrollment` 静默转发为 `kind: "classify"`）：
 
 | 工具 | 输入 | 行为 | 限制 |
 | :--- | :--- | :--- | :--- |
-| `valise_status` | 无 | 返回实例 id、profile 及其核实状态、服务器保护计划摘要 `protection_plan`（是否开启定时、默认档位、周期、保留策略与自动复制位置）、最近一次备份的时间和档位、本连接首次调用触发兜底备份时返回的 `auto_sealed_snapshot`、保护状态（2026-11-03，检测报告 F10：`configured_targets` 已配置的备份位置、`last_offsite` 别处最新的一份、`pods_waiting_sync` 还在等同步的个数，以及由代码写成的一句话 `protection_summary`，agent 原样转述，不从空列表推断"没有配置"）、当前的体检 finding id 列表、实例自己的记忆文件与交接目标位置（M6 验收中 DSH agent 因不知道自己的记忆在哪里，写进了同机 OpenClaw 的记忆文件），以及归类线索：未分类文件的路径、以及在本应稳定的类别（identity、config、skills）中连续多次封存都发生变化的文件路径（来自服务器端的变动统计，见 ARCHITECTURE.md 第 6 节） | 只读；只返回路径与计数，不返回任何文件内容 |
-| `valise_checkup` | 无 | 运行代码体检（见 ARCHITECTURE.md 第 9 节），返回各项指标和 finding id | 只读，最短间隔 10 分钟 |
-| `valise_seal` | `{ "reason": string }` | 写入一条 `soul` 档滚动备份（`kind: auto` 存入当前日期周期，参与周期保留策略，用户可在客户端按需晋升为永久存档点），返回快照 id | 只能备份 `soul` 档，最短间隔 10 分钟；命中限流时返回最近一次刚建立的快照 id 供同一修改复用，`reason` 写入审计记录 |
-| `valise_propose_enrollment` | `{ "items": [{ "root", "path", "category", "reason" }] }` | 由代码校验路径确实存在、没有路径穿越、类别合法，然后以"待确认"状态保存；确认后写入该实例的 `local_overrides` | 不得提议 `secrets` 以外的类别去覆盖已有的 `secrets` 规则；把文件移出 `soul` 档的提议（改为 `ignore`、`cache`、`body`）标记为"降级"；所有提议都需要用户在客户端（桌面「健康 › 归档建议」或 CLI `valise proposals`）确认 |
-| `valise_declare`（2026-11-02 用户决定，M12 实现） | `{ "security_skills": [{ "name", "purpose" }], "approval_mode": "ask" \| "bypass" \| "unknown" }` | agent 申报自己装了哪些安全类技能、执行风险命令是否需要用户批准；声明连同时间保存在服务器上，界面一律标"agent 声明（未经核实）"；profile 有 `approval_check` 时以核实结果为准 | 只写声明本身；最短间隔 10 分钟；Agent 保护技能在初次学习与体检时更新 |
-| `valise_handoff_begin` | 无 | 先建立一次包含当前会话的 `soul` 档滚动备份，再返回快照 id、当前会话的统计数据、profile 中的 `handoff.targets`、每个目标的行数上限，以及 `new_session_hint` | 每次交接只能调用一次 |
-| `valise_handoff_finish` | `{ "snapshot_id" }` | 由代码检查交接目标文件确实被修改、没有超过行数上限，并且只有指定的区段发生了变化；写入审计记录，返回给用户看的下一步提示 | 检查失败时返回具体原因，原文件可以从快照中恢复 |
+| `valise_status` | 无（`{}`） | 纯只读快查，**不做全盘扫描，不触发备份**：返回 `instance`、`protection_plan`（含是否已采用 `adopted`、定时、档位、周期、保留与复制目标）、精简 `last_seal`（`snapshot_id`、`created_at`、`tier`、`kind`）、由代码写成的一句话 `protection_summary`（agent 原样转述）、`pending_proposals`（计数）及必要 `notes`（`< 150 tokens`） | 毫秒级纯只读；写入不含路径与正文的轻量 `agent-mcp` 审计时间戳 |
+| `valise_seal` | `{ "reason"?: string }` | 写入一条滚动周期备份（`kind: auto` 存入当前日期周期，参与周期保留策略，用户可在客户端按需晋升为永久存档点）。**已确认保护计划的实例按计划档位（默认 `full`）封存**；未采用保护计划的旧实例保守沿用 `soul` 档并在结果中附带 `plan_warning`。`reason` 可选（缺省记 `"agent mcp backup"`）写入审计记录 | 最短间隔 10 分钟；命中 `rate_limited` 时报错同时返回 `last_seal_id` 与 `last_seal_at` 供同一修改复用，不循环重试 |
+| `valise_onboard_context` | 无（`{}`） | 纯只读收集档案上下文：**不触发任何备份**。返回 5 块信息 + `protection_summary` 与精简 `last_seal`：<br>1. `instance`（`instance_id`、`profile_id`、`profile_version`、`roots`）；<br>2. `protection_plan`；<br>3. `effective_rules`（Profile 规则 + Dossier `local_overrides` / `local_sqlite` / `external_refs`）；<br>4. `layout_facts`（5 项：`unclassified_dirs`、`largest_dirs`、`external_symlinks`、`churn_files`、**`untracked_sqlite`**）；<br>5. `pending_proposals`（当前待审批队列，便于去重） | 只返回路径聚合、字节计数与前 16 字节 SQLite 魔数识别线索（`untracked_sqlite`），**绝不读取任何表数据或文件内容**；写入轻量 `agent-mcp` 审计时间戳 |
+| `valise_propose_dossier` | `{ "items": [ ... ] }` | 统一校验并入队三类结构化提案：<br>• `classify`：`{ kind, root, glob (或 path), category, reason }`（`category` 仅限 `memory \| workspace \| state \| skills \| config \| secrets \| cache \| ignore`；硬拒绝用非 `secrets` 覆盖 Profile `secrets`；改入 `cache`/`ignore` 标为降级并要求写明可重建理由）；<br>• `sqlite`：`{ kind, root, glob, secret_tables?, reason }`（硬拒绝削弱 Profile `secret_tables`）；<br>• `external_ref`：`{ kind, path, ref_kind: "external_dir" \| "symlink_target", reason }`（校验绝对路径且位于所有 `roots` 之外） | 单批调用上限 ≤ 50 条（技能约束最多挑选 10 条高价值项）；禁止直写 Dossier，全部需人类在桌面「健康 › 归档建议」或 CLI `valise proposals` 确认后才生效 |
 
-### 3.1 由 agent 补充归类（M6）
+### 3.1 由 agent 补充档案边界（Dossier Proposals）
 
-运行时文件（心跳、锁、临时状态）因 harness、因用户而异，不写进官方 profile，而是作为每个实例的本地覆盖处理：
+1. **代码提供线索**：`valise_onboard_context` 在不触碰文件内容的前提下提供 `unclassified_dirs`、`largest_dirs`（覆盖 `state` 与 `workspace` 下大体积插件垃圾）、`external_symlinks`、`churn_files` 与 `untracked_sqlite`（只检查前 16 字节 `"SQLite format 3\x00"`，排除已纳管库及 `body`/`cache`/`ignore`）。
+2. **agent 筛选高价值提案**：`valise-onboard` 对照 `effective_rules` 和 `pending_proposals` 去重，禁止对 `full` 已默认兜底的零散小 `unclassified` 文件刷屏；单次只提最多 10 条高价值项。
+3. **用户拍板**：所有提案经由桌面「健康 › 归档建议」或 `valise proposals` 审批后，才分别写入实例档案的 `local_overrides`、`local_sqlite` 或 `external_refs`（`external_ref` 在 v0.1 只登记为已知覆盖缺口或忽略，不自动扩封）。
+4. **兜底与回流**：`raw` 档不受分类或降级规则影响。对同类 Harness 普遍成立的新模式仍通过 PR 进入官方 profile，不收集遥测。
 
-1. **代码提供证据**：`valise_status` 给出未分类文件，以及在 identity、config、skills 中连续多次封存都发生变化的文件。
-2. **agent 解释并提议**：agent 结合它对自身 harness 的了解，用 `valise_propose_enrollment` 提出归类和理由。
-3. **用户拍板**：客户端列出全部提议；"降级"提议（会让文件离开 `soul` 档）单独列出、单独确认，防止 agent 误判或被注入后让记忆从备份中消失。
-4. **兜底**：`raw` 档不受任何覆盖影响，始终包含实例目录下的全部文件。
-5. **回流**：如果某个模式对所有用户都成立，应以 PR 的形式带证据修改官方 profile。Valise 不收集遥测。
+## 4. 两个极简技能
 
-在 M6 之前，用户可以用 `valise enroll --assign` 手动写入本地覆盖。
+每个技能只保留一个紧凑的 `SKILL.md`（正文英文、用用户语言回复；触发词兼容中英文）。旧四件套（`valise-enroll`、`valise-upkeep`、`valise-handoff`、`valise-checkup`）已从发版套件移除。
 
-## 4. 四个技能
+### 4.1 `valise-onboard`（低频档案报备，≤ 28 行）
 
-每个技能都是一个标准的 `SKILL.md`，用 frontmatter 写明 `name` 和 `description`，正文用平实的语言写给 agent 看。
+触发：刚安装完技能、新装插件或新增自定义记忆/数据目录、或用户要求检查备份覆盖与体积膨胀。**严格只报备，绝不触发备份**，且绝不执行 shell、读写磁盘文件或改写 `AGENTS.md` 等常驻指令，不在 `reason` 与回复中泄漏任何凭据或正文片段，失败不循环重试：
 
-### 4.1 `valise-enroll`（认识保护）
+1. 调用 `valise_onboard_context`（仅此 1 次）。
+2. 与 `effective_rules` / `pending_proposals` 去重，仅依据 `layout_facts` 和已知布局挑选至多 **10 条**高价值提案（大体积 ≥5 MiB 或明显可重建的插件缓存/依赖/日志降级 `cache`/`ignore`；未纳管 SQLite 提交 `sqlite`；新凭据或成块核心业务/记忆目录提交 `classify`；`roots` 外重要目录或外部软链提交 `external_ref`）。
+3. 有高价值项则合并调 **1 次** `valise_propose_dossier`（无项则 0 次）。
+4. 简洁汇报 3 点：保护计划/定时状态 + 原样转述 `protection_summary`；已提交的提案并引导去桌面「健康 › 归档建议」确认（或说明无需补充）；列出 `roots` 外覆盖缺口。
 
-触发：用户让 agent 了解 Valise 的备份保护；旧“逃生舱”说法继续识别，不能只接受旧品牌词。
+### 4.2 `valise-backup`（日常查状态与高风险前留底，≤ 23 行）
 
-步骤：
+触发：用户询问备份状态/要求先备份，或在 agent 进行高风险自我修改之前；**明文禁止**在普通聊天、只读查询、记入单条日常记忆、微调单个普通小文件时触发：
 
-1. 调用 `valise_status`，了解自己是哪个实例、服务器保护计划是否开启定时备份（通常默认含凭据完整备份与日期周期，另有手动存档点）、最近一次备份与异地同步情况；记住 `auto_sealed_snapshot`（首次调用兜底备份的快照 id，如有）。
-2. 用一两句话向用户说明：哪些东西已经受到保护（包括用户保护计划的定时/存档点覆盖与 MCP 触发的 `soul` 档滚动备份不含凭据），最近一次备份是什么时候，是否已经复制到异地位置。
-3. 调用 `valise_declare` 如实申报当前已知的安全类技能与审批模式（`ask` / `bypass` / `unknown`），让健康页一开始就有声明信息。
-4. 如果 agent 知道自己还使用了 profile 没有覆盖的目录（例如用户让它自建的笔记目录），就调用 `valise_propose_enrollment` 提出来，并提醒用户到 Valise 桌面端「健康 › 归档建议」或命令行 `valise proposals` 确认。
-5. 记住 4.2 中的习惯规则。如果 harness 支持，把规则写进自己的常驻指令，但只写一行引用，例如"风险操作前遵循 valise-upkeep 技能"。写常驻指令前先确保刚建立过覆盖当前工作的备份：若第 1 步已返回 `auto_sealed_snapshot`（或数分钟内已有覆盖快照），直接引用该快照 id 继续；否则先调用 `valise_seal`。
-
-### 4.2 `valise-upkeep`（日常习惯）
-
-在以下操作之前，先调用 `valise_seal`，并在 `reason` 中写明原因：
-
-- 修改自己的人格、规则或记忆文件；
-- 安装或删除技能和插件；
-- 修改配置；
-- 升级 harness；
-- 批量编辑或清理文件。
-
-如果封存失败，就告诉用户失败原因，并询问用户是否继续。**不得在用户不知情的情况下跳过封存。**
-
-### 4.3 `valise-handoff`（正式的"转生"）
-
-触发：用户提出想切换会话；或者体检出现 `long_session` 或 `cost_growth`，用户同意交接。
-
-步骤：
-
-1. 调用 `valise_handoff_begin`。此时旧会话已经完整封存，要明确告诉用户："旧对话已经封存，不会丢失。"
-2. 撰写交接内容，写入 `handoff.targets` 指定的原生记忆文件。写入方式为追加一个带日期标题的区段，不得改动该区段以外的内容，并且不超过行数上限。内容只包括：正在进行的任务与下一步、近期确定的事实与决定、未解决的问题。不写寒暄，不写排错过程，不写任何凭据。
-3. 调用 `valise_handoff_finish`。
-4. 把 `new_session_hint` 转告用户，告诉用户如何开启新会话；新会话会自动加载交接内容。
-
-### 4.4 `valise-checkup`（体检）
-
-1. 调用 `valise_checkup`，用通俗的语言解释每一个 finding（见第 5 节）。
-2. 只给建议，不主动修改任何东西。涉及记忆的整理（例如把久远的记忆抽象成摘要），必须满足以下条件：用户明确同意 → 先 `valise_seal` → 在原文件中只修改用户同意的部分 → 告诉用户可以从哪个快照撤销。
-3. 推荐方案时，先给出该 harness 官方文档中的原生选项（profile 的 `native_options_doc`），再给出第 6 节的选择标准。**不点名推荐任何第三方插件。**
+1. **查状态**：调用 `valise_status`（1 次），用 2 句短话交代定时保护开关、活跃档位、最近备份时间，并**原样转述** `protection_summary`。
+2. **高风险修改前留底**：仅当用户要求备份，或即将改动核心配置（如 `openclaw.json`）、装卸技能/插件、大幅重写/清理人格/规则/记忆、批量改删工作区文件、升级 Harness 前，调用 `valise_seal`（可选短 `reason`）。
+3. 汇报生成的滚动快照 ID（`kind: auto`）；若返回 `plan_warning`（未采用保护计划的旧 `soul` 实例），温和提醒去桌面端确认保护计划以覆盖配置与工作区；命中 `rate_limited` 时直接复用返回中的 `last_seal_id` 与时间并继续；其余错误立刻停下用一句话说明并询问用户，绝不循环重试。
 
 ## 5. Finding 的解读要点
 
@@ -137,22 +105,22 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 ### 8.1 MCP 服务端
 
 - `valise-porter mcp --instance <id>`：stdio 上的 JSON-RPC 2.0，一行一条消息。只实现 `initialize`、`notifications/initialized`、`ping`、`tools/list`、`tools/call`，不引入第三方 MCP 库。协议版本：客户端请求的版本在支持列表（`2025-06-18`、`2025-03-26`、`2024-11-05`）内就照用，否则回复最新的。
+- `tools/list` 仅暴露 4 个工具（`valise_status`、`valise_seal`、`valise_onboard_context`、`valise_propose_dossier`）；`Call()` 对隐藏的旧版工具名保留 v0.1 静默兼容，并移除连接首次调用自动触发 `autoSeal` 的机制。
 - 工具结果同时放在 `structuredContent`（JSON 对象）和一段 `text` 中；用户错误（频率限制、校验失败等）以 `isError: true` 返回"原因 + 建议"，不中断会话。
-- 审计记录的发起者为 `agent-mcp`；被频率限制挡回的封存尝试也记一条（结果 `rate_limited`，附原因）。频率限制与交接状态保存在 `~/.local/state/valise/mcp/<实例>.json`。
-- MCP 进程以实例在服务器上的 profile 副本为准（与封存相同），不需要客户端在线。
-- **代码兜底**（用户决定，2026-10-31；2026-11-19 修订归档轨）：同一个 MCP 连接中，agent 第一次调用任何工具（`valise_seal` 与 `valise_handoff_begin` 本身会备份，除外）时，如果距上次备份已超过 10 分钟，先自动建立一次 `soul` 档滚动备份（`kind: auto`，写入日期周期叶子，并记下 `LastSealID` 随本次 `valise_status` 返回及作为限流提示，避免随后立即调用 `valise_seal` 时误报无法绕过的限流障碍），审计原因为 `auto: first tool call (<工具名>)`，并计入频率限制。原因：M6 验收中观察到，模型在写记忆、改人格前并不可靠地调用 `valise_seal`；随日期周期落盘可跟随用户保留策略退役，不污染永久手动存档点。局限：只覆盖调用了 Valise 工具的会话；不依赖 agent 的定时备份由保护计划负责。
+- 审计记录的发起者为 `agent-mcp`；`valise_seal`（含 `rate_limited` 与实际封存）、`valise_status`、`valise_onboard_context`、`valise_propose_dossier` 均写入不含任何内容/敏感路径的轻量审计时间戳，保证桌面端准确统计「最近 MCP 调用时间」。频率限制保存在 `~/.local/state/valise/mcp/<实例>.json`。
+- MCP 进程以实例在服务器上的 profile 副本与实例档案为准，不需要客户端在线。
 
-### 8.2 归类提议
+### 8.2 归类与档案扩展提议
 
-- `valise_propose_enrollment` 的 `path` 是相对 root 的路径：指向文件时生成精确规则，指向目录时生成 `<path>/**`。代码校验：路径存在、不含 `..` 与绝对路径、不经过符号链接逃出 root、类别合法；与已有 `secrets` 规则冲突的非 `secrets` 提议直接拒绝。
-- 提议保存在 `~/.config/valise/instances/<实例>.proposals.json`（0600），每条有 id、规则、理由、时间、是否"降级"，以及它会把多少个目前未分类的文件移出凭据层。同一规则重复提议时只更新理由。
-- 未分类文件按"未知即敏感"随凭据层封存；把它们归入 soul 档类别的提议，客户端会注明"接受后这些文件将从凭据层进入 soul 档"，提醒用户确认其中没有凭据（M6 验收中观察到 agent 会把未知的数据库提议为 `state`）。
-- 客户端：`valise proposals <服务器> <实例>` 列出全部待确认提议，降级提议单独成组；`--accept <id,…|all>` 只接受非降级提议；降级提议必须用 `--accept-demotion <id,…>` 单独接受，执行前再次说明"这些文件将不再进入 soul 档"；`--reject <id,…|all>` 拒绝。接受的提议写入实例记录的 `local_overrides`，从下一次封存起生效。
+- `valise_propose_dossier` 的三类提案保存在 `~/.config/valise/instances/<实例>.proposals.json`（0600），每条含 id、kind（`classify` / `sqlite` / `external_ref`）、规则或库/外联定义、理由与时间：
+  - `classify`（含旧 `valise_propose_enrollment` 静默转发）：`category` 只允许 `memory | workspace | state | skills | config | secrets | cache | ignore`。路径经代码校验存在、相对 `root`、不含 `..` 且不经符号链接逃逸；命中既有 `secrets` 规则的非 `secrets` 提议直接拒绝；将文件改为 `cache` 或 `ignore`（离开 `soul` 档）标为"降级"并强制要求原因；命中当前 `unclassified` 移入 `soul` 档时标注未分类计数提醒用户不含凭据。
+  - `sqlite`：校验 `root` 与 `glob` 在实例 roots 内，并校验不削弱同匹配 Profile `consistency.sqlite[].secret_tables`。
+  - `external_ref`：校验 `ref_kind` 为 `external_dir` 或 `symlink_target`，且绝对路径严格位于所有 `roots` 之外。
+- 客户端（桌面「健康 › 归档建议」与 CLI `valise proposals <服务器> <实例>`）：列出全部待确认提议，降级提议单独成组且仅可通过 `--accept-demotion` / 桌面逐条确认弹窗接受。确认后分别合入 Dossier 的 `local_overrides`、`local_sqlite` 与 `external_refs`，从下一次封存起生效。
 
-### 8.3 交接
+### 8.3 旧交接工具兼容（v0.1 静默保留，功能归 ValiseMemo）
 
-- `valise_handoff_begin`：封存一次 `soul` 档（不受 `valise_seal` 的 10 分钟限制），记录每个交接目标文件当时的 SHA-256 与长度，返回快照 id、最近活跃会话的统计、目标、行数上限与 `new_session_hint`。同一时间只能有一个未完成的交接；新的 begin 会作废旧的。
-- `valise_handoff_finish`：`append_section` 模式下逐个检查目标文件：原内容必须原样保留为前缀；追加部分不超过 `max_lines` 行，第一行非空行必须是带日期（`YYYY-MM-DD`）的 Markdown 标题。至少一个目标被修改才算成功。失败时返回具体原因，并说明可以从 begin 的快照恢复原文件。
+- `valise_handoff_begin` / `valise_handoff_finish` 与 `valise_checkup` / `valise_declare` 已从新安装技能与 `tools/list` 下线，仅在 `Call()` 中保持 v0.1 静默兼容以便已接旧技能的存量代理平稳过渡。
 
 ### 8.4 体检
 
@@ -173,7 +141,7 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 
 - 每个发现除了代码给出的数字，还要附**处理建议**，分三层，按顺序展示：
   1. **harness 自己的做法**：profile 的 `checkup.remedies.<finding>`（文字，只展示，Valise 不执行）；没有时用 Valise 内置的通用说明（例如长会话：开新会话前先交接）。
-  2. **交给 agent**：一段可以复制给 agent 的话，请它用已安装的 `valise-checkup` 技能解读结果并提出整理方案，由用户确认后再执行；没装技能时提示先安装。
+  2. **交给 agent**：涉及目录布局与备份体积优化时，可复制引导词请 Agent 用 `valise-onboard` 报备目录与排除可重建缓存（旧 `valise-checkup` 技能已随 v0.1 收口移除，深度记忆与会话整理交由后续 ValiseMemo / v0.2+ 承接）。
   3. **记忆整理技能**：说明 Valise 计划提供自己的 `valise-memory` 技能（整理、压缩、归档记忆），目前处于规划中。只写文字，不渲染按钮，不点名任何第三方方案。
 - 归类提议在界面上称为"归档建议"，放在体检页中（UI.md 9.4），不再单独成页。
 
@@ -185,7 +153,7 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 
 | 级别 | 内容 | 安装方式 | 访问级别 |
 | :--- | :--- | :--- | :--- |
-| 基础 | 四个Agent 保护技能与 MCP 接入（8.5 节） | 默认提供，在管理页一键安装 | 主人 |
+| 基础 | Agent 保护技能二件套（`valise-onboard`、`valise-backup`）与 MCP 接入（8.5 节） | 默认提供，在管理页一键安装 | 主人 |
 | 增强 | 官方记忆技能（`valise-memory`，规划中）、官方辅助技能、不需要 root 的工具（如 rclone） | 逐项选择、逐项安装 | 主人 |
 | 专家 | harness 插件、需要 root 的工具（如经系统包管理器装 rsync） | 逐项安装，先说明风险、用户确认知晓 | 开发者模式 › 高级模式，并受 INSTALL.md 4.2 的前提约束 |
 
@@ -233,12 +201,12 @@ tools:
 
 ### 8.5 安装 Agent 保护技能
 
-- 客户端（桌面「管理与设置 › Agent 保护技能」或 `valise kit install <服务器> <实例>`）：先列出将要写入的文件，用户确认后由 porter 把 `agent-kit/skills/` 下的四个技能写到 profile 的 `agent_kit.skills_dir`（每个技能一个子目录，已存在且内容不同时先备份为 `SKILL.md.valise-bak-<时间>`）。技能文件随客户端分发；未写入配置文件的 MCP 接入方式（`mcp_add_argv`、`mcp_config_snippet`、`mcp_config_doc` 与可直接复制的话术）可在桌面端折叠面板随时直接查看复制，无需解锁 Valise 口令。
-- 然后打印 MCP 的接入方法：profile 有 `agent_kit.mcp_add_argv` 时，展开 `${PORTER}`、`${INSTANCE}` 后打印 harness 自己的命令供用户执行；没有命令、只有 `agent_kit.mcp_config_snippet` 时打印展开后的配置片段；同时打印一句可以转告 agent 的话。
-- `format: jsonl` 的会话文件以 `.zst` 或 `.zstd` 结尾时先解压；大小按磁盘上的字节计，token 估算按解压后的字节计。Valise 不执行这条命令，也不修改 harness 配置。
+- 客户端（桌面「管理与设置 › Agent 保护技能」或 `valise kit install <服务器> <实例>`）：先列出将要写入的文件，用户确认后由 porter 把 `agent-kit/skills/` 下的二件套技能（`valise-onboard`、`valise-backup`）写到 profile 的 `agent_kit.skills_dir`（每个技能一个子目录，已存在且内容不同时先备份为 `SKILL.md.valise-bak-<时间>`）；同时按历史发版哈希识别并清理未修改的旧四件套残留（用户改过的保留并列出）。未写入配置文件的 MCP 接入方式（`mcp_add_argv`、`mcp_config_snippet`、`mcp_config_doc` 与 3 句可直接复制对 Agent 说的话）可在桌面端折叠面板随时直接查看复制，无需解锁 Valise 口令。
+- 然后打印 MCP 的接入方法：profile 有 `agent_kit.mcp_add_argv` 时，展开 `${PORTER}`、`${INSTANCE}` 后打印 harness 自己的命令供用户执行；没有命令、只有 `agent_kit.mcp_config_snippet` 时打印展开后的配置片段；同时打印可转告 agent 的三句短提示词（首次报备布局、查询备份状态、高风险修改前留底）。Valise 不执行这条命令，也不修改 harness 配置。
+- `format: jsonl` 的会话文件以 `.zst` 或 `.zstd` 结尾时先解压；大小按磁盘上的字节计，token 估算按解压后的字节计。
 - 技能正文用英文书写，并要求 agent 用用户的语言与用户交流；触发说明同时列出中英文说法。
-- `valise kit status <服务器> <实例>`（M7a）：逐个列出四个技能在技能目录中的状态（与本客户端发布的版本一致 / 已被修改 / 未安装）以及 Valise 留下的备份数；MCP 方面只报告最近一次 agent 经 MCP 调用的时间（来自审计记录）。Valise 不读取 harness 的配置，因此不声称"MCP 已配置"。
-- `valise kit uninstall <服务器> <实例> [--force]`（M7a）：先列出将删除的文件，用户确认后由 porter 在 Go 代码中删除：内容与当前发布版本一致的 `SKILL.md`、Valise 写的 `SKILL.md.valise-bak-*` 备份，以及因此变空的技能目录。被修改过的 `SKILL.md` 保留并列出，加 `--force` 才删除。然后打印撤除 MCP 的方法：profile 的 `agent_kit.mcp_remove_argv`（harness 自己的命令，Valise 不执行），或提示从配置片段所在文件删除相应条目；并提醒 agent 可能在常驻指令里加过一行提及 `valise_seal` 的提醒，需要用户或 agent 自行删除。MCP 状态、审计记录与备份库不受影响。
+- `valise kit status <服务器> <实例>`（M7a）：逐个列出当前技能在技能目录中的状态（与本客户端发布的版本一致 / 已被修改 / 未安装）以及 Valise 留下的备份数；MCP 方面只报告最近一次 agent 经 MCP 调用的时间（来自审计记录）。Valise 不读取 harness 的配置，因此不声称"MCP 已配置"，也不展示 agent 自报安全状态。
+- `valise kit uninstall <服务器> <实例> [--force]`（M7a）：先列出将删除的文件，用户确认后由 porter 在 Go 代码中删除：内容与当前发布版本一致的 `SKILL.md`（含匹配历史哈希的旧四件套残留）、Valise 写的 `SKILL.md.valise-bak-*` 备份，以及因此变空的技能目录。被修改过的 `SKILL.md` 保留并列出，加 `--force` 才删除。然后打印撤除 MCP 的方法：profile 的 `agent_kit.mcp_remove_argv`（harness 自己的命令，Valise 不执行），或提示从配置片段所在文件删除相应条目。MCP 状态、审计记录与备份库不受影响。
 
 ## 9. 管理方接口与技能（N5a，规划未实现）
 

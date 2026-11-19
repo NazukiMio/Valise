@@ -142,6 +142,9 @@ func (a *App) agentKitCard(c *ui.Context, row *agentRow) {
 		if st.note != "" {
 			notice(c, "ok", st.note)
 		}
+		if st.lastInstall != nil && st.lastInstall.Result != nil && len(st.lastInstall.Result.LegacyKept) > 0 {
+			notice(c, "warn", T("kit.legacy_kept", "paths", strings.Join(st.lastInstall.Result.LegacyKept, ", ")))
+		}
 		a.kitRemovalNotice(c, st)
 		if st.guide != nil {
 			ui.Collapsible(c, T("kit.guide_title"), a.fold("kit-guide-"+key), func() {
@@ -158,9 +161,6 @@ func (a *App) kitStatusSection(c *ui.Context, st *agentKitState) {
 		statusRow(c, "ok", T("kit.mcp.label"), T("kit.mcp.called", "n", st.status.MCPCalls, "when", when(*st.status.LastMCP, c.Now())))
 	} else {
 		statusRow(c, "neutral", T("kit.mcp.label"), T("kit.mcp.never"))
-	}
-	if d := st.status.Declaration; d != nil {
-		muted(ui.Text(c, T("kit.declared", "mode", approvalModeLabel(d.ApprovalMode), "n", len(d.SecuritySkills)))).FontSize(fsSub).Wrap()
 	}
 	if st.status.Dir == "" {
 		muted(ui.Text(c, T("kit.no_skills_dir"))).FontSize(fsSub).Wrap()
@@ -245,10 +245,9 @@ func (a *App) kitGuideSection(c *ui.Context, st *agentKitState) {
 		}
 		ui.Text(c, T("kit.prompts_title")).FontSize(fsSub).Bold()
 		prompts := []struct{ label, copyLabel, text string }{
-			{T("kit.prompt.enroll"), T("kit.prompt.enroll_copy"), g.EnrollSay},
-			{T("kit.prompt.upkeep"), T("kit.prompt.upkeep_copy"), g.UpkeepSay},
-			{T("kit.prompt.checkup"), T("kit.prompt.checkup_copy"), g.CheckupSay},
-			{T("kit.prompt.handoff"), T("kit.prompt.handoff_copy"), g.HandoffSay},
+			{T("kit.prompt.onboard"), T("kit.prompt.onboard_copy"), g.OnboardSay},
+			{T("kit.prompt.status"), T("kit.prompt.status_copy"), g.StatusSay},
+			{T("kit.prompt.backup"), T("kit.prompt.backup_copy"), g.BackupSay},
 		}
 		for i, pr := range prompts {
 			if pr.text == "" {

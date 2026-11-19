@@ -63,6 +63,24 @@ func (c *cli) checkup(ctx context.Context, args []string) error {
 	return nil
 }
 
+func proposalSummaryText(p agentkit.Proposal) string {
+	switch p.EffectiveKind() {
+	case agentkit.ProposalKindSQLite:
+		if p.SQLite != nil {
+			s := "sqlite:" + p.SQLite.Root + ":" + p.SQLite.Glob
+			if len(p.SQLite.SecretTables) > 0 {
+				s += "（保密表：" + strings.Join(p.SQLite.SecretTables, ",") + "）"
+			}
+			return s
+		}
+	case agentkit.ProposalKindExternalRef:
+		if p.ExternalRef != nil {
+			return "external:" + p.ExternalRef.Path + "（" + p.ExternalRef.RefKind + "）"
+		}
+	}
+	return p.Rule.Root + ":" + p.Rule.Glob + " → " + p.Rule.Category
+}
+
 func (c *cli) proposals(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("proposals", flag.ContinueOnError)
 	accept := fs.String("accept", "", "")
@@ -89,7 +107,7 @@ func (c *cli) proposals(ctx context.Context, args []string) error {
 			return err
 		}
 		if len(ps) == 0 {
-			fmt.Fprintln(c.out, "没有待确认的归类提议。")
+			fmt.Fprintln(c.out, "没有待确认的归档建议。")
 			return nil
 		}
 		print := func(title string, demotion bool) {
@@ -102,14 +120,14 @@ func (c *cli) proposals(ctx context.Context, args []string) error {
 					fmt.Fprintln(c.out, title)
 					first = false
 				}
-				fmt.Fprintf(c.out, "  %s  %s:%s → %s\n      理由（agent 提供）：%s\n", p.ID, p.Rule.Root, p.Rule.Glob, p.Rule.Category, p.Reason)
+				fmt.Fprintf(c.out, "  %s  %s\n      理由（agent 提供）：%s\n", p.ID, proposalSummaryText(p), p.Reason)
 				if p.Unclassified > 0 {
 					fmt.Fprintf(c.out, "      注意：其中 %d 个文件目前未分类（按凭据对待），接受后将进入轻装备份；请确认里面没有凭据\n", p.Unclassified)
 				}
 			}
 		}
-		print("归类提议：", false)
-		print("降级提议（接受后这些文件将不再进入 soul 档，需要单独确认）：", true)
+		print("档案与归类建议：", false)
+		print("降级提议（接受后这些文件将不再进入常规备份，需要单独确认）：", true)
 		fmt.Fprintf(c.out, "\n接受：valise proposals %s %s --accept <id,…|all>\n", host, instance)
 		fmt.Fprintf(c.out, "接受降级：valise proposals %s %s --accept-demotion <id,…>（逐个列出，不支持 all）\n", host, instance)
 		fmt.Fprintf(c.out, "拒绝：valise proposals %s %s --reject <id,…|all>\n", host, instance)
@@ -122,7 +140,7 @@ func (c *cli) proposals(ctx context.Context, args []string) error {
 		}
 	}
 	if len(d.AcceptDemotions) > 0 && !*yes &&
-		!c.confirm(fmt.Sprintf("接受降级提议 %s？这些文件将不再进入 soul 档（raw 档仍包含它们）", strings.Join(d.AcceptDemotions, ","))) {
+		!c.confirm(fmt.Sprintf("接受降级提议 %s？这些文件将不再进入常规备份（仅 raw 档包含它们）", strings.Join(d.AcceptDemotions, ","))) {
 		fmt.Fprintln(c.out, "已取消。")
 		return nil
 	}
@@ -131,7 +149,7 @@ func (c *cli) proposals(ctx context.Context, args []string) error {
 		return err
 	}
 	for _, p := range res.Accepted {
-		fmt.Fprintf(c.out, "已接受 %s：%s:%s → %s\n", p.ID, p.Rule.Root, p.Rule.Glob, p.Rule.Category)
+		fmt.Fprintf(c.out, "已接受 %s：%s\n", p.ID, proposalSummaryText(p))
 	}
 	for _, id := range res.Rejected {
 		fmt.Fprintf(c.out, "已拒绝 %s\n", id)
@@ -191,6 +209,15 @@ func (c *cli) kit(ctx context.Context, args []string) error {
 	} else {
 		fmt.Fprintf(c.out, "无法安装技能：%s\n", plan.NoSkills)
 	}
+	if plan.Result != nil && len(plan.Result.LegacyRemoved) > 0 {
+		fmt.Fprintf(c.out, "已自动清理 %d 个未修改的旧版技能文件。\n", len(plan.Result.LegacyRemoved))
+	}
+	if plan.Result != nil && len(plan.Result.LegacyKept) > 0 {
+		fmt.Fprintln(c.out, "保留以下你曾手动修改过的旧版技能文件：")
+		for _, p := range plan.Result.LegacyKept {
+			fmt.Fprintf(c.out, "  %s\n", p)
+		}
+	}
 	fmt.Fprintln(c.out, "\n接入 MCP（Valise 不会修改 harness 的配置，请自己执行或转告 agent）：")
 	if len(plan.MCPCommand) > 0 {
 		quoted := make([]string, len(plan.MCPCommand))
@@ -209,7 +236,7 @@ func (c *cli) kit(ctx context.Context, args []string) error {
 		fmt.Fprintf(c.out, "  配置说明：%s\n", plan.MCPDoc)
 	}
 	fmt.Fprintf(c.out, "  或者把这句话转告 agent：\n    %s\n", plan.AgentLine)
-	fmt.Fprintln(c.out, "\n接入后对 agent 说：我给你装了 Valise 保护技能，你学习一下。")
+	fmt.Fprintln(c.out, "\n接入后可对 agent 说：用 valise-onboard 验收连接并报备你的目录布局。")
 	return nil
 }
 
@@ -301,6 +328,5 @@ func (c *cli) kitUninstall(ctx context.Context, args []string) error {
 	default:
 		fmt.Fprintf(c.out, "  在 harness 的 MCP 配置中删除名为 %s 的服务器，或请 agent 删除。\n", plan.MCPServerName)
 	}
-	fmt.Fprintln(c.out, "另外，agent 学习保护技能时可能在它的常驻指令里加过一行提及 valise_seal 的提醒，请自行删除或让 agent 删除。")
 	return nil
 }

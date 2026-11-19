@@ -2,6 +2,7 @@ package profile
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -58,13 +59,24 @@ type Match struct {
 // docs/ARCHITECTURE.md section 4: secrets rules (profile and overrides),
 // then local_overrides, then body.paths, then the first matching path rule.
 type Classifier struct {
-	p         *Profile
-	overrides []Override
+	p           *Profile
+	overrides   []Override
+	extraSQLite []SQLiteRef
 }
 
 // NewClassifier returns a classifier for an effective profile.
 func NewClassifier(p *Profile, overrides []Override) *Classifier {
 	return &Classifier{p: p, overrides: overrides}
+}
+
+// WithSQLite returns a classifier that also honors instance dossier SQLite rules.
+func (c *Classifier) WithSQLite(extra []SQLiteRef) *Classifier {
+	if c == nil || len(extra) == 0 {
+		return c
+	}
+	out := *c
+	out.extraSQLite = slices.Clone(extra)
+	return &out
 }
 
 // Classify returns the category of the file at rel (slash-separated,
@@ -100,17 +112,38 @@ func (c *Classifier) Classify(root, rel string) Match {
 	return Match{}
 }
 
-// SQLite returns the consistency.sqlite declaration matching the file.
+// SQLite returns the consistency.sqlite or dossier local_sqlite declaration
+// matching the file. When multiple declarations match, SecretTables is the
+// union so a local rule can never weaken a profile's secret_tables.
 func (c *Classifier) SQLite(root, rel string) (SQLiteRef, bool) {
-	if c.p.Consistency == nil {
+	if c == nil {
 		return SQLiteRef{}, false
 	}
-	for _, s := range c.p.Consistency.SQLite {
-		if s.Root == root && MatchGlob(s.Glob, rel) {
-			return s, true
+	var out SQLiteRef
+	matched := false
+	seen := map[string]bool{}
+	collect := func(list []SQLiteRef) {
+		for _, s := range list {
+			if s.Root != root || !MatchGlob(s.Glob, rel) {
+				continue
+			}
+			if !matched {
+				out = SQLiteRef{Root: s.Root, Glob: s.Glob}
+				matched = true
+			}
+			for _, tbl := range s.SecretTables {
+				if !seen[tbl] {
+					seen[tbl] = true
+					out.SecretTables = append(out.SecretTables, tbl)
+				}
+			}
 		}
 	}
-	return SQLiteRef{}, false
+	if c.p != nil && c.p.Consistency != nil {
+		collect(c.p.Consistency.SQLite)
+	}
+	collect(c.extraSQLite)
+	return out, matched
 }
 
 // SQLiteSidecarSuffixes are SQLite's companion files.

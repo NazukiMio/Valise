@@ -378,6 +378,11 @@ func (c *healthTab) proposalsView(w, sel int) (string, int, int) {
 			from = strings.Count(b.String(), "\n") + 1
 		}
 		line := pr.Rule.Root + ":" + pr.Rule.Glob + " → " + categoryName(pr.Rule.Category)
+		if pr.EffectiveKind() == agentkit.ProposalKindSQLite && pr.SQLite != nil {
+			line = "sqlite:" + pr.SQLite.Root + ":" + pr.SQLite.Glob
+		} else if pr.EffectiveKind() == agentkit.ProposalKindExternalRef && pr.ExternalRef != nil {
+			line = "external:" + pr.ExternalRef.Path + " (" + pr.ExternalRef.RefKind + ")"
+		}
 		if pr.Demotion {
 			line += warnStyle.Render("  降级：不再进轻装备份，需要单独确认")
 		}

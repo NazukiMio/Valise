@@ -103,7 +103,7 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 	rep = &vaultrpc.SealReport{InstanceID: params.InstanceID, Tier: params.Tier, Categories: map[string]vaultrpc.Tally{},
 		Unstable: []string{}, SQLite: []vault.SQLiteNote{}}
 	var items []porterenroll.Item
-	c := profile.NewClassifier(prof, rec.LocalOverrides)
+	c := profile.NewClassifier(prof, rec.LocalOverrides).WithSQLite(rec.LocalSQLite)
 	nested := porterenroll.NestedInstances(e.For(prof), prof, params.InstanceID, rec.Roots[profile.StateRoot])
 	porterenroll.Walk(roots, nested, c, func(it porterenroll.Item) {
 		if it.SidecarOf != "" {
@@ -239,7 +239,9 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 	now := time.Now().UTC()
 	snap := vault.Snapshot{InstanceID: rec.InstanceID, Tier: params.Tier, CreatedAt: now,
 		Profile:    vault.ProfileRef{ID: prof.ID, Version: prof.ProfileVersion, Status: prof.Status},
-		ProfileDoc: prof, Provenance: rec.Provenance, LocalOverrides: rec.LocalOverrides, Roots: rec.Roots, SQLite: rep.SQLite,
+		ProfileDoc: prof, Provenance: rec.Provenance, LocalOverrides: rec.LocalOverrides,
+		LocalSQLite: rec.LocalSQLite, ExternalRefs: rec.ExternalRefs,
+		Roots: rec.Roots, SQLite: rep.SQLite,
 		Name: rec.Name, Env: rec.Env,
 		Notes: vault.Notes{Unstable: rep.Unstable, UnclassifiedCount: rep.UnclassifiedCount}}
 	meta, err := w.Commit(snap, files, vault.Meta{Kind: kind, Note: note})

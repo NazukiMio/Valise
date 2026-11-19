@@ -390,8 +390,10 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 			rootsMap[r.ID] = r.Path
 		}
 		rec := enroll.Record{InstanceID: instance, ProfileID: prof.ID, ProfileVersion: prof.ProfileVersion, Roots: rootsMap,
-			Provenance: head.Provenance, LocalOverrides: append([]profile.Override{}, head.LocalOverrides...), EnrolledAt: time.Now().UTC(),
-			Name: head.Name}
+			Provenance: head.Provenance, LocalOverrides: append([]profile.Override{}, head.LocalOverrides...),
+			LocalSQLite:  append([]profile.SQLiteRef(nil), head.LocalSQLite...),
+			ExternalRefs: append([]enroll.ExternalRef(nil), head.ExternalRefs...),
+			EnrolledAt:   time.Now().UTC(), Name: head.Name}
 		if len(head.Env) > 0 {
 			rec.Env = map[string]string{}
 			for k, v := range head.Env { // a path-based selection follows the new state dir
