@@ -1,10 +1,20 @@
 # 当前状态与交接
 
-> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-18。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
+> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-19。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. Phase B3（2026-11-18）
+## 0. Phase B3.1 与阶段交接（2026-11-19）
 
-基线为 `c0eff00`，当前分支为 `design/gui-polish-phase2`。用户确认 Phase B2 真机验收通过。B3 保留旅程曲线的视口裁剪、可见卡片淡入和长月份虚拟列表，并完成备份双轨制、服务器自动退役及桌面晋升。
+- **分支状态**：`design/gui-polish-phase2`（`97f0a6e`）已合并（fast-forward）至 `main`；当前工作分支为 `feat/cloud-rclone-and-server-shell`（从 `main` 切出）。
+- **已修复并完成打包核验（2026-11-19）**：`stage-test-20261118-b3` 已补全 `-ldflags` 中的 `ReleasePublicKey` 重编、重签与刷新 `SHA256SUMS`，并实测 `profiles status` 与 `cloud list` 正常读取 `2026.11.10` 资料包。
+- **当前实施中（`feat/cloud-rclone-and-server-shell`）**：
+  1. **服务器 `rclone` 安装与 `PATH` 回退**：`porter` 优先使用 `~/.local/bin/rclone`，不存在时回退服务器 `PATH` 中已安装的 `rclone`（始终显式 `--config ~/.config/valise/rclone/rclone.conf`）；GUI 服务器设置与云盘登录行接通已有无 `sudo` Kit 二进制安装（先展示 URL/版本/SHA-256/路径并要求显式勾选确认，同时保留跳转服务器命令行自装入口）。
+  2. **云盘多服务器串行登录与会话内保留 `client_secret`**：云盘添加/重登录页支持多选服务器并按序串行登录（共享单次 `BeginOperation()` PIN 租约）；`client_id`/`client_secret` 在当前页内存会话中保留，离开该页、点完成/返回或关窗立即清零，不落盘不写日志。
+  3. **「服务器命令行」归位服务器详情页**：从 Agent 页移出，在服务器详情页提供独立入口 `/servers/<host>/shell`；Agent 页精简为「原生对话与向导」（仅含「原生对话」与「首次向导」，CLI `valise native --shell` 保持兼容）。
+- **已登记后续待办（本批不动）**：UI「过度防御 / 过度解释」文案专项审计（如云盘页重复说明服务器攻破暴露的长文），留待后续阶段统一清理平衡。
+
+### Phase B3（2026-11-18）
+
+基线为 `c0eff00`，原分支 `design/gui-polish-phase2` 已合入 `main`。用户确认 Phase B2 真机验收通过。B3 保留旅程曲线的视口裁剪、可见卡片淡入和长月份虚拟列表，并完成备份双轨制、服务器自动退役及桌面晋升。
 
 - 定时任务写日期周期。用户手动与操作前备份写实例的永久 `savepoints/` 叶子。旧历史和混合周期继续可读，自动退役不清理它们。
 - 自动退役默认关闭。用户设置保留数后，只处理已结束的纯自动服务器周期，保留当前周期和异地副本。
@@ -50,13 +60,12 @@ B3 测试包位于 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-202
 - **已定，后续独立阶段处理**：管理员通行证界面仍要求另设“管理口令”，与 AGENTS.md 第 3 节“默认用 Valise 口令”不一致；用户 2026-11-17 确认本分支不改，留给后续安全阶段。
 - **实机前端验收（2026-11-18）**：用户已在真实桌面窗口使用 `stage-test-20261117-ui`（`23bdcc8`）完成前两轮界面整理及第 3 批体验优化验收，前端功能通过；实测暴露“备份数量很多时旅程页动效全量渲染卡顿”及对应的“备份退役机制”设计缺口，已纳入下方 `0b` 节交由新会话推进。
 
-### 0b. 后续验收与反馈（交接必看）
+### 0b. 已解决的打包阻塞与后续验收项
 
-1. **首要阻塞（`stage-test-20261118-b3` 打包漏注公钥，待新会话先重打再继续实测）**：
+1. **已解决（`stage-test-20261118-b3` 打包漏注公钥，2026-11-19 已重打并核验）**：
    - **现象**：用户打开测试包的云盘重新登录界面时报错「已安装的资料包没有云盘清单」（`kit_tools_none`）。
-   - **根因**：重打 `659d9c0` 的 `/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261118-b3/` 客户端二进制时，`-ldflags` 只传了 `-X main.version=0.0.0-dev+stage-test-20261118-b3`，漏传了 `-X valise/client/porter.ReleasePublicKey=RWQbaFToOWjIZQaMqdyF2N8SK/TEdbXwi9vnUHzVx2MlhSRXQYPVppps`。`ReleasePublicKey` 为空导致 `profiles.Load` 无法验签本机已装的 `2026.11.10` 资料包，`set.Kit` 为 `nil`。
-   - **下一步**：新会话接手后先补全 `-ldflags "-X main.version=0.0.0-dev+stage-test-20261118-b3 -X valise/client/porter.ReleasePublicKey=RWQbaFToOWjIZQaMqdyF2N8SK/TEdbXwi9vnUHzVx2MlhSRXQYPVppps"` 重新编译 `valise` 与 `Valise Test.app`（并重签与刷新 `SHA256SUMS`），再交给用户继续验证。
-2. 随后由用户在真实桌面窗口与 Linux 测试服务器核对：B3（定时备份、自动退役、晋升、独立恢复、长/短旅程曲线）、单次操作 PIN 弹窗次数、首页服务器分组以及重新登录云盘（需同步更新测试包内 `valise-porter_linux_*` 至服务器）。
+   - **根因与修复**：漏传 `valise/client/porter.ReleasePublicKey` 导致无法验签本机已装的 `2026.11.10` 资料包；已补全完整 `-ldflags` 重新编译 `valise` 与 `Valise Test.app`、重签并刷新 `SHA256SUMS`（14/14 OK），实测 `profiles status` 与 `cloud list` 均正常读取 `2026.11.10` 资料包及云盘清单。
+2. 随后由用户在真实桌面窗口与 Linux 测试服务器核对：B3（定时备份、自动退役、晋升、独立恢复、长/短旅程曲线）、单次操作 PIN 弹窗次数、首页服务器分组以及本次 B3.1 新增的服务器 `rclone` 安装、多服务器云盘批量登录与服务器命令行（届时重打包含更新 `valise-porter_linux_*` 的新测试包）。
 
 ## 0c. 架构收敛、前端整固与 Phase B1 实施记录
 
