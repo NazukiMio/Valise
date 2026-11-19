@@ -33,7 +33,34 @@ paths: [{ root: state, glob: "extra.json", category: config, verify: pending }]
 provenance: { kind: binary, binary: { name: extra } }
 `
 
-func writeSignedPack(t *testing.T, yamlBody, packVer string, s *minisigntest.Signer) string {
+const kitToolsTestYAML = `schema: valise-kit-tools/1
+tools:
+  - id: rclone
+    tier: enhanced
+    name: rclone
+    purpose: 同步到网盘
+    without: 不能同步到网盘
+    check: { binary: rclone }
+    binary:
+      version: "1.75.2"
+      archives:
+        - { arch: amd64, url: "https://downloads.rclone.org/v1.75.2/rclone-v1.75.2-linux-amd64.zip", sha256: "349ac8fba6ff65d6247043f1750cdcb518ec5d500ef91463a10d37c0ccdf3702", member: "rclone-v1.75.2-linux-amd64/rclone" }
+    clouds:
+      - id: gdrive
+        name: Google Drive
+        rclone_type: drive
+        access: folder
+        access_note: 只看自己建的文件夹
+      - id: webdav
+        name: WebDAV
+        rclone_type: webdav
+        browser: false
+        access: account
+        access_note: 整个目录树
+        verify: pending
+`
+
+func writeSignedPack(t *testing.T, yamlBody, kitBody, packVer string, s *minisigntest.Signer) string {
 	t.Helper()
 	src := filepath.Join(t.TempDir(), "src")
 	if err := os.MkdirAll(src, 0o700); err != nil {
@@ -42,7 +69,14 @@ func writeSignedPack(t *testing.T, yamlBody, packVer string, s *minisigntest.Sig
 	if err := os.WriteFile(filepath.Join(src, "p.yaml"), []byte(yamlBody), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	tgz, err := profiles.Build(src, "", packVer, time.Now())
+	kitPath := ""
+	if kitBody != "" {
+		kitPath = filepath.Join(t.TempDir(), "kit-tools.yaml")
+		if err := os.WriteFile(kitPath, []byte(kitBody), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tgz, err := profiles.Build(src, kitPath, packVer, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,8 +102,8 @@ func TestProfilesSettingsInstallVerifiedAndUnverifiedLocal(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(signer.PublicKey), "\n")
 	a.svc.Release.PublicKey = lines[len(lines)-1]
 
-	verifiedPack := writeSignedPack(t, signedProfileYAML, "2026.11.19", signer)
-	untrustedPack := writeSignedPack(t, unverifiedProfileYAML, "2026.11.20", minisigntest.New())
+	verifiedPack := writeSignedPack(t, signedProfileYAML, kitToolsTestYAML, "2026.11.19", signer)
+	untrustedPack := writeSignedPack(t, unverifiedProfileYAML, "", "2026.11.20", minisigntest.New())
 
 	picked := verifiedPack
 	a.SetFilePicker(func(title, msg string) (string, error) { return picked, nil })
@@ -79,14 +113,15 @@ func TestProfilesSettingsInstallVerifiedAndUnverifiedLocal(t *testing.T) {
 	click(t, tt, T("settings.tab.profiles"))
 	hasAll(t, tt.Texts(), T("profiles.title"), T("profiles.none"), T("profiles.check_online"), T("profiles.pick_file"))
 
-	// Preview and install verified pack: reloads harness and hasSessionCLI live.
+	// Preview and install verified pack: shows clouds list and reloads harness live.
 	click(t, tt, T("profiles.pick_file"))
-	hasAll(t, tt.Texts(), T("profiles.preview_title", "version", "2026.11.19"), "demo v2", T("profiles.sig_ok"), T("profiles.install_go"))
+	wantClouds := T("profiles.clouds_list", "list", "Google Drive"+T("common.dot_sep")+"WebDAV")
+	hasAll(t, tt.Texts(), T("profiles.preview_title", "version", "2026.11.19"), "demo v2", wantClouds, T("profiles.sig_ok"), T("profiles.install_go"))
 	if tt.HasText(T("profiles.install_local")) {
 		t.Fatalf("verified pack offered unverified local import: %q", tt.Texts())
 	}
 	click(t, tt, T("profiles.install_go"))
-	hasAll(t, tt.Texts(), T("profiles.installed", "version", "2026.11.19"), T("profiles.install_done", "version", "2026.11.19"), "demo v2")
+	hasAll(t, tt.Texts(), T("profiles.installed", "version", "2026.11.19"), T("profiles.install_done", "version", "2026.11.19"), "demo v2", wantClouds)
 	if a.harness["demo"] != "Demo" || !a.hasSessionCLI["demo"] {
 		t.Fatalf("profiles did not reload live: harness=%v session=%v", a.harness, a.hasSessionCLI)
 	}

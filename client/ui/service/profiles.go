@@ -44,6 +44,7 @@ func needProfiles(set *profiles.Set) error {
 type ProfilesStatus struct {
 	Pack        *profiles.Manifest `json:"pack,omitempty"`
 	PackProblem string             `json:"pack_problem,omitempty"`
+	Clouds      []string           `json:"clouds,omitempty"`
 	Local       []string           `json:"local,omitempty"`
 	Rejected    []string           `json:"rejected,omitempty"`
 }
@@ -59,6 +60,13 @@ func (s *Service) ProfilesStatus() (*ProfilesStatus, error) {
 		st.PackProblem = set.PackProblem.Error()
 		if ue, ok := valise.As(set.PackProblem); ok {
 			st.PackProblem = ue.Reason
+		}
+	}
+	if set.Kit != nil {
+		for _, t := range set.Kit.Tools {
+			for _, cl := range t.Clouds {
+				st.Clouds = append(st.Clouds, cl.Name)
+			}
 		}
 	}
 	for id, l := range set.ByID {

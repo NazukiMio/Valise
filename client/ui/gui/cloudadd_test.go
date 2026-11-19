@@ -207,3 +207,15 @@ func TestCloudFormPasswordAndLongChoices(t *testing.T) {
 		t.Fatalf("reply = %q, want opt2", got)
 	}
 }
+
+func TestCloudAddMissingPackOpensProfilesSettings(t *testing.T) {
+	a, tt := locWorld(t)
+	a.router.Push(cloudAddRoute)
+	tt.Frame()
+	hasAll(t, tt.Texts(), T("loc.cloud_open_profiles"))
+	click(t, tt, T("loc.cloud_open_profiles"))
+	if a.router.Path() != "/settings" || a.setTab != 3 {
+		t.Fatalf("path=%q setTab=%d, want /settings and 3", a.router.Path(), a.setTab)
+	}
+	hasAll(t, tt.Texts(), T("profiles.title"))
+}

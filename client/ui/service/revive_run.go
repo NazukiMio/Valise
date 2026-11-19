@@ -276,6 +276,122 @@ func (s *Service) OldCleanup(ctx context.Context, host, instance string) ([]stri
 	return res["removed"], err
 }
 
+// CleanupBatchRequest selects pre-swap leftover ops and superseded instances
+// to remove in one authenticated batch on a server.
+type CleanupBatchRequest struct {
+	PrevOps      []string
+	OldInstances []string
+}
+
+// CleanupBatchFailure records one item in a batch cleanup that failed.
+type CleanupBatchFailure struct {
+	Kind   string // "prev" or "old"
+	Target string
+	Err    error
+}
+
+// CleanupBatchResult summarizes what a batch cleanup removed and what failed.
+type CleanupBatchResult struct {
+	Removed  []string
+	PrevDone int
+	OldDone  int
+	Failures []CleanupBatchFailure
+}
+
+// CleanupBatch removes multiple superseded instances and pre-swap directories
+// inside a single session, always prompting once for PIN or Valise passphrase
+// before opening the batch when the client has a keystore.
+func (s *Service) CleanupBatch(ctx context.Context, host string, req CleanupBatchRequest) (*CleanupBatchResult, error) {
+	olds := dedupNonEmpty(req.OldInstances)
+	prevs := dedupNonEmpty(req.PrevOps)
+	if len(olds) == 0 && len(prevs) == 0 {
+		return &CleanupBatchResult{}, nil
+	}
+	stopOp := s.BeginOperation()
+	defer stopOp()
+	if s.HasKey() {
+		if err := s.verifyOwnerFresh(host); err != nil {
+			return nil, err
+		}
+	}
+	res := &CleanupBatchResult{}
+	seenRemoved := map[string]bool{}
+	recordRemoved := func(items []string) {
+		for _, p := range items {
+			if p != "" && !seenRemoved[p] {
+				seenRemoved[p] = true
+				res.Removed = append(res.Removed, p)
+			}
+		}
+	}
+	err := s.withSession(ctx, host, func(c caller) error {
+		// Clean superseded instances first: their Superseded.OpID leftovers are
+		// removed once, and any overlapping PrevDrop afterwards is a no-op.
+		for _, inst := range olds {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			var rpcRes map[string][]string
+			err := c.Call(ctx, revive.MethodOldCleanup, revive.OldCleanupParams{InstanceID: inst}, &rpcRes)
+			recordRemoved(rpcRes["removed"])
+			if err != nil {
+				if isBatchAbortError(err) {
+					return err
+				}
+				res.Failures = append(res.Failures, CleanupBatchFailure{Kind: "old", Target: inst, Err: err})
+				continue
+			}
+			res.OldDone++
+		}
+		for _, op := range prevs {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			var rpcRes map[string][]string
+			err := c.Call(ctx, revive.MethodPrevDrop, revive.OpParams{OpID: op}, &rpcRes)
+			recordRemoved(rpcRes["removed"])
+			if err != nil {
+				if isBatchAbortError(err) {
+					return err
+				}
+				res.Failures = append(res.Failures, CleanupBatchFailure{Kind: "prev", Target: op, Err: err})
+				continue
+			}
+			res.PrevDone++
+		}
+		return nil
+	})
+	return res, err
+}
+
+func dedupNonEmpty(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(items))
+	out := make([]string, 0, len(items))
+	for _, s := range items {
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+func isBatchAbortError(err error) bool {
+	ue, ok := valise.As(err)
+	if !ok {
+		return false
+	}
+	switch ue.Code {
+	case "cancelled", "admin_locked", "owner_locked", "pin_locked", "pin_wrong", "pin_destroyed", "passphrase_wrong", "admin_passphrase_wrong":
+		return true
+	}
+	return false
+}
+
 // KeyUnregister removes a recipient from host. Snapshots already sealed stay
 // decryptable by that key.
 func (s *Service) KeyUnregister(ctx context.Context, host, recipient string) ([]string, bool, error) {

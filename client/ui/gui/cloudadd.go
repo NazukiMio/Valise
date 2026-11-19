@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"valise/core/kittools"
+	"valise/core/valise"
 	"valise/ui/service"
 )
 
@@ -135,6 +136,16 @@ func (a *App) cloudAddPage(c *ui.Context) {
 	})
 	if ca.err != nil {
 		errorBox(c, ca.err, a.fold("clouds-err"))
+		if isPackError(ca.err) {
+			ui.Row(c).Children(func() {
+				ui.PrimaryButton(c, T("loc.cloud_open_profiles")).OnClick(func() {
+					a.closeAdding()
+					a.setTab = 3
+					a.readProfilesStatus()
+					a.navigate("/settings")
+				})
+			})
+		}
 	}
 	if ca.login != nil {
 		a.cloudLoginView(c, ca)
@@ -212,6 +223,18 @@ func (ca *cloudAdd) chosen() *kittools.Cloud {
 		}
 	}
 	return nil
+}
+
+func isPackError(err error) bool {
+	ue, ok := valise.As(err)
+	if !ok {
+		return false
+	}
+	switch ue.Code {
+	case "kit_tools_none", "pack_unusable", "no_profiles", "profiles_broken":
+		return true
+	}
+	return false
 }
 
 // cloudChoice is one drive; pending drives stay selectable so the user can opt

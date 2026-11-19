@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"valise/client/profiles"
+	"valise/core/kittools"
 	"valise/ui/service"
 )
 
@@ -68,9 +69,15 @@ func (a *App) profilesStatusCard(c *ui.Context, ps *profilesState) {
 			switch {
 			case st.Pack != nil:
 				ui.Text(c, T("profiles.installed", "version", st.Pack.Version)).TextColor(palette.Ok).Bold()
-				if list := formatPackEntries(st.Pack.Profiles); list != "" {
+				list := formatPackEntries(st.Pack.Profiles)
+				if list != "" || len(st.Clouds) > 0 {
 					subPanel(ui.Column(c)).Gap(4).Children(func() {
-						mono(muted(ui.Text(c, list))).Wrap()
+						if list != "" {
+							mono(muted(ui.Text(c, list))).Wrap()
+						}
+						if len(st.Clouds) > 0 {
+							muted(ui.Text(c, T("profiles.clouds_list", "list", strings.Join(st.Clouds, T("common.dot_sep"))))).Wrap()
+						}
 					})
 				}
 			case st.PackProblem != "":
@@ -115,9 +122,16 @@ func (a *App) profilesPreviewCard(c *ui.Context, ps *profilesState, pf *service.
 	card(ui.Column(c)).Gap(10).Children(func() {
 		sectionTitle(ui.Text(c, T("profiles.preview_title", "version", pf.Pack.Manifest.Version)))
 		mono(muted(ui.Text(c, pf.From))).Wrap()
-		if list := formatPackEntries(pf.Pack.Manifest.Profiles); list != "" {
+		list := formatPackEntries(pf.Pack.Manifest.Profiles)
+		clouds := formatPackClouds(pf.Pack.Kit)
+		if list != "" || clouds != "" {
 			subPanel(ui.Column(c)).Gap(4).Children(func() {
-				mono(ui.Text(c, list)).Wrap()
+				if list != "" {
+					mono(ui.Text(c, list)).Wrap()
+				}
+				if clouds != "" {
+					muted(ui.Text(c, T("profiles.clouds_list", "list", clouds))).Wrap()
+				}
 			})
 		}
 		if pf.SignatureErr == nil {
@@ -229,6 +243,19 @@ func formatPackEntries(entries []profiles.ManifestEntry) string {
 		parts = append(parts, fmt.Sprintf("%s v%d", p.ID, p.ProfileVersion))
 	}
 	return strings.Join(parts, T("common.dot_sep"))
+}
+
+func formatPackClouds(kit *kittools.List) string {
+	if kit == nil {
+		return ""
+	}
+	var names []string
+	for _, t := range kit.Tools {
+		for _, cl := range t.Clouds {
+			names = append(names, cl.Name)
+		}
+	}
+	return strings.Join(names, T("common.dot_sep"))
 }
 
 func packCommands(p *profiles.Pack) []string {

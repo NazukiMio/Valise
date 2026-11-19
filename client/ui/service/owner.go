@@ -205,6 +205,21 @@ func (s *Service) ValisePassphrase(host string) (string, error) {
 	return pass, nil
 }
 
+// verifyOwnerFresh prompts once for the 6-digit PIN (when enabled) or Valise
+// passphrase and unlocks the keystore into any active operation lease.
+func (s *Service) verifyOwnerFresh(host string) error {
+	pass, err := s.promptValise(host)
+	if err != nil {
+		return err
+	}
+	k, err := s.Unlock(pass)
+	if err != nil {
+		return err
+	}
+	k.Lock()
+	return nil
+}
+
 func (s *Service) ownerIdentity(host string) (age.Identity, error) {
 	s.owner.mu.Lock()
 	if s.activeOwner() {
