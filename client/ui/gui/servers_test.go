@@ -171,6 +171,30 @@ func TestAgentsOnServer(t *testing.T) {
 	}
 }
 
+func TestAgentsOnServerOutdatedAndCurrentProfile(t *testing.T) {
+	a, tt := world(t)
+	a.harness["openclaw"] = "OpenClaw"
+	a.harness["hermes"] = "Hermes"
+	outdated := service.DetectedInstance{
+		Candidate:              enroll.Candidate{ProfileID: "openclaw", StateDir: "/home/me/.openclaw", Version: "2026.10.9"},
+		ID:                     "openclaw",
+		Enrolled:               "openclaw",
+		EnrolledProfileVersion: 22,
+		ProfileVersion:         24,
+	}
+	current := service.DetectedInstance{
+		Candidate:              enroll.Candidate{ProfileID: "hermes", StateDir: "/home/me/.hermes", Version: "1.0.0"},
+		ID:                     "hermes",
+		Enrolled:               "hermes",
+		EnrolledProfileVersion: 11,
+		ProfileVersion:         11,
+	}
+	a.scans["lab"] = &serverScan{found: []service.DetectedInstance{outdated, current}, adopts: map[string]*adoption{}}
+	a.router.Push("/servers/lab/agents")
+	tt.Frame()
+	hasAll(t, tt.Texts(), T("adopt.profile_outdated"), T("adopt.update_profile"), T("adopt.done"), T("common.view"))
+}
+
 // The install plan is shown in full before anything runs; missing
 // requirements and an existing agent stop it; the result keeps exit codes
 // and what detecting found apart.

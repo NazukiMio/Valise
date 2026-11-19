@@ -33,10 +33,11 @@ type hooks struct {
 
 // agentData is what was read about the agents, shared by every page.
 type agentData struct {
-	agents   load[service.AgentListResult]
-	harness  map[string]string // profile id → display name
-	display  map[string]*profile.Display
-	hasRepos bool // a local repository is registered (docs/UI.md 7.2)
+	agents        load[service.AgentListResult]
+	harness       map[string]string // profile id → display name
+	hasSessionCLI map[string]bool   // profile id → pack declares native_session_cli
+	display       map[string]*profile.Display
+	hasRepos      bool // a local repository is registered (docs/UI.md 7.2)
 	// vaultNames maps a connection to the folder its vault has in the
 	// repositories (the server's name, which may differ: “debian-vm” keeps
 	// its backups under “debian”). Read with the agents; kept when a read

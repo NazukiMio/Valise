@@ -198,3 +198,19 @@ func TestNativeEntriesSessionOnboardAndReconnectAfterExit(t *testing.T) {
 	}
 	a.native.running = false
 }
+
+func TestNativeSessionUpdateHintWhenProfileUpdated(t *testing.T) {
+	a, tt := nativeViewWorld(t)
+	a.navigate("/native/home/xiaoman")
+	tt.Frame()
+	if tt.HasText(T("native.session_update_needed")) || tt.HasText(T("native.go_update_profile")) {
+		t.Fatalf("unexpected update hint when pack has no session CLI: %q", tt.Texts())
+	}
+	a.hasSessionCLI["fixture"] = true
+	tt.Frame()
+	hasAll(t, tt.Texts(), T("native.session"), T("native.session_update_needed"), T("native.go_update_profile"))
+	click(t, tt, T("native.go_update_profile"))
+	if a.router.Path() != "/servers/home/agents" {
+		t.Fatalf("went to %s", a.router.Path())
+	}
+}

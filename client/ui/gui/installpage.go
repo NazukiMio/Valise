@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
@@ -36,11 +37,17 @@ type installRun struct {
 // installConn joins the terminal to RunInstall: what the steps print is
 // read by the terminal, what is typed goes to their input.
 type installConn struct {
-	out   *io.PipeReader
-	outW  *io.PipeWriter
-	in    *io.PipeReader
-	inW   *io.PipeWriter
-	shown bool
+	out      *io.PipeReader
+	outW     *io.PipeWriter
+	in       *io.PipeReader
+	inW      *io.PipeWriter
+	shown    bool
+	mu       sync.Mutex
+	cols     int
+	rows     int
+	wpx      int
+	hpx      int
+	onResize func(cols, rows, wpx, hpx int)
 }
 
 func newInstallConn() *installConn {
@@ -48,6 +55,28 @@ func newInstallConn() *installConn {
 	c.out, c.outW = io.Pipe()
 	c.in, c.inW = io.Pipe()
 	return c
+}
+
+func (c *installConn) ResizePixels(cols, rows, cellW, cellH int) error {
+	wpx, hpx := cols*cellW, rows*cellH
+	c.mu.Lock()
+	c.cols, c.rows, c.wpx, c.hpx = cols, rows, wpx, hpx
+	fn := c.onResize
+	c.mu.Unlock()
+	if fn != nil {
+		fn(cols, rows, wpx, hpx)
+	}
+	return nil
+}
+
+func (c *installConn) SetResize(fn func(cols, rows, wpx, hpx int)) {
+	c.mu.Lock()
+	c.onResize = fn
+	cols, rows, wpx, hpx := c.cols, c.rows, c.wpx, c.hpx
+	c.mu.Unlock()
+	if fn != nil && cols > 0 && rows > 0 {
+		fn(cols, rows, wpx, hpx)
+	}
 }
 
 func (c *installConn) Read(p []byte) (int, error)  { return c.out.Read(p) }

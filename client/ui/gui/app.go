@@ -72,7 +72,7 @@ func New(svc *service.Service) *App {
 		run:          func(f func()) { go f() }, update: func(f func()) { f() }}
 	a.hooks = hooks{entryOpener: svc.OpenEntry, openURL: service.OpenURL,
 		scanTimeline: svc.ScanTimelineInScope, runRestoreTest: svc.RunSelectedRestoreTest}
-	a.agentData = agentData{harness: map[string]string{}, display: map[string]*profile.Display{}, vaultNames: map[string]string{},
+	a.agentData = agentData{harness: map[string]string{}, hasSessionCLI: map[string]bool{}, display: map[string]*profile.Display{}, vaultNames: map[string]string{},
 		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{}}
 	a.prefs = prefs{View: "cards", Dismissed: map[string]string{}}
 	a.entries, a.natives = map[string]*entryState{}, map[string]*nativeState{}
@@ -130,6 +130,9 @@ func (a *App) loadHarness() {
 	}
 	for _, p := range set.Effective() {
 		a.harness[p.ID] = p.DisplayName
+		if len(p.NativeSessionCLI) > 0 {
+			a.hasSessionCLI[p.ID] = true
+		}
 		if in := p.Install; in != nil {
 			var needs []string
 			for _, r := range in.Requires {

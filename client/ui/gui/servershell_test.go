@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -99,4 +100,47 @@ func TestServerShellCloseCancelsAndClearsPrompts(t *testing.T) {
 	if !closed {
 		t.Fatal("shell end did not release the window close")
 	}
+}
+
+func TestInstallConnResizePixelsAndSetResize(t *testing.T) {
+	conn := newInstallConn()
+	defer conn.Close()
+
+	if err := conn.ResizePixels(100, 32, 9, 18); err != nil {
+		t.Fatal(err)
+	}
+	type size struct{ cols, rows, wpx, hpx int }
+	var mu sync.Mutex
+	var got []size
+	conn.SetResize(func(cols, rows, wpx, hpx int) {
+		mu.Lock()
+		got = append(got, size{cols, rows, wpx, hpx})
+		mu.Unlock()
+	})
+	if err := conn.ResizePixels(140, 44, 8, 16); err != nil {
+		t.Fatal(err)
+	}
+	want := []size{{100, 32, 900, 576}, {140, 44, 1120, 704}}
+	mu.Lock()
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		mu.Unlock()
+		t.Fatalf("got=%+v want=%+v", got, want)
+	}
+	mu.Unlock()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 1; i <= 50; i++ {
+			_ = conn.ResizePixels(80+i, 24+i, 8, 16)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			conn.SetResize(func(int, int, int, int) {})
+		}
+	}()
+	wg.Wait()
 }

@@ -87,7 +87,13 @@ func (a *App) startServerShell(server string, acceptRisk bool) {
 	}
 	r.cancel, r.running = cancel, true
 	a.run(func() {
-		code, err := a.svc.RunServerShell(ctx, server, service.NativeIO{Stdin: conn.in, Stdout: conn.outW, Stderr: conn.outW})
+		code, err := a.svc.RunServerShell(ctx, server, service.NativeIO{
+			Stdin:    conn.in,
+			Stdout:   conn.outW,
+			Stderr:   conn.outW,
+			PTY:      r.term != nil,
+			OnResize: conn.SetResize,
+		})
 		conn.Close()
 		cancel()
 		a.update(func() {

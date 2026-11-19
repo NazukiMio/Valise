@@ -108,7 +108,13 @@ func (s *Service) InstanceNativeCommand(ctx context.Context, host, instance stri
 	}
 	cmd := t.TTYCommand(ctx, nativeLine(found.Path, instance, mode))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
+	cmd.Cancel = killProcessGroupCancel(cmd)
+	cmd.WaitDelay = 500 * time.Millisecond
+	return cmd, asyncDone, nil
+}
+
+func killProcessGroupCancel(cmd *exec.Cmd) func() error {
+	return func() error {
 		if cmd.Process == nil || cmd.Process.Pid <= 0 {
 			return os.ErrProcessDone
 		}
@@ -118,8 +124,57 @@ func (s *Service) InstanceNativeCommand(ctx context.Context, host, instance stri
 		}
 		return err
 	}
+}
+
+func runInteractiveCmd(ctx context.Context, cmd *exec.Cmd, streams NativeIO, connFailedErr, startFailedErr *valise.UserError) (int, error) {
+	if streams.PTY {
+		return runSSHWithPTY(ctx, cmd, streams, connFailedErr, startFailedErr)
+	}
+	return runSSHWithPipes(ctx, cmd, streams, connFailedErr, startFailedErr)
+}
+
+func runSSHWithPipes(ctx context.Context, cmd *exec.Cmd, streams NativeIO, connFailedErr, startFailedErr *valise.UserError) (int, error) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = killProcessGroupCancel(cmd)
 	cmd.WaitDelay = 500 * time.Millisecond
-	return cmd, asyncDone, nil
+	cmd.Stdout, cmd.Stderr = streams.Stdout, streams.Stderr
+	if streams.Stdin != nil {
+		if _, isFile := streams.Stdin.(*os.File); isFile {
+			cmd.Stdin = streams.Stdin
+		} else {
+			// An interactive pipe (such as the desktop terminal's installConn)
+			// stays open until the caller closes it after exit; copying via
+			// StdinPipe keeps cmd.Wait from blocking on Stdin EOF after the
+			// remote command exits.
+			pw, err := cmd.StdinPipe()
+			if err != nil {
+				return -1, startFailedErr.WithDetail(err.Error())
+			}
+			go func() {
+				_, _ = io.Copy(pw, streams.Stdin)
+				_ = pw.Close()
+			}()
+		}
+	}
+	err := cmd.Run()
+	return mapInteractiveExit(ctx, err, connFailedErr, startFailedErr)
+}
+
+func mapInteractiveExit(ctx context.Context, err error, connFailedErr, startFailedErr *valise.UserError) (int, error) {
+	if ctx.Err() != nil {
+		return -1, ctx.Err()
+	}
+	if err == nil {
+		return 0, nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		if exit.ExitCode() == ssh.ExitConnFailed {
+			return exit.ExitCode(), connFailedErr
+		}
+		return exit.ExitCode(), nil
+	}
+	return -1, startFailedErr
 }
 
 func closeMasterAsync(closeMaster func()) {
@@ -132,6 +187,11 @@ func closeMasterAsync(closeMaster func()) {
 type NativeIO struct {
 	Stdin          io.Reader
 	Stdout, Stderr io.Writer
+	// PTY opens a local pseudo-terminal for the interactive ssh child and
+	// exports standard terminal environment variables while preserving
+	// SSH_ASKPASS. OnResize receives a window-size callback for live SIGWINCH.
+	PTY      bool
+	OnResize func(func(cols, rows, widthPx, heightPx int))
 }
 
 // RunInstanceNative only connects streams. No recording, output parser,
@@ -144,40 +204,10 @@ func (s *Service) RunInstanceNative(ctx context.Context, host, instance string, 
 		return -1, err
 	}
 	defer done()
-	cmd.Stdout, cmd.Stderr = streams.Stdout, streams.Stderr
-	if streams.Stdin != nil {
-		if _, isFile := streams.Stdin.(*os.File); isFile {
-			cmd.Stdin = streams.Stdin
-		} else {
-			// An interactive pipe (such as the desktop terminal's installConn)
-			// stays open until the caller closes it after exit; copying via
-			// StdinPipe keeps cmd.Wait from blocking on Stdin EOF after the
-			// remote command exits.
-			pw, err := cmd.StdinPipe()
-			if err != nil {
-				return -1, valise.New("native_start_failed", "命令行与向导没有启动", "重新检查服务器连接和管理登录后再试").WithDetail(err.Error())
-			}
-			go func() {
-				_, _ = io.Copy(pw, streams.Stdin)
-				_ = pw.Close()
-			}()
-		}
-	}
-	err = cmd.Run()
-	if ctx.Err() != nil {
-		return -1, ctx.Err()
-	}
-	if err == nil {
-		return 0, nil
-	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		if exit.ExitCode() == ssh.ExitConnFailed {
-			return exit.ExitCode(), valise.New("terminal_conn_failed", "和服务器的命令行与向导连接已断开", "检查网络后重新打开；不要把连接结束当作 Agent 已停止")
-		}
-		return exit.ExitCode(), nil
-	}
-	return -1, valise.New("native_start_failed", "命令行与向导没有启动", "重新检查服务器连接和管理登录后再试")
+	return runInteractiveCmd(ctx, cmd, streams,
+		valise.New("terminal_conn_failed", "和服务器的命令行与向导连接已断开", "检查网络后重新打开；不要把连接结束当作 Agent 已停止"),
+		valise.New("native_start_failed", "命令行与向导没有启动", "重新检查服务器连接和管理登录后再试"),
+	)
 }
 
 // NativeServiceRestoreResult keeps starting paused service units separate from

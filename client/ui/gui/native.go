@@ -125,10 +125,22 @@ func (a *App) nativePage(c *ui.Context, server, instance string) {
 	a.nativePausedBanner(c, server, instance, n)
 	if len(n.info.SessionArgv) > 0 {
 		a.nativeDailyCard(c, server, instance, n.info)
+	} else if a.hasSessionCLI[n.info.ProfileID] {
+		a.nativeSessionUpdateCard(c, server)
 	}
 	if len(n.info.Argv) > 0 {
 		a.nativeOnboardCard(c, server, instance, n)
 	}
+}
+
+func (a *App) nativeSessionUpdateCard(c *ui.Context, server string) {
+	card(ui.Column(c)).Gap(8).Children(func() {
+		sectionTitle(ui.Text(c, T("native.session")))
+		muted(ui.Text(c, T("native.session_update_needed"))).Wrap()
+		ui.Row(c).Children(func() {
+			ui.Button(c, T("native.go_update_profile")).OnClick(func() { a.router.Push("/servers/" + server + "/agents") })
+		})
+	})
 }
 
 func (a *App) startNative(server, instance string, mode service.NativeMode, stopService bool) {
@@ -185,7 +197,13 @@ func (a *App) startNativeAccepted(server, instance string, mode service.NativeMo
 				return
 			}
 		}
-		code, err := a.svc.RunInstanceNative(ctx, server, instance, mode, service.NativeIO{Stdin: conn.in, Stdout: conn.outW, Stderr: conn.outW})
+		code, err := a.svc.RunInstanceNative(ctx, server, instance, mode, service.NativeIO{
+			Stdin:    conn.in,
+			Stdout:   conn.outW,
+			Stderr:   conn.outW,
+			PTY:      r.term != nil,
+			OnResize: conn.SetResize,
+		})
 		conn.Close()
 		cancel()
 		var refresh bool

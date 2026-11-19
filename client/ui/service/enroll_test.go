@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"valise/testbed/fakesshenv"
@@ -84,4 +85,40 @@ func TestEnrollErrors(t *testing.T) {
 	wantCode(t, err, "assign_invalid")
 	_, err = s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Assign: []string{"state:x=nonsense"}})
 	wantCode(t, err, "override_invalid")
+}
+
+func TestDetectInstancesProfileVersions(t *testing.T) {
+	s, _ := enrollWorld(t)
+	ctx := context.Background()
+
+	list, err := s.DetectInstances(ctx, "box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != "demo" || list[0].Enrolled != "" || list[0].ProfileVersion != 1 || list[0].EnrolledProfileVersion != 0 {
+		t.Fatalf("before enroll: %+v", list)
+	}
+
+	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+	list, err = s.DetectInstances(ctx, "box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Enrolled != "demo" || list[0].ProfileVersion != 1 || list[0].EnrolledProfileVersion != 1 {
+		t.Fatalf("after enroll v1: %+v", list)
+	}
+
+	v2 := strings.Replace(demoProfile, "profile_version: 1", "profile_version: 2", 1)
+	if err := os.WriteFile(filepath.Join(s.Dirs.Data, "profiles", "demo.yaml"), []byte(v2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list, err = s.DetectInstances(ctx, "box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Enrolled != "demo" || list[0].ProfileVersion != 2 || list[0].EnrolledProfileVersion != 1 {
+		t.Fatalf("after local profile bump to v2: %+v", list)
+	}
 }

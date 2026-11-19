@@ -126,6 +126,10 @@ func (a *App) foundCard(c *ui.Context, host string, sc *serverScan, d service.De
 			case d.Enrolled != "" && a.unbound(host, d.Enrolled) && (ad == nil || ad.res == nil && !ad.busy):
 				ui.Text(c, T("adopt.no_identity")).FontSize(12).TextColor(palette.Warn)
 				ui.PrimaryButton(c, T("adopt.again")).OnClick(func() { a.adopt(host, sc, d, false) })
+			case d.Enrolled != "" && d.ProfileVersion > 0 && d.EnrolledProfileVersion > 0 && d.ProfileVersion > d.EnrolledProfileVersion && (ad == nil || !ad.busy && ad.res == nil && !ad.written):
+				ui.Text(c, T("adopt.profile_outdated")).FontSize(12).TextColor(palette.Warn)
+				ui.PrimaryButton(c, T("adopt.update_profile")).OnClick(func() { a.adopt(host, sc, d, false) })
+				ui.Button(c, T("common.view")).OnClick(func() { a.router.Push("/agents/" + host + "/" + orText(d.Enrolled, d.ID)) })
 			case d.Enrolled != "" && (ad == nil || !ad.busy && ad.res == nil) || ad != nil && ad.written:
 				ui.Text(c, T("adopt.done")).FontSize(12).TextColor(palette.Ok)
 				ui.Button(c, T("common.view")).OnClick(func() { a.router.Push("/agents/" + host + "/" + orText(d.Enrolled, d.ID)) })
@@ -170,6 +174,7 @@ func (a *App) adopt(host string, sc *serverScan, d service.DetectedInstance, acc
 			ad.res = res
 			if accept && res.Written != "" {
 				ad.written = true
+				delete(a.natives, host+"/"+opts.InstanceID)
 				a.refreshAgents()
 			}
 		})

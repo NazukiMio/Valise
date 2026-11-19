@@ -212,9 +212,20 @@ func (s *Service) DetectInstances(ctx context.Context, host string) ([]DetectedI
 	var out []DetectedInstance
 	for _, c := range det.Candidates {
 		d := DetectedInstance{Candidate: c, ID: CandidateID(c)}
+		effID := c.ProfileID
+		if len(c.Children) == 1 {
+			effID = c.Children[0]
+		}
+		if loaded := set.ByID[effID]; loaded != nil && loaded.Effective != nil {
+			d.ProfileVersion = loaded.Effective.ProfileVersion
+		}
 		for _, in := range insts {
 			if in.Superseded == nil && in.Roots[profile.StateRoot] == c.StateDir {
 				d.Enrolled = in.InstanceID
+				d.EnrolledProfileVersion = in.ProfileVersion
+				if loaded := set.ByID[in.ProfileID]; loaded != nil && loaded.Effective != nil {
+					d.ProfileVersion = loaded.Effective.ProfileVersion
+				}
 			}
 		}
 		out = append(out, d)
@@ -227,8 +238,10 @@ type DetectedInstance struct {
 	enroll.Candidate
 	// ID is the default instance id; Enrolled the instance already
 	// enrolled for this state dir.
-	ID       string `json:"id"`
-	Enrolled string `json:"enrolled,omitempty"`
+	ID                     string `json:"id"`
+	Enrolled               string `json:"enrolled,omitempty"`
+	EnrolledProfileVersion int    `json:"enrolled_profile_version,omitempty"`
+	ProfileVersion         int    `json:"profile_version,omitempty"`
 }
 
 // SetAgentLabel sets the name an agent shows in Valise; "" follows the
