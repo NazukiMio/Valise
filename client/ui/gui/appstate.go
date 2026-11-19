@@ -156,13 +156,14 @@ func (v *serversView) forgetServer(name string) {
 	delete(v.passes, name)
 }
 
-// keysView is the settings page's keys and backup lock.
+// keysView is the settings page's keys, backup, personalization and profiles.
 type keysView struct {
-	setTab  int           // 0 keys, 1 backup
-	keyFlow *keyFlow      // the key dialog, nil when closed
-	keyNote string        // a done key action, said once
-	lockOff bool          // the backup lock's off confirmation is open
-	recover *recoverState // finding the passphrase again, nil when not
+	setTab   int           // 0 keys, 1 backup, 2 personalization, 3 profiles
+	keyFlow  *keyFlow      // the key dialog, nil when closed
+	keyNote  string        // a done key action, said once
+	lockOff  bool          // the backup lock's off confirmation is open
+	recover  *recoverState // finding the passphrase again, nil when not
+	profiles *profilesState
 }
 
 // restoreView is restoring, migrating and copying.

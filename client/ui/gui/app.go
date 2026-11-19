@@ -124,6 +124,10 @@ func (a *App) Start() {
 }
 
 func (a *App) loadHarness() {
+	a.harness = map[string]string{}
+	a.hasSessionCLI = map[string]bool{}
+	a.display = map[string]*profile.Display{}
+	a.installable = nil
 	set, err := a.svc.Profiles()
 	if err != nil || set == nil {
 		return
@@ -144,6 +148,16 @@ func (a *App) loadHarness() {
 			d := *p.Display
 			a.display[p.ID] = &d
 		}
+	}
+}
+
+// reloadProfiles refreshes in-memory profile metadata and clears cached server
+// scan/cloud add views so newly installed profile versions appear without restart.
+func (a *App) reloadProfiles() {
+	a.loadHarness()
+	a.scans = map[string]*serverScan{}
+	if a.cloudAdding == nil || a.cloudAdding.login == nil {
+		a.closeAdding()
 	}
 }
 

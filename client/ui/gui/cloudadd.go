@@ -138,7 +138,6 @@ func (a *App) cloudAddPage(c *ui.Context) {
 		a.serverLoginRow(c, ca, cl)
 		a.hereLoginRow(c, ca, cl)
 		ui.Text(c, T("loc.cloud_server_risk")).FontSize(12).TextColor(palette.Warn).Wrap()
-		muted(ui.Text(c, T("loc.cloud_visible"))).Wrap()
 		ui.Collapsible(c, T("common.details"), a.fold("cloud-details"), func() {
 			muted(ui.Text(c, T("loc.cloud_details"))).Wrap()
 		})

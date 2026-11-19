@@ -14,7 +14,7 @@ import (
 
 func (a *App) settingsPage(c *ui.Context) {
 	pageHead(c, T("nav.settings"), "")
-	ui.Tabs(c, &a.setTab, T("settings.tab.keys"), T("settings.tab.backup"), T("settings.tab.personalization"))
+	ui.Tabs(c, &a.setTab, T("settings.tab.keys"), T("settings.tab.backup"), T("settings.tab.personalization"), T("settings.tab.profiles"))
 	if a.keyNote != "" {
 		ui.Row(c).Gap(10).Padding(10, 14).Radius(10).Background(palette.Board).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, a.keyNote).TextColor(palette.Ok).Grow(1).Wrap()
@@ -22,6 +22,8 @@ func (a *App) settingsPage(c *ui.Context) {
 		})
 	}
 	switch a.setTab {
+	case 3:
+		a.profilesSettings(c)
 	case 2:
 		a.personalization(c)
 	case 1:
