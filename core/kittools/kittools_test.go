@@ -34,6 +34,23 @@ func TestRepositoryList(t *testing.T) {
 	if od := rc.Cloud("onedrive"); od == nil || !od.Pending() {
 		t.Fatalf("%+v", od)
 	}
+	wd := rc.Cloud("webdav")
+	if wd == nil || !wd.Pending() || wd.UsesBrowser() || wd.UsesLoopback() || !wd.FormAvailable(false) || wd.NeedsBucket {
+		t.Fatalf("webdav mismatch: %+v", wd)
+	}
+	if args := wd.CreateArgs("valise-wd", true); strings.Contains(strings.Join(args, " "), "config_is_local") {
+		t.Fatalf("non-browser CreateArgs kept config_is_local: %v", args)
+	}
+	s3 := rc.Cloud("s3")
+	if s3 == nil || !s3.Pending() || s3.UsesBrowser() || s3.UsesLoopback() || !s3.FormAvailable(false) || !s3.NeedsBucket || s3.Access != AccessFolder {
+		t.Fatalf("s3 mismatch: %+v", s3)
+	}
+	if !ValidCloudBucket("my-bucket.01") || ValidCloudBucket("") || ValidCloudBucket("..") || ValidCloudBucket("a/b") || ValidCloudBucket(".hidden") {
+		t.Fatal("ValidCloudBucket check failed")
+	}
+	if CloudFolder("") != "valise-vault/" || CloudFolder("bkt") != "bkt/valise-vault/" {
+		t.Fatal("CloudFolder mismatch")
+	}
 	if a := rc.ClientArchive("darwin", "arm64"); a == nil || !strings.Contains(a.URL, rc.Binary.Version) {
 		t.Fatalf("%+v", a)
 	}
@@ -46,6 +63,8 @@ func TestLintRefuses(t *testing.T) {
 		"other variable":         `{schema: valise-kit-tools/1, tools: [{id: a, tier: expert, name: a, purpose: p, without: w, check: {binary: a}, install: [{os_id: [debian], argv: [echo, "${PATH}"]}]}]}`,
 		"unknown field":          `{schema: valise-kit-tools/1, tools: [{id: a, tier: expert, name: a, purpose: p, without: w, check: {binary: a}, script: "curl x | sh"}]}`,
 		"cloud token":            `{schema: valise-kit-tools/1, tools: [{id: rclone, tier: enhanced, name: a, purpose: p, without: w, check: {binary: rclone}, binary: {version: "1", archives: []}, clouds: [{id: x, name: X, rclone_type: drive, access: folder, access_note: n, params: {token: abc}}]}]}`,
+		"cloud s3 secret":        `{schema: valise-kit-tools/1, tools: [{id: rclone, tier: enhanced, name: a, purpose: p, without: w, check: {binary: rclone}, binary: {version: "1", archives: []}, clouds: [{id: x, name: X, rclone_type: s3, access: folder, access_note: n, params: {secret_access_key: abc}}]}]}`,
+		"cloud bearer":           `{schema: valise-kit-tools/1, tools: [{id: rclone, tier: enhanced, name: a, purpose: p, without: w, check: {binary: rclone}, binary: {version: "1", archives: []}, clouds: [{id: x, name: X, rclone_type: webdav, access: account, access_note: n, params: {bearer_token: abc}}]}]}`,
 		"cloud on other tool":    `{schema: valise-kit-tools/1, tools: [{id: a, tier: enhanced, name: a, purpose: p, without: w, check: {binary: a}, binary: {version: "1", archives: []}, clouds: [{id: x, name: X, rclone_type: drive, access: folder, access_note: n}]}]}`,
 		"client http":            `{schema: valise-kit-tools/1, tools: [{id: rclone, tier: enhanced, name: a, purpose: p, without: w, check: {binary: rclone}, binary: {version: "1", archives: []}, client_archives: [{os: darwin, arch: arm64, url: "http://x/1/a.zip", sha256: "", member: a}]}]}`,
 		"member escapes":         `{schema: valise-kit-tools/1, tools: [{id: a, tier: enhanced, name: a, purpose: p, without: w, check: {binary: a}, binary: {version: "1", archives: [{arch: amd64, url: "https://x/a.zip", sha256: "", member: "../a"}]}}]}`,

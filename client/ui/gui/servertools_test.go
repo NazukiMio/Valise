@@ -25,6 +25,7 @@ type fakeKit struct {
 	installed []string
 	removed   []string
 	logins    []string
+	forms     []service.CloudForm
 	failLogin map[string]bool
 }
 
@@ -52,8 +53,9 @@ func (f *fakeKit) ops() *kitOps {
 			f.rclone[h] = rcloneTool(false, false)
 			return nil
 		},
-		loginServer: func(_ context.Context, h, name, id string, _ service.CloudForm) error {
+		loginServer: func(_ context.Context, h, name, id string, form service.CloudForm) error {
 			f.logins = append(f.logins, h)
+			f.forms = append(f.forms, form)
 			if f.failLogin[h] {
 				return errors.New("fixture login failed")
 			}

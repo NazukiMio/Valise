@@ -403,12 +403,12 @@ profile 负责通用规则，档案记录这台服务器实际探测并经用户
 
 ### 7.3 云盘（N3，2026-11-07 用户决定）
 
-备份位置新增“云盘”，全部经 rclone 完成，Valise 不实现任何云盘协议。首批 Google Drive、OneDrive、Dropbox；坚果云（WebDAV）与自定义云在后。
+备份位置新增“云盘”，全部经 rclone 完成，Valise 不实现任何云盘协议。清单含 Google Drive、OneDrive、Dropbox、WebDAV（坚果云 / Alist 等）与 S3 兼容存储（R2 / OSS / MinIO / S3）。
 
-- **表单登录**（2026-11-10 用户决定）：桌面版把 rclone 的提问画成表单（rclone 的非交互配置，LOGIN_RELAY.md 第 7 节第 5 步）；无浏览器授权、不支持回环授权的云盘与旧 porter 仍用窗口里的终端。
+- **表单登录**（2026-11-10 用户决定）：桌面版把 rclone 的提问画成表单（rclone 的非交互配置，LOGIN_RELAY.md 第 7 节第 5 步）。不需要浏览器 OAuth 的凭证表单云盘（`browser: false`，如 WebDAV 与 S3 兼容存储）同样通过非交互表单逐项填写端点、账号或存储桶等选项，无需打开浏览器或占用回环端口 `53682`；不支持表单授权的云盘与旧 porter 仍用窗口里的终端。
 - **rclone 保持独立程序**（2026-11-10 用户决定）：不把 rclone 作为库集成进 porter 或桌面版。理由：porter 要保持小（每次部署都上传，服务器直传依赖服务器上的 rclone）；网盘接口变化时只换 rclone，不必等 Valise 发版；授权文件仍是 rclone 的标准配置，Valise 不在时用户可直接用 rclone 访问。
 
-- **云盘清单**：签名资料包 `kit-tools.yaml` 中 rclone 条目的 `clouds`（AGENT_KIT.md 8.4）列出每家的 `rclone_type`、固定参数、授权范围（`folder` 只能访问 rclone 自己建的文件 / `account` 能访问整个网盘）与说明。Go 代码不写任何云盘名称或参数；`verify: pending` 的条目只展示、不能添加。Google Drive 固定 `scope: drive.file`；rclone 内置的 Dropbox 与 OneDrive 应用是整盘权限。
+- **云盘清单**：签名资料包 `kit-tools.yaml` 中 rclone 条目的 `clouds`（AGENT_KIT.md 8.4）列出每家的 `rclone_type`、固定参数、`browser` / `needs_bucket` 声明、授权范围（`folder` 只能访问 rclone 建的文件或指定存储桶 / `account` 能访问整个网盘）与说明。Go 代码不写任何云盘名称或参数；`verify: pending` 的条目会明确标出未在当前版本核实，须用户在界面显式勾选确认（或 CLI 传入 `--allow-pending`）后方可试用登录。Google Drive 固定 `scope: drive.file`；rclone 内置的 Dropbox 与 OneDrive 应用是整盘权限。
 - **自己的应用**（2026-11-08 用户决定；2026-11-10 起桌面版的表单登录里由用户在表单中填写 client_id 与 client_secret，只交给 rclone 一次，Valise 不保存、不记录，见 LOGIN_RELAY.md 第 7 节第 5 步；终端登录仍按下文）：rclone 1.75.2 提示它共享的 Google Drive 应用“将在 2026 年内停止工作”。条目可声明 `ask_app: true`（Google Drive），登录时 rclone 的配置命令加 `--all`，由 rclone 自己在终端里依次询问 client_id、client_secret、service_account_file 与是否编辑高级设置（默认否）；client_id 留空时 rclone 会问是否继续用共享应用。用户在 rclone 的提问里自己填写，Valise 只转发终端字节，不解析、不保存、不记录（与原生界面同一规则）。登录前界面说明这几步，并给出 rclone 文档“自建 client_id”页面的地址；不用自己的应用时写明“rclone 的共享应用可能随时停用，之后需要重新登录”。桌面云盘添加或重登录页可在当前页面会话的内存中保留用户填写的 `client_id` 与 `client_secret`，以便连续为多台选中的服务器依次登录；每台服务器仍各自完成独立 OAuth 授权（Valise 不读取或分发 `rclone.conf` 中的 token），始终不保存（绝不落盘、不写日志），并在完成、返回、离开该页或关闭窗口时立即清零。
 - **两种登录**，界面分别说明同步级别，可以都登录：
   - **服务器登录**：rclone 优先使用由 Kit 安装的 `~/.local/bin/rclone`（版本与 SHA-256 已核实，无需 `sudo`）；当其不存在时，回退使用服务器 `PATH` 中用户自行安装的 `rclone`。配置始终写入 Valise 自己的文件 `~/.config/valise/rclone/rclone.conf`（0600），每次调用都显式 `--config`，不碰用户自己的 rclone 配置。remote 名为 `valise-<位置名>`。备份后由服务器直传，定时与自动复制依赖它，不需要 Valise 打开。桌面版允许一次勾选多台服务器，按序串行完成登录，整批复用同一次操作级 PIN 租约。
@@ -416,7 +416,7 @@ profile 负责通用规则，档案记录这台服务器实际探测并经用户
   - 两种都登录时先服务器直传，失败再经这台电脑中转，结果写明路径；只有服务器登录的云盘能被保护计划的自动复制使用。
 - **授权内容**只在上述 rclone 配置文件里。Valise 不读取、不解析、不保存、不记录它；登录过程的终端字节经 Valise 转发（LOGIN_RELAY.md 第 7 节），只显示给用户，不写日志与审计。
 - **服务器登录确认页**写明：“授权保存在服务器上。服务器被攻破时，这个授权会一起暴露（备份内容本身是加密的）。” `account` 级的云盘另写“这个授权能访问整个网盘”，并建议只用这台电脑登录或改用 Google Drive；用户确认后可以继续。
-- **保存位置**：授权完成后用 `rclone lsjson --max-depth 1 valise-<名>:` 做只读连通测试，再经 `target_check`（N2 G 节）保存；`targets.json` 记 `{"name", "kind": "rclone", "dest": "valise-<名>:valise-vault/"}`，不含授权内容。
+- **保存位置**：授权完成后用 `rclone lsjson --max-depth 1` 对目标根目录做只读连通测试，再经 `target_check`（N2 G 节）保存；`targets.json` 记 `{"name", "kind": "rclone", "dest": "valise-<名>:valise-vault/"}`；需要指定存储桶的条目（`needs_bucket: true`，如 S3 兼容存储）经安全桶名校验后记为 `valise-<名>:<bucket>/valise-vault/`（本机 `clouds` 记对应 `folder`，重登录时自动带入），始终不含授权内容。
 - **同步只追加**：先 `rclone lsf -R --files-only` 列出目标已有文件，只上传缺少的，按叶子顺序（pack → index → 快照 → 元数据 → epochs/keys → PERIOD → VAULT）分批 `rclone copy --files-from … --ignore-existing --immutable`，不使用 `sync`。中断后续传。删除整个周期与 sftp 相同：先写 `DELETING`，逐个删除文件，最后删标记（VAULT_FORMAT.md 10.4）。副本校验适用 7.1 节。
 - **云端可见的明文**：目录名（服务器名、实例名、周期）与文件大小；文件内容是 age 加密的。不加 rclone crypt，保持备份库公开格式：从网盘网页下载整个目录即可用 `tools/standalone-restore/` 恢复。添加时写明哪些名字云端可见。
 - **移除位置**：`rclone config delete valise-<名>`（服务器或本机各自的配置文件），界面写明“这里的授权已删除；网盘账户里的授权需要你在账户设置里撤销”。云端已有的备份不自动删除。

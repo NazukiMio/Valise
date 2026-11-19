@@ -302,3 +302,21 @@ func TestRcloneMissingEverywhere(t *testing.T) {
 		t.Fatalf("forget: %v", err)
 	}
 }
+
+func TestRcloneBucketTargetAndNonBrowserPrepare(t *testing.T) {
+	w := newWorld(t)
+	rcloneWorld(t, w)
+	ctx := context.Background()
+	if err := SetTarget(w.p, vaultrpc.Target{Name: "s3b", Kind: "rclone", Dest: "valise-s3b:my-bucket.01/valise-vault/"}); err != nil {
+		t.Fatalf("bucket dest rejected: %v", err)
+	}
+	noBrowser := false
+	wd := kittools.Cloud{ID: "webdav", Name: "WebDAV", RcloneType: "webdav", Browser: &noBrowser, Access: kittools.AccessAccount, AccessNote: "n"}
+	res, err := CloudPrepare(ctx, w.env, w.p, vaultrpc.CloudPrepareParams{Name: "dav", Cloud: wd})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(res.Argv, " "), "config_is_local") {
+		t.Fatalf("non-browser CloudPrepare included config_is_local: %v", res.Argv)
+	}
+}

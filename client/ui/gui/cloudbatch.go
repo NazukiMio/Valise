@@ -32,14 +32,18 @@ func appendUniq(list []string, s string) []string {
 }
 
 // cloudForm is the question-and-browser side of one form login.
-func (a *App) cloudForm(ctx context.Context, lg *cloudLogin, app kittools.App) service.CloudForm {
-	return service.CloudForm{App: app,
-		Ask:    func(q kittools.Question) (string, error) { return a.askForm(ctx, lg, q) },
-		Status: func(s service.LoginStatus) { a.update(func() { lg.status = loginStatusText(s) }) },
+func (a *App) cloudForm(ctx context.Context, lg *cloudLogin, app kittools.App, opts service.CloudOptions) service.CloudForm {
+	return service.CloudForm{
+		App:          app,
+		Bucket:       opts.Bucket,
+		AllowPending: opts.AllowPending,
+		Ask:          func(q kittools.Question) (string, error) { return a.askForm(ctx, lg, q) },
+		Status:       func(s service.LoginStatus) { a.update(func() { lg.status = loginStatusText(s) }) },
 		ConfirmOpen: func(link, domain string) bool {
 			return a.askYes(ctx, lg, T("loc.open_ask", "domain", domain), T("loc.open_go"))
 		},
-		OpenBrowser: a.openURL}
+		OpenBrowser: a.openURL,
+	}
 }
 
 // startCloudBatchLogin logs in on each host in order inside one job.
@@ -52,6 +56,7 @@ func (a *App) startCloudBatchLogin(ca *cloudAdd, cl *kittools.Cloud, hosts []str
 	ca.login = lg
 	name, id := strings.TrimSpace(ca.name), cl.ID
 	app := kittools.App{ClientID: strings.TrimSpace(ca.appID), ClientSecret: strings.TrimSpace(ca.appKey)}
+	opts := service.CloudOptions{AllowPending: ca.allowPending, Bucket: strings.TrimSpace(ca.bucket)}
 	a.start(&lg.j, time.Duration(len(hosts))*20*time.Minute, func(ctx context.Context) error {
 		var err error
 		for i, host := range hosts {
@@ -59,7 +64,7 @@ func (a *App) startCloudBatchLogin(ca *cloudAdd, cl *kittools.Cloud, hosts []str
 				lg.index, lg.where, lg.form, lg.status = i, host, true, ""
 				lg.q, lg.ask, lg.conn, lg.term, lg.text = nil, nil, nil, nil, ""
 			})
-			err = a.loginOneServer(ctx, lg, host, name, id, app)
+			err = a.loginOneServer(ctx, lg, host, name, id, app, opts)
 			a.update(func() {
 				lg.results = append(lg.results, cloudBatchResult{host: host, err: err})
 				if err != nil {
@@ -84,10 +89,10 @@ func (a *App) startCloudBatchLogin(ca *cloudAdd, cl *kittools.Cloud, hosts []str
 
 // loginOneServer is the form login on host, or the terminal when the form
 // cannot be used there.
-func (a *App) loginOneServer(ctx context.Context, lg *cloudLogin, host, name, id string, app kittools.App) error {
-	err := a.kit().loginServer(ctx, host, name, id, a.cloudForm(ctx, lg, app))
+func (a *App) loginOneServer(ctx context.Context, lg *cloudLogin, host, name, id string, app kittools.App, opts service.CloudOptions) error {
+	err := a.kit().loginServer(ctx, host, name, id, a.cloudForm(ctx, lg, app, opts))
 	if errors.Is(err, service.ErrFormUnavailable) {
-		return a.terminalLogin(ctx, lg, host, name, id)
+		return a.terminalLogin(ctx, lg, host, name, id, opts)
 	}
 	return err
 }

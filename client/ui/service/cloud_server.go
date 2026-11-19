@@ -54,7 +54,30 @@ func (s *Service) cloudEntry(id string) (*kittools.Cloud, error) {
 
 // CloudTarget is the saved location of a cloud drive.
 func CloudTarget(name string) vaultrpc.Target {
-	return vaultrpc.Target{Name: name, Kind: "rclone", Dest: vaultrpc.CloudRemote(name) + ":" + cloudFolder}
+	return CloudTargetFolder(name, "")
+}
+
+// CloudTargetFolder is the saved location of a cloud drive at folder
+// (empty uses cloudFolder).
+func CloudTargetFolder(name, folder string) vaultrpc.Target {
+	if folder == "" {
+		folder = cloudFolder
+	}
+	return vaultrpc.Target{Name: name, Kind: "rclone", Dest: vaultrpc.CloudRemote(name) + ":" + folder}
+}
+
+func resolveCloudFolder(cloud *kittools.Cloud, bucket string) (string, error) {
+	bucket = strings.TrimSpace(bucket)
+	if !cloud.NeedsBucket {
+		return cloudFolder, nil
+	}
+	if bucket == "" {
+		return "", valise.New("cloud_bucket_required", cloud.Name+" 需要填写存储桶（Bucket）名", "填入已建好的存储桶名")
+	}
+	if !kittools.ValidCloudBucket(bucket) {
+		return "", valise.New("cloud_bucket_invalid", "存储桶名字无效："+bucket, "只能使用字母、数字、点、下划线和连字符，不能含斜杠")
+	}
+	return kittools.CloudFolder(bucket), nil
 }
 
 // CloudOptions control a cloud login.
@@ -63,6 +86,8 @@ type CloudOptions struct {
 	AllowPending bool
 	// Headless uses rclone's own headless login.
 	Headless bool
+	// Bucket is the bucket name for object-storage clouds (NeedsBucket).
+	Bucket string
 }
 
 // CloudLoginIO is a login relay plus the headless step: ConfirmAuthorize
@@ -126,7 +151,11 @@ func (s *Service) CloudLoginServer(ctx context.Context, host, name, cloudID stri
 	if cloud.Pending() && !o.AllowPending {
 		return nil, valise.New("cloud_pending", cloud.Name+" 的登录与复制还没有在这个版本上测试", "确实要试用时加 --allow-pending；出现问题请报告")
 	}
-	headless := o.Headless || !cloud.UsesLoopback() || !PortFree(CloudPort)
+	folder, err := resolveCloudFolder(cloud, o.Bucket)
+	if err != nil {
+		return nil, err
+	}
+	headless := cloud.UsesBrowser() && (o.Headless || !cloud.UsesLoopback() || !PortFree(CloudPort))
 	var local *LocalRclone
 	if headless {
 		if local = s.FindLocalRclone(ctx); local == nil {
@@ -190,7 +219,7 @@ func (s *Service) CloudLoginServer(ctx context.Context, host, name, cloudID stri
 		}
 		return res, err
 	}
-	target := CloudTarget(name)
+	target := CloudTargetFolder(name, folder)
 	chk, err := s.CheckTarget(ctx, host, vaultrpc.TargetCheckParams{Target: &target})
 	if err == nil && !chk.Reachable {
 		err = valise.New("cloud_unreachable", "登录完成了，但服务器读不了这个云盘："+chk.Reason, "重新登录；"+chk.Suggestion).WithDetail(chk.Detail)

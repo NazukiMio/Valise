@@ -30,6 +30,7 @@ type CopySource struct {
 	Spec   string `json:"spec"`
 	Kind   string `json:"kind"` // repo, dir or cloud
 	Name   string `json:"name,omitempty"`
+	Folder string `json:"folder,omitempty"`
 	Server string `json:"server"` // the server's folder name in the copy
 	Dir    string `json:"dir,omitempty"`
 }
@@ -67,6 +68,7 @@ func (s *Service) ParseCopySource(host, spec string) (*CopySource, error) {
 			if !s.IsCloudHere(name) {
 				return nil, valise.New("cloud_unknown", "这台电脑没有登录云盘 "+name, "先登录：valise cloud add --here")
 			}
+			c.Folder = s.cloudFolderOf(name)
 			return c, nil
 		}
 		r, err := s.repo(name)
@@ -123,7 +125,11 @@ func (s *Service) serversIn(dir, prefix string) string {
 
 // cloudBase is where a cloud keeps the server's periods.
 func (c *CopySource) cloudBase() string {
-	return vaultrpc.CloudRemote(c.Name) + ":" + cloudFolder + c.Server
+	folder := c.Folder
+	if folder == "" {
+		folder = cloudFolder
+	}
+	return vaultrpc.CloudRemote(c.Name) + ":" + folder + c.Server
 }
 
 // SourceStatus lists a copy's periods and backups without a key, shaped

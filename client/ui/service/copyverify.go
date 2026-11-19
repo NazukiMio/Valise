@@ -296,7 +296,7 @@ func (s *Service) checkHere(ctx context.Context, host, serverName, leaf string, 
 		c.State, c.Reason = CopyUnknown, reasonOf(err)
 		return
 	}
-	s.checkRemote(ctx, host, leaf, c, rs, rs.Dest(cloudFolder+serverName+"/"+leaf), basis, cache, o)
+	s.checkRemote(ctx, host, leaf, c, rs, rs.Dest(s.cloudFolderOf(c.Where)+serverName+"/"+leaf), basis, cache, o)
 }
 
 // checkRemote reads a leaf at base through this computer's tools.

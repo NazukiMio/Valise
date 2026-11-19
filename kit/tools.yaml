@@ -55,6 +55,21 @@ tools:
         access: account
         access_note: 能读写整个 Dropbox
         verify: pending
+      - id: webdav
+        name: WebDAV（坚果云 / Alist 等）
+        rclone_type: webdav
+        browser: false
+        access: account
+        access_note: 按填写的 WebDAV 地址与账号读写该目录下的文件
+        verify: pending
+      - id: s3
+        name: S3 兼容存储（R2 / OSS / MinIO / S3）
+        rclone_type: s3
+        browser: false
+        needs_bucket: true
+        access: folder
+        access_note: 仅读写所填存储桶（Bucket）内的 valise-vault 目录
+        verify: pending
 
   - id: rsync
     tier: expert

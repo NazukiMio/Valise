@@ -91,7 +91,7 @@ func (s *Service) addRemoteTimeline(scan *timelineScan) {
 			if err != nil {
 				return journey.Result{}, err
 			}
-			return s.localRemoteJourney(ctx, st, st.Dest(cloudFolder), loc)
+			return s.localRemoteJourney(ctx, st, st.Dest(s.cloudFolderOf(cloud.Name)), loc)
 		})
 	}
 }

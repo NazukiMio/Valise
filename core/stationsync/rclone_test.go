@@ -133,3 +133,17 @@ func TestRcloneProbeTimeout(t *testing.T) {
 		t.Fatalf("%v", run.argv)
 	}
 }
+
+func TestCauseS3AndWebDAVAuthErrors(t *testing.T) {
+	for _, msg := range []string{
+		"ERROR : InvalidAccessKeyId: The AWS Access Key Id you provided does not exist",
+		"ERROR : SignatureDoesNotMatch: The request signature we calculated does not match",
+		"ERROR : AccessDenied: Access Denied",
+		"ERROR : 403 Forbidden",
+		"ERROR : AuthFailure: authentication failed",
+	} {
+		if got := Cause(msg); got != CauseAuthDenied {
+			t.Errorf("Cause(%q) = %q, want %q", msg, got, CauseAuthDenied)
+		}
+	}
+}

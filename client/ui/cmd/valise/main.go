@@ -74,9 +74,9 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   sync <服务器> <目标>                            把服务器备份库同步到备份位置
   cloud list                                     列出可以添加的云盘（经 rclone）
   cloud rclone                                   准备这台电脑的 rclone（PATH 中已有就直接用）
-  cloud add <服务器> <名称> --cloud <id> [--headless] [--allow-pending]
+  cloud add <服务器> <名称> --cloud <id> [--bucket <桶名>] [--headless] [--allow-pending]
                                                  在服务器上登录云盘并保存为备份位置（授权留在服务器的 rclone 配置里）
-  cloud add --here <名称> --cloud <id> [--allow-pending]
+  cloud add --here <名称> --cloud <id> [--bucket <桶名>] [--allow-pending]
                                                  在这台电脑上登录云盘（复制经这台电脑中转，只在 Valise 打开时进行）
   cloud remove <服务器> <名称> | --here <名称>       移除云盘位置与登录（网盘里的备份不删除）
   pull <服务器> [--leaf 周期] [--to 目录]          把备份库拉取到本机（默认全部周期）

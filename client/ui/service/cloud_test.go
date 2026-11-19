@@ -276,8 +276,12 @@ func TestCloudReloginPreservesAutoAndUpsertsHere(t *testing.T) {
 	if !s.validCloudName("gd") || s.validCloudName("usb") || s.CloudIDOf("gd") != "gdrive" || s.CloudIDOf("unknown") != "" {
 		t.Fatalf("cloud helpers mismatch")
 	}
-	updated := s.upsertCloudHere("gd", "google-drive")
-	if len(updated) != 1 || updated[0].Cloud != "google-drive" {
+	updated := s.upsertCloudHere("gd", "google-drive", "")
+	if len(updated) != 1 || updated[0].Cloud != "google-drive" || updated[0].Folder != "" {
 		t.Fatalf("upsertCloudHere duplicated or failed: %+v", updated)
+	}
+	s.Config.Clouds = s.upsertCloudHere("s3loc", "s3", "my-bucket/valise-vault/")
+	if got := s.CloudBucketOf("s3loc"); got != "my-bucket" {
+		t.Fatalf("CloudBucketOf = %q, want my-bucket", got)
 	}
 }

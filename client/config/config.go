@@ -103,10 +103,12 @@ func SetAdminWindow(dir string, minutes int) error {
 }
 
 // Cloud is a cloud drive logged in on this computer: the location name
-// (its rclone remote is valise-<name>) and the signed list's cloud id.
+// (its rclone remote is valise-<name>), the signed list's cloud id, and an
+// optional bucket-prefixed folder path (empty means valise-vault/).
 type Cloud struct {
-	Name  string `json:"name"`
-	Cloud string `json:"cloud"`
+	Name   string `json:"name"`
+	Cloud  string `json:"cloud"`
+	Folder string `json:"folder,omitempty"`
 }
 
 // SetClouds replaces the cloud list in config.json.

@@ -100,7 +100,7 @@ func (a *App) serverLoginRow(c *ui.Context, ca *cloudAdd, cl *kittools.Cloud) {
 	}
 	if len(sel) > 0 {
 		b.OnClick(func() { a.startCloudBatchLogin(ca, cl, sel) })
-		if !validName(ca.name) {
+		if !ca.canLogin(cl) {
 			b.Disabled(true)
 		}
 	}

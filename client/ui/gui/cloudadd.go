@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
@@ -18,20 +19,22 @@ import (
 // keys through and records nothing typed.
 
 type cloudAdd struct {
-	read    bool
-	relogin bool
-	clouds  []kittools.Cloud
-	err     error
-	id      string
-	name    string
-	local   *service.LocalRclone
-	localOK bool // the search for rclone here finished
-	dl      *service.RcloneDownload
-	dlJ     job
-	login   *cloudLogin
-	saved   []string // where it is logged in now: hosts, or “here”
-	appID   string   // the user's own app, kept in memory only while this page is open
-	appKey  string   // cleared on leaving the page, Done and closing the window
+	read         bool
+	relogin      bool
+	clouds       []kittools.Cloud
+	err          error
+	id           string
+	name         string
+	bucket       string
+	allowPending bool
+	local        *service.LocalRclone
+	localOK      bool // the search for rclone here finished
+	dl           *service.RcloneDownload
+	dlJ          job
+	login        *cloudLogin
+	saved        []string // where it is logged in now: hosts, or “here”
+	appID        string   // the user's own app, kept in memory only while this page is open
+	appKey       string   // cleared on leaving the page, Done and closing the window
 
 	hostTools map[string]*cloudHostRclone // rclone on each server, by host
 }
@@ -76,12 +79,32 @@ func (a *App) openCloudAdd() {
 }
 
 func (a *App) openCloudRelogin(name string) {
-	id := ""
+	id, bucket := "", ""
 	if a.svc != nil {
 		id = a.svc.CloudIDOf(name)
+		bucket = a.svc.CloudBucketOf(name)
 	}
-	a.cloudAdding = &cloudAdd{name: name, id: id, relogin: true}
+	if bucket == "" {
+		bucket = a.cloudTargetBucket(name)
+	}
+	a.cloudAdding = &cloudAdd{name: name, id: id, bucket: bucket, relogin: true}
 	a.router.Push(cloudAddRoute)
+}
+
+func (a *App) cloudTargetBucket(name string) string {
+	prefix := "valise-" + name + ":"
+	for _, h := range a.hosts() {
+		t := a.target(h, name)
+		if t == nil {
+			continue
+		}
+		if rest, ok := strings.CutPrefix(t.Dest, prefix); ok {
+			if b, ok := strings.CutSuffix(rest, "/valise-vault/"); ok && b != "" {
+				return b
+			}
+		}
+	}
+	return ""
 }
 
 func (a *App) cloudAddPage(c *ui.Context) {
@@ -132,8 +155,22 @@ func (a *App) cloudAddPage(c *ui.Context) {
 		} else {
 			labeled(c, T("loc.name"), func() { ui.TextInput(c, &ca.name).Label(T("loc.name")).Placeholder("gdrive") })
 		}
+		if cl.NeedsBucket {
+			labeled(c, T("loc.cloud_bucket"), func() {
+				if ca.relogin && ca.bucket != "" {
+					ui.Text(c, ca.bucket).Bold()
+				} else {
+					ui.TextInput(c, &ca.bucket).Label(T("loc.cloud_bucket")).Placeholder(T("loc.cloud_bucket_placeholder"))
+				}
+			})
+			muted(ui.Text(c, T("loc.cloud_bucket_hint"))).Wrap()
+		}
 		if cl.AskApp {
 			a.ownApp(c, ca, cl)
+		}
+		if cl.Pending() {
+			notice(c, "warn", T("loc.cloud_pending_warn"))
+			ui.Checkbox(c.Key("cp-"+cl.ID), &ca.allowPending, T("loc.cloud_pending_confirm"))
 		}
 		a.serverLoginRow(c, ca, cl)
 		a.hereLoginRow(c, ca, cl)
@@ -161,6 +198,9 @@ func (a *App) readClouds(ca *cloudAdd) {
 					ca.id = cl.ID
 				}
 			}
+			if ca.id == "" && len(list) > 0 {
+				ca.id = list[0].ID
+			}
 		})
 	})
 }
@@ -174,28 +214,48 @@ func (ca *cloudAdd) chosen() *kittools.Cloud {
 	return nil
 }
 
-// cloudChoice is one drive; one not yet tested is shown and cannot be
-// picked.
+// cloudChoice is one drive; pending drives stay selectable so the user can opt
+// in with explicit risk confirmation.
 func (a *App) cloudChoice(c *ui.Context, ca *cloudAdd, cl kittools.Cloud) {
 	row := ui.Row(c).Gap(12).Padding(10, 14).Radius(10).AlignItems(ui.Center).Border(1, palette.Line)
 	if ca.id == cl.ID {
 		row.Border(2, palette.Brand)
 	}
-	if !cl.Pending() {
-		row.Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(cl.Name).OnClick(func() { ca.id = cl.ID })
-	}
+	row.Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(cl.Name).OnClick(func() {
+		if ca.id != cl.ID {
+			oldID := ca.id
+			ca.id = cl.ID
+			ca.allowPending = false
+			if !ca.relogin && (ca.name == "" || ca.name == oldID) {
+				ca.name = cl.ID
+			}
+		}
+	})
 	row.Children(func() {
 		ui.Icon(c, icons.cloud).FontSize(18).TextColor(palette.Brand)
-		ui.Text(c, cl.Name).Bold().Width(140)
+		ui.Text(c, cl.Name).Bold().Width(200)
 		note := cl.AccessNote
-		if cl.Access == kittools.AccessAccount {
+		if cl.Access == kittools.AccessAccount && !cl.Pending() {
 			note = T("loc.cloud_whole")
 		}
 		if cl.Pending() {
-			note = T("loc.cloud_pending")
+			note = T("loc.cloud_pending") + T("common.dot_sep") + note
 		}
 		muted(ui.Text(c, note)).Wrap().Grow(1)
 	})
+}
+
+func (ca *cloudAdd) canLogin(cl *kittools.Cloud) bool {
+	if cl == nil || !validName(ca.name) {
+		return false
+	}
+	if cl.Pending() && !ca.allowPending {
+		return false
+	}
+	if cl.NeedsBucket && !kittools.ValidCloudBucket(strings.TrimSpace(ca.bucket)) {
+		return false
+	}
+	return true
 }
 
 func (a *App) hereLoginRow(c *ui.Context, ca *cloudAdd, cl *kittools.Cloud) {
@@ -212,7 +272,7 @@ func (a *App) hereLoginRow(c *ui.Context, ca *cloudAdd, cl *kittools.Cloud) {
 		case ca.local == nil:
 		default:
 			b := ui.Button(c, T("loc.cloud_login_here")).OnClick(func() { a.startCloudLogin(ca, cl, "") })
-			if !validName(ca.name) {
+			if !ca.canLogin(cl) {
 				b.Disabled(true)
 			}
 		}

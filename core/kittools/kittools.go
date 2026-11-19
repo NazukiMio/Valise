@@ -77,14 +77,29 @@ type Cloud struct {
 	AccessNote string            `yaml:"access_note" json:"access_note"`
 	// Loopback false: the drive cannot use the loopback login.
 	Loopback *bool `yaml:"loopback" json:"loopback,omitempty"`
+	// Browser false: non-OAuth credential-form login (e.g. WebDAV, S3).
+	Browser *bool `yaml:"browser" json:"browser,omitempty"`
+	// NeedsBucket: object storage that requires a target bucket prefix.
+	NeedsBucket bool `yaml:"needs_bucket" json:"needs_bucket,omitempty"`
 	// AskApp lets rclone ask for the user's own app (config create --all).
 	AskApp  bool   `yaml:"ask_app" json:"ask_app,omitempty"`
 	AppHelp string `yaml:"app_help" json:"app_help,omitempty"`
 	Verify  string `yaml:"verify" json:"verify,omitempty"`
 }
 
+// UsesBrowser reports whether logging in uses a web browser (OAuth).
+func (c Cloud) UsesBrowser() bool { return c.Browser == nil || *c.Browser }
+
 // UsesLoopback reports whether the loopback login applies.
-func (c Cloud) UsesLoopback() bool { return c.Loopback == nil || *c.Loopback }
+func (c Cloud) UsesLoopback() bool { return c.UsesBrowser() && (c.Loopback == nil || *c.Loopback) }
+
+// FormAvailable reports whether Valise's non-interactive form login can run.
+func (c Cloud) FormAvailable(portFree bool) bool {
+	if !c.UsesBrowser() {
+		return true
+	}
+	return c.UsesLoopback() && portFree
+}
 
 // Pending reports a cloud that may be shown but not added.
 func (c Cloud) Pending() bool { return c.Verify == "pending" }
@@ -186,17 +201,35 @@ func (l *List) ByID(id string) *Tool {
 }
 
 var (
-	idRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
-	shaRe    = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	varRe    = regexp.MustCompile(`\$\{[^}]*\}`)
-	memberRe = regexp.MustCompile(`^[A-Za-z0-9._/+-]+$`)
-	typeRe   = regexp.MustCompile(`^[a-z0-9]{1,30}$`)
-	keyRe    = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
-	valueRe  = regexp.MustCompile(`^[A-Za-z0-9._:/-]{0,100}$`)
+	idRe          = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
+	shaRe         = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	varRe         = regexp.MustCompile(`\$\{[^}]*\}`)
+	memberRe      = regexp.MustCompile(`^[A-Za-z0-9._/+-]+$`)
+	typeRe        = regexp.MustCompile(`^[a-z0-9]{1,30}$`)
+	keyRe         = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
+	valueRe       = regexp.MustCompile(`^[A-Za-z0-9._:/-]{0,100}$`)
+	cloudBucketRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 )
 
+// ValidCloudBucket reports whether s is a single safe bucket name segment.
+func ValidCloudBucket(s string) bool {
+	return s != "." && s != ".." && cloudBucketRe.MatchString(s)
+}
+
+// CloudFolder returns the vault root folder within a cloud drive or bucket.
+func CloudFolder(bucket string) string {
+	if bucket == "" {
+		return "valise-vault/"
+	}
+	return bucket + "/valise-vault/"
+}
+
 // secretKeys may never be fixed parameters: they are authorization content.
-var secretKeys = []string{"token", "client_secret", "client_id", "pass", "password", "key", "service_account_file", "service_account_credentials"}
+var secretKeys = []string{
+	"token", "client_secret", "client_id", "pass", "password", "key",
+	"service_account_file", "service_account_credentials",
+	"access_key_id", "secret_access_key", "session_token", "bearer_token", "bearer_token_command",
+}
 
 // Parse reads kit-tools.yaml strictly and checks it.
 func Parse(data []byte) (*List, error) {
@@ -265,7 +298,10 @@ func (c Cloud) CreateArgs(remote string, local bool) []string {
 	}
 	// --no-output: rclone otherwise prints the finished config, token
 	// included, to the terminal (seen on 1.75.2); its questions still show.
-	args = append(args, fmt.Sprintf("config_is_local=%t", local), "--no-output")
+	if c.UsesBrowser() {
+		args = append(args, fmt.Sprintf("config_is_local=%t", local))
+	}
+	args = append(args, "--no-output")
 	if c.AskApp {
 		args = append(args, "--all")
 	}

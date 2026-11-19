@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,12 +60,13 @@ func (a *App) startCloudLogin(ca *cloudAdd, cl *kittools.Cloud, where string) {
 	ca.login = lg
 	name, id := strings.TrimSpace(ca.name), cl.ID
 	app := kittools.App{ClientID: strings.TrimSpace(ca.appID), ClientSecret: strings.TrimSpace(ca.appKey)}
+	opts := service.CloudOptions{AllowPending: ca.allowPending, Bucket: strings.TrimSpace(ca.bucket)}
 	a.start(&lg.j, 20*time.Minute, func(ctx context.Context) error {
-		err := a.svc.CloudLoginHereForm(ctx, name, id, a.cloudForm(ctx, lg, app))
+		err := a.svc.CloudLoginHereForm(ctx, name, id, a.cloudForm(ctx, lg, app, opts))
 		if !errors.Is(err, service.ErrFormUnavailable) {
 			return err
 		}
-		return a.terminalLogin(ctx, lg, "", name, id)
+		return a.terminalLogin(ctx, lg, "", name, id, opts)
 	}, func(err error) {
 		if err == nil {
 			ca.saved = appendUniq(ca.saved, T("loc.here"))
@@ -101,7 +103,7 @@ func (a *App) askYes(ctx context.Context, lg *cloudLogin, text, yes string) bool
 
 // terminalLogin is the login in the window's terminal: rclone asks there,
 // and the headless authorization stays out of command lines.
-func (a *App) terminalLogin(ctx context.Context, lg *cloudLogin, where, name, id string) error {
+func (a *App) terminalLogin(ctx context.Context, lg *cloudLogin, where, name, id string, opts service.CloudOptions) error {
 	ready := make(chan struct{})
 	a.update(func() {
 		lg.form, lg.conn = false, newInstallConn()
@@ -118,9 +120,9 @@ func (a *App) terminalLogin(ctx context.Context, lg *cloudLogin, where, name, id
 	}
 	defer lg.conn.outW.Close()
 	if where == "" {
-		return a.svc.CloudLoginHere(ctx, name, id, service.CloudOptions{}, lg.conn.in, lg.conn.outW)
+		return a.svc.CloudLoginHere(ctx, name, id, opts, lg.conn.in, lg.conn.outW)
 	}
-	_, err := a.svc.CloudLoginServer(ctx, where, name, id, service.CloudOptions{}, service.CloudLoginIO{
+	_, err := a.svc.CloudLoginServer(ctx, where, name, id, opts, service.CloudLoginIO{
 		LoginIO: service.LoginIO{Stdin: lg.conn.in, Stdout: lg.conn.outW, Cols: 100, Rows: 30,
 			Status: func(s service.LoginStatus) { a.update(func() { lg.status = loginStatusText(s) }) },
 			ConfirmOpen: func(link, domain string) bool {
@@ -224,7 +226,7 @@ func (a *App) cloudLoginView(c *ui.Context, ca *cloudAdd) {
 func formQuestionView(c *ui.Context, fq *formQuestion) {
 	q := fq.q
 	head, rest, _ := strings.Cut(strings.TrimSpace(q.Help), "\n")
-	ui.Column(c).Gap(8).Padding(12, 14).Radius(10).Background(palette.Board).Children(func() {
+	ui.Column(c.Key("fq-state-"+q.State)).Gap(8).Padding(12, 14).Radius(10).Background(palette.Board).Children(func() {
 		ui.Text(c, orText(head, q.Name)).Bold().Wrap()
 		if q.Error != "" {
 			ui.Text(c, q.Error).FontSize(12).TextColor(palette.Warn).Wrap()
@@ -233,15 +235,22 @@ func formQuestionView(c *ui.Context, fq *formQuestion) {
 			muted(ui.Text(c, rest)).Wrap()
 		}
 		if len(q.Choices) > 0 {
-			ui.RadioGroup(c, func() {
-				for _, ch := range q.Choices {
-					label := ch.Value
-					if ch.Help != "" {
-						label += " · " + strings.SplitN(ch.Help, "\n", 2)[0]
+			choices := func() {
+				ui.RadioGroup(c, func() {
+					for i, ch := range q.Choices {
+						label := ch.Value
+						if ch.Help != "" {
+							label += " · " + strings.SplitN(ch.Help, "\n", 2)[0]
+						}
+						ui.Radio(c.Key("fq-"+strconv.Itoa(i)+"-"+ch.Value), &fq.answer, ch.Value, label)
 					}
-					ui.Radio(c.Key("fq-"+ch.Value), &fq.answer, ch.Value, label)
-				}
-			}).Gap(6).Label(orText(head, q.Name))
+				}).Gap(6).Label(orText(head, q.Name))
+			}
+			if len(q.Choices) > 8 {
+				ui.Scroll(c).Height(240).Children(choices)
+			} else {
+				choices()
+			}
 		}
 		if len(q.Choices) == 0 || !q.Only {
 			in := ui.TextInput(c, &fq.answer).Label(q.Name)

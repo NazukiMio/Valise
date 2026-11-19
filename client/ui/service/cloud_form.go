@@ -32,6 +32,10 @@ var ErrFormUnavailable = errors.New("the form login is not available here")
 // CloudForm is how the form login reaches the person.
 type CloudForm struct {
 	App kittools.App
+	// Bucket is the bucket name for object-storage clouds (NeedsBucket).
+	Bucket string
+	// AllowPending permits trying an unverified cloud after explicit opt-in.
+	AllowPending bool
 	// Ask shows one of rclone's questions and returns the answer.
 	Ask         func(kittools.Question) (string, error)
 	Status      func(LoginStatus)
@@ -59,7 +63,7 @@ func answerFixed(q kittools.Question) (string, bool) {
 // form.
 func (s *Service) CloudFormReady(cloudID string) bool {
 	cloud, err := s.cloudEntry(cloudID)
-	return err == nil && cloud.UsesLoopback() && PortFree(CloudPort)
+	return err == nil && cloud.FormAvailable(PortFree(CloudPort))
 }
 
 // CloudLoginServerForm logs host in to a cloud drive with the form, then
@@ -71,11 +75,15 @@ func (s *Service) CloudLoginServerForm(ctx context.Context, host, name, cloudID 
 	if err != nil {
 		return nil, err
 	}
-	if cloud.Pending() {
-		return nil, valise.New("cloud_pending", cloud.Name+" 的登录与复制还没有在这个版本上测试", "选择已核实的云盘")
+	if cloud.Pending() && !f.AllowPending {
+		return nil, valise.New("cloud_pending", cloud.Name+" 的登录与复制还没有在这个版本上测试", "勾选已知风险确认后试用")
 	}
-	if !cloud.UsesLoopback() || !PortFree(CloudPort) {
+	if !cloud.FormAvailable(PortFree(CloudPort)) {
 		return nil, ErrFormUnavailable
+	}
+	folder, err := resolveCloudFolder(cloud, f.Bucket)
+	if err != nil {
+		return nil, err
 	}
 	if err := kittools.CheckApp(f.App); err != nil {
 		return nil, valise.New("app_invalid", "自己的应用填写有误", "client_id 与 client_secret 各填一行；不用自己的应用就都留空")
@@ -146,7 +154,7 @@ func (s *Service) CloudLoginServerForm(ctx context.Context, host, name, cloudID 
 		forget()
 		return res, err
 	}
-	target := CloudTarget(name)
+	target := CloudTargetFolder(name, folder)
 	chk, err := s.CheckTarget(ctx, host, vaultrpc.TargetCheckParams{Target: &target})
 	if err == nil && !chk.Reachable {
 		err = valise.New("cloud_unreachable", "登录完成了，但服务器读不了这个云盘："+chk.Reason, "重新登录；"+chk.Suggestion).WithDetail(chk.Detail)
@@ -198,11 +206,15 @@ func (s *Service) CloudLoginHereForm(ctx context.Context, name, cloudID string, 
 	if err != nil {
 		return err
 	}
-	if cloud.Pending() {
-		return valise.New("cloud_pending", cloud.Name+" 的登录与复制还没有在这个版本上测试", "选择已核实的云盘")
+	if cloud.Pending() && !f.AllowPending {
+		return valise.New("cloud_pending", cloud.Name+" 的登录与复制还没有在这个版本上测试", "勾选已知风险确认后试用")
 	}
-	if !cloud.UsesLoopback() || !PortFree(CloudPort) {
+	if !cloud.FormAvailable(PortFree(CloudPort)) {
 		return ErrFormUnavailable
+	}
+	folder, err := resolveCloudFolder(cloud, f.Bucket)
+	if err != nil {
+		return err
 	}
 	if err := kittools.CheckApp(f.App); err != nil {
 		return valise.New("app_invalid", "自己的应用填写有误", "client_id 与 client_secret 各填一行；不用自己的应用就都留空")
@@ -252,13 +264,13 @@ func (s *Service) CloudLoginHereForm(ctx context.Context, name, cloudID string, 
 	}
 	st, err := s.hereStation(ctx, name)
 	if err == nil {
-		_, _, err = stationsync.With(ctx, localRunner{}, st, func(r stationsync.Remote) error { return r.Probe(ctx, st.Dest(cloudFolder)) })
+		_, _, err = stationsync.With(ctx, localRunner{}, st, func(r stationsync.Remote) error { return r.Probe(ctx, st.Dest(folder)) })
 	}
 	if err != nil {
 		s.forgetHere(local.Path, name)
 		return err
 	}
-	clouds := s.upsertCloudHere(name, cloudID)
+	clouds := s.upsertCloudHere(name, cloudID, folder)
 	if err := config.SetClouds(s.Dirs.Data, clouds); err != nil {
 		s.forgetHere(local.Path, name)
 		return err

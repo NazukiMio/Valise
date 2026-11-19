@@ -53,15 +53,36 @@ func (s *Service) validCloudName(name string) bool {
 	return true
 }
 
-func (s *Service) upsertCloudHere(name, cloudID string) []config.Cloud {
+func (s *Service) cloudFolderOf(name string) string {
+	if c := s.cloudHere(name); c != nil && c.Folder != "" {
+		return c.Folder
+	}
+	return cloudFolder
+}
+
+// CloudBucketOf returns the bucket prefix configured for a local cloud
+// location, or "" when none.
+func (s *Service) CloudBucketOf(name string) string {
+	b, ok := strings.CutSuffix(s.cloudFolderOf(name), "/"+cloudFolder)
+	if ok {
+		return b
+	}
+	return ""
+}
+
+func (s *Service) upsertCloudHere(name, cloudID, folder string) []config.Cloud {
+	if folder == cloudFolder {
+		folder = ""
+	}
 	clouds := append([]config.Cloud{}, s.Config.Clouds...)
 	for i := range clouds {
 		if clouds[i].Name == name {
 			clouds[i].Cloud = cloudID
+			clouds[i].Folder = folder
 			return clouds
 		}
 	}
-	return append(clouds, config.Cloud{Name: name, Cloud: cloudID})
+	return append(clouds, config.Cloud{Name: name, Cloud: cloudID, Folder: folder})
 }
 
 func (s *Service) hereStation(ctx context.Context, name string) (stationsync.Station, error) {
@@ -102,6 +123,10 @@ func (s *Service) CloudLoginHere(ctx context.Context, name, cloudID string, o Cl
 	if cloud.Pending() && !o.AllowPending {
 		return valise.New("cloud_pending", cloud.Name+" 的登录与复制还没有在这个版本上测试", "确实要试用时加 --allow-pending；出现问题请报告")
 	}
+	folder, err := resolveCloudFolder(cloud, o.Bucket)
+	if err != nil {
+		return err
+	}
 	if !s.validCloudName(name) {
 		return valise.New("cloud_name_invalid", "名字无效或已被使用："+name, "换一个只含小写字母、数字和连字符的名字")
 	}
@@ -133,14 +158,14 @@ func (s *Service) CloudLoginHere(ctx context.Context, name, cloudID string, o Cl
 	st, err := s.hereStation(ctx, name)
 	if err == nil {
 		_, _, err = stationsync.With(ctx, localRunner{}, st, func(r stationsync.Remote) error {
-			return r.Probe(ctx, st.Dest(cloudFolder))
+			return r.Probe(ctx, st.Dest(folder))
 		})
 	}
 	if err != nil {
 		s.forgetHere(local.Path, name)
 		return err
 	}
-	clouds := s.upsertCloudHere(name, cloudID)
+	clouds := s.upsertCloudHere(name, cloudID, folder)
 	if err := config.SetClouds(s.Dirs.Data, clouds); err != nil {
 		s.forgetHere(local.Path, name)
 		return err
@@ -225,7 +250,7 @@ func (s *Service) syncCloud(ctx context.Context, host, name string, wait bool) (
 	if res.Direct == "" {
 		res.Direct = "只在这台电脑登录了"
 	}
-	dest := cloudFolder + status.ServerName
+	dest := s.cloudFolderOf(name) + status.ServerName
 	res.Dest = st.Dest(dest)
 	res.Method, _, err = stationsync.With(ctx, localRunner{}, st, func(r stationsync.Remote) error {
 		res.Leaves, res.Snapshots = []string{}, []string{}

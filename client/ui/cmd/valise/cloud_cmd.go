@@ -83,6 +83,7 @@ func (c *cli) cloudRclone(ctx context.Context) error {
 func (c *cli) cloudAdd(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("cloud add", flag.ContinueOnError)
 	id := fs.String("cloud", "", "")
+	bucket := fs.String("bucket", "", "")
 	pending := fs.Bool("allow-pending", false, "")
 	headless := fs.Bool("headless", false, "")
 	here := fs.Bool("here", false, "")
@@ -128,7 +129,7 @@ func (c *cli) cloudAdd(ctx context.Context, args []string) error {
 	}
 	term := newLoginTerminal(c)
 	defer term.restore()
-	res, err := c.svc.CloudLoginServer(ctx, host, name, cl.ID, service.CloudOptions{AllowPending: *pending, Headless: *headless}, service.CloudLoginIO{
+	res, err := c.svc.CloudLoginServer(ctx, host, name, cl.ID, service.CloudOptions{AllowPending: *pending, Headless: *headless, Bucket: *bucket}, service.CloudLoginIO{
 		LoginIO: service.LoginIO{
 			Stdin: term.remote, Stdout: c.out, Cols: term.cols, Rows: term.rows,
 			Status: func(s service.LoginStatus) {
@@ -168,6 +169,7 @@ func (c *cli) cloudAdd(ctx context.Context, args []string) error {
 func (c *cli) cloudAddHere(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("cloud add --here", flag.ContinueOnError)
 	id := fs.String("cloud", "", "")
+	bucket := fs.String("bucket", "", "")
 	pending := fs.Bool("allow-pending", false, "")
 	fs.Bool("here", true, "")
 	pos, err := parseArgs(fs, args, 1)
@@ -184,7 +186,7 @@ func (c *cli) cloudAddHere(ctx context.Context, args []string) error {
 	}
 	fmt.Fprintf(c.out, "在这台电脑上登录云盘，作为备份位置 %s。授权留在这台电脑（Valise 自己的 rclone 配置）；复制经这台电脑中转，只在 Valise 打开时进行。\n", pos[0])
 	fmt.Fprintln(c.out, "接下来是 rclone 自己的提问，会在这台电脑的浏览器里打开授权页。")
-	if err := c.svc.CloudLoginHere(ctx, pos[0], *id, service.CloudOptions{AllowPending: *pending}, c.in, c.out); err != nil {
+	if err := c.svc.CloudLoginHere(ctx, pos[0], *id, service.CloudOptions{AllowPending: *pending, Bucket: *bucket}, c.in, c.out); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.out, "已登录，连接测试通过。复制：valise sync <服务器> %s\n", pos[0])
