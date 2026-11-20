@@ -93,8 +93,12 @@ func setup(t *testing.T) (*client, string, string, string, *time.Time) {
 	write(t, filepath.Join(state, "MEMORY.md"), "# Memory\n\n- fact one\n")
 	write(t, filepath.Join(state, "notes/a.md"), "user notes")
 	write(t, filepath.Join(state, "runtime.lock"), "1")
+	write(t, filepath.Join(state, "tools/runtime.bin"), strings.Repeat("x", 4096))
+	write(t, filepath.Join(state, "cache/blob.bin"), strings.Repeat("y", 4096))
+	write(t, filepath.Join(state, "tmp/scratch.bin"), strings.Repeat("z", 4096))
 	writeSQLite(t, filepath.Join(state, "db/core.sqlite"), "tokens", "core_token=secret")
 	writeSQLite(t, filepath.Join(state, "plugins/mem.db"), "notes", "do_not_leak")
+	writeSQLite(t, filepath.Join(state, "tools/excluded.db"), "t", "ignored_db")
 	os.Symlink(extDir, filepath.Join(state, "ext_link"))
 
 	p := profile.Profile{
@@ -104,6 +108,11 @@ func setup(t *testing.T) (*client, string, string, string, *time.Time) {
 			{Root: "state", Glob: "SOUL.md", Category: "identity"},
 			{Root: "state", Glob: "MEMORY.md", Category: "memory"},
 			{Root: "state", Glob: "db/*.sqlite", Category: "state"},
+			{Root: "state", Glob: "cache/**", Category: "cache"},
+			{Root: "state", Glob: "tmp/**", Category: "ignore"},
+		},
+		Body: &profile.Body{
+			Paths: []profile.PathRef{{Root: "state", Glob: "tools/**"}},
 		},
 		Consistency: &profile.Consistency{
 			SQLite: []profile.SQLiteRef{{Root: "state", Glob: "db/*.sqlite", SecretTables: []string{"tokens"}}},
@@ -200,6 +209,25 @@ func TestProtocolAndTools(t *testing.T) {
 	if len(sqliteList) != 1 || sqliteList[0].(map[string]any)["path"] != "plugins/mem.db" {
 		t.Fatalf("unexpected untracked_sqlite: %+v", sqliteList)
 	}
+	eff := sc["effective_rules"].(map[string]any)
+	bodyPaths, _ := eff["profile_body_paths"].([]any)
+	if len(bodyPaths) != 1 || bodyPaths[0].(map[string]any)["root"] != "state" || bodyPaths[0].(map[string]any)["glob"] != "tools/**" {
+		t.Fatalf("unexpected profile_body_paths: %+v", eff["profile_body_paths"])
+	}
+	largestDirs := facts["largest_dirs"].([]any)
+	hasNotesOrPlugins := false
+	for _, entry := range largestDirs {
+		pfx := entry.(map[string]any)["prefix"].(string)
+		if pfx == "tools/" || pfx == "cache/" || pfx == "tmp/" {
+			t.Fatalf("excluded category leaked into largest_dirs: %+v", largestDirs)
+		}
+		if pfx == "notes/" || pfx == "plugins/" {
+			hasNotesOrPlugins = true
+		}
+	}
+	if !hasNotesOrPlugins {
+		t.Fatalf("expected full-tier dirs in largest_dirs, got: %+v", largestDirs)
+	}
 	extList := facts["external_symlinks"].([]any)
 	if len(extList) != 1 || extList[0].(map[string]any)["link_path"] != "state:ext_link" {
 		t.Fatalf("unexpected external_symlinks: %+v", extList)
@@ -292,6 +320,11 @@ func TestProtocolAndTools(t *testing.T) {
 	}
 	if got := sc["layout_facts"].(map[string]any)["untracked_sqlite"].([]any); len(got) != 0 {
 		t.Fatalf("accepted local_sqlite still shown in untracked_sqlite: %+v", got)
+	}
+	for _, entry := range sc["layout_facts"].(map[string]any)["largest_dirs"].([]any) {
+		if entry.(map[string]any)["prefix"] == "runtime.lock" {
+			t.Fatalf("accepted ignore override still shown in largest_dirs: %+v", entry)
+		}
 	}
 
 	// Hidden legacy tools stay compatible in Call() even though removed from tools/list.

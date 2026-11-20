@@ -5,7 +5,8 @@ description: Check Valise backup status or take a rolling backup before risky se
 
 # Valise backup safety net
 
-Always reply in the user's language. Only call `valise_status` and `valise_seal`.
+Always reply in the user's language. Only call the Valise MCP tools `valise_status` and `valise_seal` (plus any runtime tool-discovery lookup such as `tool_search` to resolve prefixed tool IDs).
+- **Deferred tool discovery**: If your runtime loads MCP tools lazily (e.g. `tool_search`), look up the prefixed real tool IDs for `valise_status` and `valise_seal` first. If the current v0.1 tools are missing, stop immediately and ask the user to upgrade the server `valise-porter` and restart the gateway—never fall back to legacy tools.
 - **Hard bans**: Never edit standing instructions (like `AGENTS.md`), never probe files on disk, and never put secrets, tokens, passwords, or file content snippets in `reason`.
 
 ## 1. Check backup status (`valise_status`)

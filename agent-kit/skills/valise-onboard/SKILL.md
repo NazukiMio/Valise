@@ -5,7 +5,8 @@ description: Onboard this agent's custom layout to Valise's server dossier and c
 
 # Onboard layout to Valise
 
-Always reply in the user's language. Only call `valise_onboard_context` and (when needed) `valise_propose_dossier`.
+Always reply in the user's language. Only call the Valise MCP tools `valise_onboard_context` and (when needed) `valise_propose_dossier` (plus any runtime tool-discovery lookup such as `tool_search` to resolve prefixed tool IDs).
+- **Deferred tool discovery**: If your runtime loads MCP tools lazily (e.g. `tool_search`), look up the prefixed real tool IDs for `valise_onboard_context` and `valise_propose_dossier` first. If these new tools are missing, stop immediately and ask the user to upgrade the server `valise-porter` and restart the gateway—never fall back to legacy tools.
 - **Hard bans**: Never trigger a backup, never edit standing instructions (like `AGENTS.md`), never run shell commands, never read or list files on disk, and never include secrets, tokens, passwords, or file content snippets in any `reason` or reply.
 
 ## Steps

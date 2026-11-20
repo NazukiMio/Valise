@@ -32,11 +32,12 @@ type onboardInstance struct {
 }
 
 type onboardEffectiveRules struct {
-	ProfilePaths   []profile.PathRule   `json:"profile_paths"`
-	ProfileSQLite  []profile.SQLiteRef  `json:"profile_sqlite,omitempty"`
-	LocalOverrides []profile.Override   `json:"local_overrides"`
-	LocalSQLite    []profile.SQLiteRef  `json:"local_sqlite,omitempty"`
-	ExternalRefs   []enroll.ExternalRef `json:"external_refs,omitempty"`
+	ProfilePaths     []profile.PathRule   `json:"profile_paths"`
+	ProfileBodyPaths []profile.PathRef    `json:"profile_body_paths,omitempty"`
+	ProfileSQLite    []profile.SQLiteRef  `json:"profile_sqlite,omitempty"`
+	LocalOverrides   []profile.Override   `json:"local_overrides"`
+	LocalSQLite      []profile.SQLiteRef  `json:"local_sqlite,omitempty"`
+	ExternalRefs     []enroll.ExternalRef `json:"external_refs,omitempty"`
 }
 
 type dirStat struct {
@@ -96,6 +97,10 @@ func (t *Tools) onboardContext(ctx context.Context) (any, error) {
 	t.audit("onboard_context", "ok", "", "")
 
 	facts := t.collectLayoutFacts(ctx, rec, prof)
+	var profBodyPaths []profile.PathRef
+	if prof.Body != nil {
+		profBodyPaths = slices.Clone(prof.Body.Paths)
+	}
 	var profSQLite []profile.SQLiteRef
 	if prof.Consistency != nil {
 		profSQLite = slices.Clone(prof.Consistency.SQLite)
@@ -120,11 +125,12 @@ func (t *Tools) onboardContext(ctx context.Context) (any, error) {
 		LastSeal:       lastSeal,
 		Protection:     protectionSummary,
 		EffectiveRules: onboardEffectiveRules{
-			ProfilePaths:   profPaths,
-			ProfileSQLite:  profSQLite,
-			LocalOverrides: ov,
-			LocalSQLite:    slices.Clone(rec.LocalSQLite),
-			ExternalRefs:   slices.Clone(rec.ExternalRefs),
+			ProfilePaths:     profPaths,
+			ProfileBodyPaths: profBodyPaths,
+			ProfileSQLite:    profSQLite,
+			LocalOverrides:   ov,
+			LocalSQLite:      slices.Clone(rec.LocalSQLite),
+			ExternalRefs:     slices.Clone(rec.ExternalRefs),
 		},
 		LayoutFacts:      facts,
 		PendingProposals: ps,
@@ -171,6 +177,11 @@ func (t *Tools) collectLayoutFacts(ctx context.Context, rec *enroll.Record, prof
 		if it.SidecarOf != "" {
 			return
 		}
+		if it.Match.Category == profile.CategoryBody ||
+			it.Match.Category == profile.CategoryCache ||
+			it.Match.Category == profile.CategoryIgnore {
+			return
+		}
 		sz := it.Info.Size()
 		lKey := [2]string{it.Root, layoutGroupPrefix(it.Rel)}
 		ld := largestMap[lKey]
@@ -191,10 +202,7 @@ func (t *Tools) collectLayoutFacts(ctx context.Context, rec *enroll.Record, prof
 			ud.Bytes += sz
 		}
 
-		if it.SQLite == nil && sz >= 16 &&
-			it.Match.Category != profile.CategoryBody &&
-			it.Match.Category != profile.CategoryCache &&
-			it.Match.Category != profile.CategoryIgnore {
+		if it.SQLite == nil && sz >= 16 {
 			if isSQLiteHeader(it.Abs) {
 				untrackedDBs = append(untrackedDBs, sqliteFact{
 					Root:  it.Root,

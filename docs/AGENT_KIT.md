@@ -39,19 +39,19 @@ agent-kit 是可选的档案报备与操作前备份辅助，**不是灾难恢�
 | :--- | :--- | :--- | :--- |
 | `valise_status` | 无（`{}`） | 纯只读快查，**不做全盘扫描，不触发备份**：返回 `instance`、`protection_plan`（含是否已采用 `adopted`、定时、档位、周期、保留与复制目标）、精简 `last_seal`（`snapshot_id`、`created_at`、`tier`、`kind`）、由代码写成的一句话 `protection_summary`（agent 原样转述）、`pending_proposals`（计数）及必要 `notes`（`< 150 tokens`） | 毫秒级纯只读；写入不含路径与正文的轻量 `agent-mcp` 审计时间戳 |
 | `valise_seal` | `{ "reason"?: string }` | 写入一条滚动周期备份（`kind: auto` 存入当前日期周期，参与周期保留策略，用户可在客户端按需晋升为永久存档点）。**已确认保护计划的实例按计划档位（默认 `full`）封存**；未采用保护计划的旧实例保守沿用 `soul` 档并在结果中附带 `plan_warning`。`reason` 可选（缺省记 `"agent mcp backup"`）写入审计记录 | 最短间隔 10 分钟；命中 `rate_limited` 时报错同时返回 `last_seal_id` 与 `last_seal_at` 供同一修改复用，不循环重试 |
-| `valise_onboard_context` | 无（`{}`） | 纯只读收集档案上下文：**不触发任何备份**。返回 5 块信息 + `protection_summary` 与精简 `last_seal`：<br>1. `instance`（`instance_id`、`profile_id`、`profile_version`、`roots`）；<br>2. `protection_plan`；<br>3. `effective_rules`（Profile 规则 + Dossier `local_overrides` / `local_sqlite` / `external_refs`）；<br>4. `layout_facts`（5 项：`unclassified_dirs`、`largest_dirs`、`external_symlinks`、`churn_files`、**`untracked_sqlite`**）；<br>5. `pending_proposals`（当前待审批队列，便于去重） | 只返回路径聚合、字节计数与前 16 字节 SQLite 魔数识别线索（`untracked_sqlite`），**绝不读取任何表数据或文件内容**；写入轻量 `agent-mcp` 审计时间戳 |
+| `valise_onboard_context` | 无（`{}`） | 纯只读收集档案上下文：**不触发任何备份**。返回 5 块信息 + `protection_summary` 与精简 `last_seal`：<br>1. `instance`（`instance_id`、`profile_id`、`profile_version`、`roots`）；<br>2. `protection_plan`；<br>3. `effective_rules`（Profile `paths` / `profile_body_paths` / `profile_sqlite` + Dossier `local_overrides` / `local_sqlite` / `external_refs`）；<br>4. `layout_facts`（5 项：`unclassified_dirs`、`largest_dirs`〔仅统计会进入 `full` 常规备份的大目录，跳过 `body`/`cache`/`ignore`〕、`external_symlinks`、`churn_files`、**`untracked_sqlite`**）；<br>5. `pending_proposals`（当前待审批队列，便于去重） | 只返回路径聚合、字节计数与前 16 字节 SQLite 魔数识别线索（`untracked_sqlite`），**绝不读取任何表数据或文件内容**；写入轻量 `agent-mcp` 审计时间戳 |
 | `valise_propose_dossier` | `{ "items": [ ... ] }` | 统一校验并入队三类结构化提案：<br>• `classify`：`{ kind, root, glob (或 path), category, reason }`（`category` 仅限 `memory \| workspace \| state \| skills \| config \| secrets \| cache \| ignore`；硬拒绝用非 `secrets` 覆盖 Profile `secrets`；改入 `cache`/`ignore` 标为降级并要求写明可重建理由）；<br>• `sqlite`：`{ kind, root, glob, secret_tables?, reason }`（硬拒绝削弱 Profile `secret_tables`）；<br>• `external_ref`：`{ kind, path, ref_kind: "external_dir" \| "symlink_target", reason }`（校验绝对路径且位于所有 `roots` 之外） | 单批调用上限 ≤ 50 条（技能约束最多挑选 10 条高价值项）；禁止直写 Dossier，全部需人类在桌面「健康 › 归档建议」或 CLI `valise proposals` 确认后才生效 |
 
 ### 3.1 由 agent 补充档案边界（Dossier Proposals）
 
-1. **代码提供线索**：`valise_onboard_context` 在不触碰文件内容的前提下提供 `unclassified_dirs`、`largest_dirs`（覆盖 `state` 与 `workspace` 下大体积插件垃圾）、`external_symlinks`、`churn_files` 与 `untracked_sqlite`（只检查前 16 字节 `"SQLite format 3\x00"`，排除已纳管库及 `body`/`cache`/`ignore`）。
+1. **代码提供线索**：`valise_onboard_context` 在不触碰文件内容的前提下提供 `unclassified_dirs`、`largest_dirs`（跳过已排除的 `body`/`cache`/`ignore`，仅统计会进入 `full` 常规备份的 `state` / `workspace` 大目录与插件垃圾）、`external_symlinks`、`churn_files` 与 `untracked_sqlite`（只检查前 16 字节 `"SQLite format 3\x00"`，排除已纳管库及 `body`/`cache`/`ignore`）。
 2. **agent 筛选高价值提案**：`valise-onboard` 对照 `effective_rules` 和 `pending_proposals` 去重，禁止对 `full` 已默认兜底的零散小 `unclassified` 文件刷屏；单次只提最多 10 条高价值项。
 3. **用户拍板**：所有提案经由桌面「健康 › 归档建议」或 `valise proposals` 审批后，才分别写入实例档案的 `local_overrides`、`local_sqlite` 或 `external_refs`（`external_ref` 在 v0.1 只登记为已知覆盖缺口或忽略，不自动扩封）。
 4. **兜底与回流**：`raw` 档不受分类或降级规则影响。对同类 Harness 普遍成立的新模式仍通过 PR 进入官方 profile，不收集遥测。
 
 ## 4. 两个极简技能
 
-每个技能只保留一个紧凑的 `SKILL.md`（正文英文、用用户语言回复；触发词兼容中英文）。旧四件套（`valise-enroll`、`valise-upkeep`、`valise-handoff`、`valise-checkup`）已从发版套件移除。
+每个技能只保留一个紧凑的 `SKILL.md`（正文英文、用用户语言回复；触发词兼容中英文）。两者均支持延迟工具发现（如 `tool_search` 先查带前缀的真实工具 ID），且明确要求找不到当前 v0.1 工具时立即停止并提示用户升级服务器 `valise-porter` 与重启网关、禁止回退调用旧工具。旧四件套（`valise-enroll`、`valise-upkeep`、`valise-handoff`、`valise-checkup`）已从发版套件移除。
 
 ### 4.1 `valise-onboard`（低频档案报备，≤ 28 行）
 
