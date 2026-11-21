@@ -34,8 +34,8 @@ type adoption struct {
 // installable is a harness with an official install plan.
 type installable struct{ ID, Name, Takes, Needs string }
 
-// guideURL is the beginner guide to writing a profile (PROFILES.md 附录 A).
-const guideURL = "https://github.com/NazukiMio/Valise/blob/main/docs/PROFILES.md#%E9%99%84%E5%BD%95-a%E4%B8%BA-harness-%E5%86%99%E4%B8%80%E4%BB%BD%E8%B5%84%E6%96%99%E5%85%A5%E9%97%A82026-11-08"
+// guideURL is the beginner guide to writing a profile (docs/PROFILE_AUTHORING.md).
+const guideURL = "https://github.com/NazukiMio/Valise/blob/main/docs/PROFILE_AUTHORING.md"
 
 func (a *App) scanServer(host string) {
 	sc := a.scans[host]
@@ -227,7 +227,7 @@ func (a *App) adoptReport(c *ui.Context, host string, sc *serverScan, d service.
 		if ad.res.ProfileLocal {
 			ui.Text(c, T("profile.local")).FontSize(12).TextColor(palette.Warn)
 		}
-		if len(r.Pending) > 0 {
+		if ad.res.RestoreCapability != "" && ad.res.RestoreCapability != "tested" {
 			ui.Text(c, T("adopt.restore_untested")).FontSize(12).TextColor(palette.Warn)
 		}
 		if len(r.UnclassGroups) > 0 {

@@ -1,68 +1,70 @@
 ---
 name: valise-profile-author
-description: Author, audit, or update a Valise `valise-profile/1` harness profile YAML. Use when the user asks to add support for an agent/harness in Valise, write `~/.config` local profile YAML, fix `profilelint` errors, or audit `verify: pending` items ("给某 harness 写一份 Valise profile", "生成 Valise 资料档案", "audit valise profile", "为新 Agent 写接入规则").
+description: Author, audit, or update a Valise `valise-profile/1` harness profile YAML from official docs/source repositories (Mode A) or read-only live inspection (Mode B). Use when the user asks to add a harness to Valise, draft a local profile YAML, fix `profilelint` errors/warnings, or audit `verify: pending` items ("给某 harness 写一份 Valise profile", "生成 Valise 资料档案", "audit valise profile", "为新 Agent 写接入规则").
 ---
 
 # Author a Valise Harness Profile (`valise-profile/1`)
 
-Valise keeps all harness-specific knowledge inside declarative YAML (`profiles/*.yaml` for official packs, or `<ValiseDataDir>/profiles/<id>.yaml` for local unreviewed profiles). Go code never hardcodes harness names, paths, ports, or commands.
+Valise stores all harness-specific rules in declarative YAML (`profiles/*.yaml` for signed packs, or local unreviewed profiles). Before drafting, read [references/schema-v1.md](references/schema-v1.md), [references/doc-research-checklist.md](references/doc-research-checklist.md), and start from [references/minimal-template.yaml](references/minimal-template.yaml).
 
-Before writing or editing YAML, consult [references/schema-v1.md](references/schema-v1.md) and start from [references/minimal-template.yaml](references/minimal-template.yaml).
+## Core Boundary: Profile vs Dossier + `full` Fallback
 
-## Hard Discipline Rules
+- **Profile (`<id>.yaml`)** owns only cross-machine, universal rules: `detect`, `roots`, explicit `secrets` / `exclusive_secrets` whitelists, `body.paths`, `provenance`, core `consistency.sqlite` + `secret_tables`, high-confidence `cache`/`ignore`, `service`, `entries`, `health`, `native_cli`, and `agent_kit`.
+- **Dossier (`valise-onboard`) + `full` fallback** own per-machine reality: user-installed plugins, custom workspace subdirs, and miscellaneous files. Under Valise's default `full` backup, unclassified files inside `roots` are safely preserved in the sensitive layer—never stuff speculative paths into a Profile or guess `cache`/`ignore`.
 
-1. **Read-only reconnaissance only**: Inspect documentation, CLI `--help`, config schemas, and read-only directory listings. Never modify the target harness's configuration, state, or running service just to draft a profile.
-2. **Never read or echo secrets**: Locate credential filenames by schema/documentation only; never print API keys, tokens, `.env` contents, or private key files.
-3. **Never fabricate paths or commands**: Any path, SQLite column, command flag, or recovery behavior not directly observed on a real installation or official version-pinned docs **must** carry `verify: pending` (field on `paths` / `actions` / `approval_check` / `identity`, or `# verify: pending` YAML comment) or remain omitted/`null`. Keep `status: draft` whenever any `verify: pending` marker exists.
-4. **Whitelist secrets explicitly and avoid conflicts**: Declare credentials only under `category: secrets` (and `exclusive_secrets` when token/device identity must not blindly be cloned). A `secrets` glob must never also match `body`, `cache`, or `ignore` (including `body.paths`). Use `consistency.sqlite[].secret_tables` when a SQLite file stores both credentials and sessions/state.
-5. **Argv arrays only, never shell strings**: Every command (`version_argv`, `discover_argv`, `steps`, `actions[].argv`, `entries[].auth.*`, `entries[].port_change.steps`, `health.checks[].argv`, `approval_check.argv`, `identity.argv`, `agent_kit.*_argv`) must be a YAML argv list, respecting exact variable substitution rules (`${HOME}`, `${STATE_DIR}`, `${PORT}`, `${OUT}`, `${PORTER}`, `${INSTANCE}`, `${STAGE_DIR}`). Never emit `curl | bash` or `sh -c`.
-6. **Honest per-capability status**: Set `capabilities.<name>.status` to `tested` **only** with exact `versions` and `env` from real-machine runs (`backup`, `restore`, `install`, `manage`, `login`, `checkup`, `kit`); otherwise leave `untested` or `partial`.
+## Hard Discipline Rules (Core-First, Zero Fabrication)
 
-## Workflow
+1. **Read-only only & never read secrets**: Inspect docs, source code, CLI `--help`, and read-only directory listings. Never edit the target harness or read/print `.env`, API keys, tokens, or private keys.
+2. **Never fabricate hashes, transactions, or deprecated blocks**:
+   - **FORBIDDEN**: Fabricating `install.steps` `sha256`/`integrity` without actually downloading and verifying the artifact.
+   - **FORBIDDEN**: Fabricating unverified B03 `actions` transactions (`steps` + `transaction`) or `approval_check` schemas without live machine verification.
+   - **FORBIDDEN**: Emitting deprecated `checkup` or `handoff` blocks in any new profile.
+3. **Strict `body.paths` & `secrets` rules**:
+   - Every `body.paths[].glob` MUST be `<literal-dir>/**`; do not duplicate `category: body` in `paths`.
+   - Declare credentials explicitly as `category: secrets` (and `exclusive_secrets` for non-cloneable bot/device tokens). Never overlap `secrets`, `exclusive_secrets`, or `consistency.sqlite` with `body`/`cache`/`ignore`.
+4. **Argv arrays only**: Every executable command must be a YAML argv list using only allowed placeholders (`${HOME}`, `${STATE_DIR}`, `${PORT}`, `${OUT}`, etc.). Never emit shell strings, `sh -c`/`bash -lc`, `curl | bash`, `$(...)`, or backticks.
+5. **Honest `verify: pending` & `capabilities`**: Mark every unverified rule with `verify: pending` (field or `# verify: pending` comment). Keep `status: draft` and set every capability not verified on a real host to `status: untested`.
 
-### Step 1: Read-Only Reconnaissance
-Collect facts about the target harness (`<harness>`) from official docs or an inspected target environment without changing anything:
-- Executable binary name(s), private bin dirs (if any), and non-network version command (`--version`);
-- State directory env override (`home_env`, `relocation.env`), default path (`~/.harness`), and unambiguous `markers_any`;
-- Multi-instance glob pattern (`detect.named`), selector env vars (`${NAME}`, `${STATE_DIR}`), and whether named instances share one gateway service (`service: shared`);
-- Separate roots beyond `state` (e.g. `workspace` via `discover_argv` or `default`);
-- File map split honestly into Valise categories (`secrets`, `identity`, `memory`, `skills`, `config`, `sessions`, `state`, `body`, `cache`, `ignore`);
-- Exact installation provenance (`npm_global`, `git`, `uv_tool`, `pipx`, or `binary`);
-- Optional runtime details: systemd user unit (`scope: user`), local web entry (`127.0.0.1` port/path & auth token readout), read-only `health` checks, `agent_kit` skills directory + MCP add/remove command or snippet (and optional deprecated compatibility blocks `checkup` / `handoff` only if targeting legacy session governance).
+## Two-Mode Workflow
 
-### Step 2: Draft from the Minimal Template
-Copy [references/minimal-template.yaml](references/minimal-template.yaml) and fill in only verified facts plus explicitly marked `verify: pending` hypotheses where needed for initial discovery/classification. Follow [references/schema-v1.md](references/schema-v1.md) strictly (`profilelint` uses YAML `KnownFields(true)` and rejects any unknown key, including mistyped fields like `identity.path` instead of `identity.name`).
+### Mode A (Default): Official Docs / Source Repository Only
+Use when no live installation is available (or user supplies docs/repo URL):
+1. Work through the 8-item checklist and source search keywords in [references/doc-research-checklist.md](references/doc-research-checklist.md).
+2. Populate only doc/source-proven core sections: `detect`, `roots`, `paths` (conservative `secrets` first), `exclusive_secrets`, `consistency.sqlite`, `provenance`, `body.paths` (`<dir>/**`), `service`, `entries`, `health`, `native_cli`, `agent_kit`, and `capabilities` (all `untested`).
+3. Annotate every key rule with `DOC: <page/url>` or `SRC: <file:symbol>` comments, and synthesize a `<sample.txt>` path list from docs/source for offline classification testing.
 
-### Step 3: Lint Strictly
-Run Valise's linter against the new file (and its parent YAML if writing a child profile with `extends`):
-- Using a built Valise CLI:
+### Mode B (Optional): Read-Only Live Inspection
+Use when the user has a live host or local install:
+1. Run strictly read-only checks (`<bin> --version`, `--help`, directory listing, `systemctl --user list-unit-files`, config schema inspection). Never read secret file contents.
+2. Record real-world observations with `OBS: <version/env/finding>` comments; only remove `verify: pending` or upgrade a capability to `partial`/`tested` (with exact `versions` + `env`) when actually verified.
+
+## Offline Verification Loop
+
+Validate strictly against the Valise linter and simulate path classification before handing off:
+
+- **Standalone Valise CLI** (works anywhere):
   ```bash
-  valise profiles lint [--json] <path/to/harness.yaml>
+  valise profiles lint --strict --commands --classify <sample.txt> <id>.yaml
   ```
-- Inside the Valise Go repository:
+  *(For a child profile using `extends`, pass `<parent.yaml> <id>.yaml`.)*
+- **Inside the Valise repository**:
   ```bash
-  cd core && go run ./cmd/profilelint ../profiles/<harness>.yaml
+  ./scripts/verify-profile.sh --strict --sample <sample.txt> <id>.yaml
   ```
-Fix every reported issue until exit code is `0`. Inspect the `pending=<N>` count to ensure `status: verified` is never set while `pending > 0`.
 
-### Step 4: Dry-Run Local Profile & Enrollment Report (Read-Only)
-1. Copy the validated YAML into `<ValiseDataDir>/profiles/<id>.yaml` (on macOS `~/Library/Application Support/valise/profiles/`, on Linux `${XDG_DATA_HOME:-~/.local/share}/valise/profiles/`).
-2. Confirm Valise loads it cleanly without rejection:
-   ```bash
-   valise profiles status
-   ```
-3. Run read-only discovery/enrollment against a target host (do NOT pass `--accept` yet until the user reviews the classification):
-   ```bash
-   valise enroll <server> --profile <id> --report-json
-   ```
-4. Inspect `unclassified` files, unexpected symlinks, SQLite sidecars, or missing markers from the JSON report and refine `paths` / `consistency` / `exclusive_secrets` without guessing secrets.
+Fix all hard errors and unintended warnings (`shadowed_path`, `redundant_body_path`, `exclusive_not_in_secrets`, `missing_capabilities`, `missing_secrets`, `deprecated_field`) until exit code is `0`.
 
-### Step 5: Evidence & Auditability
-Record source provenance in YAML comments on every rule (`DOCS: <url>`, `OBS: <version/command/env>`) so reviewers or future harness updates can audit why each glob, SQLite column, or command was classified that way.
+## Required Deliverables (3 Items)
 
-### Step 6: Contribution Checklist (For Official PRs to `profiles/*.yaml`)
-Before submitting to upstream `profiles/`:
-- Exact harness version tested (`harness_versions_tested`);
-- Output of `valise enroll --report-json` (credential paths redacted if sensitive);
-- OS/arch & install layout used for verification;
-- Explicit evidence (official doc link or real install observation) for every removed `verify: pending`.
+Always deliver all three items in your final response:
+1. **Validated `<id>.yaml`**: Strictly compliant with `valise-profile/1`, with `DOC:` / `SRC:` / `OBS:` provenance comments on every rule.
+2. **Command Audit & Pending Summary**:
+   - Complete list of executable commands extracted by `--commands` (noting permission tier and whether any basic red flags appeared);
+   - Explicit list of all remaining `verify: pending` items and why each needs live verification.
+3. **Import & Next-Step Guidance**:
+   - **Desktop GUI (recommended)**: Import via 「设置 › 资料包 › 导入本地资料 (.yaml)…」 (previews executable commands before saving);
+   - **Manual local placement** (`os.UserConfigDir()`):
+     - macOS: `~/Library/Application Support/valise/profiles/<id>.yaml`
+     - Linux: `${XDG_CONFIG_HOME:-~/.config}/valise/profiles/<id>.yaml`
+     Then run `valise profiles status` to confirm clean loading;
+   - **Read-only live probe**: Run `valise enroll <server> --profile <id> --report-json` (without accepting yet) to inspect `unclassified` files and refine rules.

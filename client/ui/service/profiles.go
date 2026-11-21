@@ -7,11 +7,14 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"valise/client/porter"
 	"valise/client/profiles"
+	"valise/core/install"
+	"valise/core/profile"
 	"valise/core/valise"
 )
 
@@ -209,4 +212,149 @@ func (s *Service) download(ctx context.Context, h *http.Client, url string, max 
 		return nil, valise.New("download_too_large", "下载的文件超出大小限制", "确认来源正确").WithDetail(url)
 	}
 	return b, nil
+}
+
+// LocalProfileFile is one local profile YAML read from disk, previewed but
+// not yet imported.
+type LocalProfileFile struct {
+	From          string          `json:"from"`
+	ID            string          `json:"id"`
+	DisplayName   string          `json:"display_name"`
+	Version       int             `json:"profile_version"`
+	Status        string          `json:"status"`
+	RestoreCap    string          `json:"restore_capability"`
+	Pending       int             `json:"pending"`
+	Warnings      []profile.Issue `json:"warnings,omitempty"`
+	Commands      []string        `json:"commands,omitempty"`
+	RefusedCmds   []string        `json:"refused_commands,omitempty"`
+	ReplacesLocal bool            `json:"replaces_local,omitempty"`
+	Data          []byte          `json:"-"`
+}
+
+const maxLocalProfileBytes = 1 << 20
+
+// ReadLocalProfileFile parses and lints one local profile YAML together with
+// the installed official pack and the other local profiles.
+func (s *Service) ReadLocalProfileFile(path string) (*LocalProfileFile, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, valise.New("local_profile_read", "无法读取本地资料文件", "检查路径："+path).WithDetail(err.Error())
+	}
+	if st.Size() > maxLocalProfileBytes {
+		return nil, valise.New("local_profile_too_big", "本地资料文件超过 1 MiB", "确认选的是单份 harness 资料 .yaml 文件")
+	}
+	fh, err := os.Open(path)
+	if err != nil {
+		return nil, valise.New("local_profile_read", "无法读取本地资料文件", "检查路径："+path).WithDetail(err.Error())
+	}
+	defer fh.Close()
+	data, err := io.ReadAll(io.LimitReader(fh, maxLocalProfileBytes+1))
+	if err != nil {
+		return nil, valise.New("local_profile_read", "无法读取本地资料文件", "检查路径："+path).WithDetail(err.Error())
+	}
+	if len(data) > maxLocalProfileBytes {
+		return nil, valise.New("local_profile_too_big", "本地资料文件超过 1 MiB", "确认选的是单份 harness 资料 .yaml 文件")
+	}
+	f, err := s.checkLocalProfile(data, filepath.Base(path))
+	if err != nil {
+		return nil, err
+	}
+	f.From = path
+	return f, nil
+}
+
+// checkLocalProfile is the shared parse, conflict, lint and command audit.
+func (s *Service) checkLocalProfile(data []byte, name string) (*LocalProfileFile, error) {
+	newDoc, err := profile.Parse(data)
+	if err != nil {
+		return nil, valise.New("local_profile_parse", "本地资料文件无法解析", "对照 docs/PROFILE_AUTHORING.md 修正后重试").WithDetail(err.Error())
+	}
+	newDoc.Path = name
+	id := newDoc.Profile.ID
+	var docs []*profile.Document
+	pack, packErr := profiles.Installed(s.Dirs.Data, s.Release.PublicKey)
+	if packErr == nil && pack != nil {
+		for _, d := range pack.Docs {
+			if d.Profile.ID == id {
+				return nil, valise.New("local_profile_official_conflict", "官方资料包里已有同名 harness 资料："+id, "本地资料不能覆盖官方资料；请换一个 id")
+			}
+		}
+		docs = append(docs, pack.Docs...)
+	}
+	replaces := false
+	if _, err := os.Stat(filepath.Join(profiles.LocalDir(s.Dirs.Data), id+".yaml")); err == nil {
+		replaces = true
+	}
+	matches, _ := filepath.Glob(filepath.Join(profiles.LocalDir(s.Dirs.Data), "*.yaml"))
+	for _, m := range matches {
+		d, err := profile.LoadFile(m)
+		if err != nil {
+			continue
+		}
+		if d.Profile.ID == id {
+			replaces = true
+			continue
+		}
+		docs = append(docs, d)
+	}
+	docs = append(docs, newDoc)
+	var res *profile.Result
+	for _, r := range profile.Lint(docs) {
+		if r.Doc == newDoc {
+			r := r
+			res = &r
+		}
+	}
+	if res == nil {
+		return nil, valise.New("local_profile_lint_failed", "本地资料文件没有通过校验", "对照 docs/PROFILE_AUTHORING.md 修正后重试")
+	}
+	if len(res.Issues) > 0 {
+		var lines []string
+		for _, i := range res.Issues {
+			lines = append(lines, i.String())
+		}
+		return nil, valise.New("local_profile_lint_failed", "本地资料文件没有通过校验", "按详情里的字段提示修正后重试").WithDetail(strings.Join(lines, "\n"))
+	}
+	eff := res.Effective
+	if eff == nil {
+		return nil, valise.New("local_profile_lint_failed", "本地资料文件无法解析其父资料", "确认 extends 的父资料已安装")
+	}
+	f := &LocalProfileFile{
+		ID: id, DisplayName: eff.DisplayName, Version: eff.ProfileVersion, Status: eff.Status,
+		RestoreCap: eff.CapabilityStatus("restore"), Pending: len(newDoc.Pending),
+		Warnings: res.Warnings, Commands: profiles.Commands(eff), ReplacesLocal: replaces, Data: data,
+	}
+	for _, cmd := range profile.Commands(eff) {
+		if len(cmd.Argv) == 0 {
+			continue
+		}
+		for _, fd := range install.CheckCommand(cmd.Argv, "") {
+			if fd.Refuse {
+				f.RefusedCmds = append(f.RefusedCmds, cmd.Label+": "+strings.Join(cmd.Argv, " ")+"（"+fd.Reason+"）")
+			}
+		}
+	}
+	return f, nil
+}
+
+// InstallLocalProfile writes a previewed local profile after checking it again.
+func (s *Service) InstallLocalProfile(f *LocalProfileFile) (string, error) {
+	if f == nil || len(f.Data) == 0 {
+		return "", valise.New("local_profile_empty", "没有可导入的本地资料", "重新选择文件")
+	}
+	if len(f.RefusedCmds) > 0 {
+		return "", valise.New("local_profile_refused", "资料里含有 Valise 在任何模式下都不会执行的命令", "删除这些命令后重新选择文件").WithDetail(strings.Join(f.RefusedCmds, "\n"))
+	}
+	again, err := s.checkLocalProfile(f.Data, f.ID+".yaml")
+	if err != nil {
+		return "", err
+	}
+	if len(again.RefusedCmds) > 0 {
+		return "", valise.New("local_profile_refused", "资料里含有 Valise 在任何模式下都不会执行的命令", "删除这些命令后重新选择文件").WithDetail(strings.Join(again.RefusedCmds, "\n"))
+	}
+	path, err := profiles.WriteLocalFile(s.Dirs.Data, again.ID, f.Data)
+	if err != nil {
+		return "", valise.New("local_profile_write", "无法写入本地资料", "检查数据目录权限").WithDetail(err.Error())
+	}
+	return path, nil
 }

@@ -36,7 +36,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
   profiles status                                查看 harness 资料包与本地 profile
   profiles install [--tag profiles-…] [--file <文件>] [--yes]
                                                  安装 harness 资料包（在线拉取最新版，或本地文件；未签名的只能作为本地 profile）
-  profiles lint [--json] <profile.yaml>…         按 Valise 资料包校验规则离线检查本地 profile YAML（子 profile 须附带父文件）
+  profiles lint [--strict] [--commands] [--classify <样本>] [--json] <profile.yaml>…  按 Valise 资料包校验规则离线检查本地 profile YAML（子 profile 须附带父文件）
   server add <别名> --host <地址> [--port 22] [--user 用户] [--login password|key:<私钥路径>] [--admin-key]
          [--trust-fingerprint SHA256:…] [--name 名字] [--release 版本 | --local 文件]
                                                  手动添加服务器：确认身份 → 用密码登录一次装好日常钥匙 → 检查 → 部署 porter → 起名

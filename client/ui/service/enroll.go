@@ -39,6 +39,8 @@ type EnrollResult struct {
 	Written string `json:"written,omitempty"`
 	// RejectedLocalProfiles failed lint and were ignored.
 	RejectedLocalProfiles []string `json:"rejected_local_profiles,omitempty"`
+	// RestoreCapability is the profile's restore status (tested, pending...).
+	RestoreCapability string `json:"restore_capability,omitempty"`
 }
 
 // Enroll detects, scans and (with Accept) records one instance.
@@ -75,6 +77,9 @@ func (s *Service) Enroll(ctx context.Context, host string, opts EnrollOptions) (
 	}
 	loaded := set.ByID[eff]
 	res.ProfileLocal = loaded.Local
+	if loaded.Effective != nil {
+		res.RestoreCapability = loaded.Effective.CapabilityStatus("restore")
+	}
 	id := opts.InstanceID
 	if id == "" {
 		id = CandidateID(cand)

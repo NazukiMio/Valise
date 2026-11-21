@@ -1,5 +1,9 @@
 # Starter Harness Profile Template (valise-profile/1)
-# Keep status: draft until every entry and capability has real verification evidence.
+# Passes `valise profiles lint --strict` with 0 errors and 0 warnings.
+# Rules:
+# - Keep status: draft until every verify: pending is resolved on a real host.
+# - Annotate each rule with DOC: <url/page>, SRC: <file:symbol>, or OBS: <env/finding>.
+# - Do NOT add deprecated checkup/handoff blocks in new profiles.
 schema: valise-profile/1
 id: example-harness
 display_name: Example Harness
@@ -8,21 +12,34 @@ status: draft
 harness_versions_tested: []
 docs: https://example.com/docs
 
+capabilities:
+  install: { status: untested }
+  manage: { status: untested }
+  backup: { status: untested }
+  restore: { status: untested, note: "恢复尚未在此版本演练" }
+  login: { status: untested }
+  kit: { status: untested }
+
 detect:
   binaries: [example-harness]
-  version_argv: [example-harness, --version]
+  version_argv: [example-harness, --version]   # DOC: verify read-only, no network
   state_dir_candidates: ["${env:EXAMPLE_HOME}", "${HOME}/.example-harness"]
   markers_any: [config.yaml]
 
 roots: []
 
 paths:
+  # Credentials whitelist (highest priority; must never overlap body/cache/ignore)
   - { root: state, glob: ".env", category: secrets, verify: pending }
+  # Core user state & configuration (put specific rules before broader globs)
   - { root: state, glob: "config.yaml", category: config }
   - { root: state, glob: "MEMORY.md", category: memory, verify: pending }
   - { root: state, glob: "skills/**", category: skills, verify: pending }
   - { root: state, glob: "sessions/**", category: sessions, verify: pending }
+  # High-confidence regenerable cache/ignore only; leave uncertain files unclassified for full fallback
   - { root: state, glob: "cache/**", category: cache, verify: pending }
+
+exclusive_secrets: []
 
 consistency:
   sqlite: []
@@ -33,19 +50,21 @@ provenance:
   binary: { name: example-harness }
 
 body:
+  # Every body.paths[].glob MUST be "<literal-dir>/**" (e.g. "runtime/**").
+  # Do NOT duplicate body.paths entries under paths with category: body.
   paths: []
   bootstrap_argv: []
   fresh_install_doc: https://example.com/docs/install
 
 relocation: null
+
 service:
   candidates: []
+
 entries: []
 
 health:
   grace_seconds: 15
   checks: []
 
-capabilities:
-  backup: { status: untested }
-  restore: { status: untested, note: "恢复尚未在此版本演练" }
+login: []

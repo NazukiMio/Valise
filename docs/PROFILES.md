@@ -7,7 +7,7 @@ Profile 是 Valise 了解某种 harness **通用规则的唯一途径**：发现
 ## 1. 来源与信任
 
 - 官方 profile 存放在仓库的 `profiles/` 目录下，经过 PR 审核后打成**资料包**单独签名发布（1.1 节）。客户端本身不内置任何 profile。
-- 用户可以在 `~/.config/valise/profiles/` 放置本地 profile。这类 profile 在 UI 中始终标记为"本地，未经审核"。本地 profile 与资料包中的 profile 同 id 时，本地的被拒绝并报告。
+- 用户可以在客户端数据目录下的 `profiles/` 放置本地 profile（与 `os.UserConfigDir()` 对齐：macOS 为 `~/Library/Application Support/valise/profiles/`，Linux 为 `${XDG_CONFIG_HOME:-~/.config}/valise/profiles/`）。这类 profile 在 UI 中始终标记为"本地，未经审核"。本地 profile 与资料包中的 profile 同 id 时，本地的被拒绝并报告。
 
 ### 1.1 资料包（2026-10-31 用户决定）
 
@@ -68,6 +68,7 @@ capabilities:
 - 保护计划、自定义包含/排除与类别是不同模型。Dossier 的 `local_overrides`、`local_sqlite` 与 `external_refs` 仅在人类审批 `valise_propose_dossier` 提案或显式 CLI 参数时更新（详情见 ARCHITECTURE.md 第 4.1 节）；不得为实现“自定义备份”伪造类别、放宽 secrets / `secret_tables` 优先级或改写 raw 的原含义。
 - N1 / N5b 在引入新范围前定稿匹配、SQLite 单位、快照范围记录、回滚携带/删除语义及旧工具拒绝策略；本文件 schema 和 lint 未扩展前不在 YAML 中使用假定字段。
 - full / raw 不等于可重建所有程序。来源记录与能力核实继续逐项检查，目录外程序、版本不可得与架构限制如实报告；通过备份测试不自动将 restore 标为 tested。
+- **Profile 与 Dossier（`valise-onboard`）分工边界**：Profile 只描述跨用户、跨机器稳定的通用规则（探测、roots、显式 `secrets`/`exclusive_secrets` 白名单、`body.paths`、安装来源 `provenance`、核心 SQLite 与 `secret_tables`、高置信 `cache`/`ignore`、服务/入口/健康检查/命令行与向导/Agent 保护技能）。单机特有的自装插件、个人工作区子目录或零散小文件不要硬塞进 Profile——`full` 默认已按敏感层兜底保存 roots 内未分类文件，用户可在接入后通过 `valise-onboard` 报备进 Dossier。完整的编写心智模型、排查坑点与离线校验流程见 [PROFILE_AUTHORING.md](PROFILE_AUTHORING.md)。
 
 ### 1.5 已废弃：并行运行环境声明（`environments`，2026-11-15 撤销）
 
@@ -304,31 +305,74 @@ agent_kit:
 
 变量说明：`${HOME}` 表示用户主目录；`${STATE_DIR}` 表示解析后的状态目录；`${env:NAME}` 表示环境变量，变量未设置时这一项视为不存在；`${OUT}` 只在 `export_argv` 中使用。
 
-## 3. profilelint 的校验规则
+## 3. `profilelint` 的校验规则
 
-- 所有路径都必须相对于某个 root。禁止出现 `..`。除 `${HOME}` 和 `${env:…}` 展开得到的路径外，不允许出现其他绝对路径。
-- 所有命令都必须写成 argv 数组，禁止使用 shell 字符串。
-- category 必须是 ARCHITECTURE.md 第 5 节中列出的值。
-- 声明了 `secrets` 的 glob 不得同时出现在 `body`、`cache` 或 `ignore` 中。
-- `status: verified` 的 profile 中不允许出现任何 `verify: pending`，并且 `harness_versions_tested` 不能为空。
-- 子 profile 不得删除父 profile 中的 `secrets` 规则。
+`profilelint`（及 `valise profiles lint`、`./scripts/verify-profile.sh`）将检查结果分为**硬错误（Errors）**与**软警告（Warnings）**，并可经 `--commands` 输出全部可执行入口的命令审计清单。
 
-实现说明：
+### 3.1 硬错误规则（Errors，阻断打包 / 加载 / 导入）
 
-- "未核实"标记有两种写法，profilelint 都会统计：规则中的 `verify: pending` 字段，以及任何包含 `verify: pending` 的 YAML 注释。`verify` 字段只允许取值 `pending`。
-- "同时出现"按两种情况判定：glob 字符串完全相同；或者 `secrets` 的 glob 不含通配符，并且能被同一 root 下某条 `body`、`cache`、`ignore` 规则（包括 `body.paths`）匹配。
-- glob 语法：以 `/` 分隔路径段，`**` 匹配零个或多个路径段，其余段使用 Go `path.Match` 的语法。
-- `secret_tables` 中的表名只能包含字母、数字和下划线。
-- `display.logo.svg` 只接受 SVG 文本（不超过 64 KiB，不得含 `<script>`、事件属性、外部引用或 `<foreignObject>`），必须同时写 `source` 与 `license`；只用于展示 harness 自己的标识，不构成背书（AGENTS.md 7.6）。
-- `display.icon` 最多 12 行、每行显示宽度不超过 24；`display.icon_compact` 最多 6 行、每行不超过 12。只允许单宽字符（推荐盲文 U+2800–U+28FF，空白用 `⠀`；也可用框线与 ASCII），不得包含全角字符、emoji、制表符、控制字符或 ANSI 转义；`display.color` 必须是 `#RRGGBB`。图标原样显示、不在运行时缩放；只有标准图标时，紧凑场景按点缩放兜底（UI.md 8.1）。
-- `install.steps` 中 `script` 必须有 `sha256` 与 `runtime_downloads`（没有时写空字符串表示已确认没有）；`url` 必须是 `https`；所有命令都是 argv 数组。
-- `capabilities` 中状态为 `tested` 的项必须有 `versions` 与 `env`。
-- `actions`：`id` 唯一且合法；`name`、`explain` 不能为空；`risk` 与 `output` 只能取规定的值；`argv` 只能引用 `${HOME}`；`output: secret` 必须写 `secret`（`url_param` 只能与 `json_field` 一起出现），其他 `output` 不能写 `secret`；`terminal: true` 不能与 `secret` 同时出现；`config` 与 `danger` 必须写 `undo`。
-- `service.repair_action` 非空时必须有服务候选，引用本 profile 中存在的动作；B02 只允许非交互、非机密的 `manage` 动作。关联本身表示维护者已核实此动作可处理所声明服务的问题；尚未核实的动作不得填入关联。命名实例的有效 profile 去掉服务时，一并去掉此入口，不通过动作名猜测服务关系。客户端资料与服务器登记版本不同时，先重新接入，再确认执行；不根据新资料的说明执行旧版本命令。
-- `entries[].auth` 中 `url_argv` 与 `token_argv` 最多出现一个；`url_suffix` 只能与 `token_argv` 一起出现，并且只能引用 `${TOKEN}`；`url_field` 只能与 `url_argv` 一起出现，必须是点分字段路径。
-- profile 使用严格解析，出现 schema 中没有的字段即报错。子 profile 只能包含元信息字段（`schema`、`id`、`display_name`、`profile_version`、`status`、`harness_versions_tested`、`docs`、`extends`、`when`）以及 `paths`、`consistency`、`checkup`；它的父 profile 必须出现在同一次 lint 的文件集合中。
+出现任意硬错误时，资料包打包、客户端加载与本地导入一律拒绝：
 
-### 3.1 B03 配置事务（2026-11-05 用户确认）
+- **严格解码**：YAML 启用 `KnownFields(true)`，出现 schema 未定义的字段名即报错（例如 `identity` 只有 `name` 没有 `path`）。
+- **路径与根目录**：所有路径必须相对于某个已声明的 `root`，禁止出现 `..`；除 `${HOME}` 与 `${env:…}` 展开得到的路径外，不允许出现绝对路径。glob 以 `/` 分隔路径段，`**` 匹配零个或多个路径段，其余段使用 Go `path.Match` 语法。
+- **分类与冲突边界**：
+  - `category` 必须是 ARCHITECTURE.md 第 5 节中列出的值。
+  - 声明为 `secrets` 的 glob 不得与同一 root 下的 `body`、`cache`、`ignore`（含 `body.paths`）冲突（同字符串，或 `secrets` 为字面路径且能被对方匹配）。
+  - `exclusive_secrets` 不得与同一 root 下的 `body`、`cache`、`ignore`（含 `body.paths`）冲突。
+  - `consistency.sqlite` 不得与同一 root 下的 `body`、`cache`、`ignore`（含 `body.paths`）冲突；`secret_tables` 表名仅允许字母、数字与下划线。
+- **`body.paths` 与 `paths` 的 body 约束**：
+  - `body.paths[].glob` 必须写成 `<字面目录>/**` 形式（不含通配符的非空目录前缀加 `/**`，与恢复期目录搬动前置条件一致）。
+  - `paths` 中若声明 `category: body`，同一 `(root, glob)` 必须同时出现在 `body.paths` 中，否则恢复时无法搬动身体目录（推荐仅在 `body.paths` 声明，不再重复写入 `paths`）。
+- **命令与变量安全**：
+  - 所有命令必须写成 argv 数组，禁止 shell 字符串，且只能使用各自字段允许的变量占位符。
+  - 所有可执行 `argv` 禁止以 shell 包装器（如 `sh -c`、`bash -lc`、`zsh -ec` 等，含经 `env`/`sudo`/`nohup` 等前缀包裹的形式）执行命令字符串，也禁止任意参数包含命令替换 `$(` 或反引号 `` ` ``（`install.steps[].interpreter: [bash]` 本身不含 `-c` 属于合法解释器声明）。
+- **核实状态与能力**：
+  - `verify` 字段只允许取值 `pending`；`profilelint` 同时统计字段与 YAML 注释中的 `verify: pending`。
+  - `status: verified` 禁止存在任何 `verify: pending`，且 `harness_versions_tested` 不能为空。
+  - `capabilities` 中状态为 `tested` 的项必须同时填写 `versions` 与 `env`。
+- **视觉标识**：
+  - `display.logo.svg` 只接受不超过 64 KiB 的纯 SVG 文本（禁止 `<script>`、事件属性、外部引用与 `<foreignObject>`），且必须写明 `source` 与 `license`（不构成背书，AGENTS.md 7.6）。
+  - `display.icon` 最多 12 行 × 24 列、`display.icon_compact` 最多 6 行 × 12 列，仅允许单宽字符（推荐盲文 U+2800–U+28FF、框线与 ASCII），禁止全角字符、emoji、制表符、控制字符与 ANSI 转义；`display.color` 必须为 `#RRGGBB`。
+- **安装、入口与动作约束**：
+  - `install.steps` 中 `script` 必须有 `https://` `url`、64 位十六进制 `sha256`、`interpreter` 与 `runtime_downloads`（确认无额外下载时写 `""`）。
+  - `entries[].auth` 中 `url_argv` 与 `token_argv` 最多出现一个；`url_field`（点分路径）仅可与 `url_argv` 同用；`url_suffix`（仅允许 `${TOKEN}`）仅可与 `token_argv` 同用。
+  - `actions`：`id` 唯一且合法；`name`、`explain` 非空；`risk`、`output` 取值合法；单步 `argv` 仅允许 `${HOME}` 且与 `steps`/`transaction` 互斥；`output: secret` 必须写 `secret` 且禁止 `terminal: true`；`config` 与 `danger` 必须写 `undo`。
+  - `service.repair_action` 非空时必须有 `service.candidates`，且指向本 profile 中非交互、非机密的 `manage` 动作（尚未核实的动作不得填入关联；命名实例去掉服务时一并去掉入口）。
+- **子 profile 约束**：
+  - 子 profile 只能包含元信息字段（`schema`、`id`、`display_name`、`profile_version`、`status`、`harness_versions_tested`、`docs`、`extends`、`when`）以及 `paths`、`consistency`、`checkup`，不得删除父 profile 的 `secrets` 规则；其父 profile 必须出现在同一次 lint 的文件集合中。
+
+### 3.2 软警告规则（Warnings，支持 `--strict`）与命令审计
+
+软警告默认打印但不阻断现有兼容加载；传入 `--strict` 时任何软警告均视为失败（返回非 0），新编写与提交 PR 时应尽量清零无意警告：
+
+| 警告代码 | 触发条件 | 处理建议 |
+| :--- | :--- | :--- |
+| `deprecated_field` | 声明了已弃用的 `checkup`、`handoff` 或 `capabilities.checkup` | 新编写的 profile 不要配置这些字段；历史 profile 仅作向后兼容保留 |
+| `redundant_body_path` | `paths` 中声明了 `category: body` 且同一 `(root, glob)` 已出现在 `body.paths` | 删除 `paths` 中的重复项，统一保留在 `body.paths` |
+| `shadowed_path` | 同一 `root` 下前序更宽的非 `secrets` 规则遮蔽了后续非 `secrets` 规则 | 将更具体的规则移到通配规则之前（`secrets` 规则因优先级最高不触发此警告） |
+| `exclusive_not_in_secrets` | `exclusive_secrets` 中的条目未被同 `root` 下任意 `category: secrets` 规则覆盖 | 在 `paths` 中为对应路径补充 `category: secrets` |
+| `missing_capabilities` | 顶层 profile（非子 profile）未填写 `capabilities` 块 | 按 1.2 节如实填写各能力的 `tested` / `partial` / `untested` 状态 |
+| `missing_secrets` | 顶层 profile 的 `paths` 中没有任何 `category: secrets` 规则 | 核对官方文档或源码补充凭据白名单，确实无凭据文件时再说明原因 |
+
+**命令审计（`--commands`）**：`profilelint --commands` 与本地导入预览统一调用核心提取器，完整覆盖全部 14 类会在服务器端执行或触发安装的入口（共 16 个字段）：
+1. 版本探测：`detect.version_argv`
+2. 根目录发现：`roots[].discover_argv`
+3. 身体重建：`body.bootstrap_argv`
+4. 服务安装：`service.install_argv`
+5. 管理页认证：`entries[].auth.url_argv` / `token_argv`
+6. 入口改端口：`entries[].port_change.steps[]`
+7. 健康检查：`health.checks[].argv`
+8. 登录授权：`login[].argv`
+9. 原生导出：`native.export_argv`
+10. 命令行与向导：`native_cli`、`native_session_cli`
+11. 管理动作与 B03 配置事务：`actions[].argv`、`actions[].steps[].argv`
+12. 审批状态检查：`approval_check.argv`
+13. 读取 Agent 名字：`identity.argv`
+14. 官方安装与依赖：`install.requires[].install[].argv`、`install.steps[]`（`argv`、`npm_global`、`script`、`path_add`）
+
+审计结果同时标注权限层级（`daily` / `owner` / `admin`）与基础疑点检查结论（写「未发现基础疑点」或具体疑点，绝不写「安全」）。仅打印给用户参考、Valise 永不执行的 `agent_kit.mcp_add_argv` / `mcp_remove_argv` 不混入可执行命令清单。
+
+### 3.3 B03 配置事务（2026-11-05 用户确认）
 
 动作的 `argv` 与 `steps` 互斥。`steps` 为 1–16 个 `{id, argv}` 固定步骤，必须同时声明 `transaction: {root: state, env: {变量名: "${STAGE_DIR}[/相对路径]"}, writes: [相对文件或目录], scratch: [可选，命令每次运行都会重写的相对目录]}`（scratch 规则见 INSTALL.md 5.2.1）；只允许非交互、`output: none`、`risk: config` 且有 `undo` 的动作。`verification: {versions: [精确版本], env, date}` 记录完整事务证据；未核实时写 `verify: pending`，不提供执行入口。重定向与 writes 必须覆盖所有副作用，不把声明当成系统沙箱。
 
@@ -338,57 +382,9 @@ agent_kit:
 
 ## 4. 子 profile
 
-用于覆盖同一 harness 下的不同插件形态，例如 DSH 的各种记忆插件。子 profile 通过 `extends` 继承父 profile，通过 `when` 设置生效条件，并只能**追加** `paths`、`consistency`、`checkup` 规则。子 profile 只用于正确地封存用户已经安装的东西，**不代表推荐**。
+用于覆盖同一 harness 下的不同插件形态，例如 DSH 的各种记忆插件。子 profile 通过 `extends` 继承父 profile，通过 `when` 设置生效条件，并只能**追加** `paths`、`consistency`（`sqlite`）与兼容字段 `checkup` 规则，不得删除父 profile 的 `secrets` 规则。子 profile 只用于正确地保存用户已经安装的东西，**不代表推荐**。
 
-## 5. 贡献要求
-
-提交 PR 时必须附上以下内容：harness 的版本；`valise enroll --report-json` 的输出（凭据路径可以打码）；在哪台靶机上验证过；以及每条 `verify: pending` 被移除的依据（官方文档链接，或真实安装的观察结果）。
-
----
-
-## 6. 核实记录（M2，2026-10-30）
-
-初稿已经拆成 `profiles/*.yaml`，**以那里的文件为准**。每条规则的依据都写在文件注释里（官方文档页面或真实安装的观察结果）。三份 profile 的 `profile_version` 均为 2，状态仍为 `draft`。
-
-| profile | 核实环境 | 版本 | 待核实条目 |
-| :--- | :--- | :--- | :---: |
-| `openclaw` | `ubuntu-vm`（arm64），npm 用户级前缀，`openclaw setup --baseline`，未配置凭据、未安装服务 | 2026.10.9 | 30 → 8 |
-| `dsh` | `ubuntu-vm`（arm64），npm 用户级前缀，`dsh web --dump-config` 初始化，未配置凭据、未启动 | 0.2.1-rc.5 | 14 → 6 |
-| `hermes` | `ubuntu-vm-x86`（x86_64，无 sudo），官方安装，systemd 用户服务运行中 | 0.22.5（commit bf0203a794） | 20 → 11 |
-
-### 6.1 对初稿的主要更正
-
-- **OpenClaw**：运行时状态库是 `state/openclaw.sqlite`，另有每个 agent 的 `agents/<id>/agent/openclaw-agent.sqlite`；后者同时存放模型凭据和会话转录，因此引入表级凭据剥离（`secret_tables`，见 ARCHITECTURE.md 第 6 节）。会话不再是 JSONL，体检改为读 SQLite。工作区标准文件中没有 `TOOLS.md`、`HEARTBEAT.md`，新增 `BOOT.md`。补充凭据文件 `.env`、`secrets.json`、`auth.json`、`codex-home/`、`openclaw.json.bak`。日志默认在 `/tmp/openclaw/`，不在状态目录里，删除 `logs/**` 规则。服务单元名、端口 18789、`OPENCLAW_STATE_DIR` 均已由官方文档核实。工作区路径改由只读命令 `openclaw config get agents.defaults.workspace` 读出。健康检查删除 `openclaw doctor`（没有找到退出码有文档的只读命令）。
-- **DSH**：凭据在 `.credentials.yaml` 和 `.env`，不在 `credentials/`；会话为 `sessions/` 下的 JSONL；存储在 `storages/`；profile 目录下的 `node_modules/` 由 pnpm 按 `package.json` 安装，归为缓存。状态目录的标记文件为 `profiles`。`DSH_HOME` 和默认地址 `127.0.0.1:3080` 已核实。
-- **Hermes**：`config.yaml` 的 schema 中有 `api_key` 字段，可以内联密钥，整体改为凭据。按官方文档补充凭据存储（`.op.env`、`npmrc`、`mcp-tokens/`、`vault/`、`proxy/`、`platforms/` 等）。身体除 `hermes-agent/` 外还包括安装程序管理的 `tools/`（约 1 GB 的 node、python、uv、chromium 等运行时）和 `installs/`（约 0.5 GB 的安装环境）。新增 `kanban.db`、`cron/executions.db` 两个 SQLite。健康检查删除 `hermes doctor`（会联网探测模型提供商）。
-
-### 6.2 仍未核实的条目与原因
-
-| profile | 条目 | 原因 | 何时能核实 |
-| :--- | :--- | :--- | :--- |
-| openclaw | `config-journal-fingerprint.key` 归为凭据 | 文档没有说明用途，只按文件名保守处理 | 需要 OpenClaw 文档或源码说明 |
-| openclaw | `state/openclaw.sqlite` 中按列名补充的凭据表（`secret_store_entries`、设备令牌等） | 只看到表结构，没有观察到实际行（`auth_profile_store` 已在 M5 验收中核实） | 配对设备、使用 secret store 后 |
-| openclaw | `cron/**` 归为配置 | 未观察到该目录 | 创建一个定时任务后 |
-| openclaw | `openclaw.json` 中内联的渠道令牌是否属于独占凭据 | 需要接入渠道才能观察 | M4（克隆时） |
-| dsh | `profiles/*/pnpm-lock.yaml` | 未观察到 | 安装一个插件后 |
-| dsh | 会话文件布局、独占凭据、交接目标、技能目录 | 未配置凭据，没有运行过会话；web profile 禁用了文件系统技能 | 配置凭据并运行后；交接与技能属于 M6 |
-| hermes | `shared/nous_auth.json` 归为凭据 | 文档没有说明，只按文件名保守处理 | 需要 Hermes 文档或源码说明 |
-| hermes | `plugins/**` 归为技能、`image_cache/**` 归为缓存 | 文档提到目录，但没有说明是否可再生 | 安装一个插件后 |
-| hermes | `bootstrap_argv`（重建 `tools/`、`installs/`） | 属于身体重建 | M4 |
-| hermes | `native.export_argv`、`quiesce` | 属于封存 | M3 |
-| 全部 | 体检的会话表结构、`native_options_doc`、`new_session_hint`、`mcp_config_doc` | 属于 agent-kit | M6 |
-
-**用户决定（2026-10-30）**：三份 profile 保持 `draft`，上表各条目在对应的里程碑（或配置凭据实际运行 harness 后）再核实，不阻塞 M2。
-
-`ubuntu-vm-x86` 上的 Hermes 还有 14 个文件没有任何规则（`shared-state.db`、`source-checks/`、`gateway_state.json`、`state/`、`spawn-ledger.json`、`gateway-starts.log`、`context_length_cache.yaml`、`install_id`、`plugin-update-checks/`、`kanban/`、`runtime/` 等，合计约 158 KiB）。这是 2026-10-30 的观察与当时 soul 范围下的处理记录。当前这些内容保持 unclassified，不凭文件名编造分类；soul-secrets / full / raw 按既有规则将其放入敏感层，新默认 full 包含它们。用户可自愿用 `--assign` 补充归类，接入不再要求先逐文件归类。
-
-### 6.3 额外样本：`ubuntu-vm` 上的旧版 Hermes
-
-这份 Hermes 由旧版 Fathom 部署：`~/.hermes` 是指向 `/slots/active → /slots/b` 的符号链接（AB 槽位），目录中还有 `FATHOM_RESTORE_MARKER.txt`。它只用于只读观察：登记报告能穿过根目录的符号链接正确扫描，旧项目的文件都落在"未分类"中。它不作为核实依据，也不在其上写入实例记录。
-
-### 6.4 子 profile 机制示例（仅用于演示机制，不代表推荐）
-
-社区中存在多种 DSH 记忆插件，存储方式各不相同：有的为每个项目存一个 JSONL 文件，有的使用单个 JSON 文件，有的采用向量加图谱的组合。下面的示例只演示"检测到用户已经装了某种存储形态时，如何把它正确归类"：
+示例（仅演示机制，不代表推荐）：
 
 ```yaml
 schema: valise-profile/1
@@ -400,18 +396,23 @@ extends: dsh
 when: { exists: { root: state, glob: "memory-plugin/memories.json" } }
 paths:
   - { root: state, glob: "memory-plugin/**", category: memory }
-checkup:
-  memory_mechanism_markers: [ { root: state, glob: "memory-plugin/memories.json" } ]
 ```
 
-## 附录 A：为 harness 写一份资料（入门，2026-11-08）
+## 5. 贡献要求
 
-桌面版“这台服务器上的 Agent”在资料包不认识你的 harness 时链到这里。资料只是一份 YAML 数据：告诉 Valise 去哪里找这个 harness、它的文件各是什么、怎么判断它在运行。Valise 不会因此往服务器上装任何东西。
+提交 PR 时必须附上以下内容：harness 的版本；`valise enroll --report-json` 的输出（凭据路径可以打码）；在哪台靶机上验证过；以及每条 `verify: pending` 被移除的依据（官方文档链接，或真实安装的观察结果）。详细流程与清单见 [PROFILE_AUTHORING.md](PROFILE_AUTHORING.md)。
 
-1. **放在哪里**：这台电脑上 Valise 数据目录下的 `profiles/<id>.yaml`（`<id>` 用小写字母、数字和连字符）。这里的资料叫“本机资料”，界面标“未经审核”，与签名资料包里的官方资料分开。
-2. **从最小骨架开始**：照着仓库里的 `profiles/dsh.yaml` 写，它是最短的一份。至少要有：`schema: valise-profile/1`、`id`、`display_name`、`profile_version: 1`、`status: draft`、`detect`（可执行文件名、取版本号的命令、状态目录的候选位置、能确认是它的标记文件）、`paths`（每类文件的 glob 与类别：identity、memory、skills、config、sessions、state、secrets、workspace、cache）、`provenance`（它是怎么装上的）、`service` 与 `entries`（没有就写空）。第 2 节逐项说明了每个字段。
-3. **没亲眼核实的条目标 `verify: pending`**（第 1.2 节）。不要猜凭据文件：凭据只按你在 `paths` 里明确写成 `secrets` 的条目处理。
-4. **检查**：运行 `valise profiles lint <你的文件>.yaml`（如有子 profile，连同父 profile 一起传入）及 `valise profiles status`。资料有问题时会列出与仓库 `profilelint` 一致的拒绝原因。
-5. **借助编程 Agent 编写**：仓库根目录 `skills/valise-profile-author/` 提供给开发/编程 Agent（Claude Code / Codex / Antigravity / OpenClaw）使用的标准编写技能与最小模板，引导其用只读探测编写不猜凭据、可通过 `lint` 的初稿。
-6. **回到 Valise 重新扫描**：桌面版“这台服务器上的 Agent”点“重新扫描”，认出来就能接入。恢复能力还没核实的资料用于恢复时，界面会写明“恢复尚未在此版本测试”及影响。
-7. **想让它进官方资料包**：按第 5 节的贡献要求提交，附上在真实机器上核实的记录。
+---
+
+## 6. 官方 Profile 核实依据与验收记录
+
+官方 profile 以仓库 `profiles/*.yaml`（`openclaw.yaml`、`hermes.yaml`、`dsh.yaml`）为唯一现行正文：每条规则的出处均以注释形式（文档章节、源码位置或实机观察 `OBS`）就地记录，按能力核实状态以各文件内的 `capabilities` 块为准。
+
+各阶段靶机核实与端到端验收流水记录统一归档于 `docs/acceptance/`，本规范不再堆积阶段性施工日志。
+
+## 附录 A：为 harness 写一份资料（入门入口）
+
+桌面版“这台服务器上的 Agent”在资料包不认识你的 harness 时链到这里。完整的人类编写与实机验证教程已独立成文，请直接阅读：
+
+- **人类编写与实机教程**：[PROFILE_AUTHORING.md](PROFILE_AUTHORING.md)（含心智模型、5 大高频踩坑、离线校验 `./scripts/verify-profile.sh` / `valise profiles lint`、本机导入路径与 PR 贡献清单）。
+- **AI 辅助编写技能**：`skills/valise-profile-author/`（可直接交给 Claude Code / Codex / Antigravity / OpenClaw，支持纯官方文档/源码交付与只读现场核验）。

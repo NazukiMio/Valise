@@ -17,6 +17,7 @@ type Issue struct {
 	File    string `json:"file"`
 	Field   string `json:"field"`
 	Message string `json:"message"`
+	Code    string `json:"code,omitempty"`
 }
 
 func (i Issue) String() string {
@@ -33,6 +34,8 @@ type Result struct {
 	// be resolved.
 	Effective *Profile
 	Issues    []Issue
+	// Warnings are soft findings that do not fail the lint.
+	Warnings []Issue
 }
 
 var (
@@ -56,7 +59,7 @@ func Lint(docs []*Document) []Result {
 		results[i].Doc = d
 		id := d.Profile.ID
 		if prev, dup := byID[id]; dup && id != "" {
-			results[i].Issues = append(results[i].Issues, Issue{d.Path, "id", fmt.Sprintf("id %q 与 %s 重复", id, prev.Path)})
+			results[i].Issues = append(results[i].Issues, Issue{File: d.Path, Field: "id", Message: fmt.Sprintf("id %q 与 %s 重复", id, prev.Path)})
 			continue
 		}
 		byID[id] = d
@@ -70,6 +73,7 @@ func Lint(docs []*Document) []Result {
 		c.checkDoc(d, eff)
 		results[i].Effective = eff
 		results[i].Issues = append(results[i].Issues, c.issues...)
+		results[i].Warnings = append(results[i].Warnings, c.warnings...)
 	}
 	return results
 }
@@ -129,11 +133,17 @@ func Merge(parent, child *Profile) *Profile {
 type checker struct {
 	file   string
 	issues []Issue
-	roots  []string
+	// warnings are soft findings (Code set).
+	warnings []Issue
+	roots    []string
+}
+
+func (c *checker) warn(code, field, format string, a ...any) {
+	c.warnings = append(c.warnings, Issue{File: c.file, Field: field, Message: fmt.Sprintf(format, a...), Code: code})
 }
 
 func (c *checker) add(field, format string, a ...any) {
-	c.issues = append(c.issues, Issue{c.file, field, fmt.Sprintf(format, a...)})
+	c.issues = append(c.issues, Issue{File: c.file, Field: field, Message: fmt.Sprintf(format, a...)})
 }
 
 func (c *checker) checkDoc(d *Document, eff *Profile) {
@@ -220,6 +230,8 @@ func (c *checker) checkDoc(d *Document, eff *Profile) {
 		c.checkCheckup(p.Checkup)
 	}
 	c.checkSecretConflicts(eff)
+	c.checkPathStructure(p, eff)
+	c.checkWarnings(p, eff)
 }
 
 func (c *checker) checkTop(p *Profile) {
@@ -257,7 +269,7 @@ func (c *checker) checkTop(p *Profile) {
 				c.add(fmt.Sprintf("detect.named[%d].service", i), "只能是 shared 或不写")
 			}
 			if len(n.Env) == 0 {
-				c.add(fmt.Sprintf("detect.named[%d].env", i), "必须写明怎样让 harness 的命令针对这个实例（如 OPENCLAW_PROFILE: ${NAME}）")
+				c.add(fmt.Sprintf("detect.named[%d].env", i), "必须写明怎样让 harness 的命令针对这个实例（如 EXAMPLE_STATE_DIR: ${STATE_DIR}）")
 			}
 			for k, v := range n.Env {
 				if !envNameRe.MatchString(k) || strings.ReplaceAll(strings.ReplaceAll(v, "${NAME}", ""), "${STATE_DIR}", "") != "" && strings.Contains(v, "$") {
@@ -773,6 +785,9 @@ func (c *checker) argvVars(f string, a Argv, required bool, vars ...string) {
 	if a[0] == "" {
 		c.add(f, "argv[0] 不能为空")
 	}
+	if msg := checkShellWrapper(a); msg != "" {
+		c.add(f, "%s", msg)
+	}
 	for i, s := range a {
 		if err := checkVars(s, vars...); err != nil {
 			c.add(fmt.Sprintf("%s[%d]", f, i), "%v", err)
@@ -996,4 +1011,146 @@ func keys(m map[string]string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// checkPathStructure adds the structural checks on body, exclusive_secrets
+// and consistency.sqlite that the restore planner depends on.
+func (c *checker) checkPathStructure(p, eff *Profile) {
+	if eff.Body != nil {
+		for i, r := range eff.Body.Paths {
+			if p.Extends != "" && !bodyPathIn(p, r) {
+				continue
+			}
+			dir, ok := strings.CutSuffix(r.Glob, "/**")
+			if !ok || dir == "" || !IsLiteral(dir) {
+				c.add(fmt.Sprintf("body.paths[%d].glob", i), "必须是「字面目录/**」形式：%q", r.Glob)
+			}
+		}
+	}
+	for i, r := range p.Paths {
+		if r.Category != CategoryBody {
+			continue
+		}
+		if !hasBodyPath(eff, r.Root, r.Glob) {
+			c.add(fmt.Sprintf("paths[%d]", i), "paths 中的 body 规则必须同时列入 body.paths，否则恢复时无法搬动身体目录")
+		}
+	}
+	others := c.excludeRefs(eff)
+	for i, s := range eff.ExclusiveSecrets {
+		for _, o := range others {
+			if conflicts(o.ref, s) {
+				c.add(fmt.Sprintf("exclusive_secrets[%d]", i), "exclusive_secrets 规则 %q 同时出现在 %s 中", s.Glob, o.where)
+			}
+		}
+	}
+	if eff.Consistency != nil {
+		for i, s := range eff.Consistency.SQLite {
+			for _, o := range others {
+				if conflicts(o.ref, s.Ref()) {
+					c.add(fmt.Sprintf("consistency.sqlite[%d]", i), "SQLite 规则 %q 同时出现在 %s 中", s.Glob, o.where)
+				}
+			}
+		}
+	}
+}
+
+func bodyPathIn(p *Profile, r PathRef) bool {
+	return p.Body != nil && slices.Contains(p.Body.Paths, r)
+}
+
+func hasBodyPath(eff *Profile, root, glob string) bool {
+	return eff.Body != nil && slices.Contains(eff.Body.Paths, PathRef{root, glob})
+}
+
+type whereRef struct {
+	ref   PathRef
+	where string
+}
+
+func (c *checker) excludeRefs(p *Profile) []whereRef {
+	var others []whereRef
+	for i, r := range p.Paths {
+		switch r.Category {
+		case CategoryBody, CategoryCache, CategoryIgnore:
+			others = append(others, whereRef{PathRef{r.Root, r.Glob}, fmt.Sprintf("paths[%d] (%s)", i, r.Category)})
+		}
+	}
+	if p.Body != nil {
+		for i, r := range p.Body.Paths {
+			others = append(others, whereRef{r, fmt.Sprintf("body.paths[%d]", i)})
+		}
+	}
+	return others
+}
+
+func conflicts(other, s PathRef) bool {
+	if other.Root != s.Root || ValidateGlob(s.Glob) != nil || ValidateGlob(other.Glob) != nil {
+		return false
+	}
+	return other.Glob == s.Glob || (IsLiteral(s.Glob) && MatchGlob(other.Glob, s.Glob))
+}
+
+// globCovers conservatively reports whether every path matching later also
+// matches earlier.
+func globCovers(earlier, later string) bool {
+	if earlier == later || earlier == "**" {
+		return true
+	}
+	if dir, ok := strings.CutSuffix(earlier, "/**"); ok && IsLiteral(dir) && strings.HasPrefix(later, dir+"/") {
+		return true
+	}
+	return IsLiteral(later) && ValidateGlob(earlier) == nil && MatchGlob(earlier, later)
+}
+
+func (c *checker) checkWarnings(p, eff *Profile) {
+	if p.Checkup != nil || p.Handoff != nil {
+		c.warn("deprecated_field", "checkup", "checkup / handoff 已弃用")
+	} else if _, ok := p.Capabilities["checkup"]; ok {
+		c.warn("deprecated_field", "capabilities.checkup", "capabilities.checkup 已弃用")
+	}
+	for i, r := range p.Paths {
+		if r.Category == CategoryBody && hasBodyPath(eff, r.Root, r.Glob) {
+			c.warn("redundant_body_path", fmt.Sprintf("paths[%d]", i), "body 规则 %q 已在 body.paths 中，paths 里的这条是多余的", r.Glob)
+		}
+	}
+	for i, later := range eff.Paths {
+		if later.Category == CategorySecrets {
+			continue
+		}
+		for _, earlier := range eff.Paths[:i] {
+			if earlier.Category == CategorySecrets || earlier.Root != later.Root {
+				continue
+			}
+			if globCovers(earlier.Glob, later.Glob) {
+				c.warn("shadowed_path", fmt.Sprintf("paths[%d]", i), "规则 %q 被前面的 %q 遮蔽，永远不会生效", later.Glob, earlier.Glob)
+				break
+			}
+		}
+	}
+	for i, ex := range eff.ExclusiveSecrets {
+		covered := false
+		for _, r := range eff.Paths {
+			if r.Category == CategorySecrets && r.Root == ex.Root && globCovers(r.Glob, ex.Glob) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			c.warn("exclusive_not_in_secrets", fmt.Sprintf("exclusive_secrets[%d]", i), "%q 没有被任何 secrets 规则覆盖", ex.Glob)
+		}
+	}
+	if p.Extends == "" {
+		if len(p.Capabilities) == 0 {
+			c.warn("missing_capabilities", "capabilities", "没有记录任何能力核实状态")
+		}
+		hasSecrets := false
+		for _, r := range eff.Paths {
+			if r.Category == CategorySecrets {
+				hasSecrets = true
+			}
+		}
+		if !hasSecrets {
+			c.warn("missing_secrets", "paths", "没有声明任何 secrets 规则")
+		}
+	}
 }

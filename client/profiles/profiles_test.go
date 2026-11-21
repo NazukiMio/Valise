@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"valise/client/minisign/minisigntest"
+	"valise/core/profile"
 	"valise/core/valise"
 )
 
@@ -150,5 +151,44 @@ provenance: { kind: binary, binary: { name: mine } }
 	}
 	if len(s.Rejected) != 1 {
 		t.Fatalf("rejected %v", s.Rejected)
+	}
+}
+
+func TestCommandsFormat(t *testing.T) {
+	p := &profile.Profile{
+		Detect: &profile.Detect{VersionArgv: profile.Argv{"x", "--version"}},
+		Install: &profile.Install{Steps: []profile.InstallStep{
+			{Kind: profile.StepScript, URL: "https://e.invalid/i.sh", SHA256: "0123456789abcdef", Interpreter: profile.Argv{"bash"}},
+			{Kind: profile.StepPathAdd, Dir: "${HOME}/.local/bin"},
+		}},
+	}
+	got := Commands(p)
+	want := []string{
+		"检测版本：x --version",
+		"安装脚本：https://e.invalid/i.sh（SHA-256 0123456789ab）-> bash <downloaded:i.sh>",
+		"加入 PATH：${HOME}/.local/bin",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("%v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%d: %q != %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestWriteLocalFile(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := WriteLocalFile(dir, "../bad", []byte("x")); err == nil {
+		t.Error("bad id accepted")
+	}
+	p, err := WriteLocalFile(dir, "my-profile", []byte("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(p)
+	if err != nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("%v %v", err, st)
 	}
 }

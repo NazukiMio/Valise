@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -365,43 +366,46 @@ func writeAtomic(dst string, b []byte) error {
 	return os.Rename(f.Name(), dst)
 }
 
-// Commands lists the argv a profile may make Valise run on a server, for
+// Commands lists the commands a profile may make Valise run on a server, for
 // the user to review before trusting an unsigned profile.
 func Commands(p *profile.Profile) []string {
 	var out []string
-	add := func(what string, a profile.Argv) {
-		if len(a) > 0 {
-			out = append(out, what+"："+strings.Join(a, " "))
-		}
-	}
-	if p.Detect != nil {
-		add("检测版本", p.Detect.VersionArgv)
-	}
-	for _, r := range p.Roots {
-		add("查找目录 "+r.ID, r.DiscoverArgv)
-	}
-	if p.Body != nil {
-		add("重建身体", p.Body.BootstrapArgv)
-	}
-	if p.Service != nil {
-		add("安装服务", p.Service.InstallArgv)
-	}
-	if p.Health != nil {
-		for _, c := range p.Health.Checks {
-			add("健康检查", c.Argv)
-		}
-	}
-	for _, l := range p.Login {
-		add("登录 "+l.ID, l.Argv)
-	}
-	if p.Native != nil {
-		add("导出", p.Native.ExportArgv)
-	}
-	for _, e := range p.Entries {
-		if e.Auth != nil {
-			add("管理页令牌 "+e.ID, e.Auth.URLArgv)
-			add("管理页令牌 "+e.ID, e.Auth.TokenArgv)
+	for _, ref := range profile.Commands(p) {
+		switch {
+		case ref.Label == "加入 PATH":
+			out = append(out, ref.Label+"："+ref.Note)
+		case ref.URL != "":
+			h := ref.SHA256
+			if len(h) > 12 {
+				h = h[:12]
+			}
+			out = append(out, ref.Label+"："+ref.URL+"（SHA-256 "+h+"）-> "+strings.Join(ref.Argv, " "))
+		case ref.Label == "安装 npm 包":
+			out = append(out, ref.Label+"："+strings.Join(ref.Argv, " ")+"（"+ref.Note+"）")
+		default:
+			out = append(out, ref.Label+"："+strings.Join(ref.Argv, " "))
 		}
 	}
 	return out
+}
+
+var localIDRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// WriteLocalFile stores one profile as <id>.yaml in the local profile directory.
+func WriteLocalFile(dataDir, id string, raw []byte) (string, error) {
+	if !localIDRe.MatchString(id) {
+		return "", fmt.Errorf("profile id 无效：%q", id)
+	}
+	dir := LocalDir(dataDir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	dst := filepath.Join(dir, id+".yaml")
+	if err := writeAtomic(dst, raw); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(dst, 0o600); err != nil {
+		return "", err
+	}
+	return dst, nil
 }

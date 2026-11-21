@@ -426,3 +426,75 @@ func TestLintActions(t *testing.T) {
 		t.Error("accepted a terminal secret action")
 	}
 }
+
+func lintWarn(t *testing.T, src string) []Issue {
+	t.Helper()
+	return Lint([]*Document{mustParse(t, "p.yaml", src)})[0].Warnings
+}
+
+func hasCode(ws []Issue, code string) bool {
+	for _, w := range ws {
+		if w.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func TestHardErrorsNew(t *testing.T) {
+	cases := []struct{ name, old, new, field, msg string }{
+		{"body glob", "body: { paths: []", `body: { paths: [ { root: state, glob: "bin/*" } ]`, "body.paths[0].glob", "字面目录"},
+		{"body in paths only", `{ root: workspace, glob: "**", category: workspace }`, `{ root: workspace, glob: "**", category: workspace }
+  - { root: state, glob: "app/**", category: body }`, "paths[3]", "必须同时列入 body.paths"},
+		{"exclusive vs cache", `{ root: workspace, glob: "**", category: workspace }`, `{ root: state, glob: "channels/**", category: cache }`, "exclusive_secrets[0]", "同时出现"},
+		{"sqlite vs ignore", `{ root: workspace, glob: "**", category: workspace }`, `{ root: state, glob: "agent.sqlite", category: ignore }`, "consistency.sqlite[1]", "同时出现"},
+		{"shell wrapper", "argv: [example, doctor]", "argv: [bash, -lc, doctor]", "health.checks[3].argv", "shell"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if !strings.Contains(baseYAML, c.old) {
+				t.Fatalf("base lacks %q", c.old)
+			}
+			expectIssue(t, lintOne(t, strings.Replace(baseYAML, c.old, c.new, 1)), c.field, c.msg)
+		})
+	}
+}
+
+func TestSoftWarnings(t *testing.T) {
+	if !hasCode(lintWarn(t, baseYAML), "deprecated_field") {
+		t.Error("deprecated_field missing")
+	}
+	cases := []struct{ name, old, new, code string }{
+		{"redundant", "body: { paths: []", `body: { paths: [ { root: state, glob: "app/**" } ]`, "redundant_body_path"},
+		{"shadowed", `{ root: workspace, glob: "**", category: workspace }`, `{ root: state, glob: "memories/**", category: memory }
+  - { root: state, glob: "memories/a.md", category: memory }`, "shadowed_path"},
+		{"exclusive", `{ root: state, glob: "channels/**" }`, `{ root: state, glob: "other/**" }`, "exclusive_not_in_secrets"},
+		{"no caps", "schema: valise-profile/1", "schema: valise-profile/1", "missing_capabilities"},
+		{"no secrets", `{ root: state, glob: ".env", category: secrets }`, `{ root: state, glob: ".env", category: config }`, "missing_secrets"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			src := strings.Replace(baseYAML, c.old, c.new, 1)
+			if c.code == "redundant_body_path" {
+				src = strings.Replace(src, `{ root: workspace, glob: "**", category: workspace }`, `{ root: workspace, glob: "**", category: workspace }
+  - { root: state, glob: "app/**", category: body }`, 1)
+			}
+			if !hasCode(lintWarn(t, src), c.code) {
+				t.Errorf("missing warning %s: %v", c.code, lintWarn(t, src))
+			}
+		})
+	}
+}
+
+func TestShellWrapper(t *testing.T) {
+	for _, a := range [][]string{{"sh", "-c", "x"}, {"sudo", "-u", "me", "bash", "-lc", "x"}, {"env", "A=1", "zsh", "-ec", "x"}, {"a", "$(b)"}, {"a", "`b`"}} {
+		if checkShellWrapper(a) == "" {
+			t.Errorf("%v not flagged", a)
+		}
+	}
+	for _, a := range [][]string{{"bash"}, {"bash", "install.sh", "--check"}, {"example", "--version"}, {"sudo", "apt-get", "install", "-y", "curl"}} {
+		if m := checkShellWrapper(a); m != "" {
+			t.Errorf("%v flagged: %s", a, m)
+		}
+	}
+}

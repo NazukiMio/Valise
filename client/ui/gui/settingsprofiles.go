@@ -14,15 +14,16 @@ import (
 )
 
 type profilesState struct {
-	started   bool
-	loading   bool
-	picking   bool
-	status    *service.ProfilesStatus
-	statusErr error
-	fetchJ    job
-	installJ  job
-	pending   *service.PackFile
-	doneNote  string
+	started      bool
+	loading      bool
+	picking      bool
+	status       *service.ProfilesStatus
+	statusErr    error
+	fetchJ       job
+	installJ     job
+	pending      *service.PackFile
+	pendingLocal *service.LocalProfileFile
+	doneNote     string
 }
 
 func (a *App) ensureProfilesState() *profilesState {
@@ -52,6 +53,9 @@ func (a *App) profilesSettings(c *ui.Context) {
 	a.profilesStatusCard(c, ps)
 	if ps.pending != nil {
 		a.profilesPreviewCard(c, ps, ps.pending)
+	}
+	if ps.pendingLocal != nil {
+		a.localProfilePreviewCard(c, ps, ps.pendingLocal)
 	}
 }
 
@@ -111,6 +115,7 @@ func (a *App) profilesStatusCard(c *ui.Context, ps *profilesState) {
 			ui.PrimaryButton(c, T("profiles.check_online")).Disabled(busy).OnClick(func() { a.fetchPackOnline() })
 			if a.pickFile != nil {
 				ui.Button(c, T("profiles.pick_file")).Disabled(busy).OnClick(func() { a.pickPackLocal() })
+				ui.Button(c, T("profiles.pick_yaml")).Disabled(busy).OnClick(func() { a.pickProfileLocal() })
 			}
 			ui.Button(c, T("common.refresh")).Disabled(busy).OnClick(func() { ps.doneNote = ""; a.readProfilesStatus() })
 		})
@@ -166,7 +171,7 @@ func (a *App) fetchPackOnline() {
 	if ps.loading || ps.picking || ps.fetchJ.busy || ps.installJ.busy {
 		return
 	}
-	ps.doneNote, ps.installJ.err, ps.pending = "", nil, nil
+	ps.doneNote, ps.installJ.err, ps.pending, ps.pendingLocal = "", nil, nil, nil
 	var pf *service.PackFile
 	a.start(&ps.fetchJ, 2*time.Minute, func(ctx context.Context) (err error) {
 		a.says(&ps.fetchJ)(T("profiles.fetching"))
@@ -184,7 +189,7 @@ func (a *App) pickPackLocal() {
 	if a.pickFile == nil || ps.loading || ps.picking || ps.fetchJ.busy || ps.installJ.busy {
 		return
 	}
-	ps.picking, ps.doneNote, ps.fetchJ.err, ps.installJ.err, ps.pending = true, "", nil, nil, nil
+	ps.picking, ps.doneNote, ps.fetchJ.err, ps.installJ.err, ps.pending, ps.pendingLocal = true, "", nil, nil, nil, nil
 	a.run(func() {
 		path, err := a.pickFile(T("profiles.pick_title"), T("profiles.pick_msg"))
 		var pf *service.PackFile

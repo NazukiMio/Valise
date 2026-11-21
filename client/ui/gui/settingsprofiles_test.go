@@ -150,3 +150,56 @@ func TestProfilesSettingsInstallVerifiedAndUnverifiedLocal(t *testing.T) {
 		t.Fatalf("broken pack state missing: %q", tt.Texts())
 	}
 }
+
+func TestProfilesSettingsLocalYAMLImport(t *testing.T) {
+	a, tt := settingsWorld(t)
+	signer := minisigntest.New()
+	lines := strings.Split(strings.TrimSpace(signer.PublicKey), "\n")
+	a.svc.Release.PublicKey = lines[len(lines)-1]
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	extra := write("extra.yaml", unverifiedProfileYAML)
+	picked := extra
+	a.SetFilePicker(func(title, msg string) (string, error) { return picked, nil })
+
+	a.router.Push("/settings")
+	tt.Frame()
+	click(t, tt, T("settings.tab.profiles"))
+	hasAll(t, tt.Texts(), T("profiles.pick_yaml"))
+
+	click(t, tt, T("profiles.pick_yaml"))
+	hasAll(t, tt.Texts(), T("profiles.local_preview_title", "name", "Extra", "id", "extra"), T("profiles.local_unverified_note"), T("profiles.local_import_go"))
+	if tt.HasText(T("profiles.local_replaces")) {
+		t.Fatalf("fresh import showed overwrite warning: %q", tt.Texts())
+	}
+	click(t, tt, T("profiles.local_import_go"))
+	hasAll(t, tt.Texts(), T("profiles.local_import_done", "id", "extra"), T("profiles.local_list", "list", "extra"))
+	if a.harness["extra"] != "Extra" {
+		t.Fatalf("local profile did not reload live: %v", a.harness)
+	}
+
+	// Same id again: overwrite warning.
+	click(t, tt, T("profiles.pick_yaml"))
+	hasAll(t, tt.Texts(), T("profiles.local_replaces"))
+	click(t, tt, T("common.cancel"))
+
+	// Official pack with the same id blocks the import.
+	pack := writeSignedPack(t, signedProfileYAML, "", "2026.11.19", signer)
+	picked = pack
+	click(t, tt, T("profiles.pick_file"))
+	click(t, tt, T("profiles.install_go"))
+	picked = write("demo.yaml", signedProfileYAML)
+	click(t, tt, T("profiles.pick_yaml"))
+	if tt.HasText(T("profiles.local_import_go")) {
+		t.Fatalf("official id conflict offered import: %q", tt.Texts())
+	}
+	if !strings.Contains(strings.Join(tt.Texts(), "\n"), "官方资料包里已有同名") {
+		t.Fatalf("conflict reason missing: %q", tt.Texts())
+	}
+}

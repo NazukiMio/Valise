@@ -11,10 +11,17 @@
 schema: valise-profile/1
 id: dsh
 display_name: DeepSeek Harness
-profile_version: 4
+profile_version: 5
 status: draft
 harness_versions_tested: ["0.2.1-rc.5"]
 docs: https://github.com/deepseek-ai/deepseek-harness
+capabilities:
+  install: { status: untested, note: "开发者预览版，尚未登记官方安装方案" }
+  manage: { status: untested, note: "开发者预览版，仅在前台模式观察过默认端口" }
+  backup: { status: untested, note: "开发者预览版，基础路径与无头会话已初步观察，完整备份待验收" }
+  restore: { status: untested, note: "开发者预览版，恢复尚未在此版本演练" }
+  login: { status: untested, note: "开发者预览版，尚未配置登录授权流程" }
+  kit: { status: untested, note: "开发者预览版，skills 与 MCP 配置片段待端到端验收" }
 # No display: no character art was found in the installed packages (the UI
 # is a web client); the UI shows its placeholder icon.
 

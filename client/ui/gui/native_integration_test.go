@@ -31,7 +31,7 @@ service:
 health:
   checks:
     - { kind: systemd_active }
-native_cli: [/bin/sh, -c, "cat \"$HOME/unit-state\" > \"$HOME/seen-during-onboard\"; echo onboard-done"]
+native_cli: [demo, onboard]
 native_session_cli: [/bin/echo, session-done]
 `
 
@@ -58,7 +58,7 @@ func newNativeFlowWorld(t *testing.T) *nativeFlowWorld {
 		}
 	}
 	write(filepath.Join(w.home, ".demo/demo.json"), "{}")
-	write(filepath.Join(w.home, ".local/bin/demo"), "#!/bin/sh\necho demo 1.0\n")
+	write(filepath.Join(w.home, ".local/bin/demo"), "#!/bin/sh\nif [ \"$1\" = onboard ]; then cat \"$HOME/unit-state\" > \"$HOME/seen-during-onboard\"; echo onboard-done; exit 0; fi\necho demo 1.0\n")
 	write(filepath.Join(w.home, ".local/bin/loginctl"), "#!/bin/sh\necho yes\n")
 	write(filepath.Join(w.home, "unit-state"), "active\n")
 	write(filepath.Join(w.home, ".local/bin/systemctl"), `#!/bin/sh

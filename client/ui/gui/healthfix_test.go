@@ -42,7 +42,7 @@ detect: { binaries: [demo], state_dir_candidates: ["${HOME}/.demo"], markers_any
 paths: [{ root: state, glob: "demo.json", category: config, verify: pending }]
 provenance: { kind: binary, binary: { name: demo } }
 actions:
-  - { id: retune, name: 重新配置, explain: "固定配置动作", undo: "恢复备份", risk: config, argv: [/bin/sh, -c, "echo retuned >> $HOME/ran"], output: none }
+  - { id: retune, name: 重新配置, explain: "固定配置动作", undo: "恢复备份", risk: config, argv: [demo, retune], output: none }
 `
 
 const fixLoginctl = `#!/bin/sh
@@ -111,7 +111,7 @@ exec '`+e.SSH+`' "$@"
 		t.Fatal(err)
 	}
 	write(filepath.Join(w.home, ".demo/demo.json"), "{}")
-	write(filepath.Join(w.home, ".local/bin/demo"), "#!/bin/sh\necho demo 1.0\n")
+	write(filepath.Join(w.home, ".local/bin/demo"), "#!/bin/sh\nif [ \"$1\" = retune ]; then echo retuned >> \"$HOME/ran\"; exit 0; fi\necho demo 1.0\n")
 	write(filepath.Join(w.home, ".local/bin/loginctl"), fixLoginctl)
 	// A timer depends on linger; time sync is off too, whose fix the desktop
 	// does not offer yet.

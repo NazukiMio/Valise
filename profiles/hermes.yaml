@@ -10,10 +10,17 @@
 schema: valise-profile/1
 id: hermes
 display_name: Hermes Agent
-profile_version: 11
+profile_version: 12
 status: draft
 harness_versions_tested: ["0.22.5"]
 docs: https://hermes-agent.nousresearch.com
+capabilities:
+  install: { status: untested, note: "尚无纯用户级官方安装方案" }
+  manage: { status: partial, versions: ["0.22.5"], env: "Ubuntu x86_64（无 sudo）", note: "已核实状态目录、多实例与 systemd 用户服务；无本地 Web 入口" }
+  backup: { status: partial, versions: ["0.22.5"], env: "Ubuntu x86_64", note: "SQLite（state.db/kanban.db/cron）与分类规则已登记，部分路径待核实" }
+  restore: { status: untested, note: "身体重建（bootstrap_argv）与完整恢复尚未在此版本演练" }
+  login: { status: untested }
+  kit: { status: partial, versions: ["0.22.5"], env: "Ubuntu x86_64", note: "skills 目录与 mcp add/remove 命令已登记；MCP 端到端待靶机验收" }
 # OBS (2026-10-31, commit bf0203a794, MIT): HERMES_CADUCEUS in
 # hermes_cli/banner.py, markup color #CD7F32 (Rich tags removed).
 display:
@@ -73,11 +80,7 @@ paths:
   - { root: state, glob: "kanban.db", category: state }             # OBS + kanban docs
   - { root: state, glob: "sessions/request_dump_*.json", category: secrets }   # OBS (2026-10-31): failed-request dumps carry request.headers.Authorization (redaction not checked): verify: pending
   - { root: state, glob: "sessions/**", category: sessions }
-  # Body: rebuilt, never sealed (OBS: git checkout, installer-managed runtimes
-  # referenced by the service unit's PATH, per-install environments)
-  - { root: state, glob: "hermes-agent/**", category: body }
-  - { root: state, glob: "tools/**", category: body }
-  - { root: state, glob: "installs/**", category: body }
+  # Body directories (hermes-agent/**, tools/**, installs/**) are declared under body.paths below.
   # Not sealed
   - { root: state, glob: "cache/**", category: cache }              # OBS: model catalogs, uv cache
   - { root: state, glob: "audio_cache/**", category: cache }        # CFG: TTS output
