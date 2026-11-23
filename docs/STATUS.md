@@ -1,10 +1,17 @@
 # 当前状态与交接
 
-> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-21。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
+> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-23。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-21）
+## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-23）
 
-- **分支状态**：`feat/cloud-rclone-and-server-shell`（含 B3.1 与 B3.2 提交 `c098ce9`、`28b6696`，测试包 `stage-test-20261119-b3.2`）已通过全部真机验收并经 `--ff-only` 合入 `main`；当前工作分支 **`feat/v01-recovery-closure`** 已完成 v0.1 条目 1（`5152107`）、条目 2（`cef529f`）、`v01r2` 真机反馈修复（`4420a56`，已实机验收通过）、`v01r3`（`a4f1bd1`）、`v01r4`（`aabd97f`）及 `v01r5`；现已完成 **`v01r6`**（Profile 架构收口与编写套件），通过 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`），并打好真机验收测试包 `stage-test-20261121-v01r6`。
+- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试（`/Users/nazukimio/Downloads/Valise_Test/report.md`）后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成全部 **WP0–WP6** 实机反馈修复与 **Stage 4 跨模型审计修复**（`revive_plan.go`、`system_fixes.go`、`porter/internal/mcp/tools.go`、`profiles.go`、`protectdesired.go`、`adoptplan.go`），并通过全量 `-race` 测试与 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`），同步打好真机验收测试包 `stage-test-20261123-beta1-fixes`。
+- **`feat/beta1-feedback-fixes` 已完成修复（WP0–WP6 + Stage 4 审计）**：
+  1. **WP1 · 迁移身体与服务解耦**：支持 `AllowVersionMismatch`、`SkipService`/`--data-only`、`BinaryFound` 探测、同提交 `git` 仓库修复、Dossier 可见性及 `external_refs` 缺口告警。
+  2. **WP2 · 安装脚本两级安全检查**：修复 Hermes `install.sh` L332 单字节 `\xHH` 误报，补充行号与代码片段预览；对破坏性、禁用安全机制及二进制脚本保持永久拒绝（无绕过），将二次下载管道 / `eval` / 解码命令降级为 `RiskSentence` 明确确认。
+  3. **WP3 · 接管后内联保护计划与一键 Agent Kit 接线**：接管后内联展示保护计划卡片并在 Agent Kit 页增加缺失计划横幅；支持用户确认后一键执行 MCP `mcp_add_argv`/`mcp_remove_argv` 接线与可选服务重启，并独立汇报三段结果。
+  4. **WP4 · `protection-plan/3` 多周期调度与复制目标闭环**：支持 `off`/`hourly`/`daily`/`weekly`/`monthly` 周期（向后兼容旧版 porter）、允许关闭定时保存、完整展示与保存复制目标（服务器 + 本机 + 客户端云盘如 `gdrive`），并增加按周期联动的保留份数预览。
+  5. **WP5 · 本地资料覆盖与编写套件升级**：支持本地 `.yaml` 覆盖同 ID 官方资料（含徽章与一键恢复官方）、结构化能力差异预览、导入后过期实例同步（修复 `RecordFrom` 保留 `Label` 与 `LocalOverrides`），升级 `skills/valise-profile-author/` 与 `docs/PROFILE_AUTHORING.md`，并将 `profiles/hermes.yaml` 升至 `v13`。
+  6. **WP6 · 诊断日志与 GitHub 限流兜底**：`beta`/`rc` 预发布构建默认开启 `valise-debug.log`，并在 GitHub API 403/429 限流时自动回退至 `releases.atom`。
 - **B3 / B3.1 / B3.2 真机验收结论（2026-11-19，用户实机确认「全部通过」）**：
   1. **备份双轨与寿命闭环（B3）**：定时日期周期、永久手动存档点 `savepoints/`、主人级快照晋升、默认关闭的服务器自动退役与长旅程曲线视口虚拟化；原版恢复脚本验证源周期退役后仍可恢复。
   2. **服务器 `rclone` 与多服务器云盘登录（B3.1）**：`porter` 优先使用 `~/.local/bin/rclone` 并回退服务器 `PATH`；GUI 接通无 `sudo` Kit 安装（展示版本/URL/SHA-256 并显式确认）；云盘添加/重登录支持多选服务器串行登录（共享单次操作级 PIN 租约），`client_id`/`client_secret` 仅在当前页面内存会话保留并在离开/完成/关闭窗口时清零。
@@ -35,7 +42,7 @@
 
 ### 必须保留的环境与基线事实
 
-- **当前待验收测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261121-v01r6/Valise Test.app`（`0.0.0-dev+stage-test-20261121-v01r6`，构建自 `feat/v01-recovery-closure`，含 `darwin/arm64` 客户端、`valise` CLI 与 `valise-porter_linux_{arm64,amd64}`；具体提交见包内 `BUILD.json`）。打包验收门禁中执行 `profiles install` / `profiles status` / `cloud list` 必须显式指定真实宿主 `HOME=/Users/nazukimio`（避免仅写入隔离沙盒 `$HOME`）。历史包 `stage-test-20261120-v01r5`、`v01r4`、`v01r3`、`v01r2`、`b3.2` 等均保留未动。
+- **当前待验收测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261123-beta1-fixes/Valise Test.app`（`0.1.0-beta.2-dev+stage-test-20261123`，Beta 公钥 `RWTZ1EJhJqLr+89l9EhFambSn5K8QWguYmn9x2mGlC5aQfJzcMyWA15L`，资料包 `2026.11.23` 含 `dsh v5` / `hermes v13` / `openclaw v24`，构建自 `feat/beta1-feedback-fixes`，含 `darwin/arm64` 客户端、`valise` CLI 与 `valise-porter_linux_{arm64,amd64}`；具体提交见包内 `BUILD.json`）。打包验收门禁中执行 `profiles install` / `profiles status` / `cloud list` 必须使用 `--config-dir "$TMP"` 隔离配置目录。历史包 `stage-test-20261121-v01r6`、`stage-test-20261120-v01r5`、`v01r4`、`v01r3`、`v01r2`、`b3.2` 等均保留未动。
 - **默认资料包与演练公钥**：当前开发资料包位于 `~/.cache/valise-drill/devpack`（`2026.11.21`：`dsh v5`、`hermes v12`、`openclaw v24`，`kit-tools.yaml` 含 `webdav`/`s3`，公钥 `RWQCRlUzO1yCpR4+m1KbYsJO7OIYDC2OpeB3j+JTZ2cPj37DcSZuoCF1`）；演练配置 `~/.cache/valise-drill/drillpack` 独立保留，不得混用或覆盖。
 - **构建与检查环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；构建发布/测试包时 `-ldflags` 必须同时注入 `main.version` 与 `valise/client/porter.ReleasePublicKey`；禁止执行 `rm -f`（清空用 `: > file`，测试用 `t.TempDir()`）；未经用户明确要求不执行 `git push`。
 

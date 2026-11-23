@@ -27,7 +27,7 @@ agent-kit 是可选的档案报备与操作前备份辅助，**不是灾难恢�
 客户端中的“安装 Agent 保护技能”会做两件事，并在执行前明确告诉用户：
 
 - 把 `agent-kit/skills/` 下的二件套技能（`valise-onboard`、`valise-backup`）复制到 profile 中 `agent_kit.skills_dir` 指定的位置；同时安全检查并清理旧四件套残留目录（`valise-enroll`、`valise-upkeep`、`valise-handoff`、`valise-checkup`）：与历史官方发布内容一致的 `SKILL.md` 及 `.valise-bak-*` 自动清理并删除空目录，用户自行修改过的文件原样保留并列出。
-- 展示该 harness 配置 MCP Server 的方法。MCP 的启动命令为 `valise-porter mcp --instance <id>`。Valise **不自动修改 harness 的配置文件**，而是给出可以直接复制的配置片段，或者可以直接拷贝执行的 CLI 命令。
+- 接入 MCP Server（启动命令为 `valise-porter mcp --instance <id>`）：若 profile 声明了 `agent_kit.mcp_add_argv`，在安装前展开 `${PORTER}` 与 `${INSTANCE}` 并完整预览命令，默认在用户确认后经独立管理连接执行并记录审计（可选同时重启服务并复核健康）；未声明命令或用户不愿自动执行时，在折叠区提供可直接复制的配置片段、CLI 命令或文档指引。Valise 不擅自解析或静默改写 harness 配置文件。
 
 技能目录为空（profile 未提供）的 harness，暂不支持安装技能，仍可单独接入 MCP。
 
@@ -201,12 +201,16 @@ tools:
 
 ### 8.5 安装 Agent 保护技能
 
-- 客户端（桌面「管理与设置 › Agent 保护技能」或 `valise kit install <服务器> <实例>`）：先列出将要写入的文件，用户确认后由 porter 把 `agent-kit/skills/` 下的二件套技能（`valise-onboard`、`valise-backup`）写到 profile 的 `agent_kit.skills_dir`（每个技能一个子目录，已存在且内容不同时先备份为 `SKILL.md.valise-bak-<时间>`）；同时按历史发版哈希识别并清理未修改的旧四件套残留（用户改过的保留并列出）。未写入配置文件的 MCP 接入方式（`mcp_add_argv`、`mcp_config_snippet`、`mcp_config_doc` 与 3 句可直接复制对 Agent 说的话）可在桌面端折叠面板随时直接查看复制，无需解锁 Valise 口令。
-- 然后打印 MCP 的接入方法：profile 有 `agent_kit.mcp_add_argv` 时，展开 `${PORTER}`、`${INSTANCE}` 后打印 harness 自己的命令供用户执行；没有命令、只有 `agent_kit.mcp_config_snippet` 时打印展开后的配置片段；同时打印可转告 agent 的三句短提示词（首次报备布局、查询备份状态、高风险修改前留底）。Valise 不执行这条命令，也不修改 harness 配置。
+- **安装流程**（桌面「管理与设置 › Agent 保护技能」或 `valise kit install <服务器> <实例>`）：
+  1. 先列出将要写入 `agent_kit.skills_dir` 的二件套技能文件（`valise-onboard`、`valise-backup`；已存在且内容不同时先备份为 `SKILL.md.valise-bak-<时间>`），并提示会按历史发版哈希自动清理未修改的旧四件套残留（用户改过的保留并列出）。
+  2. 若 profile 声明了 `agent_kit.mcp_add_argv`，同时展开 `${PORTER}`、`${INSTANCE}` 预览实际命令，**默认勾选经用户确认后通过独立管理连接执行**（`admin` 权限，写入审计记录，可取消勾选仅安装技能文件）；若实例托管了后台服务，同时提供可选的「重启服务并复核健康」步骤。
+  3. **分项诚实汇报结果**：分别展示「技能文件写入结果」「MCP 注册命令退出码」与「服务重启及健康复核结果」，绝不把命令退出码 0 合并冒充服务健康或 MCP 已就绪。
+  4. **折叠区手动兜底**：无论是否执行过自动注册，展开后的 `mcp_add_argv`、`mcp_config_snippet`、`mcp_config_doc` 与 3 句可直接复制对 Agent 说的话（首次报备布局、查询备份状态、高风险修改前留底）均保留在折叠面板中，随时可直接查看复制，无需解锁 Valise 口令。
+- **保护计划引导**：接入新实例后默认引导创建保护计划（默认 `full` 档位，定时备份按需开关）；若在 Agent 保护技能页检测到当前实例尚未启用保护计划，页面明确提示并给出前往设置的入口（避免 `valise_seal` 回退到旧 `soul` 档）。
 - `format: jsonl` 的会话文件以 `.zst` 或 `.zstd` 结尾时先解压；大小按磁盘上的字节计，token 估算按解压后的字节计。
 - 技能正文用英文书写，并要求 agent 用用户的语言与用户交流；触发说明同时列出中英文说法。
 - `valise kit status <服务器> <实例>`（M7a）：逐个列出当前技能在技能目录中的状态（与本客户端发布的版本一致 / 已被修改 / 未安装）以及 Valise 留下的备份数；MCP 方面只报告最近一次 agent 经 MCP 调用的时间（来自审计记录）。Valise 不读取 harness 的配置，因此不声称"MCP 已配置"，也不展示 agent 自报安全状态。
-- `valise kit uninstall <服务器> <实例> [--force]`（M7a）：先列出将删除的文件，用户确认后由 porter 在 Go 代码中删除：内容与当前发布版本一致的 `SKILL.md`（含匹配历史哈希的旧四件套残留）、Valise 写的 `SKILL.md.valise-bak-*` 备份，以及因此变空的技能目录。被修改过的 `SKILL.md` 保留并列出，加 `--force` 才删除。然后打印撤除 MCP 的方法：profile 的 `agent_kit.mcp_remove_argv`（harness 自己的命令，Valise 不执行），或提示从配置片段所在文件删除相应条目。MCP 状态、审计记录与备份库不受影响。
+- **卸载流程**（`valise kit uninstall <服务器> <实例> [--force]`）：先列出将删除的文件，并在 profile 声明了 `agent_kit.mcp_remove_argv` 时展开 `${INSTANCE}` 预览撤除命令（默认勾选经用户确认后通过独立管理连接执行并记录审计，可选同时重启服务并复核健康）。用户确认后，porter 在 Go 代码中删除内容与当前发布版本一致的 `SKILL.md`（含匹配历史哈希的旧四件套残留）、Valise 写的 `SKILL.md.valise-bak-*` 备份，以及因此变空的技能目录；被修改过的 `SKILL.md` 保留并列出，加 `--force` 才删除。结果同样分别展示技能文件删除、MCP 撤除退出码与服务复核状态，并在折叠区保留手动撤除命令或配置片段清理指引。MCP 状态、审计记录与备份库不受影响。
 
 ## 9. 管理方接口与技能（N5a，规划未实现）
 

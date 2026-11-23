@@ -19,8 +19,7 @@ type CommandRef struct {
 }
 
 // Commands lists every command a profile can run on a server, in a stable
-// order. agent_kit.mcp_*_argv are only printed to the user and never run, so
-// they are not listed.
+// order.
 func Commands(p *Profile) []CommandRef {
 	if p == nil {
 		return nil
@@ -78,6 +77,10 @@ func Commands(p *Profile) []CommandRef {
 	}
 	if p.Identity != nil {
 		add("identity.argv", "读取 Agent 名字", "daily", p.Identity.Argv)
+	}
+	if p.AgentKit != nil {
+		add("agent_kit.mcp_add_argv", "注册 Valise MCP", "admin", p.AgentKit.MCPAddArgv)
+		add("agent_kit.mcp_remove_argv", "撤除 Valise MCP", "admin", p.AgentKit.MCPRemoveArgv)
 	}
 	if in := p.Install; in != nil {
 		for i, r := range in.Requires {

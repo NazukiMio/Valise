@@ -118,7 +118,14 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 			fact(c, T("restore.services"), T("restore.service_effect", "unit", p.Plan.Unit, "source", orText(p.StopSource, T("restore.none"))))
 		}
 		fact(c, T("restore.space"), T("restore.space_value", "need", size(p.NeedBytes), "free", size(int64(p.FreeBytes))))
-		fact(c, T("restore.body"), T("restore.body."+p.Plan.Body.Action))
+		bodyVal := T("restore.body." + p.Plan.Body.Action)
+		if p.BodySummary != "" {
+			bodyVal += T("common.dot_sep") + p.BodySummary
+		}
+		fact(c, T("restore.body"), bodyVal)
+		if p.Dossier != nil {
+			fact(c, T("restore.dossier"), T("restore.dossier_value", "overrides", p.Dossier.LocalOverrides, "sqlite", len(p.Dossier.LocalSQLite), "external", len(p.Dossier.ExternalRefs)))
+		}
 		fact(c, T("restore.access"), T("restore.access_hint"))
 	})
 	ui.Collapsible(c, T("restore.technical"), a.fold("restore-technical"), func() {
@@ -163,17 +170,31 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 	}
 	hard, allow := false, false
 	for _, block := range p.Blockers {
-		switch block.Code {
-		case "profile_draft":
-			ui.Checkbox(c, &r.draft, T("restore.allow_draft"))
-			allow = true
-		case "profile_from_snapshot":
-			ui.Checkbox(c, &r.snapshotProfile, T("restore.allow_snapshot"))
-			allow = true
-		default:
-			hard = true
-		}
-		errorBox(c, &block, a.fold("restore-block-"+block.Code))
+		ui.Column(c.Key("blk-" + block.Code)).Gap(6).Children(func() {
+			switch block.Code {
+			case "profile_draft":
+				ui.Checkbox(c, &r.draft, T("restore.allow_draft"))
+				allow = true
+			case "profile_from_snapshot":
+				ui.Checkbox(c, &r.snapshotProfile, T("restore.allow_snapshot"))
+				allow = true
+			case "body_version_mismatch":
+				ui.Checkbox(c, &r.allowVersionMismatch, T("restore.allow_version_mismatch"))
+				allow = true
+			case "body_rebuild_unverified":
+				ui.Checkbox(c, &r.allowVersionMismatch, T("restore.allow_body_data_only"))
+				ui.Row(c).Children(func() {
+					ui.Button(c, T("restore.go_install_target")).OnClick(func() { a.navigate("/servers/" + p.Target + "/agents") })
+				})
+				allow = true
+			case "service_missing":
+				ui.Checkbox(c, &r.skipService, T("restore.allow_skip_service"))
+				allow = true
+			default:
+				hard = true
+			}
+			errorBox(c, &block, a.fold("restore-block-"+block.Code))
+		})
 	}
 	if len(p.Nested) > 0 {
 		hard = true

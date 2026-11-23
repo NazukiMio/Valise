@@ -9,6 +9,8 @@ import (
 
 	"valise/client/minisign/minisigntest"
 	"valise/client/profiles"
+	"valise/core/enroll"
+	"valise/ui/service"
 )
 
 const signedProfileYAML = `schema: valise-profile/1
@@ -189,17 +191,38 @@ func TestProfilesSettingsLocalYAMLImport(t *testing.T) {
 	hasAll(t, tt.Texts(), T("profiles.local_replaces"))
 	click(t, tt, T("common.cancel"))
 
-	// Official pack with the same id blocks the import.
+	// Official pack with the same id allows local override with diff preview, post-import instance sync banner, and one-click restore to official.
 	pack := writeSignedPack(t, signedProfileYAML, "", "2026.11.19", signer)
 	picked = pack
 	click(t, tt, T("profiles.pick_file"))
 	click(t, tt, T("profiles.install_go"))
-	picked = write("demo.yaml", signedProfileYAML)
-	click(t, tt, T("profiles.pick_yaml"))
-	if tt.HasText(T("profiles.local_import_go")) {
-		t.Fatalf("official id conflict offered import: %q", tt.Texts())
+
+	a.agents.value.Items = []service.AgentSummary{
+		{ConnectionID: "home", Instance: enroll.InstanceSummary{InstanceID: "demo1", ProfileID: "demo", ProfileVersion: 2}},
 	}
-	if !strings.Contains(strings.Join(tt.Texts(), "\n"), "官方资料包里已有同名") {
-		t.Fatalf("conflict reason missing: %q", tt.Texts())
+	overrideYAML := strings.Replace(signedProfileYAML, "profile_version: 2", "profile_version: 3", 1) +
+		"entries:\n  - { id: web, kind: web, host: 127.0.0.1, port: 8080, path: \"/\" }\n"
+	picked = write("demo.yaml", overrideYAML)
+	click(t, tt, T("profiles.pick_yaml"))
+	hasAll(t, tt.Texts(),
+		T("profiles.local_overrides_official", "id", "demo", "version", 2),
+		T("profiles.diff_title"),
+		"版本：v2 → v3",
+		"新增入口：web",
+		T("profiles.local_import_go"),
+	)
+	click(t, tt, T("profiles.local_import_go"))
+	hasAll(t, tt.Texts(),
+		T("profiles.override_item", "id", "demo", "local", 3, "official", 2),
+		T("profiles.restore_official"),
+		T("profiles.sync_banner", "n", 1),
+		T("profiles.sync_now", "n", 1),
+	)
+
+	// One-click restore back to official removes the local override.
+	click(t, tt, T("profiles.restore_official"))
+	hasAll(t, tt.Texts(), T("profiles.restore_official_done", "id", "demo"))
+	if tt.HasText(T("profiles.override_item", "id", "demo", "local", 3, "official", 2)) {
+		t.Fatalf("override still listed after restoring official: %q", tt.Texts())
 	}
 }

@@ -23,6 +23,15 @@ type ProtectionBindingStore struct {
 	mu    sync.Mutex
 	dir   string
 	repos []config.Repo
+	// clouds are the registered cloud names a CloudCopies entry may refer to.
+	clouds []config.Cloud
+}
+
+// WithClouds teaches the store the registered clouds so cloud_copies entries
+// can be validated. A nil list rejects any cloud entry as unknown.
+func (s *ProtectionBindingStore) WithClouds(clouds []config.Cloud) *ProtectionBindingStore {
+	s.clouds = append([]config.Cloud(nil), clouds...)
+	return s
 }
 
 func NewProtectionBindingStore(stateDir string, repos []config.Repo) *ProtectionBindingStore {
@@ -87,7 +96,14 @@ func (s *ProtectionBindingStore) Read(ctx context.Context, agent identity.AgentR
 // A stale local revision is rejected even when the server plan has committed.
 // Callers must report a local failure separately; this store never rolls back
 // or touches a server, and never changes legacy repository auto settings.
+//
+// CompareAndSwap keeps any cloud choices already saved; CompareAndSwapCopies
+// replaces both lists (a nil cloud list keeps the saved cloud choices).
 func (s *ProtectionBindingStore) CompareAndSwap(ctx context.Context, agent identity.AgentRef, expected, serverRevisionSeen protection.Revision, copies []protection.LocalCopy) (*protection.ClientBinding, error) {
+	return s.CompareAndSwapCopies(ctx, agent, expected, serverRevisionSeen, copies, nil)
+}
+
+func (s *ProtectionBindingStore) CompareAndSwapCopies(ctx context.Context, agent identity.AgentRef, expected, serverRevisionSeen protection.Revision, copies, clouds []protection.LocalCopy) (*protection.ClientBinding, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -112,6 +128,22 @@ func (s *ProtectionBindingStore) CompareAndSwap(ctx context.Context, agent ident
 		if !registered[copy.RepoID] {
 			return nil, protectionError("repo_unknown", "本机保护设置引用了未登记的仓库")
 		}
+	}
+	if clouds != nil {
+		if err := protection.ValidateLocalCopies(clouds); err != nil {
+			return nil, err
+		}
+		clouds = cloneProtection(clouds)
+		knownCloud := map[string]bool{}
+		for _, c := range s.clouds {
+			knownCloud[c.Name] = true
+		}
+		for _, c := range clouds {
+			if !knownCloud[c.RepoID] {
+				return nil, protectionError("cloud_unknown", "本机保护设置引用了未登记的云盘")
+			}
+		}
+		sort.Slice(clouds, func(i, j int) bool { return clouds[i].RepoID < clouds[j].RepoID })
 	}
 	// The immutable order also makes equivalent configurations easy to compare.
 	sort.Slice(copies, func(i, j int) bool { return copies[i].RepoID < copies[j].RepoID })
@@ -155,7 +187,10 @@ func (s *ProtectionBindingStore) CompareAndSwap(ctx context.Context, agent ident
 			return nil, err
 		}
 	}
-	binding := protection.ClientBinding{ClientID: file.ClientID, AgentRef: agent, Revision: revision + 1, ServerRevisionSeen: serverRevisionSeen, LocalCopies: copies}
+	if clouds == nil && index >= 0 {
+		clouds = file.Bindings[index].CloudCopies
+	}
+	binding := protection.ClientBinding{ClientID: file.ClientID, AgentRef: agent, Revision: revision + 1, ServerRevisionSeen: serverRevisionSeen, LocalCopies: copies, CloudCopies: clouds}
 	if index >= 0 {
 		file.Bindings[index] = binding
 	} else {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const demoKit = `checkup:
@@ -107,5 +108,158 @@ func TestKitFilesShipTwoSkills(t *testing.T) {
 		if !strings.Contains(string(f.Content), "name: "+f.Skill+"\n") || !strings.Contains(string(f.Content), "description: ") {
 			t.Errorf("%s: frontmatter name/description missing", f.Skill)
 		}
+	}
+}
+
+func TestKitOneClickWireAndRestart(t *testing.T) {
+	origSettle := nativeServiceSettle
+	nativeServiceSettle = 150 * time.Millisecond
+	t.Cleanup(func() { nativeServiceSettle = origSettle })
+
+	s, home := enrollWorld(t)
+	ctx := context.Background()
+	write := func(rel, body string, mode os.FileMode) {
+		p := filepath.Join(home, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("unit-state", "active\n", 0o644)
+	write(".local/bin/systemctl", `#!/bin/sh
+f="$HOME/unit-state"
+case "$2" in
+show)
+  st=$(cat "$f")
+  printf 'LoadState=loaded\nActiveState=%s\nUnitFileState=enabled\n' "$st"
+  ;;
+is-active) cat "$f" ;;
+stop) echo inactive > "$f"; echo stop >> "$HOME/svc-log" ;;
+reset-failed) ;;
+start)
+  echo start >> "$HOME/svc-log"
+  if [ -f "$HOME/unit-broken" ]; then
+    echo failed > "$f"
+  else
+    echo active > "$f"
+  fi
+  ;;
+esac
+`, 0o755)
+	write(".local/bin/demo", `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  echo "$@" >> "$HOME/mcp-log"
+  if [ -f "$HOME/mcp-fail" ]; then
+    echo "boom stderr" >&2
+    exit 7
+  fi
+  echo "wired ok"
+  exit 0
+fi
+echo demo 1.0
+`, 0o755)
+
+	kitProf := demoProfile + `service:
+  candidates: [ { scope: user, unit: demo.service } ]
+agent_kit:
+  skills_dir: { root: state, path: "skills/" }
+  mcp_add_argv: [demo, mcp, add, valise, --command, "${PORTER}", "--arg=${INSTANCE}"]
+  mcp_remove_argv: [demo, mcp, remove, valise, "--arg=${INSTANCE}"]
+`
+	if err := os.WriteFile(filepath.Join(s.Dirs.Data, "profiles", "demo.yaml"), []byte(kitProf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Guide exposes service unit metadata.
+	guide, err := s.KitGuide(ctx, "box", "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !guide.HasService || guide.ServiceUnit != "demo.service" {
+		t.Fatalf("expected HasService/ServiceUnit, got %+v", guide)
+	}
+
+	// Dry run reports planned command and unit without executing.
+	dry, err := s.KitInstallWithOptions(ctx, "box", "demo", KitInstallOptions{WireMCP: true, RestartService: true}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dry.MCPWire == nil || dry.MCPWire.Attempted || len(dry.MCPWire.Command) == 0 {
+		t.Fatalf("unexpected dry MCPWire: %+v", dry.MCPWire)
+	}
+	if dry.ServiceRestart == nil || dry.ServiceRestart.Attempted || dry.ServiceRestart.Unit != "demo.service" {
+		t.Fatalf("unexpected dry ServiceRestart: %+v", dry.ServiceRestart)
+	}
+	if _, err := os.Stat(filepath.Join(home, "mcp-log")); !os.IsNotExist(err) {
+		t.Fatal("dry run executed mcp command")
+	}
+
+	// Real install with WireMCP + RestartService succeeds and reports healthy.
+	plan, err := s.KitInstallWithOptions(ctx, "box", "demo", KitInstallOptions{WireMCP: true, RestartService: true}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Result == nil || len(plan.Result.Written) != 2 {
+		t.Fatalf("skills not installed: %+v", plan.Result)
+	}
+	if plan.MCPWire == nil || !plan.MCPWire.Attempted || !plan.MCPWire.OK || plan.MCPWire.ExitCode != 0 || !strings.Contains(plan.MCPWire.Output, "wired ok") {
+		t.Fatalf("unexpected MCPWire: %+v", plan.MCPWire)
+	}
+	if plan.ServiceRestart == nil || !plan.ServiceRestart.Attempted || !plan.ServiceRestart.OK || !plan.ServiceRestart.Healthy || plan.ServiceRestart.Unit != "demo.service" {
+		t.Fatalf("unexpected ServiceRestart: %+v", plan.ServiceRestart)
+	}
+	mcpLog, _ := os.ReadFile(filepath.Join(home, "mcp-log"))
+	if !strings.Contains(string(mcpLog), "mcp add valise") || !strings.Contains(string(mcpLog), "--arg=demo") {
+		t.Fatalf("unexpected mcp-log: %q", string(mcpLog))
+	}
+	svcLog, _ := os.ReadFile(filepath.Join(home, "svc-log"))
+	if !strings.Contains(string(svcLog), "stop\nstart") {
+		t.Fatalf("expected stop+start in svc-log: %q", string(svcLog))
+	}
+
+	// Failure in MCP command does not discard skills result; broken service keeps OK vs Healthy separate.
+	write("mcp-fail", "1", 0o644)
+	write("unit-broken", "1", 0o644)
+	failPlan, err := s.KitInstallWithOptions(ctx, "box", "demo", KitInstallOptions{WireMCP: true, RestartService: true}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failPlan.Result == nil {
+		t.Fatal("expected skills Result even when wire fails")
+	}
+	if failPlan.MCPWire == nil || !failPlan.MCPWire.Attempted || failPlan.MCPWire.OK || failPlan.MCPWire.ExitCode != 7 || !strings.Contains(failPlan.MCPWire.Output, "boom stderr") {
+		t.Fatalf("unexpected failed MCPWire: %+v", failPlan.MCPWire)
+	}
+	if failPlan.ServiceRestart == nil || !failPlan.ServiceRestart.Attempted || !failPlan.ServiceRestart.OK || failPlan.ServiceRestart.Healthy {
+		t.Fatalf("expected OK=true Healthy=false for broken service: %+v", failPlan.ServiceRestart)
+	}
+
+	// Uninstall with UnwireMCP + RestartService (after fixing flags).
+	_ = os.Remove(filepath.Join(home, "mcp-fail"))
+	_ = os.Remove(filepath.Join(home, "unit-broken"))
+	rm, err := s.KitUninstallWithOptions(ctx, "box", "demo", KitUninstallOptions{UnwireMCP: true, RestartService: true}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rm.MCPWire == nil || !rm.MCPWire.Attempted || !rm.MCPWire.OK {
+		t.Fatalf("unexpected unwire outcome: %+v", rm.MCPWire)
+	}
+	if rm.ServiceRestart == nil || !rm.ServiceRestart.Attempted || !rm.ServiceRestart.OK || !rm.ServiceRestart.Healthy {
+		t.Fatalf("unexpected uninstall restart outcome: %+v", rm.ServiceRestart)
+	}
+	mcpLog, _ = os.ReadFile(filepath.Join(home, "mcp-log"))
+	if !strings.Contains(string(mcpLog), "mcp remove valise --arg=demo") {
+		t.Fatalf("expected remove in mcp-log: %q", string(mcpLog))
+	}
+
+	// Refused command is never executed.
+	refused := s.kitRunStep(ctx, "box", nil, []string{"rm", "-rf", "/"}, "demo", false, "kit-test-")
+	if refused.Attempted || refused.OK || refused.Err == "" {
+		t.Fatalf("expected refused command to be rejected without running: %+v", refused)
 	}
 }

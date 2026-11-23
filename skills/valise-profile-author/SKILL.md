@@ -30,7 +30,8 @@ Valise stores all harness-specific rules in declarative YAML (`profiles/*.yaml` 
 ### Mode A (Default): Official Docs / Source Repository Only
 Use when no live installation is available (or user supplies docs/repo URL):
 1. Work through the 8-item checklist and source search keywords in [references/doc-research-checklist.md](references/doc-research-checklist.md).
-2. Populate only doc/source-proven core sections: `detect`, `roots`, `paths` (conservative `secrets` first), `exclusive_secrets`, `consistency.sqlite`, `provenance`, `body.paths` (`<dir>/**`), `service`, `entries`, `health`, `native_cli`, `agent_kit`, and `capabilities` (all `untested`).
+2. Populate all doc/source-proven core sections: `detect`, `roots`, `paths` (conservative `secrets` first), `exclusive_secrets`, `consistency.sqlite`, `provenance`, `body.paths` (`<dir>/**`), `service`, `entries`, `health`, `native_cli`, `native_session_cli`, safe starter `actions`, `agent_kit`, and `capabilities` (all `untested`).
+   - **DO NOT omit doc/source-verified interactive entries or starter actions**: Whenever official docs or source confirm localhost web UI/dashboard ports (`entries`), onboarding CLI (`native_cli`), daily interactive session CLI (`native_session_cli`), service install command (`service.install_argv`), or safe starter `actions` (`status` / `restart` / `doctor`), include them and mark `# verify: pending` / `verify: pending` so users immediately get usable interactive controls after importing instead of an empty card! (Do not put on-demand dashboard ports into always-on `health.checks`.)
 3. Annotate every key rule with `DOC: <page/url>` or `SRC: <file:symbol>` comments, and synthesize a `<sample.txt>` path list from docs/source for offline classification testing.
 
 ### Mode B (Optional): Read-Only Live Inspection
@@ -62,7 +63,7 @@ Always deliver all three items in your final response:
    - Complete list of executable commands extracted by `--commands` (noting permission tier and whether any basic red flags appeared);
    - Explicit list of all remaining `verify: pending` items and why each needs live verification.
 3. **Import & Next-Step Guidance**:
-   - **Desktop GUI (recommended)**: Import via 「设置 › 资料包 › 导入本地资料 (.yaml)…」 (previews executable commands before saving);
+   - **Desktop GUI (recommended)**: Import via 「设置 › 资料包 › 导入本地资料 (.yaml)…」 (previews capability diff when overriding a same-ID official profile and previews all executable commands before saving; same-ID local overrides are badged as local/unreviewed with one-click removal to restore official and one-click sync to enrolled instances);
    - **Manual local placement** (`os.UserConfigDir()`):
      - macOS: `~/Library/Application Support/valise/profiles/<id>.yaml`
      - Linux: `${XDG_CONFIG_HOME:-~/.config}/valise/profiles/<id>.yaml`

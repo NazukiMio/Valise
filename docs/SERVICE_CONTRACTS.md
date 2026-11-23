@@ -74,10 +74,10 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 | --- | --- | --- |
 | `ServerProtectionPlan` | `schema_version`, `agent_ref`, `revision`, `scope`, `schedule`, `period`, `server_copies`, `accepted_at` | 服务器独立执行需要的全部设置；新建 scope = preset/full；定时备份须明确启用 |
 | `scope` | `kind: preset`, `tier` | 只接受现有 tier；N2 新建默认 full，显式旧范围保留；custom 返回 unsupported_scope |
-| `schedule` | `enabled`, `daily_at`, `timezone`, `catch_up` | 首版新向导用每天 HH:mm + IANA 时区；旧非每日设置保留 legacy 表达，转换须显示差异。返回最近/下次触发及 linger 等实际条件；错过记录与可选补跑见 4.4 |
+| `schedule` | `enabled`, `cadence`, `every_hours`, `daily_at`, `weekdays`, `day_of_month`, `timezone`, `catch_up` | `protection-plan/3` 支持多频率日程：`hourly`（每 1/2/4/6/8/12 小时）、`daily`（每天 HH:mm）、`weekly`（周几多选 + HH:mm）、`monthly`（每月 1–28 日 + HH:mm），并向后兼容 `protection-plan/1..2`（缺省 `cadence` 视为 `daily`）。**明确允许 `schedule.enabled: false` 直接保存或创建保护计划，无需填写每日时间**。返回最近/下次触发及 linger 等实际条件；错过记录与可选补跑见 4.4 |
 | `period` | `unit`, `timezone` | 复用现有 week/month/quarter 与周期边界规则；与 schedule 时区分开，修改只影响下一个叶子。旧 `.vault.json` 是兼容投影，不再作为第二个可独立覆盖的权威 |
 | `server_copies[]` | `target_ref`, `enabled`, `minimum_interval` | 引用现有目标，不含密码；直传/证书/中转条件分别报告，配置开启不等于实际可更新 |
-| `ClientProtectionBinding` | `client_id`, `agent_ref`, `revision`, `server_revision_seen`, `local_copies[]` | 本客户端私有；每项引用 repo_id 和是否随成功备份/客户端重新打开时补齐；路径仍取已有 repos 配置。执行规则与设置入口见 ARCHITECTURE.md 7.4（2026-11-08） |
+| `ClientProtectionBinding` | `client_id`, `agent_ref`, `revision`, `server_revision_seen`, `local_copies[]`, `cloud_copies[]` | 本客户端私有；`local_copies[]` 按本机仓库（`repo_id`）、`cloud_copies[]` 按本机登录云盘（`cloud_id`）分别记录是否随成功备份或客户端重新打开时自动补齐；路径/配置仍取已有 repos 与本机 rclone 配置。执行规则与设置入口见 ARCHITECTURE.md 7.4（2026-11-08） |
 
 持久化到服务器 `protection/<instance_id>.json`（`valise-protection/1`）和客户端 `protection-bindings.json`（`valise-protection-bindings/1`）；均在现有 Valise 配置目录内，0600，原子替换，不放备份库或活动 roots。
 

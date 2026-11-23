@@ -34,35 +34,87 @@ type MissedRun struct {
 	RanAt       *time.Time `json:"ran_at,omitempty"`
 }
 
-// ScheduledTimes lists the daily schedule's trigger times in (from, to]. A
-// local time skipped by a DST change does not occur, as with systemd's
-// OnCalendar; a repeated local time occurs once, at its first instant.
+var goWeekday = map[string]time.Weekday{
+	"Mon": time.Monday,
+	"Tue": time.Tuesday,
+	"Wed": time.Wednesday,
+	"Thu": time.Thursday,
+	"Fri": time.Friday,
+	"Sat": time.Saturday,
+	"Sun": time.Sunday,
+}
+
+// ScheduledTimes lists the schedule's trigger times in (from, to]. A local
+// time skipped by a DST change does not occur, as with systemd's OnCalendar;
+// a repeated local time occurs once, at its first instant.
 func ScheduledTimes(s Schedule, from, to time.Time) ([]time.Time, error) {
-	if !dailyRE.MatchString(s.DailyAt) || !ValidTimezone(s.Timezone) {
+	yes := true
+	check := s
+	check.Enabled = &yes
+	if err := check.validate(); err != nil {
 		return nil, errors.New("schedule invalid")
 	}
 	loc, err := time.LoadLocation(s.Timezone)
 	if err != nil {
 		return nil, err
 	}
-	hh, _ := strconv.Atoi(s.DailyAt[:2])
-	mm, _ := strconv.Atoi(s.DailyAt[3:])
+	cadence := s.EffectiveCadence()
 	start := from.In(loc)
 	end := to.In(loc)
 	// Iterate calendar days at local noon, which no DST change crosses.
 	day := time.Date(start.Year(), start.Month(), start.Day(), 12, 0, 0, 0, loc).AddDate(0, 0, -1)
 	last := time.Date(end.Year(), end.Month(), end.Day(), 12, 0, 0, 0, loc).AddDate(0, 0, 1)
 	var out []time.Time
-	for ; !day.After(last); day = day.AddDate(0, 0, 1) {
-		t := time.Date(day.Year(), day.Month(), day.Day(), hh, mm, 0, 0, loc)
-		if t.Hour() != hh || t.Minute() != mm || t.Day() != day.Day() {
-			continue // nonexistent local time
+	if cadence == "hourly" {
+		mm := 0
+		if s.DailyAt != "" {
+			mm, _ = strconv.Atoi(s.DailyAt[3:])
 		}
-		if t.After(from) && !t.After(to) {
-			out = append(out, t.UTC())
+		for ; !day.After(last); day = day.AddDate(0, 0, 1) {
+			for hh := 0; hh < 24; hh += s.EveryHours {
+				t := time.Date(day.Year(), day.Month(), day.Day(), hh, mm, 0, 0, loc)
+				if t.Hour() != hh || t.Minute() != mm || t.Day() != day.Day() {
+					continue // nonexistent local time
+				}
+				if t.After(from) && !t.After(to) {
+					out = append(out, t.UTC())
+				}
+			}
+		}
+	} else {
+		hh, _ := strconv.Atoi(s.DailyAt[:2])
+		mm, _ := strconv.Atoi(s.DailyAt[3:])
+		var allowedDays map[time.Weekday]bool
+		if cadence == "weekly" {
+			allowedDays = make(map[time.Weekday]bool, len(s.Weekdays))
+			for _, w := range s.Weekdays {
+				allowedDays[goWeekday[w]] = true
+			}
+		}
+		for ; !day.After(last); day = day.AddDate(0, 0, 1) {
+			if cadence == "weekly" && !allowedDays[day.Weekday()] {
+				continue
+			}
+			if cadence == "monthly" && day.Day() != s.DayOfMonth {
+				continue
+			}
+			t := time.Date(day.Year(), day.Month(), day.Day(), hh, mm, 0, 0, loc)
+			if t.Hour() != hh || t.Minute() != mm || t.Day() != day.Day() {
+				continue // nonexistent local time
+			}
+			if t.After(from) && !t.After(to) {
+				out = append(out, t.UTC())
+			}
 		}
 	}
-	return out, nil
+	sort.Slice(out, func(i, j int) bool { return out[i].Before(out[j]) })
+	dedup := out[:0]
+	for _, t := range out {
+		if len(dedup) == 0 || !dedup[len(dedup)-1].Equal(t) {
+			dedup = append(dedup, t)
+		}
+	}
+	return dedup, nil
 }
 
 // ComputeMissed is pure: it reports, oldest first, the scheduled times of the
@@ -90,8 +142,13 @@ func ComputeMissed(plan ServerPlan, runs []BackupRun, now time.Time) ([]MissedRu
 	if w := now.Add(-MissedWindow); w.After(from) {
 		from = w
 	}
-	// Two extra days give the last reported slot its following slot.
-	slots, err := ScheduledTimes(plan.Schedule, from, now.Add(48*time.Hour))
+	// Extra horizon gives the last reported slot its following slot.
+	horizon := 48 * time.Hour
+	switch plan.Schedule.EffectiveCadence() {
+	case "weekly", "monthly":
+		horizon = 35 * 24 * time.Hour
+	}
+	slots, err := ScheduledTimes(plan.Schedule, from, now.Add(horizon))
 	if err != nil {
 		return out, clockDoubt
 	}

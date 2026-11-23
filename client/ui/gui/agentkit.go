@@ -17,10 +17,12 @@ import (
 // install and uninstall preview exact paths and confirm before owner actions.
 
 type agentKitOps struct {
-	status    func(context.Context, string, string) (*agentkit.KitStatusResult, error)
-	guide     func(context.Context, string, string) (*service.KitGuide, error)
-	install   func(context.Context, string, string, bool) (*service.KitPlan, error)
-	uninstall func(context.Context, string, string, bool, bool) (*service.KitRemovalPlan, error)
+	status               func(context.Context, string, string) (*agentkit.KitStatusResult, error)
+	guide                func(context.Context, string, string) (*service.KitGuide, error)
+	install              func(context.Context, string, string, bool) (*service.KitPlan, error)
+	installWithOptions   func(context.Context, string, string, service.KitInstallOptions, bool) (*service.KitPlan, error)
+	uninstall            func(context.Context, string, string, bool, bool) (*service.KitRemovalPlan, error)
+	uninstallWithOptions func(context.Context, string, string, service.KitUninstallOptions, bool) (*service.KitRemovalPlan, error)
 }
 
 type agentKitState struct {
@@ -35,16 +37,20 @@ type agentKitState struct {
 	installOpen    bool
 	uninstallOpen  bool
 	uninstallForce bool
+	wireMCP        bool
+	restartSvc     bool
 	lastInstall    *service.KitPlan
 	lastRemoval    *service.KitRemovalPlan
 }
 
 func (a *App) kitOps() agentKitOps {
 	ops := agentKitOps{
-		status:    a.svc.KitStatus,
-		guide:     a.svc.KitGuide,
-		install:   a.svc.KitInstall,
-		uninstall: a.svc.KitUninstall,
+		status:               a.svc.KitStatus,
+		guide:                a.svc.KitGuide,
+		install:              a.svc.KitInstall,
+		installWithOptions:   a.svc.KitInstallWithOptions,
+		uninstall:            a.svc.KitUninstall,
+		uninstallWithOptions: a.svc.KitUninstallWithOptions,
 	}
 	if h := a.agentKitHook; h != nil {
 		if h.status != nil {
@@ -56,8 +62,24 @@ func (a *App) kitOps() agentKitOps {
 		if h.install != nil {
 			ops.install = h.install
 		}
+		if h.installWithOptions != nil {
+			ops.installWithOptions = h.installWithOptions
+		} else if h.install != nil {
+			fn := h.install
+			ops.installWithOptions = func(ctx context.Context, host, inst string, _ service.KitInstallOptions, dryRun bool) (*service.KitPlan, error) {
+				return fn(ctx, host, inst, dryRun)
+			}
+		}
 		if h.uninstall != nil {
 			ops.uninstall = h.uninstall
+		}
+		if h.uninstallWithOptions != nil {
+			ops.uninstallWithOptions = h.uninstallWithOptions
+		} else if h.uninstall != nil {
+			fn := h.uninstall
+			ops.uninstallWithOptions = func(ctx context.Context, host, inst string, o service.KitUninstallOptions, dryRun bool) (*service.KitRemovalPlan, error) {
+				return fn(ctx, host, inst, o.Force, dryRun)
+			}
 		}
 	}
 	return ops
@@ -116,6 +138,10 @@ func (a *App) readAgentKit(server, instance string) {
 func (a *App) agentKitCard(c *ui.Context, row *agentRow) {
 	key := row.Server + "/" + row.Instance
 	st := a.kitOf(row.Server, row.Instance)
+	var ps *protState
+	if !row.Retired() {
+		ps = a.protOf(row)
+	}
 	card(ui.Column(c)).Gap(8).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			sectionTitle(ui.Text(c, T("kit.title"))).Grow(1)
@@ -127,6 +153,25 @@ func (a *App) agentKitCard(c *ui.Context, row *agentRow) {
 			})
 		})
 		muted(ui.Text(c, T("kit.what"))).FontSize(fsSub).Wrap()
+		if ps != nil && ps.view != nil && ps.view.ServerPlan == nil && !ps.read.busy {
+			subPanel(ui.Column(c)).Gap(8).Background(palette.AlertBg).Border(1, palette.AlertBorder).Children(func() {
+				ui.Text(c, T("kit.no_plan_warn")).FontSize(fsSub).TextColor(palette.Warn).Wrap()
+				if ps.changeJ.busy {
+					a.jobLine(c, &ps.changeJ)
+				} else {
+					if ps.changeJ.err != nil {
+						errorBox(c, ps.changeJ.err, a.fold("kit-plan-err-"+key))
+					}
+					if ps.ref != nil {
+						ui.Row(c).Children(func() {
+							ui.Button(c, T("kit.enable_default_plan")).OnClick(func() {
+								a.applyDesired(row, ps, defaultProtectionDesired(false))
+							})
+						})
+					}
+				}
+			})
+		}
 		if st.err != nil {
 			errorBox(c, st.err, a.fold("kit-err-"+key))
 		}
@@ -139,13 +184,7 @@ func (a *App) agentKitCard(c *ui.Context, row *agentRow) {
 		if st.actJ.err != nil {
 			errorBox(c, st.actJ.err, a.fold("kit-act-err-"+key))
 		}
-		if st.note != "" {
-			notice(c, "ok", st.note)
-		}
-		if st.lastInstall != nil && st.lastInstall.Result != nil && len(st.lastInstall.Result.LegacyKept) > 0 {
-			notice(c, "warn", T("kit.legacy_kept", "paths", strings.Join(st.lastInstall.Result.LegacyKept, ", ")))
-		}
-		a.kitRemovalNotice(c, st)
+		a.kitOutcomeSection(c, st)
 		if st.guide != nil {
 			ui.Collapsible(c, T("kit.guide_title"), a.fold("kit-guide-"+key), func() {
 				a.kitGuideSection(c, st)
@@ -188,38 +227,26 @@ func (a *App) kitStatusSection(c *ui.Context, st *agentKitState) {
 	if st.actJ.busy {
 		return
 	}
+	openInstall := func() {
+		st.wireMCP = st.guide != nil && len(st.guide.MCPCommand) > 0
+		st.restartSvc = st.guide != nil && st.guide.HasService
+		st.installOpen = true
+	}
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		if hasMissing {
-			ui.PrimaryButton(c, T("kit.install_open")).OnClick(func() { st.installOpen = true })
+			ui.PrimaryButton(c, T("kit.install_open")).OnClick(openInstall)
 		} else if hasModified {
-			ui.Button(c, T("kit.update_open")).OnClick(func() { st.installOpen = true })
+			ui.Button(c, T("kit.update_open")).OnClick(openInstall)
 		} else {
-			ui.Button(c, T("kit.reinstall_open")).OnClick(func() { st.installOpen = true })
+			ui.Button(c, T("kit.reinstall_open")).OnClick(openInstall)
 		}
 		if hasInstalled {
 			quietButton(c, T("kit.uninstall_open")).OnClick(func() {
 				st.uninstallForce = false
+				st.wireMCP = st.guide != nil && len(st.guide.MCPRemoveCmd) > 0
+				st.restartSvc = st.guide != nil && st.guide.HasService
 				st.uninstallOpen = true
 			})
-		}
-	})
-}
-
-func (a *App) kitRemovalNotice(c *ui.Context, st *agentKitState) {
-	rem := st.lastRemoval
-	if rem == nil || rem.Result == nil {
-		return
-	}
-	subPanel(ui.Column(c)).Gap(6).Children(func() {
-		ui.Text(c, T("kit.removed_summary", "removed", len(rem.Result.Removed), "kept", len(rem.Result.Kept))).FontSize(fsSub).Wrap()
-		if len(rem.MCPCommand) > 0 || rem.MCPSnippet {
-			muted(ui.Text(c, T("kit.unwire_note"))).FontSize(fsSub).Wrap()
-		}
-		if len(rem.MCPCommand) > 0 {
-			cmd := strings.Join(rem.MCPCommand, " ")
-			a.copyableCode(c, st, cmd, T("kit.unwire_note"), T("kit.copy_remove_cmd"))
-		} else if rem.MCPSnippet {
-			muted(ui.Text(c, T("kit.unwire_snippet"))).FontSize(fsSub).Wrap()
 		}
 	})
 }

@@ -50,6 +50,8 @@ func TestDebugLogDefaultsAndEnvOverride(t *testing.T) {
 		{"v0.1.0-DEV+abc", true},
 		{"test", true},
 		{"0.0.0-stage-Test", true},
+		{"v0.1.0-beta.1", true},
+		{"v0.1.0-RC2", true},
 		{"v1.0.0", false},
 		{"0.9.2", false},
 		{"", false},

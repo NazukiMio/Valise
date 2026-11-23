@@ -30,6 +30,7 @@ type restoreFlow struct {
 	j                                        job
 	progress                                 service.Progress
 	credential, draft, snapshotProfile, swap bool
+	allowVersionMismatch, skipService        bool
 	sourceChoice                             string
 	backupCurrent                            bool
 	verify                                   *revive.StageVerifyResult
@@ -128,7 +129,7 @@ func (a *App) prepareRestore(r *restoreFlow) {
 		r.j.err = valise.New("target_missing", T("restore.error.target"), T("restore.error.target_hint"))
 		return
 	}
-	req := service.RestoreRequest{Options: service.ReviveOptions{Target: r.target, From: r.origin, Mode: r.mode, SnapshotID: r.point.SnapshotRef.SnapshotID, InstanceID: r.id, Roots: roots, AllowDraft: r.draft, AllowSnapshotProfile: r.snapshotProfile}, Snapshot: r.point.SnapshotRef, Source: r.sources[r.source]}
+	req := service.RestoreRequest{Options: service.ReviveOptions{Target: r.target, From: r.origin, Mode: r.mode, SnapshotID: r.point.SnapshotRef.SnapshotID, InstanceID: r.id, Roots: roots, AllowDraft: r.draft, AllowSnapshotProfile: r.snapshotProfile, AllowVersionMismatch: r.allowVersionMismatch, SkipService: r.skipService}, Snapshot: r.point.SnapshotRef, Source: r.sources[r.source]}
 	if r.plan != nil {
 		r.plan.Revive.Close()
 		r.plan = nil

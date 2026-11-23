@@ -60,11 +60,28 @@ relocation: null
 
 service:
   candidates: []
+  # Include doc/source-verified install_argv / repair_action marked verify: pending when applicable:
+  # install_argv: [example-harness, gateway, install]   # verify: pending
+  # repair_action: restart
 
+# Do NOT omit doc/source-verified localhost web UI ports (entries), onboarding/session CLI,
+# or safe starter actions (status/restart/doctor) — write them in with verify: pending so
+# users get usable interactive entries immediately after importing.
 entries: []
 
 health:
   grace_seconds: 15
   checks: []
+
+# native_cli: [example-harness, setup]           # verify: pending
+# native_session_cli: [example-harness, chat]    # verify: pending
+
+# actions:
+#   - id: status
+#     name: 查看服务状态
+#     explain: "查看后台服务运行状态"
+#     risk: read
+#     argv: [example-harness, status]            # verify: pending
+#     output: text
 
 login: []

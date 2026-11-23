@@ -38,12 +38,11 @@
 4. **程序本体与来源（`provenance` / `body`）**
    - `provenance` 声明安装方式（`npm_global` / `git` / `uv_tool` / `pipx` / `binary`）。
    - 若程序本体目录嵌套在状态目录内部（例如 git 检出目录或私有运行时），必须将其声明在 `body.paths` 中，避免打进常规备份并确保恢复交换时正确搬动。
-5. **运行形态、管理页与健康检查（`service` / `entries` / `health` / `native_cli`）**
-   - 有 systemd 用户服务就填 `service.candidates`；前台运行留空 `[]`。
-   - 有本地 Web 管理页就填 `entries`（host 只能是 `127.0.0.1` / `localhost`）；按需配置只读 `health.checks`。
-   - 若 harness 自带交互式初始化或会话终端，可配置 `native_cli` / `native_session_cli`（对应界面里的「命令行与向导」）。
+5. **运行形态、管理页、交互入口与入门管理动作（`service` / `entries` / `health` / `native_cli` / `native_session_cli` / `actions`）**
+   - 有 systemd 用户服务就填 `service.candidates`，并在官方文档/源码有自带安装命令时一并写出 `service.install_argv`（未实机核实标 `# verify: pending`）；前台运行留空 `[]`。
+   - **不要遗漏官方文档/源码已确认的交互入口**：只要官方文档或源码明确存在本地 Web 管理页/Dashboard 端口（`entries`，host 只能是 `127.0.0.1` / `localhost`）、交互式初始化向导（`native_cli`）、日常交互会话命令（`native_session_cli`）或安全的入门管理动作（`actions`，如 `status`、`restart`、`doctor`），就应直接写入并标 `# verify: pending` / `verify: pending`，让用户导入后立刻拥有可用的管理入口与命令行向导，而不是一张空白卡片。注意：按需启动的 Dashboard 端口不要加进常驻 `health.checks`。
 6. **Agent 保护技能（`agent_kit`）**
-   - 声明 `skills_dir` 以及仅用于展示给用户的 `mcp_add_argv` / `mcp_remove_argv` / `mcp_config_snippet`（Valise 不会自动改写 harness 配置）。
+   - 声明 `skills_dir` 以及 `mcp_add_argv` / `mcp_remove_argv` / `mcp_config_snippet` / `mcp_config_doc`（当提供 `mcp_add_argv` / `mcp_remove_argv` 时，Valise 会在安装/卸载技能前预览命令并默认经用户确认后在独立管理连接执行，同时在折叠区保留手动复制兜底；两项均纳入 `--commands` 命令审计，层级为 `admin`）。
    - **不要**在新 Profile 中添加已弃用的 `checkup` 或 `handoff` 块（记忆治理与交接已延后至 ValiseMemo / v0.2+）。
 
 ### 五大高频踩坑
@@ -100,9 +99,9 @@ valise profiles lint --strict --commands --classify <paths.txt> <your.yaml>
 
 ---
 
-## 5. 本机导入与实机只读验证
+## 5. 本机导入、同 ID 覆写与实机只读验证
 
-离线校验通过后，把 Profile 作为**本机资料**导入客户端（界面始终标为「本地，未经审核」，若与官方资料包同 `id` 会被拒绝以防覆盖）。
+离线校验通过后，把 Profile 作为**本机资料**导入客户端（界面始终标为「本地，未经审核」）。**允许本地文件显式覆写官方资料包中同 `id` 的 Profile**（方便调试新版本或抢先适配上游变更）：界面会醒目标注为「本地覆写，未经审核」，展示与官方版本的能力差异（capability diff），并支持一键移除本地覆写以立即恢复官方资料包版本，以及一键同步到已接入的对应实例。
 
 ### 本机资料存放路径（与 `os.UserConfigDir()` 对齐）
 
@@ -111,12 +110,12 @@ valise profiles lint --strict --commands --classify <paths.txt> <your.yaml>
 
 ### 两种导入方式
 
-1. **桌面端一键导入（推荐）**：打开「设置 › 资料包 › 导入本地资料 (.yaml)…」，选择你的 `.yaml` 文件；Valise 会先完成校验并展示全部会被执行的命令清单，确认后自动写入上述目录。
+1. **桌面端一键导入（推荐）**：打开「设置 › 资料包 › 导入本地资料 (.yaml)…」，选择你的 `.yaml` 文件；Valise 会先完成校验、展示与官方版本的能力差异（若同 `id` 覆写）及全部会被执行的命令清单，确认后自动写入上述目录，并在需要时引导一键同步到已接入实例。
 2. **手动放入 + CLI 核对**：将文件复制到上述路径并确保文件名与 `id` 一致，然后运行：
    ```bash
    valise profiles status
    ```
-   确认该 profile 已在本地列表中正常加载且无拒绝报错。
+   确认该 profile 已在本地列表中正常加载（同 `id` 时显示本地覆写标记）且无拒绝报错。
 
 ### 只读探测迭代
 

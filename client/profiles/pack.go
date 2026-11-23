@@ -409,3 +409,11 @@ func WriteLocalFile(dataDir, id string, raw []byte) (string, error) {
 	}
 	return dst, nil
 }
+
+// RemoveLocalFile removes <id>.yaml from the local profile directory.
+func RemoveLocalFile(dataDir, id string) error {
+	if !localIDRe.MatchString(id) {
+		return fmt.Errorf("profile id 无效：%q", id)
+	}
+	return os.Remove(filepath.Join(LocalDir(dataDir), id+".yaml"))
+}

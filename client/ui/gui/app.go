@@ -152,10 +152,12 @@ func (a *App) loadHarness() {
 }
 
 // reloadProfiles refreshes in-memory profile metadata and clears cached server
-// scan/cloud add views so newly installed profile versions appear without restart.
+// scan/cloud add/native/kit views so newly installed profile versions appear without restart.
 func (a *App) reloadProfiles() {
 	a.loadHarness()
 	a.scans = map[string]*serverScan{}
+	a.natives = map[string]*nativeState{}
+	a.agentKits = map[string]*agentKitState{}
 	if a.cloudAdding == nil || a.cloudAdding.login == nil {
 		a.closeAdding()
 	}

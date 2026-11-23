@@ -55,6 +55,8 @@ func (c *cli) revive(ctx context.Context, args []string) error {
 	fs.Var(mapFlag(o.Roots), "root", "")
 	fs.BoolVar(&o.AllowDraft, "allow-draft-profile", false, "")
 	fs.BoolVar(&o.AllowSnapshotProfile, "allow-snapshot-profile", false, "")
+	fs.BoolVar(&o.AllowVersionMismatch, "allow-version-mismatch", false, "")
+	fs.BoolVar(&o.SkipService, "data-only", false, "")
 	dry := fs.Bool("dry-run", false, "")
 	yes := fs.Bool("yes", false, "")
 	backupFirst := fs.Bool("backup-first", false, "")
@@ -200,6 +202,15 @@ func printPlan(c *cli, rp *service.RevivePlan) {
 	}
 	if p.Body.Action != revive.BodyMoveDirs && len(p.Body.Dirs) > 0 {
 		fmt.Fprintf(w, "    身体装在状态目录里：交换时把目标原有的 %s 原样搬进新目录，失败时搬回\n", strings.Join(p.Body.Dirs, "、"))
+	}
+	if rp.BodySummary != "" {
+		fmt.Fprintf(w, "    版本对照：%s\n", rp.BodySummary)
+	}
+	if d := rp.Dossier; d != nil {
+		fmt.Fprintf(w, "  档案：%d 项本地覆盖，%d 个本地 SQLite，%d 个根目录之外的引用\n", d.LocalOverrides, len(d.LocalSQLite), len(d.ExternalRefs))
+	}
+	if rp.DataOnly {
+		fmt.Fprintln(w, "  仅迁移数据与档案：不安装、不启动服务")
 	}
 	if p.Unit != "" {
 		fmt.Fprintf(w, "  服务：%s", p.Unit)

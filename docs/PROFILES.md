@@ -7,7 +7,7 @@ Profile 是 Valise 了解某种 harness **通用规则的唯一途径**：发现
 ## 1. 来源与信任
 
 - 官方 profile 存放在仓库的 `profiles/` 目录下，经过 PR 审核后打成**资料包**单独签名发布（1.1 节）。客户端本身不内置任何 profile。
-- 用户可以在客户端数据目录下的 `profiles/` 放置本地 profile（与 `os.UserConfigDir()` 对齐：macOS 为 `~/Library/Application Support/valise/profiles/`，Linux 为 `${XDG_CONFIG_HOME:-~/.config}/valise/profiles/`）。这类 profile 在 UI 中始终标记为"本地，未经审核"。本地 profile 与资料包中的 profile 同 id 时，本地的被拒绝并报告。
+- 用户可以在客户端数据目录下的 `profiles/` 放置本地 profile（与 `os.UserConfigDir()` 对齐：macOS 为 `~/Library/Application Support/valise/profiles/`，Linux 为 `${XDG_CONFIG_HOME:-~/.config}/valise/profiles/`）。这类 profile 在 UI 中始终标记为"本地，未经审核"。本地 profile 与官方资料包中的 profile 同 `id` 时，**允许本地文件显式覆写同 `id` 的官方 profile**（便于调试新版本或抢先适配上游变更）；界面始终醒目标注为"本地覆写，未经审核"，展示与官方版本的能力差异，并提供一键移除本地覆写以立即恢复官方资料包版本。
 
 ### 1.1 资料包（2026-10-31 用户决定）
 
@@ -297,10 +297,10 @@ handoff:                         # deprecated (可选兼容)
 
 agent_kit:
   skills_dir: { root: workspace, path: "skills/" }
-  mcp_config_doc: https://…      # 如何为该 harness 配置 MCP Server（Valise 只展示，不自动修改配置）
-  mcp_add_argv: [example, mcp, add, valise, --command, "${PORTER}", --arg=mcp, --arg=--instance, "--arg=${INSTANCE}"]   # 可选：只打印给用户，Valise 不执行
-  mcp_config_snippet: null       # 可选：harness 没有添加命令时，打印给用户粘贴的配置片段（可用 ${PORTER}、${INSTANCE}）
-  mcp_remove_argv: [example, mcp, remove, valise]   # 可选：kit uninstall 时打印的撤除命令，Valise 不执行（可用 ${INSTANCE}）
+  mcp_config_doc: https://…      # 如何为该 harness 配置 MCP Server（参考文档链接）
+  mcp_add_argv: [example, mcp, add, valise, --command, "${PORTER}", --arg=mcp, --arg=--instance, "--arg=${INSTANCE}"]   # 可选：kit install 预览并默认经用户确认后在独立管理连接执行，同时保留在折叠区手动复制
+  mcp_config_snippet: null       # 可选：harness 没有添加命令时，展示给用户粘贴的配置片段（可用 ${PORTER}、${INSTANCE}）
+  mcp_remove_argv: [example, mcp, remove, valise]   # 可选：kit uninstall 预览并默认经用户确认后在独立管理连接执行，同时保留在折叠区手动复制（可用 ${INSTANCE}）
 ```
 
 变量说明：`${HOME}` 表示用户主目录；`${STATE_DIR}` 表示解析后的状态目录；`${env:NAME}` 表示环境变量，变量未设置时这一项视为不存在；`${OUT}` 只在 `export_argv` 中使用。
@@ -354,7 +354,7 @@ agent_kit:
 | `missing_capabilities` | 顶层 profile（非子 profile）未填写 `capabilities` 块 | 按 1.2 节如实填写各能力的 `tested` / `partial` / `untested` 状态 |
 | `missing_secrets` | 顶层 profile 的 `paths` 中没有任何 `category: secrets` 规则 | 核对官方文档或源码补充凭据白名单，确实无凭据文件时再说明原因 |
 
-**命令审计（`--commands`）**：`profilelint --commands` 与本地导入预览统一调用核心提取器，完整覆盖全部 14 类会在服务器端执行或触发安装的入口（共 16 个字段）：
+**命令审计（`--commands`）**：`profilelint --commands` 与本地导入预览统一调用核心提取器，完整覆盖全部 15 类会在服务器端执行或触发安装的入口（共 18 个字段）：
 1. 版本探测：`detect.version_argv`
 2. 根目录发现：`roots[].discover_argv`
 3. 身体重建：`body.bootstrap_argv`
@@ -369,8 +369,9 @@ agent_kit:
 12. 审批状态检查：`approval_check.argv`
 13. 读取 Agent 名字：`identity.argv`
 14. 官方安装与依赖：`install.requires[].install[].argv`、`install.steps[]`（`argv`、`npm_global`、`script`、`path_add`）
+15. Agent 保护技能 MCP 注册与撤除：`agent_kit.mcp_add_argv`、`agent_kit.mcp_remove_argv`（`admin` 层级，用户确认后经独立管理连接执行）
 
-审计结果同时标注权限层级（`daily` / `owner` / `admin`）与基础疑点检查结论（写「未发现基础疑点」或具体疑点，绝不写「安全」）。仅打印给用户参考、Valise 永不执行的 `agent_kit.mcp_add_argv` / `mcp_remove_argv` 不混入可执行命令清单。
+审计结果同时标注权限层级（`daily` / `owner` / `admin`）与基础疑点检查结论（写「未发现基础疑点」或具体疑点，绝不写「安全」）。
 
 ### 3.3 B03 配置事务（2026-11-05 用户确认）
 

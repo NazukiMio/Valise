@@ -9,6 +9,8 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"valise/core/agentkit"
+	"valise/core/identity"
+	"valise/core/protection"
 	"valise/ui/service"
 )
 
@@ -101,7 +103,9 @@ func TestAgentKitCardAndModals(t *testing.T) {
 
 	// Preview modal shows exact paths and backup notice without calling install RPC.
 	click(t, tt, T("kit.install_open"))
-	hasAll(t, tt.Texts(), T("kit.install_title"), skills[0].Path, T("kit.install_backup_warn"), T("need.valise"))
+	hasAll(t, tt.Texts(), T("kit.install_title"), skills[0].Path, T("kit.install_backup_warn"), T("kit.wire_mcp_ask"), T("need.admin"))
+	click(t, tt, T("kit.wire_mcp_ask"))
+	hasAll(t, tt.Texts(), T("need.valise"))
 	if len(installDry) != 0 {
 		t.Fatalf("preview triggered install RPC: %v", installDry)
 	}
@@ -159,4 +163,86 @@ func TestAgentKitCardAndModals(t *testing.T) {
 	if len(uninstallCalls) != 2 || !uninstallCalls[1].force || uninstallCalls[1].dry {
 		t.Fatalf("uninstallCalls after force = %+v", uninstallCalls)
 	}
+}
+
+func TestAgentKitOneClickMCPAndNoPlanBanner(t *testing.T) {
+	a, _ := world(t)
+	ref := identity.AgentRef{ServerUID: "u", InstallID: "openclaw", InstanceID: "xiaoman", Generation: "g"}
+	a.agents.value.Items[0].AgentRef = &ref
+	a.prots["home/xiaoman"] = &protState{ref: &ref, view: &protection.View{Mode: "none"}}
+	tt := ui.NewTester(a.View, 1180, 1800)
+
+	var gotOpts []service.KitInstallOptions
+	var gotUnOpts []service.KitUninstallOptions
+	skillState := agentkit.SkillMissing
+	a.agentKitHook = &agentKitOps{
+		status: func(context.Context, string, string) (*agentkit.KitStatusResult, error) {
+			return &agentkit.KitStatusResult{
+				Dir:    "/home/me/.openclaw/skills",
+				Skills: []agentkit.SkillState{{Skill: "valise-onboard", Path: "/home/me/.openclaw/skills/valise-onboard/SKILL.md", State: skillState}},
+			}, nil
+		},
+		guide: func(context.Context, string, string) (*service.KitGuide, error) {
+			return &service.KitGuide{
+				HasSkillsDir: true,
+				MCPCommand:   []string{"openclaw", "mcp", "add", "valise"},
+				MCPRemoveCmd: []string{"openclaw", "mcp", "remove", "valise"},
+				HasService:   true,
+				ServiceUnit:  "openclaw-gateway.service",
+			}, nil
+		},
+		installWithOptions: func(_ context.Context, _, _ string, o service.KitInstallOptions, _ bool) (*service.KitPlan, error) {
+			gotOpts = append(gotOpts, o)
+			skillState = agentkit.SkillCurrent
+			return &service.KitPlan{
+				Result:         &agentkit.KitInstallResult{Written: []string{"SKILL.md"}},
+				MCPWire:        &service.KitStepOutcome{Attempted: true, OK: true, ExitCode: 0, Output: "added valise"},
+				ServiceRestart: &service.KitServiceRestartOutcome{Attempted: true, OK: true, Healthy: false, Unit: "openclaw-gateway.service", ExitCode: 0},
+			}, nil
+		},
+		uninstallWithOptions: func(_ context.Context, _, _ string, o service.KitUninstallOptions, _ bool) (*service.KitRemovalPlan, error) {
+			gotUnOpts = append(gotUnOpts, o)
+			skillState = agentkit.SkillMissing
+			return &service.KitRemovalPlan{
+				Result:         &agentkit.KitUninstallResult{Removed: []string{"SKILL.md"}},
+				MCPCommand:     []string{"openclaw", "mcp", "remove", "valise"},
+				MCPWire:        &service.KitStepOutcome{Attempted: true, OK: false, ExitCode: 2, Err: "命令退出码 2"},
+				ServiceRestart: &service.KitServiceRestartOutcome{Attempted: true, OK: true, Healthy: true, Unit: "openclaw-gateway.service", ExitCode: 0},
+			}, nil
+		},
+	}
+
+	a.agentTab = tabManage
+	a.router.Push("/agents/home/xiaoman")
+	tt.Advance(time.Second)
+
+	hasAll(t, tt.Texts(), T("kit.no_plan_warn"), T("kit.enable_default_plan"))
+
+	click(t, tt, T("kit.install_open"))
+	hasAll(t, tt.Texts(), T("kit.wire_mcp_ask"), "openclaw mcp add valise", T("kit.restart_svc_ask", "unit", "openclaw-gateway.service"), T("need.admin"))
+	click(t, tt, T("kit.install_confirm"))
+	if len(gotOpts) != 1 || !gotOpts[0].WireMCP || !gotOpts[0].RestartService {
+		t.Fatalf("install options = %+v", gotOpts)
+	}
+	hasAll(t, tt.Texts(),
+		T("kit.outcome.mcp_ok", "code", 0),
+		"added valise",
+		T("kit.outcome.restart_ok", "unit", "openclaw-gateway.service", "code", 0),
+		T("kit.outcome.health_unverified", "unit", "openclaw-gateway.service"),
+	)
+
+	*a.fold("kit-guide-home/xiaoman") = false
+	click(t, tt, T("kit.uninstall_open"))
+	hasAll(t, tt.Texts(), T("kit.unwire_mcp_ask"), "openclaw mcp remove valise", T("kit.restart_svc_ask", "unit", "openclaw-gateway.service"))
+	click(t, tt, T("kit.uninstall_confirm"))
+	if len(gotUnOpts) != 1 || !gotUnOpts[0].UnwireMCP || !gotUnOpts[0].RestartService {
+		t.Fatalf("uninstall options = %+v", gotUnOpts)
+	}
+	if !*a.fold("kit-guide-home/xiaoman") {
+		t.Fatal("expected guide to auto-expand when MCP unwire failed")
+	}
+	hasAll(t, tt.Texts(),
+		T("kit.outcome.mcp_fail", "code", 2, "err", "命令退出码 2"),
+		T("kit.outcome.health_ok", "unit", "openclaw-gateway.service"),
+	)
 }

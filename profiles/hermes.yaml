@@ -1,26 +1,24 @@
-# Hermes Agent. Verified on ubuntu-vm-x86 (x86_64, no sudo) with Hermes Agent
-# v0.22.5 (2026.9.24), commit bf0203a794, installed the official way and
-# running as a systemd user service.
-# Sources: the docs shipped in that exact checkout (hermes-agent/website/docs):
-# user-guide/configuration.md (CFG), user-guide/profile-distributions.md
-# (DIST: list of credential stores), developer-guide/session-storage.md (SS),
-# user-guide/security.md (SEC), plus observation of the install (OBS).
+# Hermes Agent. Documentation and source baseline: official v0.23.3.
+# OBS: v0.22.5 (2026.9.24), commit bf0203a794, Ubuntu x86_64 (no sudo), official
+# source install and systemd user gateway. No v0.23.3 runtime validation yet.
 # NOTE: the body (hermes-agent/, tools/, installs/) lives inside the state
-# directory and is never sealed; rebuilding it is M4 work.
+# directory and is never sealed; rebuilding it requires verified bootstrap_argv
+# or keeping the target's existing body during decoupled migration.
 schema: valise-profile/1
 id: hermes
 display_name: Hermes Agent
-profile_version: 12
+profile_version: 13
 status: draft
 harness_versions_tested: ["0.22.5"]
 docs: https://hermes-agent.nousresearch.com
 capabilities:
-  install: { status: untested, note: "尚无纯用户级官方安装方案" }
-  manage: { status: partial, versions: ["0.22.5"], env: "Ubuntu x86_64（无 sudo）", note: "已核实状态目录、多实例与 systemd 用户服务；无本地 Web 入口" }
-  backup: { status: partial, versions: ["0.22.5"], env: "Ubuntu x86_64", note: "SQLite（state.db/kanban.db/cron）与分类规则已登记，部分路径待核实" }
-  restore: { status: untested, note: "身体重建（bootstrap_argv）与完整恢复尚未在此版本演练" }
+  install: { status: untested, note: "v0.23.3 安装与重建待靶机验证" }
+  manage: { status: partial, versions: ["0.22.5"], env: "Ubuntu x86_64（无 sudo）", note: "已观察默认目录、命名实例与 systemd 用户服务；v0.23.3 服务归属、本地 Web 入口与交互命令待实机验证" }
+  backup: { status: partial, versions: ["0.22.5"], env: "Ubuntu x86_64", note: "旧环境已观察 SQLite 路径；v0.23.3 凭据白名单与命名实例隔离待靶机验证" }
+  restore: { status: untested, note: "待演练程序重建、凭据恢复以及网关静止后的恢复" }
   login: { status: untested }
-  kit: { status: partial, versions: ["0.22.5"], env: "Ubuntu x86_64", note: "skills 目录与 mcp add/remove 命令已登记；MCP 端到端待靶机验收" }
+  kit: { status: partial, versions: ["0.22.5"], env: "Ubuntu x86_64", note: "已观察 skills 目录与 MCP 子命令；v0.23.3 MCP 端到端待验证" }
+
 # OBS (2026-10-31, commit bf0203a794, MIT): HERMES_CADUCEUS in
 # hermes_cli/banner.py, markup color #CD7F32 (Rich tags removed).
 display:
@@ -32,17 +30,16 @@ display:
 
 detect:
   binaries: [hermes]
+  bin_dirs: ["${HOME}/.local/bin"]                                   # SRC: official installer places hermes in ~/.local/bin
   version_argv: [hermes, --version]                                  # OBS: "Hermes Agent v0.22.5 (2026.9.24) · stable · local bf0203a794a0"
-  state_dir_candidates: ["${env:HERMES_HOME}", "${HOME}/.hermes"]    # SS, OBS (the service unit sets HERMES_HOME)
-  markers_any: [config.yaml]                                         # CFG
-  # Each bot is a profile, a whole Hermes home of its own under
-  # <root>/profiles/<name> (OBS v0.22.5 ubuntu-vm: `hermes profile create`
-  # made config.yaml, .env, SOUL.md, memories, sessions, state.db, skills
-  # there). Bots inside the default home are left out of its pods. All
-  # bots run in the one gateway of the default profile (OBS: `hermes
-  # gateway list` shows one PID for default and the bot; `hermes -p <bot>
-  # gateway status` says "running via the default-profile multiplexer";
-  # installing a gateway for a bot is refused), so they share its unit.
+  # SRC: hermes_constants.py:get_process_hermes_home, named_profile_has_identity (v0.23.3).
+  state_dir_candidates: ["${env:HERMES_HOME}", "${HOME}/.hermes"]
+  markers_any: [config.yaml, .env, SOUL.md, profile.yaml, auth.json, state.db]
+  # OBS (v0.22.5 Ubuntu): named profiles under <root>/profiles/<name> ran in the
+  # default profile's single gateway multiplexer (shared unit).
+  # DOC: https://github.com/NousResearch/hermes-agent/blob/v0.23.3/website/docs/user-guide/multi-profile-gateways.md
+  # v0.23.3 resolves multi-profile gateway ownership at runtime; keep service: shared
+  # from v0.22.5 OBS until v0.23.3 Ubuntu live validation confirms per-profile units. verify: pending
   named:
     - { glob: "${env:HERMES_HOME}/profiles/*", env: { HERMES_HOME: "${STATE_DIR}" }, service: shared }
     - { glob: "${HOME}/.hermes/profiles/*", env: { HERMES_HOME: "${STATE_DIR}" }, service: shared }
@@ -50,10 +47,30 @@ detect:
 roots: []
 
 paths:
-  # Credentials (CFG, DIST)
+  # DOC: https://github.com/NousResearch/hermes-agent/blob/v0.23.3/website/docs/user-guide/profile-distributions.md
+  # DOC: https://github.com/NousResearch/hermes-agent/blob/v0.23.3/website/docs/user-guide/profiles.md
   - { root: state, glob: ".env", category: secrets }
   - { root: state, glob: "auth.json", category: secrets }
-  - { root: state, glob: "config.yaml", category: secrets, note: "配置 schema 中有 api_key 字段，可能内联密钥，整个文件按凭据处理" }   # CFG
+  # SRC: hermes_cli/profiles.py:PROFILE_CREDENTIAL_PATHS, _STORE_COPY_RE (v0.23.3).
+  - { root: state, glob: ".env.bak*", category: secrets }
+  - { root: state, glob: "auth.json.*", category: secrets }
+  - { root: state, glob: "config.yaml.bak-*", category: secrets }
+  - { root: state, glob: "config.yaml.bak.*", category: secrets }
+  - { root: state, glob: "config.yaml.corrupt.*", category: secrets }
+  - { root: state, glob: "backups/**", category: secrets }
+  - { root: state, glob: "state-snapshots/**", category: secrets }
+  - { root: state, glob: ".anthropic_oauth.json", category: secrets }
+  - { root: state, glob: "auth/google_oauth.json", category: secrets }
+  - { root: state, glob: "google_token.json", category: secrets }
+  - { root: state, glob: "google_oauth_pending.json", category: secrets }
+  - { root: state, glob: "google_client_secret.json", category: secrets }
+  - { root: state, glob: "google_chat_user_token.json", category: secrets }
+  - { root: state, glob: "google_chat_user_client_secret.json", category: secrets }
+  - { root: state, glob: "google_chat_user_oauth_pending.json", category: secrets }
+  - { root: state, glob: "slack_tokens.json", category: secrets }
+  - { root: state, glob: "webhook_subscriptions.json", category: secrets }
+  - { root: state, glob: "feishu_comment_pairing.json", category: secrets }
+  - { root: state, glob: "config.yaml", category: secrets, note: "可内联模型、MCP 与消息平台凭据" }
   - { root: state, glob: ".op.env", category: secrets }
   - { root: state, glob: "npmrc", category: secrets }
   - { root: state, glob: "honcho.json", category: secrets }
@@ -61,62 +78,115 @@ paths:
   - { root: state, glob: "teams_pipeline_store.json", category: secrets }
   - { root: state, glob: "mcp-tokens/**", category: secrets }
   - { root: state, glob: "vault/**", category: secrets }
+  - { root: state, glob: "vault.key", category: secrets }
+  - { root: state, glob: "vault.json.enc", category: secrets }
   - { root: state, glob: "proxy/**", category: secrets }
-  - { root: state, glob: "platforms/**", category: secrets, note: "SEC：平台会话与加密密钥（例如 Matrix）" }
-  - { root: state, glob: "shared/nous_auth.json", category: secrets, verify: pending }   # OBS: name only, undocumented
   - { root: state, glob: ".envrc", category: secrets }
-  - { root: state, glob: "skills/**/.envrc", category: secrets }   # DIST: ".envrc at the root or nested under a skill"
-  # Soul (CFG)
+  - { root: state, glob: "skills/**/.envrc", category: secrets }
+  # SRC: hermes_cli/home_data_layout.py:CREDENTIAL_STORE_DIRS, HERMES_PROTECTED_SUBPATHS (v0.23.3).
+  - { root: state, glob: "platforms/**", category: secrets, note: "平台会话、配对和加密状态" }
+  - { root: state, glob: "pairing/**", category: secrets }
+  - { root: state, glob: "whatsapp/session/**", category: secrets }
+  - { root: state, glob: "matrix/store/**", category: secrets }
+  - { root: state, glob: "google_chat_user_tokens/**", category: secrets }
+  - { root: state, glob: "weixin/accounts/**", category: secrets }
+  - { root: state, glob: "webapp/**", category: secrets }
+  - { root: state, glob: "shared/nous_auth.json", category: secrets, verify: pending } # OBS: filename only
+  # SRC: hermes_cli/backup.py:_EXCLUDED_DIRS, _EXCLUDED_BACKUP_ROOT_DIRS (v0.23.3).
+  # Browser stores may contain cookies or saved logins; classify as secrets.
+  - { root: state, glob: "browser-profile/**", category: secrets }
+  - { root: state, glob: "browser-profiles/**", category: secrets }
+  - { root: state, glob: "cache/browser-profiles/**", category: secrets }
+  - { root: state, glob: "browser_auth/**", category: secrets }
+  - { root: state, glob: "bot-desktop/**", category: secrets }
+  - { root: state, glob: "browser_profiles/**", category: secrets }
+  - { root: state, glob: "chrome-debug/**", category: secrets }
+  # SRC: hermes_cli/home_data_layout.py:SECRET_CACHE_STORES (v0.23.3).
+  - { root: state, glob: "bws_cache.json", category: secrets }
+  - { root: state, glob: "bws_cache.enc.json", category: secrets }
+  - { root: state, glob: "op_cache.json", category: secrets }
+  - { root: state, glob: "photon-sidecar.json", category: secrets }
+  - { root: state, glob: "cache/bws_cache.json", category: secrets }
+  - { root: state, glob: "cache/bws_cache.enc.json", category: secrets }
+  - { root: state, glob: "cache/op_cache.json", category: secrets }
+  - { root: state, glob: "runtime/photon-sidecar.json", category: secrets }
+  # OBS: v0.22.5 request dumps may include Authorization headers.
+  - { root: state, glob: "sessions/request_dump_*.json", category: secrets, verify: pending }
+  # Soul & core state
   - { root: state, glob: "SOUL.md", category: identity }
   - { root: state, glob: "AGENTS.md", category: identity }
   - { root: state, glob: "memories/USER.md", category: identity }
   - { root: state, glob: "memories/**", category: memory }
   - { root: state, glob: "skills/**", category: skills }
-  - { root: state, glob: "plugins/**", category: skills, verify: pending, note: "用户插件代码，无法按来源重建" }
+  - { root: state, glob: "plugins/**", category: skills, verify: pending, note: "用户插件代码，恢复待验证" }
+  - { root: state, glob: "profile.yaml", category: config }          # SRC: hermes_cli/profiles.py:read_profile_meta
   - { root: state, glob: "hooks/**", category: config }
   - { root: state, glob: "cron/**", category: config }
-  - { root: state, glob: "pairing/**", category: config }           # SEC: pending / approved users, rate limits
-  - { root: state, glob: "state.db", category: state }              # SS: sessions and messages
-  - { root: state, glob: "kanban.db", category: state }             # OBS + kanban docs
-  - { root: state, glob: "sessions/request_dump_*.json", category: secrets }   # OBS (2026-10-31): failed-request dumps carry request.headers.Authorization (redaction not checked): verify: pending
+  - { root: state, glob: "state.db", category: state }
+  - { root: state, glob: "kanban.db", category: state }
+  - { root: state, glob: "kanban/boards/*/kanban.db", category: state }
   - { root: state, glob: "sessions/**", category: sessions }
-  # Body directories (hermes-agent/**, tools/**, installs/**) are declared under body.paths below.
-  # Not sealed
-  - { root: state, glob: "cache/**", category: cache }              # OBS: model catalogs, uv cache
-  - { root: state, glob: "audio_cache/**", category: cache }        # CFG: TTS output
+  # High-confidence regenerable cache & runtime noise (never overlaps secrets or consistency.sqlite).
+  # Note: cache/** is intentionally NOT excluded wholesale because cache/browser-profiles/** and
+  # cache/{bws,op}_cache*.json are declared as secrets above.
+  - { root: state, glob: "cache/model_catalog.json", category: cache } # SRC: hermes_cli/model_catalog.py:_cache_path
+  - { root: state, glob: "provider_models_cache.json", category: cache } # SRC: hermes_cli/models.py:_provider_models_cache_path
+  - { root: state, glob: "checkpoints/**", category: cache }         # SRC: hermes_cli/backup.py:_EXCLUDED_DIRS
+  - { root: state, glob: "audio_cache/**", category: cache }         # CFG: TTS output
   - { root: state, glob: "image_cache/**", category: cache, verify: pending }
-  - { root: state, glob: "channel_directory.json", category: cache }   # rebuilt listing
-  - { root: state, glob: "backups/**", category: ignore }           # OBS: config.yaml.good.* copies made by hermes
-  - { root: state, glob: "logs/**", category: ignore }              # CFG
+  - { root: state, glob: "channel_directory.json", category: cache } # rebuilt listing
+  - { root: state, glob: "logs/**", category: ignore }               # CFG
   - { root: state, glob: "telemetry/**", category: ignore }
-  - { root: state, glob: "*.lock", category: ignore }               # OBS: lock files
-  - { root: state, glob: "gateway.pid", category: ignore }          # OBS
+  - { root: state, glob: ".backup.lock", category: ignore }
+  - { root: state, glob: "gateway.pid", category: ignore }
+  - { root: state, glob: "cron.pid", category: ignore }
 
 consistency:
+  # DOC: https://github.com/NousResearch/hermes-agent/blob/v0.23.3/website/docs/developer-guide/session-storage.md
+  # The reviewed schemas cover session data, tasks and cron executions.
+  # No dedicated credential tables identified in these databases.
   sqlite:
-    - { root: state, glob: "state.db" }          # SS: WAL mode
-    - { root: state, glob: "kanban.db" }
-    - { root: state, glob: "cron/executions.db" }   # OBS
-  quiesce: none                    # 如果存在向量库等二进制目录，可能需要改为 stop_service；verify: pending
+    - { root: state, glob: "state.db" }                              # SS: WAL mode
+    - { root: state, glob: "kanban.db" }                             # SRC: hermes_cli/kanban_db.py:kanban_db_path
+    - { root: state, glob: "kanban/boards/*/kanban.db" }             # SRC: hermes_cli/kanban_db.py:board_dir, kanban_db_path
+    - { root: state, glob: "cron/executions.db" }                    # SRC: cron/executions.py:_connect
+  # External Kanban paths are installation-specific. verify: pending for any
+  # non-SQLite store that needs a quiesce protocol.
+  quiesce: none
 
 provenance:
   kind: git
-  git: { root: state, path: "hermes-agent" }   # OBS: origin https://github.com/NousResearch/hermes-agent.git
+  git: { root: state, path: "hermes-agent" }                         # OBS: v0.22.5 official source install
 
 body:
   paths:
     - { root: state, glob: "hermes-agent/**" }
     - { root: state, glob: "tools/**" }
     - { root: state, glob: "installs/**" }
-  bootstrap_argv: []               # verify: pending —— 官方安装程序还会下载 tools/ 下的运行时并创建 installs/ 环境，重建步骤在 M4 核实
-  fresh_install_doc: https://hermes-agent.nousresearch.com
+  bootstrap_argv: [] # verify: pending (exact installer behavior and runtime reconstruction)
+  fresh_install_doc: https://github.com/NousResearch/hermes-agent/tree/v0.23.3#quick-start
 
-relocation: { env: HERMES_HOME }   # SS
+relocation: { env: HERMES_HOME }
 
 service:
-  candidates: [ { scope: user, unit: hermes-gateway.service } ]   # OBS: loaded, active, enabled
+  candidates: [ { scope: user, unit: hermes-gateway.service } ]      # OBS: v0.22.5 Ubuntu, default profile
+  repair_action: restart
+  install_argv: [hermes, gateway, install]                           # DOC: v0.23.3 CLI; verify: pending
 
-entries: []                        # gateway talks to messaging platforms; no local web entry observed
+# DOC: official `hermes dashboard` (127.0.0.1:9119) and `hermes webapp` (127.0.0.1:9120).
+# Both run on demand or separately from hermes-gateway.service, so do NOT add tcp/http
+# checks for them under health.checks.
+entries:
+  - id: dashboard
+    kind: web
+    host: 127.0.0.1
+    port: 9119
+    path: "/"                                                        # verify: pending
+  - id: webapp
+    kind: web
+    host: 127.0.0.1
+    port: 9120
+    path: "/"                                                        # verify: pending
 
 health:
   grace_seconds: 20
@@ -124,42 +194,79 @@ health:
     - { kind: systemd_active }
     # No argv check: `hermes doctor` probes the model provider over the network.
 
-login: []                          # M5 阶段补充
+native_cli: [hermes, setup]                                          # DOC: v0.23.3 CLI onboarding; verify: pending
+native_session_cli: [hermes, chat]                                   # DOC: v0.23.3 CLI interactive session; verify: pending
 
-exclusive_secrets: [ { root: state, glob: ".env" } ]   # 其中包含社交平台的 Bot Token；更细的拆分 verify: pending
+actions:
+  - id: status
+    name: 查看网关状态
+    explain: "查看 Hermes 网关服务的运行状态"
+    risk: read
+    argv: [hermes, gateway, status]                                  # verify: pending
+    output: text
+  - id: restart
+    name: 重启网关
+    explain: "重启 Hermes 网关服务，使配置或技能变更生效"
+    risk: manage
+    argv: [hermes, gateway, restart]                                 # verify: pending
+    output: none
+  - id: doctor
+    name: 运行 Hermes 诊断
+    explain: "在交互终端中运行 Hermes 官方诊断工具检查环境与配置"
+    risk: config
+    undo: "诊断修改前会先建立备份；可从备份原地恢复"
+    argv: [hermes, doctor]                                           # verify: pending
+    output: none
+    terminal: true
+
+login: []
+
+# Valise excludes whole files during cloning. This also skips reusable provider
+# keys in .env/auth.json and ordinary settings in config.yaml. Bot credentials,
+# single-use OAuth refresh tokens and per-bot session stores are kept in an
+# ordinary sensitive backup for restoration of the original instance.
+# DOC: https://github.com/NousResearch/hermes-agent/blob/v0.23.3/website/docs/user-guide/profiles.md
+exclusive_secrets:
+  - { root: state, glob: ".env" }
+  - { root: state, glob: "auth.json" }
+  - { root: state, glob: "config.yaml" }
+  - { root: state, glob: "platforms/**" }
+  - { root: state, glob: "pairing/**" }
+  - { root: state, glob: "whatsapp/session/**" }
+  - { root: state, glob: "matrix/store/**" }
+  - { root: state, glob: "google_chat_user_tokens/**" }
+  - { root: state, glob: "weixin/accounts/**" }
+  - { root: state, glob: "teams_pipeline_store.json" }
+  - { root: state, glob: ".anthropic_oauth.json" }
+  - { root: state, glob: "google_chat_user_token.json" }
+  - { root: state, glob: "slack_tokens.json" }
+  - { root: state, glob: "webhook_subscriptions.json" }
+  - { root: state, glob: "feishu_comment_pairing.json" }
+  - { root: state, glob: "webapp/**" }
+  # Recovery copies can contain the same exclusive credentials.
+  - { root: state, glob: ".env.bak*" }
+  - { root: state, glob: "auth.json.*" }
+  - { root: state, glob: "config.yaml.bak-*" }
+  - { root: state, glob: "config.yaml.bak.*" }
+  - { root: state, glob: "config.yaml.corrupt.*" }
+  - { root: state, glob: "backups/**" }
+  - { root: state, glob: "state-snapshots/**" }
+  - { root: state, glob: "sessions/request_dump_*.json" }
 
 native:
-  export_argv: null                # hermes backup 的输出路径参数 verify: pending
-
-checkup:
-  # OBS (2026-10-31, M6 acceptance with real sessions): messages(session_id, content, timestamp REAL seconds, token_count always NULL);
-  # token totals per session in session_model_usage(input_tokens, output_tokens, last_seen REAL seconds).
-  sessions:
-    root: state
-    glob: "state.db"
-    format: sqlite
-    sqlite:
-      table: messages
-      session_column: session_id
-      time_column: timestamp
-      time_unit: s
-      bytes_columns: [content, reasoning]
-      usage: { table: session_model_usage, session_column: session_id, tokens_columns: [input_tokens, output_tokens], time_column: last_seen, time_unit: s }
-  memory_files:
-    - { root: state, glob: "memories/MEMORY.md", warn_lines: 600 }
-    - { root: state, glob: "memories/USER.md", warn_lines: 300 }
-  memory_mechanism_markers: [ { root: state, glob: "memories/MEMORY.md" } ]
-  native_options_doc: null         # verify: pending
-
-handoff:
-  targets: [ { root: state, glob: "memories/MEMORY.md", mode: append_section, max_lines: 120 } ]
-  new_session_hint: null           # verify: pending
+  # SRC: hermes_cli/backup.py:run_backup, _run_backup_locked (v0.23.3).
+  # The native command scans the installation root, can collect external
+  # memory-provider files, and may prune older archives. verify: pending for
+  # any native export registered in Valise that is scoped to a single instance.
+  export_argv: null
 
 agent_kit:
-  skills_dir: { root: state, path: "skills/" }   # CFG: agent-created skills
-  mcp_config_doc: null             # verify: pending
-  mcp_remove_argv: [hermes, mcp, remove, valise]   # OBS (M6 cleanup): removes mcp_servers.valise from config.yaml
-  mcp_add_argv: [hermes, mcp, add, valise, --command, "${PORTER}", --args, mcp, --instance, "${INSTANCE}"]   # OBS: `hermes mcp add --help` ("--args must be the last option"); verify: pending
+  skills_dir: { root: state, path: "skills/" }
+  mcp_config_doc: https://github.com/NousResearch/hermes-agent/blob/v0.23.3/website/docs/user-guide/configuration.md
+  # SRC: hermes_cli/subcommands/mcp.py (v0.23.3). --args consumes remaining argv.
+  # verify: pending for registration/removal against a real Porter command and instance.
+  mcp_remove_argv: [hermes, mcp, remove, valise]
+  mcp_add_argv: [hermes, mcp, add, valise, --command, "${PORTER}", --args, mcp, --instance, "${INSTANCE}"]
 
 # What the harness calls one agent: `hermes profile create|list` (CLI help).
 terms: { agent: profile }

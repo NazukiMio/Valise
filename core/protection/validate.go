@@ -1,6 +1,7 @@
 package protection
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -13,6 +14,48 @@ import (
 
 var dailyRE = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0-9]$`)
 var idRE = regexp.MustCompile(`^[a-f0-9]{32}$`)
+
+var canonicalWeekdays = []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+
+var weekdayOrder = map[string]int{
+	"Mon": 1, "Tue": 2, "Wed": 3, "Thu": 4, "Fri": 5, "Sat": 6, "Sun": 7,
+}
+
+func validEveryHours(h int) bool {
+	switch h {
+	case 1, 2, 4, 6, 8, 12:
+		return true
+	default:
+		return false
+	}
+}
+
+func validWeekdays(days []string) bool {
+	if len(days) == 0 {
+		return false
+	}
+	seen := make(map[string]bool, len(days))
+	for _, d := range days {
+		if weekdayOrder[d] == 0 || seen[d] {
+			return false
+		}
+		seen[d] = true
+	}
+	return true
+}
+
+func sortedWeekdays(days []string) []string {
+	out := make([]string, 0, len(days))
+	for _, w := range canonicalWeekdays {
+		for _, d := range days {
+			if d == w {
+				out = append(out, w)
+				break
+			}
+		}
+	}
+	return out
+}
 
 func ValidID(s string) bool { return idRE.MatchString(s) }
 func ValidateAgent(a identity.AgentRef) error {
@@ -28,6 +71,59 @@ func ValidTimezone(s string) bool {
 	_, err := time.LoadLocation(s)
 	return err == nil
 }
+
+func (s Schedule) validate() error {
+	if s.Enabled == nil {
+		return valise.New("schedule_invalid", "必须明确选择启用状态、每日时间与 IANA 时区", "填写 HH:mm 时间及有效时区")
+	}
+	cadence := s.EffectiveCadence()
+	switch cadence {
+	case "daily", "hourly", "weekly", "monthly":
+	default:
+		return valise.New("schedule_invalid", "定时频率无效", "选择 daily、hourly、weekly 或 monthly")
+	}
+	if !*s.Enabled {
+		if s.DailyAt != "" && !dailyRE.MatchString(s.DailyAt) {
+			return valise.New("schedule_invalid", "必须明确选择启用状态、每日时间与 IANA 时区", "填写 HH:mm 时间及有效时区")
+		}
+		if s.Timezone != "" && !ValidTimezone(s.Timezone) {
+			return valise.New("schedule_invalid", "必须明确选择启用状态、每日时间与 IANA 时区", "填写 HH:mm 时间及有效时区")
+		}
+		if s.EveryHours != 0 && !validEveryHours(s.EveryHours) {
+			return valise.New("schedule_invalid", "按小时定时设置无效", "选择 1、2、4、6、8 或 12 小时间隔")
+		}
+		if len(s.Weekdays) > 0 && !validWeekdays(s.Weekdays) {
+			return valise.New("schedule_invalid", "按周定时设置无效", "选择不重复的有效星期（Mon–Sun）")
+		}
+		if s.DayOfMonth != 0 && (s.DayOfMonth < 1 || s.DayOfMonth > 28) {
+			return valise.New("schedule_invalid", "按月定时设置无效", "选择 1–28 日")
+		}
+		return nil
+	}
+	if !ValidTimezone(s.Timezone) {
+		return valise.New("schedule_invalid", "必须明确选择启用状态、每日时间与 IANA 时区", "填写 HH:mm 时间及有效时区")
+	}
+	switch cadence {
+	case "daily":
+		if !dailyRE.MatchString(s.DailyAt) || s.EveryHours != 0 || len(s.Weekdays) != 0 || s.DayOfMonth != 0 {
+			return valise.New("schedule_invalid", "必须明确选择启用状态、每日时间与 IANA 时区", "填写 HH:mm 时间及有效时区")
+		}
+	case "hourly":
+		if !validEveryHours(s.EveryHours) || (s.DailyAt != "" && !dailyRE.MatchString(s.DailyAt)) || len(s.Weekdays) != 0 || s.DayOfMonth != 0 {
+			return valise.New("schedule_invalid", "按小时定时设置无效", "选择 1、2、4、6、8 或 12 小时间隔及有效时区")
+		}
+	case "weekly":
+		if !dailyRE.MatchString(s.DailyAt) || !validWeekdays(s.Weekdays) || s.EveryHours != 0 || s.DayOfMonth != 0 {
+			return valise.New("schedule_invalid", "按周定时设置无效", "选择星期、HH:mm 时间及有效时区")
+		}
+	case "monthly":
+		if !dailyRE.MatchString(s.DailyAt) || s.DayOfMonth < 1 || s.DayOfMonth > 28 || s.EveryHours != 0 || len(s.Weekdays) != 0 {
+			return valise.New("schedule_invalid", "按月定时设置无效", "选择 1–28 日、HH:mm 时间及有效时区")
+		}
+	}
+	return nil
+}
+
 func (d Desired) Validate() error {
 	if d.Scope.Kind != "preset" {
 		return valise.New("unsupported_scope", "仅支持预设备份范围", "选择已有预设范围")
@@ -37,8 +133,8 @@ func (d Desired) Validate() error {
 	default:
 		return valise.New("unsupported_scope", "备份范围无效", "选择已有预设范围")
 	}
-	if d.Schedule.Enabled == nil || !dailyRE.MatchString(d.Schedule.DailyAt) || !ValidTimezone(d.Schedule.Timezone) {
-		return valise.New("schedule_invalid", "必须明确选择启用状态、每日时间与 IANA 时区", "填写 HH:mm 时间及有效时区")
+	if err := d.Schedule.validate(); err != nil {
+		return err
 	}
 	if d.Period.KeepAutoPeriods < 0 {
 		return valise.New("period_setting_invalid", "自动快照保留周期数不能为负数", "填 0 关闭退役，或填写正整数")
@@ -76,4 +172,23 @@ func (p ServerPlan) Validate() error {
 }
 
 // Calendar contains only validated fields, so systemd specifiers cannot be injected.
-func (s Schedule) Calendar() string { return "*-*-* " + s.DailyAt + ":00 " + s.Timezone }
+func (s Schedule) Calendar() string {
+	switch s.EffectiveCadence() {
+	case "hourly":
+		mm := "00"
+		if len(s.DailyAt) == 5 && dailyRE.MatchString(s.DailyAt) {
+			mm = s.DailyAt[3:5]
+		}
+		return fmt.Sprintf("*-*-* 00/%d:%s:00 %s", s.EveryHours, mm, s.Timezone)
+	case "weekly":
+		days := sortedWeekdays(s.Weekdays)
+		return strings.Join(days, ",") + " *-*-* " + s.DailyAt + ":00 " + s.Timezone
+	case "monthly":
+		return fmt.Sprintf("*-*-%.2d %s:00 %s", s.DayOfMonth, s.DailyAt, s.Timezone)
+	default:
+		if s.DailyAt == "" || s.Timezone == "" {
+			return ""
+		}
+		return "*-*-* " + s.DailyAt + ":00 " + s.Timezone
+	}
+}

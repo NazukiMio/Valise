@@ -195,10 +195,7 @@ func summarizePlan(p *cp.ServerPlan) statusPlan {
 	enabled := p.Schedule.Enabled != nil && *p.Schedule.Enabled
 	sched := "off"
 	if enabled {
-		sched = p.Schedule.DailyAt
-		if p.Schedule.Timezone != "" {
-			sched += " (" + p.Schedule.Timezone + ")"
-		}
+		sched = formatPlanSchedule(p.Schedule)
 	}
 	var targets []string
 	for _, sc := range p.ServerCopies {
@@ -218,6 +215,27 @@ func summarizePlan(p *cp.ServerPlan) statusPlan {
 		KeepAutoPeriods: p.Period.KeepAutoPeriods,
 		Targets:         targets,
 	}
+}
+
+func formatPlanSchedule(sc cp.Schedule) string {
+	var base string
+	switch sc.EffectiveCadence() {
+	case "hourly":
+		base = fmt.Sprintf("every %dh", sc.EveryHours)
+		if _, min, ok := strings.Cut(sc.DailyAt, ":"); ok && min != "" && min != "00" {
+			base += " at :" + min
+		}
+	case "weekly":
+		base = strings.Join(sc.Weekdays, ",") + " " + sc.DailyAt
+	case "monthly":
+		base = fmt.Sprintf("day %d %s", sc.DayOfMonth, sc.DailyAt)
+	default:
+		base = sc.DailyAt
+	}
+	if sc.Timezone != "" {
+		base += " (" + sc.Timezone + ")"
+	}
+	return base
 }
 
 type offsitePod struct {

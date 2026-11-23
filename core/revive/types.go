@@ -96,18 +96,19 @@ type RootFacts struct {
 
 // InspectResult is what the target reports for planning.
 type InspectResult struct {
-	Home       string                `json:"home"`
-	OS         string                `json:"os"`
-	Arch       string                `json:"arch"`
-	StateDir   string                `json:"state_dir"` // resolved by detect candidates on the target
-	Roots      []RootFacts           `json:"roots"`
-	Tools      map[string]bool       `json:"tools"`
-	Provenance enroll.Provenance     `json:"provenance"` // body currently installed on the target
-	Service    []enroll.ServiceState `json:"service"`
-	Listening  []enroll.EntryState   `json:"entries"`
-	Record     *enroll.Record        `json:"record,omitempty"`
-	PendingOps []string              `json:"pending_ops"`
-	Busy       []Process             `json:"busy,omitempty"`
+	Home        string                `json:"home"`
+	OS          string                `json:"os"`
+	Arch        string                `json:"arch"`
+	StateDir    string                `json:"state_dir"` // resolved by detect candidates on the target
+	BinaryFound bool                  `json:"binary_found,omitempty"`
+	Roots       []RootFacts           `json:"roots"`
+	Tools       map[string]bool       `json:"tools"`
+	Provenance  enroll.Provenance     `json:"provenance"` // body currently installed on the target
+	Service     []enroll.ServiceState `json:"service"`
+	Listening   []enroll.EntryState   `json:"entries"`
+	Record      *enroll.Record        `json:"record,omitempty"`
+	PendingOps  []string              `json:"pending_ops"`
+	Busy        []Process             `json:"busy,omitempty"`
 	// Overlapping lists other enrolled instances whose roots equal or lie
 	// inside the planned roots (they would be superseded by a migrate or
 	// clone).

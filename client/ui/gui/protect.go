@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -22,10 +21,11 @@ import (
 
 // protState is what was read and is being done for one agent's plan.
 type protState struct {
-	ref  *identity.AgentRef
-	view *protection.View
-	err  error
-	read job
+	ref         *identity.AgentRef
+	view        *protection.View
+	localCopies *service.LocalCopiesView
+	err         error
+	read        job
 
 	sched   *schedEdit
 	copyTo  *copyEdit
@@ -39,14 +39,6 @@ type protState struct {
 	oneOff              *oneOffBackup
 	oneOffSupported     bool
 	savepointsSupported bool
-}
-
-// schedEdit is the schedule being edited.
-type schedEdit struct {
-	on, catchUp bool
-	at, tz      string
-	period      string
-	keep        string
 }
 
 func (a *App) protOf(row *agentRow) *protState {
@@ -78,6 +70,8 @@ func (a *App) readProt(host string, ps *protState) {
 	}
 	ref := *ps.ref
 	var v protection.View
+	var lc *service.LocalCopiesView
+	var lcErr error
 	var tasks []service.BackupTask
 	var tasksErr error
 	var once, savepoints bool
@@ -88,6 +82,7 @@ func (a *App) readProt(host string, ps *protState) {
 			caps, e := a.svc.BackupCapabilities(ctx, host)
 			once = e == nil && slices.Contains(caps, protection.BackupCapabilityV3)
 			savepoints = e == nil && slices.Contains(caps, vaultrpc.SavepointsCapability)
+			lc, lcErr = a.svc.LocalCopies(ctx, host, ref.InstanceID)
 		}
 		return err
 	}, func(err error) {
@@ -99,6 +94,9 @@ func (a *App) readProt(host string, ps *protState) {
 		}
 		if err == nil {
 			ps.view = &v
+			if lcErr == nil && lc != nil {
+				ps.localCopies = lc
+			}
 		}
 	})
 }
@@ -244,99 +242,42 @@ func (a *App) planTag(c *ui.Context, ps *protState) {
 	}
 }
 
-func scheduleText(s protection.Schedule) string {
-	if s.Enabled == nil || !*s.Enabled {
-		return T("protect.schedule_off")
-	}
-	out := T("protect.schedule_on", "at", s.DailyAt, "tz", s.Timezone)
-	if s.CatchUpEnabled() {
-		out += T("common.dot_sep") + T("protect.catch_up")
-	}
-	return out
-}
-
 func (a *App) copiesText(ps *protState) string {
 	d := ps.desired()
-	if len(d.ServerCopies) == 0 {
-		return T("protect.copies_none")
-	}
-	var names []string
+	sep := T("common.list_sep")
+	var groups []string
+	var serverNames []string
 	for _, cp := range d.ServerCopies {
-		names = append(names, cp.TargetRef.ID)
-	}
-	return strings.Join(names, T("common.list_sep"))
-}
-
-func newSchedEdit(d protection.Desired) *schedEdit {
-	e := &schedEdit{at: orText(d.Schedule.DailyAt, "04:40"), tz: orText(d.Schedule.Timezone, localZone()),
-		catchUp: d.Schedule.CatchUpEnabled(), period: orText(d.Period.Unit, "month"), keep: strconv.Itoa(d.Period.KeepAutoPeriods)}
-	e.on = d.Schedule.Enabled != nil && *d.Schedule.Enabled
-	return e
-}
-
-func (a *App) scheduleDialog(c *ui.Context, row *agentRow, ps *protState) {
-	e := ps.sched
-	open := true
-	if ui.Modal(c, &open, func() {
-		dialog(ui.Column(c), 440).Children(func() {
-			dialogTitle(ui.Text(c, T("protect.schedule_title")))
-			ui.Checkbox(c, &e.on, T("protect.schedule_enable"))
-			if e.on {
-				ui.Row(c).Gap(10).Children(func() {
-					labeled(c, T("protect.at"), func() { ui.TextInput(c, &e.at).Label(T("protect.at")).Placeholder("04:40") }).Width(110)
-					labeled(c, T("protect.tz"), func() { ui.TextInput(c, &e.tz).Label(T("protect.tz")).Placeholder("Asia/Shanghai") }).Grow(1)
-				})
-				ui.Checkbox(c, &e.catchUp, T("protect.catch_up_ask"))
-			}
-			labeled(c, T("protect.period"), func() {
-				ui.RadioGroup(c, func() {
-					for _, u := range []string{"week", "month", "quarter"} {
-						ui.Radio(c.Key("p-"+u), &e.period, u, T("protect.period."+u))
-					}
-				}).Row().Gap(16).Label(T("protect.period"))
-			})
-			muted(ui.Text(c, T("protect.period_note"))).Wrap()
-			valid := true
-			if ps.savepointsSupported {
-				labeled(c, T("protect.retention"), func() {
-					ui.TextInput(c, &e.keep).Label(T("protect.retention")).Placeholder("0")
-				})
-				_, valid = parseRetention(e.keep)
-				muted(ui.Text(c, T("protect.retention.why"))).Wrap()
-			}
-			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				ui.Button(c, T("common.cancel")).OnClick(func() { ps.sched = nil })
-				ui.PrimaryButton(c, T("protect.save")).Disabled(!valid).OnClick(func() { a.saveSchedule(row, ps) })
-			})
-		})
-	}).Dismissed() {
-		ps.sched = nil
-	}
-}
-
-// saveSchedule applies the schedule dialog's choices.
-func (a *App) saveSchedule(row *agentRow, ps *protState) {
-	e := ps.sched
-	d := ps.desired()
-	on := e.on
-	d.Schedule.Enabled = &on
-	if on {
-		catch := e.catchUp
-		d.Schedule.DailyAt, d.Schedule.Timezone, d.Schedule.CatchUp = strings.TrimSpace(e.at), strings.TrimSpace(e.tz), &catch
-	}
-	d.Period.Unit = e.period
-	if ps.savepointsSupported {
-		var ok bool
-		d.Period.KeepAutoPeriods, ok = parseRetention(e.keep)
-		if !ok {
-			return
+		if cp.Enabled == nil || *cp.Enabled {
+			serverNames = append(serverNames, cp.TargetRef.ID)
 		}
 	}
-	if d.Period.Timezone == "" {
-		d.Period.Timezone = orText(d.Schedule.Timezone, localZone())
+	if len(serverNames) > 0 {
+		groups = append(groups, T("protect.copies_server", "names", strings.Join(serverNames, sep)))
 	}
-	ps.sched = nil
-	a.applyDesired(row, ps, d)
+	if ps.localCopies != nil {
+		var repoNames, cloudNames []string
+		for _, c := range ps.localCopies.Repos {
+			if (c.AfterBackup != nil && *c.AfterBackup) || (c.OnClientOpen != nil && *c.OnClientOpen) {
+				repoNames = append(repoNames, c.RepoID)
+			}
+		}
+		if len(repoNames) > 0 {
+			groups = append(groups, T("protect.copies_local", "names", strings.Join(repoNames, sep)))
+		}
+		for _, c := range ps.localCopies.Clouds {
+			if (c.AfterBackup != nil && *c.AfterBackup) || (c.OnClientOpen != nil && *c.OnClientOpen) {
+				cloudNames = append(cloudNames, c.RepoID)
+			}
+		}
+		if len(cloudNames) > 0 {
+			groups = append(groups, T("protect.copies_cloud", "names", strings.Join(cloudNames, sep)))
+		}
+	}
+	if len(groups) == 0 {
+		return T("protect.copies_none")
+	}
+	return strings.Join(groups, T("common.dot_sep"))
 }
 
 // applyDesired prepares the change, confirms it (the person's click is the
@@ -345,12 +286,12 @@ func (a *App) saveSchedule(row *agentRow, ps *protState) {
 func (a *App) applyDesired(row *agentRow, ps *protState, d protection.Desired) {
 	var rev protection.Revision
 	switch {
-	case ps.view.ServerPlan != nil:
+	case ps.view != nil && ps.view.ServerPlan != nil:
 		rev = ps.view.ServerPlan.Revision
-	case ps.view.SupersededPlan != nil:
+	case ps.view != nil && ps.view.SupersededPlan != nil:
 		rev = ps.view.SupersededPlan.Revision
 	}
-	d = sayCopies(d)
+	d = ensureScheduleDefaults(d)
 	host, ref := row.Server, *ps.ref
 	a.start(&ps.changeJ, 5*time.Minute, func(ctx context.Context) error {
 		a.says(&ps.changeJ)(T("protect.preparing"))

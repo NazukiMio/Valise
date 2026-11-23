@@ -13,9 +13,11 @@ import (
 // Finding is one hit of the checks.
 type Finding struct {
 	// Refuse marks a command that is never run, in any mode.
-	Refuse bool   `json:"refuse"`
-	Rule   string `json:"rule"`
-	Reason string `json:"reason"`
+	Refuse  bool   `json:"refuse"`
+	Rule    string `json:"rule"`
+	Reason  string `json:"reason"`
+	Line    int    `json:"line,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
 }
 
 // Finding rules.
@@ -35,7 +37,7 @@ const (
 const NoFindings = "未发现基础疑点"
 
 var (
-	reDecode     = regexp.MustCompile(`base64\s+(-d|--decode|-D)|xxd\s+-r|openssl\s+(enc\s+)?-d|\\x[0-9a-fA-F]{2}`)
+	reDecode     = regexp.MustCompile(`base64\s+(-d|--decode|-D)|xxd\s+-r|openssl\s+(enc\s+)?-d|(?:\\x[0-9a-fA-F]{2}){4,}`)
 	rePipeShell  = regexp.MustCompile(`(curl|wget|fetch)\b[^|]*\|\s*(sudo\s+)?(env\s+)?(ba|z|da|k|c|tc|fi)?sh\b|(curl|wget)\b[^|]*\|\s*(sudo\s+)?(python\d*|perl|ruby|node|php)\b`)
 	reInlineBad  = regexp.MustCompile(`\b(curl|wget|eval|exec)\b|base64|\|\s*(ba|z|da)?sh\b`)
 	reForkBomb   = regexp.MustCompile(`:\(\)\s*\{`)

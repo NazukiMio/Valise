@@ -10,7 +10,7 @@ All top-level and nested fields are decoded with `yaml.Decoder.KnownFields(true)
 ## 1. Metadata & Child Inheritance
 
 - `schema`: `"valise-profile/1"` (required)
-- `id`: lowercase `[a-z0-9]+(-[a-z0-9]+)*` (required, unique across pack/local)
+- `id`: lowercase `[a-z0-9]+(-[a-z0-9]+)*` (required; local profile YAML may explicitly override a same-ID official pack profile, always badged as local/unreviewed with one-click restore)
 - `display_name`: human-readable name (required)
 - `profile_version`: positive integer; increment on every edit
 - `status`: `draft` | `verified` (`verified` forbids any `verify: pending` field/comment and requires non-empty `harness_versions_tested`)
@@ -78,13 +78,13 @@ All top-level and nested fields are decoded with `yaml.Decoder.KnownFields(true)
   - B03 transactions (`steps` 1–16 + `transaction`): `risk: config`, `output: none`, `terminal: false`, `transaction.root: state`, `env` maps vars only to `${STAGE_DIR}[/safe/rel]`, `writes` lists relative files/dirs, optional `scratch`. Do not fabricate without live verification.
 - `approval_check`: `{ argv (${HOME}), each, bypass_when, ask_when, default_when, remedy, repair_action, repair_expect, verify }`
 - `identity`: `{ argv (${HOME}, ${STATE_DIR}), each, pick, name (required), verify }`
-- `agent_kit`: `{ skills_dir: { root, path }, mcp_config_doc, mcp_add_argv (${PORTER}, ${INSTANCE}), mcp_config_snippet (${PORTER}, ${INSTANCE}), mcp_remove_argv (${INSTANCE}) }` (display-only; Valise never executes `mcp_add_argv` / `mcp_remove_argv`)
+- `agent_kit`: `{ skills_dir: { root, path }, mcp_config_doc, mcp_add_argv (${PORTER}, ${INSTANCE}), mcp_config_snippet (${PORTER}, ${INSTANCE}), mcp_remove_argv (${INSTANCE}) }` (`mcp_add_argv` / `mcp_remove_argv` are previewed and user-confirmed executed over a dedicated admin connection during kit install/uninstall, with manual commands/snippets kept in a collapsible fallback)
 - `install`: `{ id, summary, where, takes, notes, requires: [{binary, version: ">=x.y.z", why, install: [{os_id, argv}]}], steps: [npm_global | script | argv | path_add] }`
   - `script` step requires `https://` `url`, 64-hex `sha256`, `interpreter` (e.g. `[bash]`), and `runtime_downloads` (`""` when verified none). Never fabricate hashes.
 
-## 6. Executable Command Audit (14 Categories / 16 Fields) & Variable Whitelist
+## 6. Executable Command Audit (15 Categories / 18 Fields) & Variable Whitelist
 
-`profilelint --commands` extracts all server-side executable/install entries (excluding display-only `agent_kit.mcp_*`):
+`profilelint --commands` extracts all server-side executable/install entries:
 
 | # | Field(s) | Tier | Allowed Placeholders |
 | :--- | :--- | :--- | :--- |
@@ -102,6 +102,7 @@ All top-level and nested fields are decoded with `yaml.Decoder.KnownFields(true)
 | 12 | `approval_check.argv` | `daily` | `${HOME}` only |
 | 13 | `identity.argv` | `daily` | `${HOME}`, `${STATE_DIR}` |
 | 14 | `install.requires[].install[].argv`, `install.steps[]` (`argv`/`npm_global`/`script`/`path_add`) | `admin` | `${HOME}` |
+| 15 | `agent_kit.mcp_add_argv`, `agent_kit.mcp_remove_argv` | `admin` | `${PORTER}`, `${INSTANCE}` (`mcp_remove_argv`: `${INSTANCE}`) |
 
 ## 7. Lint Hard Errors vs Soft Warnings
 

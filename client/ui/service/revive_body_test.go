@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"valise/core/enroll"
 	"valise/core/profile"
 	"valise/core/revive"
 	"valise/core/vault"
@@ -59,5 +60,137 @@ func TestNestedBodyPlan(t *testing.T) {
 		if got != tc.warn {
 			t.Fatalf("%s secrets=%v: %v", tc.mode, tc.secrets, rp.Warnings)
 		}
+	}
+}
+
+func gitBodyFixture(commit string) (*vault.Snapshot, profile.Profile) {
+	head := &vault.Snapshot{Tier: vault.TierFull, Provenance: enroll.Provenance{Git: &enroll.GitRecord{Remote: "r", Commit: commit}}}
+	return head, profile.Profile{ID: "x", DisplayName: "X"}
+}
+
+func blockerCodes(rp *RevivePlan) []string {
+	var out []string
+	for _, b := range rp.Blockers {
+		out = append(out, b.Code)
+	}
+	return out
+}
+
+func TestGitBodyDecoupledPlan(t *testing.T) {
+	head, prof := gitBodyFixture("aaaa")
+	same := revive.InspectResult{Provenance: enroll.Provenance{Git: &enroll.GitRecord{Remote: "r", Commit: "aaaa"}}}
+	other := revive.InspectResult{OS: "linux", Arch: "arm64", Provenance: enroll.Provenance{Git: &enroll.GitRecord{Remote: "r", Commit: "bbbb"}}}
+	none := revive.InspectResult{OS: "linux", Arch: "amd64"}
+	run := func(facts revive.InspectResult, o ReviveOptions) (*RevivePlan, revive.Plan) {
+		rp := &RevivePlan{}
+		plan := revive.Plan{Mode: o.Mode}
+		planBodyOpts(rp, &plan, head, facts, prof, o)
+		return rp, plan
+	}
+	// Same commit works for migrate and clone, keeping the target body.
+	for _, m := range []string{revive.ModeMigrate, revive.ModeClone} {
+		rp, plan := run(same, ReviveOptions{Mode: m})
+		if len(rp.Blockers) != 0 || plan.Body.Action != revive.BodyKeep {
+			t.Fatalf("%s same: %+v %+v", m, rp.Blockers, plan.Body)
+		}
+	}
+	if rp, plan := run(same, ReviveOptions{Mode: revive.ModeRollback}); len(rp.Blockers) != 0 || plan.Body.Action != revive.BodyMoveDirs {
+		t.Fatalf("rollback same: %+v", plan.Body)
+	}
+	// Different body on target: blocker, then opt-in keeps the target body.
+	rp, _ := run(other, ReviveOptions{Mode: revive.ModeMigrate})
+	if c := blockerCodes(rp); len(c) != 1 || c[0] != "body_version_mismatch" || !strings.Contains(rp.Blockers[0].Reason, "bbbb") || rp.BodySummary == "" {
+		t.Fatalf("mismatch: %+v", rp.Blockers)
+	}
+	rp, plan := run(other, ReviveOptions{Mode: revive.ModeMigrate, AllowVersionMismatch: true})
+	if len(rp.Blockers) != 0 || plan.Body.Action != revive.BodyKeep || rp.DataOnly || len(rp.Warnings) == 0 {
+		t.Fatalf("allowed mismatch: %+v %+v", rp, plan.Body)
+	}
+	// A binary without recorded provenance also counts as installed.
+	if rp, _ := run(revive.InspectResult{BinaryFound: true}, ReviveOptions{Mode: revive.ModeMigrate}); len(rp.Blockers) != 1 || rp.Blockers[0].Code != "body_version_mismatch" {
+		t.Fatalf("binary: %+v", rp.Blockers)
+	}
+	// No harness on the target: blocker with both ways out, then data only.
+	rp, _ = run(none, ReviveOptions{Mode: revive.ModeMigrate})
+	if c := blockerCodes(rp); len(c) != 1 || c[0] != "body_rebuild_unverified" || !strings.Contains(rp.Blockers[0].Suggestion, "仅迁移数据与档案") {
+		t.Fatalf("none: %+v", rp.Blockers)
+	}
+	rp, plan = run(none, ReviveOptions{Mode: revive.ModeMigrate, AllowVersionMismatch: true})
+	if len(rp.Blockers) != 0 || !rp.DataOnly || plan.Body.Action != revive.BodyKeep || len(plan.Body.Dirs) != 0 {
+		t.Fatalf("data only: %+v %+v", rp, plan.Body)
+	}
+}
+
+func TestUninstalledTargetEmptyProvenanceStruct(t *testing.T) {
+	head, prof := gitBodyFixture("aaaa11112222")
+	// Real porter returns non-nil empty provenance structs when harness is not installed.
+	emptyCases := []enroll.Provenance{
+		{Kind: profile.ProvenanceGit, Git: &enroll.GitRecord{Path: "/home/u/.x/repo"}},
+		{Kind: profile.ProvenanceNPMGlobal, NPM: &enroll.NPMRecord{Package: "demo-pkg"}},
+		{Kind: profile.ProvenanceUVTool, Tool: &enroll.ToolRecord{Package: "demo-tool"}},
+		{Kind: profile.ProvenanceBinary, Binary: &enroll.BinaryRecord{}},
+	}
+	for _, pv := range emptyCases {
+		if hasProvenance(pv) {
+			t.Fatalf("empty provenance struct falsely treated as installed: %+v", pv)
+		}
+		if got := describeBody(pv, "linux/amd64"); got != "未能识别版本的程序（linux/amd64）" {
+			t.Fatalf("empty provenance rendered bad body description: %q", got)
+		}
+	}
+
+	uninstalled := revive.InspectResult{
+		OS:          "linux",
+		Arch:        "amd64",
+		BinaryFound: false,
+		Provenance:  enroll.Provenance{Kind: profile.ProvenanceGit, Git: &enroll.GitRecord{Path: "/home/u/.x/repo"}},
+	}
+	rp := &RevivePlan{}
+	plan := revive.Plan{Mode: revive.ModeMigrate}
+	planBodyOpts(rp, &plan, head, uninstalled, prof, ReviveOptions{Mode: revive.ModeMigrate})
+	if c := blockerCodes(rp); len(c) != 1 || c[0] != "body_rebuild_unverified" {
+		t.Fatalf("expected body_rebuild_unverified for uninstalled target, got blockers=%+v summary=%q", rp.Blockers, rp.BodySummary)
+	}
+
+	// With AllowVersionMismatch: DataOnly=true and plan.Record.Provenance must NOT retain stale source Commit.
+	rp = &RevivePlan{}
+	plan = revive.Plan{Mode: revive.ModeMigrate}
+	opts := ReviveOptions{Mode: revive.ModeMigrate, AllowVersionMismatch: true}
+	planBodyOpts(rp, &plan, head, uninstalled, prof, opts)
+	if len(rp.Blockers) != 0 || !rp.DataOnly || plan.Body.Action != revive.BodyKeep {
+		t.Fatalf("expected data-only migrate on uninstalled target: rp=%+v body=%+v", rp, plan.Body)
+	}
+	rec := planRecord("demo", prof, []revive.RootPlan{{ID: profile.StateRoot, Path: "/home/u/.x"}}, head, uninstalled, rp, plan, opts)
+	if rec.Provenance.Git != nil && rec.Provenance.Git.Commit != "" {
+		t.Fatalf("plan.Record.Provenance retained stale source commit: %+v", rec.Provenance.Git)
+	}
+}
+
+func TestPlanServiceDataOnlyAndMissing(t *testing.T) {
+	prof := profile.Profile{ID: "x", Service: &profile.Service{Candidates: []profile.ServiceUnit{{Unit: "x.service"}}}}
+	rp := &RevivePlan{DataOnly: true}
+	plan := revive.Plan{}
+	planService(rp, &plan, revive.InspectResult{}, prof)
+	if plan.Unit != "" || plan.InstallService || len(rp.Blockers) != 0 || len(rp.Warnings) != 1 {
+		t.Fatalf("data only: %+v %+v", rp, plan)
+	}
+	rp, plan = &RevivePlan{}, revive.Plan{}
+	planService(rp, &plan, revive.InspectResult{}, prof)
+	if len(rp.Blockers) != 1 || rp.Blockers[0].Code != "service_missing" || !strings.Contains(rp.Blockers[0].Suggestion, "--data-only") {
+		t.Fatalf("missing: %+v", rp.Blockers)
+	}
+}
+
+func TestDossierSummary(t *testing.T) {
+	head := &vault.Snapshot{LocalOverrides: []profile.Override{{}}, ExternalRefs: []enroll.ExternalRef{{Path: "/opt/x", Kind: "external_dir"}}}
+	rp := &RevivePlan{}
+	rp.summarizeDossier(head)
+	if rp.Dossier == nil || rp.Dossier.LocalOverrides != 1 || len(rp.Dossier.ExternalRefs) != 1 || !strings.Contains(strings.Join(rp.Warnings, ""), "/opt/x") {
+		t.Fatalf("%+v %v", rp.Dossier, rp.Warnings)
+	}
+	rp = &RevivePlan{}
+	rp.summarizeDossier(&vault.Snapshot{})
+	if rp.Dossier != nil || len(rp.Warnings) != 0 {
+		t.Fatal("empty dossier shown")
 	}
 }

@@ -57,7 +57,17 @@ func (a *App) renderScriptFindings(c *ui.Context, fs []install.Finding) {
 		if f.Refuse {
 			key = "install.finding_refuse"
 		}
-		ui.Text(c.Key(i), "· "+T(key, "reason", f.Reason)).FontSize(12).TextColor(palette.Warn).Wrap()
+		ui.Column(c.Key(i)).Gap(2).Children(func() {
+			ui.Text(c, "· "+T(key, "reason", f.Reason)).FontSize(12).TextColor(palette.Warn).Wrap()
+			switch {
+			case f.Line > 0 && f.Snippet != "":
+				mono(muted(ui.Text(c, T("install.finding_where", "line", f.Line, "snippet", f.Snippet)))).FontSize(fsCaption).Wrap()
+			case f.Line > 0:
+				mono(muted(ui.Text(c, T("install.finding_line", "line", f.Line)))).FontSize(fsCaption).Wrap()
+			case f.Snippet != "":
+				mono(muted(ui.Text(c, f.Snippet))).FontSize(fsCaption).Wrap()
+			}
+		})
 	}
 }
 
@@ -206,6 +216,9 @@ func (a *App) customPlanView(c *ui.Context, host string, ci *customInstallRun) {
 			a.renderScriptFindings(c, p.Findings)
 			if p.Refused {
 				ui.Text(c, T("install.custom.refused_hint")).FontSize(12).TextColor(palette.Warn).Wrap()
+				ui.Row(c).Children(func() {
+					textLink(c, T("install.custom.open_shell"), func() { a.router.Push("/servers/" + host + "/shell") })
+				})
 			}
 		})
 

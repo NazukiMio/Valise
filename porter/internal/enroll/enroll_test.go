@@ -402,3 +402,55 @@ func TestNPMProvenanceLauncher(t *testing.T) {
 		t.Fatalf("%+v %v", rec, warns)
 	}
 }
+
+func TestReEnrollPreservesLocalOverridesAndDisplayName(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	p := fixtureProfile(t)
+	prev := &enroll.Record{
+		InstanceID:     "demo",
+		ProfileID:      p.ID,
+		ProfileVersion: p.ProfileVersion,
+		DisplayName:    "My Custom Agent",
+		LocalOverrides: []profile.Override{
+			{Root: "state", Glob: "mystery/**", Category: "memory"},
+			{Root: "stale-root", Glob: "old/**", Category: "config"},
+		},
+	}
+
+	// Re-enroll without new overrides: preserves valid previous LocalOverrides and DisplayName, drops stale root override.
+	rep, err := Scan(ctx, w.env, enroll.ScanParams{Profile: p, StateDir: w.state, InstanceID: "demo"}, prev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Overrides) != 1 || rep.Overrides[0].Glob != "mystery/**" || rep.Overrides[0].Category != "memory" {
+		t.Fatalf("expected merged override preserved, got %+v", rep.Overrides)
+	}
+	if rep.Categories["memory"].Files != 2 {
+		t.Fatalf("expected mystery/** classified as memory (2 files), got %+v", rep.Categories)
+	}
+	rec := enroll.RecordFrom(rep, rep.ScannedAt)
+	if rec.DisplayName != "My Custom Agent" || rec.Label() != "My Custom Agent" || len(rec.LocalOverrides) != 1 {
+		t.Fatalf("expected DisplayName and LocalOverrides preserved on RecordFrom, got %+v", rec)
+	}
+
+	// Re-enroll with explicit new override for same Root+Glob replaces previous category, plus adds new override.
+	rep2, err := Scan(ctx, w.env, enroll.ScanParams{
+		Profile:    p,
+		StateDir:   w.state,
+		InstanceID: "demo",
+		Overrides: []profile.Override{
+			{Root: "state", Glob: "mystery/**", Category: "cache"},
+			{Root: "state", Glob: "workspace/**", Category: "config"},
+		},
+	}, prev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep2.Overrides) != 2 || rep2.Overrides[0].Category != "cache" || rep2.Overrides[1].Glob != "workspace/**" {
+		t.Fatalf("expected override replacement + append, got %+v", rep2.Overrides)
+	}
+	if rep2.Categories["cache"].Files != 2 || rep2.Unclassified.Files != 0 {
+		t.Fatalf("expected cache=2 and unclassified=0, got categories=%+v unclassified=%+v", rep2.Categories, rep2.Unclassified)
+	}
+}

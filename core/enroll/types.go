@@ -299,20 +299,26 @@ func RecordFrom(r *Report, now time.Time) Record {
 	}
 	var localSQLite []profile.SQLiteRef
 	var externalRefs []ExternalRef
+	var displayName string
 	if r.Previous != nil {
+		if r.Overrides == nil && len(r.Previous.LocalOverrides) > 0 {
+			ov = append([]profile.Override(nil), r.Previous.LocalOverrides...)
+		}
 		if len(r.Previous.LocalSQLite) > 0 {
 			localSQLite = append([]profile.SQLiteRef(nil), r.Previous.LocalSQLite...)
 		}
 		if len(r.Previous.ExternalRefs) > 0 {
 			externalRefs = append([]ExternalRef(nil), r.Previous.ExternalRefs...)
 		}
+		displayName = r.Previous.DisplayName
 	}
 	return Record{
 		InstanceID: r.InstanceID, ProfileID: r.ProfileID, ProfileVersion: r.ProfileVersion,
 		Roots: roots, Provenance: r.Provenance, Service: r.Service, Entries: r.Entries,
 		LocalOverrides: ov, LocalSQLite: localSQLite, ExternalRefs: externalRefs,
 		EntryPorts: r.EntryPorts, EnrolledAt: now.UTC(),
-		Name: r.Name, Env: r.Env, HarnessName: r.HarnessName, HarnessAgents: r.HarnessAgents,
+		Name: r.Name, Env: r.Env, DisplayName: displayName,
+		HarnessName: r.HarnessName, HarnessAgents: r.HarnessAgents,
 	}
 }
 

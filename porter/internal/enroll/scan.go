@@ -55,11 +55,12 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 			return nil, valise.New("override_invalid", "归类指令无效："+err.Error(), "格式为 --assign <root>:<glob>=<类别>")
 		}
 	}
+	mergedOverrides := mergeOverrides(p, previous, params.Overrides)
 	r := &enroll.Report{
 		InstanceID: params.InstanceID, Name: params.Name, Env: params.Env, ProfileID: p.ID, ProfileVersion: p.ProfileVersion, ProfileStatus: p.Status,
 		Categories: map[string]enroll.Tally{}, Secrets: []enroll.FileRef{}, SQLite: []enroll.SQLiteFile{},
 		UnclassGroups: []enroll.UnclassifiedGroup{}, Service: []enroll.ServiceState{}, Entries: []enroll.EntryState{},
-		Overrides: params.Overrides, ScannedAt: time.Now().UTC(), Previous: previous,
+		Overrides: mergedOverrides, ScannedAt: time.Now().UTC(), Previous: previous,
 	}
 	if previous != nil {
 		r.EntryPorts = previous.EntryPorts
@@ -74,7 +75,7 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 	if previous != nil {
 		localSQLite = previous.LocalSQLite
 	}
-	classify(r, p, params.Overrides, localSQLite, nested)
+	classify(r, p, mergedOverrides, localSQLite, nested)
 	r.Provenance = Provenance(ctx, e, p, r.Roots)
 	r.Service = services(ctx, e, p, &r.Warnings)
 	r.Entries = entries(p)
@@ -83,6 +84,45 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 		r.Changes = enroll.Diff(*previous, enroll.RecordFrom(r, r.ScannedAt))
 	}
 	return r, nil
+}
+
+// mergeOverrides preserves valid overrides from a previous enrollment record
+// before applying newly supplied overrides (which replace matching Root+Glob
+// entries). Any stale previous override that no longer validates against p is
+// dropped.
+func mergeOverrides(p *profile.Profile, previous *enroll.Record, current []profile.Override) []profile.Override {
+	if previous == nil || len(previous.LocalOverrides) == 0 {
+		return current
+	}
+	byKey := make(map[[2]string]profile.Override, len(current))
+	for _, o := range current {
+		byKey[[2]string{o.Root, o.Glob}] = o
+	}
+	out := make([]profile.Override, 0, len(previous.LocalOverrides)+len(current))
+	seen := make(map[[2]string]bool, len(previous.LocalOverrides)+len(current))
+	for _, o := range previous.LocalOverrides {
+		if o.Validate(p) != nil {
+			continue
+		}
+		k := [2]string{o.Root, o.Glob}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		if repl, ok := byKey[k]; ok {
+			out = append(out, repl)
+		} else {
+			out = append(out, o)
+		}
+	}
+	for _, o := range current {
+		k := [2]string{o.Root, o.Glob}
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 func resolveRoots(ctx context.Context, e *Env, p *profile.Profile, stateDir string, warns *[]string) []enroll.Root {

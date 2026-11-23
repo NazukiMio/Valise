@@ -72,6 +72,10 @@ type KitGuide struct {
 	OnboardSay    string   `json:"onboard_say"`
 	StatusSay     string   `json:"status_say"`
 	BackupSay     string   `json:"backup_say"`
+	// HasService/ServiceUnit: the instance's effective profile declares a
+	// service unit that a restart can reload MCP configuration through.
+	HasService  bool   `json:"has_service"`
+	ServiceUnit string `json:"service_unit,omitempty"`
 }
 
 func buildKitGuide(target *LoginTarget, porterPath, instance string) *KitGuide {
@@ -89,6 +93,10 @@ func buildKitGuide(target *LoginTarget, porterPath, instance string) *KitGuide {
 	var ak *profile.AgentKit
 	if target != nil {
 		ak = target.Profile.AgentKit
+	}
+	if target != nil {
+		g.ServiceUnit = kitServiceUnit(target)
+		g.HasService = g.ServiceUnit != ""
 	}
 	if ak != nil {
 		g.HasSkillsDir = ak.SkillsDir != nil
@@ -128,11 +136,22 @@ type KitPlan struct {
 	MCPDoc     string                     `json:"mcp_doc,omitempty"`
 	MCPSnippet string                     `json:"mcp_snippet,omitempty"` // configuration to paste, never applied by Valise
 	AgentLine  string                     `json:"agent_line"`
+	// MCPWire and ServiceRestart are set only when the person asked Valise
+	// to run the harness's own add command / restart the service (not dry run).
+	MCPWire        *KitStepOutcome           `json:"mcp_wire,omitempty"`
+	ServiceRestart *KitServiceRestartOutcome `json:"service_restart,omitempty"`
 }
 
 // KitInstall installs the skills into an instance's skills_dir (dryRun only
 // reports) and prepares the MCP instructions.
 func (s *Service) KitInstall(ctx context.Context, host, instance string, dryRun bool) (*KitPlan, error) {
+	return s.KitInstallWithOptions(ctx, host, instance, KitInstallOptions{}, dryRun)
+}
+
+// KitInstallWithOptions is KitInstall plus the optional one-click MCP wiring
+// and service restart (kit_wire.go). Skills installation is never undone by a
+// failed wire or restart; each step reports its own outcome.
+func (s *Service) KitInstallWithOptions(ctx context.Context, host, instance string, opts KitInstallOptions, dryRun bool) (*KitPlan, error) {
 	if !dryRun {
 		stopOp := s.BeginOperation()
 		defer stopOp()
@@ -167,6 +186,12 @@ func (s *Service) KitInstall(ctx context.Context, host, instance string, dryRun 
 	plan.MCPDoc = guide.MCPDoc
 	plan.MCPSnippet = guide.MCPSnippet
 	plan.MCPCommand = guide.MCPCommand
+	if opts.WireMCP {
+		plan.MCPWire = s.kitRunStep(ctx, host, target, guide.MCPCommand, instance, dryRun, "kit-mcp-wire-")
+	}
+	if opts.RestartService {
+		plan.ServiceRestart = s.kitRestartService(ctx, host, instance, target, dryRun)
+	}
 	return plan, nil
 }
 
@@ -186,15 +211,24 @@ func (s *Service) KitStatus(ctx context.Context, host, instance string) (*agentk
 
 // KitRemovalPlan is what uninstalling does and how to unwire MCP.
 type KitRemovalPlan struct {
-	Result        *agentkit.KitUninstallResult `json:"result"`
-	MCPCommand    []string                     `json:"mcp_command,omitempty"` // never run by Valise
-	MCPSnippet    bool                         `json:"mcp_snippet"`           // MCP was added by pasting configuration
-	MCPServerName string                       `json:"mcp_server_name"`
+	Result         *agentkit.KitUninstallResult `json:"result"`
+	MCPCommand     []string                     `json:"mcp_command,omitempty"` // never run by Valise
+	MCPSnippet     bool                         `json:"mcp_snippet"`           // MCP was added by pasting configuration
+	MCPServerName  string                       `json:"mcp_server_name"`
+	MCPWire        *KitStepOutcome              `json:"mcp_wire,omitempty"` // the unwire step
+	ServiceRestart *KitServiceRestartOutcome    `json:"service_restart,omitempty"`
 }
 
 // KitUninstall removes the installed skills (dryRun only reports). Modified
 // skills are kept unless force.
 func (s *Service) KitUninstall(ctx context.Context, host, instance string, force, dryRun bool) (*KitRemovalPlan, error) {
+	return s.KitUninstallWithOptions(ctx, host, instance, KitUninstallOptions{Force: force}, dryRun)
+}
+
+// KitUninstallWithOptions is KitUninstall plus the optional MCP unwiring and
+// service restart.
+func (s *Service) KitUninstallWithOptions(ctx context.Context, host, instance string, opts KitUninstallOptions, dryRun bool) (*KitRemovalPlan, error) {
+	force := opts.Force
 	if !dryRun {
 		stopOp := s.BeginOperation()
 		defer stopOp()
@@ -214,10 +248,17 @@ func (s *Service) KitUninstall(ctx context.Context, host, instance string, force
 		return nil, err
 	}
 	guide := buildKitGuide(target, "", instance)
-	return &KitRemovalPlan{
+	plan := &KitRemovalPlan{
 		Result:        &res,
 		MCPCommand:    guide.MCPRemoveCmd,
 		MCPSnippet:    guide.MCPRemoveNote,
 		MCPServerName: "valise",
-	}, nil
+	}
+	if opts.UnwireMCP {
+		plan.MCPWire = s.kitRunStep(ctx, host, target, guide.MCPRemoveCmd, instance, dryRun, "kit-mcp-unwire-")
+	}
+	if opts.RestartService {
+		plan.ServiceRestart = s.kitRestartService(ctx, host, instance, target, dryRun)
+	}
+	return plan, nil
 }

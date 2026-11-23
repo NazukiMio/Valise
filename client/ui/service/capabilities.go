@@ -29,6 +29,9 @@ func n2Compatibility(hello *rpc.HelloResult, method string, params any) error {
 		if usesCatchUp(params) {
 			capability = protection.CapabilityV2
 		}
+		if usesScheduleV3(params) {
+			capability = protection.CapabilityV3
+		}
 	case protection.MethodTargetChangePrepare, protection.MethodTargetChangeApply:
 		capability = protection.CapabilityV2
 	case vaultrpc.MethodJourney:
@@ -76,6 +79,26 @@ func usesCatchUp(params any) bool {
 		return true
 	}
 	return p.Desired.Schedule.CatchUp != nil
+}
+
+// usesScheduleV3 reports whether a prepare request carries hourly, weekly or
+// monthly schedule fields. Plain daily plans stay compatible with old porters.
+func usesScheduleV3(params any) bool {
+	switch p := params.(type) {
+	case protection.PrepareParams:
+		return p.Desired.Schedule.UsesV3()
+	case *protection.PrepareParams:
+		return p != nil && p.Desired.Schedule.UsesV3()
+	}
+	b, err := json.Marshal(params)
+	if err != nil {
+		return true
+	}
+	var p protection.PrepareParams
+	if json.Unmarshal(b, &p) != nil {
+		return true
+	}
+	return p.Desired.Schedule.UsesV3()
 }
 
 func usesBackupSelection(params any) bool {

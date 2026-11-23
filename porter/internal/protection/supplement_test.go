@@ -451,3 +451,35 @@ func TestTimestampFallbackFormats(t *testing.T) {
 		}
 	}
 }
+
+func TestPorterDisabledEmptyDailyAtAndV3ScheduleRoundtrip(t *testing.T) {
+	s, a, d := world(t)
+	// Disabled schedule with empty DailyAt prepares and applies cleanly.
+	d.Schedule.DailyAt = ""
+	r := apply(t, s, prepare(t, s, a, d, 0))
+	if !r.Committed || r.NewRevision != 1 {
+		t.Fatal(r)
+	}
+	// Enabled weekly V3 schedule prepares, applies, writes OnCalendar, and loads back.
+	yes := true
+	d.Schedule = cp.Schedule{
+		Enabled:  &yes,
+		Cadence:  "weekly",
+		Weekdays: []string{"Wed", "Mon"},
+		DailyAt:  "03:15",
+		Timezone: "UTC",
+	}
+	r = apply(t, s, prepare(t, s, a, d, 1))
+	if !r.Committed || r.NewRevision != 2 {
+		t.Fatal(r)
+	}
+	_, tmr := names(a.InstanceID)
+	b, err := os.ReadFile(filepath.Join(s.Home, ".config", "systemd", "user", tmr))
+	if err != nil || !strings.Contains(string(b), "OnCalendar=Mon,Wed *-*-* 03:15:00 UTC\n") {
+		t.Fatalf("timer unit: %s %v", string(b), err)
+	}
+	loaded, err := s.LoadPlan(a.InstanceID)
+	if err != nil || loaded == nil || loaded.Schedule.Cadence != "weekly" || len(loaded.Schedule.Weekdays) != 2 {
+		t.Fatalf("loaded plan: %+v %v", loaded, err)
+	}
+}

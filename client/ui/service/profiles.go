@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -49,6 +51,8 @@ type ProfilesStatus struct {
 	PackProblem string             `json:"pack_problem,omitempty"`
 	Clouds      []string           `json:"clouds,omitempty"`
 	Local       []string           `json:"local,omitempty"`
+	Overrides   []string           `json:"overrides,omitempty"`
+	Loaded      []ProfileSummary   `json:"loaded,omitempty"`
 	Rejected    []string           `json:"rejected,omitempty"`
 }
 
@@ -76,8 +80,27 @@ func (s *Service) ProfilesStatus() (*ProfilesStatus, error) {
 		if l.Local {
 			st.Local = append(st.Local, id)
 		}
+		if l.OverridesOfficial {
+			st.Overrides = append(st.Overrides, id)
+		}
+		if l.Effective != nil {
+			sum := ProfileSummary{
+				ID:                id,
+				DisplayName:       l.Effective.DisplayName,
+				Version:           l.Effective.ProfileVersion,
+				Status:            l.Effective.Status,
+				Local:             l.Local,
+				OverridesOfficial: l.OverridesOfficial,
+			}
+			if l.Official != nil {
+				sum.OfficialVersion = l.Official.ProfileVersion
+			}
+			st.Loaded = append(st.Loaded, sum)
+		}
 	}
 	sort.Strings(st.Local)
+	sort.Strings(st.Overrides)
+	sort.Slice(st.Loaded, func(i, j int) bool { return st.Loaded[i].ID < st.Loaded[j].ID })
 	return st, nil
 }
 
@@ -119,7 +142,7 @@ func (s *Service) FetchPack(ctx context.Context, tag string) (*PackFile, error) 
 			return nil, err
 		}
 	}
-	if !strings.HasPrefix(tag, profiles.PackTagPrefix) || strings.ContainsAny(tag, "/?# ") {
+	if !strings.HasPrefix(tag, profiles.PackTagPrefix) || strings.ContainsAny(tag, "/\\?# ") || strings.Contains(tag, "..") {
 		return nil, valise.New("pack_bad_tag", "资料包版本号无效："+tag, "使用形如 "+profiles.PackTagPrefix+"2026.10.31 的版本号")
 	}
 	data, err := s.download(ctx, h, s.releaseBase()+"/"+tag+"/"+profiles.PackAsset, 4<<20)
@@ -165,24 +188,83 @@ func (s *Service) releaseBase() string {
 // ReleasesAPI lists the project's releases; overridable in tests.
 var ReleasesAPI = "https://api.github.com/repos/NazukiMio/Valise/releases?per_page=50"
 
+// ReleasesAtomURL is the public GitHub Releases Atom feed fallback when
+// api.github.com is rate-limited or unavailable; overridable in tests.
+var ReleasesAtomURL = "https://github.com/NazukiMio/Valise/releases.atom"
+
 func (s *Service) latestPackTag(ctx context.Context, h *http.Client) (string, error) {
-	b, err := s.download(ctx, h, ReleasesAPI, 2<<20)
+	b, apiErr := s.download(ctx, h, ReleasesAPI, 2<<20)
+	if apiErr == nil {
+		var rels []struct {
+			Tag        string `json:"tag_name"`
+			Draft      bool   `json:"draft"`
+			Prerelease bool   `json:"prerelease"`
+		}
+		if err := json.Unmarshal(b, &rels); err == nil {
+			best := ""
+			for _, r := range rels {
+				if !r.Draft && !r.Prerelease && strings.HasPrefix(r.Tag, profiles.PackTagPrefix) && r.Tag > best {
+					best = r.Tag
+				}
+			}
+			if best == "" {
+				return "", valise.New("pack_none", "还没有发布任何 harness 资料包", "稍后再试，或用 --file 安装本地文件")
+			}
+			return best, nil
+		} else {
+			apiErr = valise.New("pack_list", "无法读取 Release 列表", "稍后重试，或用 --tag 指定版本").WithDetail(err.Error())
+		}
+	}
+	if tag, atomErr := s.latestPackTagFromAtom(ctx, h); atomErr == nil {
+		return tag, nil
+	} else if ue, ok := valise.As(atomErr); ok && ue.Code == "pack_none" {
+		return "", atomErr
+	}
+	return "", valise.New("pack_list", "读不到 Valise 的发布列表，无法在线获取资料包",
+		"项目还没有公开发布或网络不通时，改用本地文件安装（valise profiles install --file <文件>，终端界面里选「本地文件」）").WithDetail(errText1(apiErr))
+}
+
+func (s *Service) latestPackTagFromAtom(ctx context.Context, h *http.Client) (string, error) {
+	if ReleasesAtomURL == "" {
+		return "", valise.New("pack_list", "未配置 Atom 备选地址", "")
+	}
+	b, err := s.download(ctx, h, ReleasesAtomURL, 2<<20)
 	if err != nil {
-		return "", valise.New("pack_list", "读不到 Valise 的发布列表，无法在线获取资料包",
-			"项目还没有公开发布或网络不通时，改用本地文件安装（valise profiles install --file <文件>，终端界面里选「本地文件」）").WithDetail(errText1(err))
+		return "", err
 	}
-	var rels []struct {
-		Tag        string `json:"tag_name"`
-		Draft      bool   `json:"draft"`
-		Prerelease bool   `json:"prerelease"`
+	var feed struct {
+		Entries []struct {
+			Links []struct {
+				Href string `xml:"href,attr"`
+			} `xml:"link"`
+		} `xml:"entry"`
 	}
-	if err := json.Unmarshal(b, &rels); err != nil {
-		return "", valise.New("pack_list", "无法读取 Release 列表", "稍后重试，或用 --tag 指定版本").WithDetail(err.Error())
+	if err := xml.Unmarshal(b, &feed); err != nil {
+		return "", valise.New("pack_list", "无法解析 Release Atom 列表", "稍后重试，或用 --tag 指定版本").WithDetail(err.Error())
 	}
 	best := ""
-	for _, r := range rels {
-		if !r.Draft && !r.Prerelease && strings.HasPrefix(r.Tag, profiles.PackTagPrefix) && r.Tag > best {
-			best = r.Tag
+	const marker = "/releases/tag/"
+	for _, entry := range feed.Entries {
+		for _, link := range entry.Links {
+			idx := strings.Index(link.Href, marker)
+			if idx < 0 {
+				continue
+			}
+			tag := link.Href[idx+len(marker):]
+			if cut := strings.IndexAny(tag, "?#"); cut >= 0 {
+				tag = tag[:cut]
+			}
+			decoded, err := url.PathUnescape(tag)
+			if err != nil {
+				continue
+			}
+			tag = strings.TrimSpace(decoded)
+			if !strings.HasPrefix(tag, profiles.PackTagPrefix) || strings.ContainsAny(tag, "/\\?# ") || strings.Contains(tag, "..") {
+				continue
+			}
+			if tag > best {
+				best = tag
+			}
 		}
 	}
 	if best == "" {
@@ -217,18 +299,21 @@ func (s *Service) download(ctx context.Context, h *http.Client, url string, max 
 // LocalProfileFile is one local profile YAML read from disk, previewed but
 // not yet imported.
 type LocalProfileFile struct {
-	From          string          `json:"from"`
-	ID            string          `json:"id"`
-	DisplayName   string          `json:"display_name"`
-	Version       int             `json:"profile_version"`
-	Status        string          `json:"status"`
-	RestoreCap    string          `json:"restore_capability"`
-	Pending       int             `json:"pending"`
-	Warnings      []profile.Issue `json:"warnings,omitempty"`
-	Commands      []string        `json:"commands,omitempty"`
-	RefusedCmds   []string        `json:"refused_commands,omitempty"`
-	ReplacesLocal bool            `json:"replaces_local,omitempty"`
-	Data          []byte          `json:"-"`
+	From              string          `json:"from"`
+	ID                string          `json:"id"`
+	DisplayName       string          `json:"display_name"`
+	Version           int             `json:"profile_version"`
+	Status            string          `json:"status"`
+	RestoreCap        string          `json:"restore_capability"`
+	Pending           int             `json:"pending"`
+	Warnings          []profile.Issue `json:"warnings,omitempty"`
+	Commands          []string        `json:"commands,omitempty"`
+	RefusedCmds       []string        `json:"refused_commands,omitempty"`
+	ReplacesLocal     bool            `json:"replaces_local,omitempty"`
+	OverridesOfficial bool            `json:"overrides_official,omitempty"`
+	OfficialVersion   int             `json:"official_version,omitempty"`
+	Diff              *ProfileDiff    `json:"diff,omitempty"`
+	Data              []byte          `json:"-"`
 }
 
 const maxLocalProfileBytes = 1 << 20
@@ -271,21 +356,14 @@ func (s *Service) checkLocalProfile(data []byte, name string) (*LocalProfileFile
 	}
 	newDoc.Path = name
 	id := newDoc.Profile.ID
-	var docs []*profile.Document
-	pack, packErr := profiles.Installed(s.Dirs.Data, s.Release.PublicKey)
-	if packErr == nil && pack != nil {
-		for _, d := range pack.Docs {
-			if d.Profile.ID == id {
-				return nil, valise.New("local_profile_official_conflict", "官方资料包里已有同名 harness 资料："+id, "本地资料不能覆盖官方资料；请换一个 id")
-			}
-		}
-		docs = append(docs, pack.Docs...)
-	}
 	replaces := false
 	if _, err := os.Stat(filepath.Join(profiles.LocalDir(s.Dirs.Data), id+".yaml")); err == nil {
 		replaces = true
 	}
 	matches, _ := filepath.Glob(filepath.Join(profiles.LocalDir(s.Dirs.Data), "*.yaml"))
+	sort.Strings(matches)
+	var otherLocal []*profile.Document
+	localIDs := map[string]bool{id: true}
 	for _, m := range matches {
 		d, err := profile.LoadFile(m)
 		if err != nil {
@@ -295,24 +373,55 @@ func (s *Service) checkLocalProfile(data []byte, name string) (*LocalProfileFile
 			replaces = true
 			continue
 		}
-		docs = append(docs, d)
+		if d.Profile.ID != "" {
+			if localIDs[d.Profile.ID] {
+				continue
+			}
+			localIDs[d.Profile.ID] = true
+		}
+		otherLocal = append(otherLocal, d)
 	}
+	var docs []*profile.Document
+	overridesOfficial := false
+	officialVersion := 0
+	pack, packErr := profiles.Installed(s.Dirs.Data, s.Release.PublicKey)
+	if packErr == nil && pack != nil {
+		for _, d := range pack.Docs {
+			if d.Profile.ID == id {
+				overridesOfficial = true
+				officialVersion = d.Profile.ProfileVersion
+				continue
+			}
+			if localIDs[d.Profile.ID] {
+				continue
+			}
+			docs = append(docs, d)
+		}
+	}
+	docs = append(docs, otherLocal...)
 	docs = append(docs, newDoc)
+	results := profile.Lint(docs)
 	var res *profile.Result
-	for _, r := range profile.Lint(docs) {
+	var childIssues []string
+	for _, r := range results {
 		if r.Doc == newDoc {
 			r := r
 			res = &r
+		} else if r.Doc.Profile.Extends == id && len(r.Issues) > 0 {
+			for _, i := range r.Issues {
+				childIssues = append(childIssues, i.String())
+			}
 		}
 	}
 	if res == nil {
 		return nil, valise.New("local_profile_lint_failed", "本地资料文件没有通过校验", "对照 docs/PROFILE_AUTHORING.md 修正后重试")
 	}
-	if len(res.Issues) > 0 {
+	if len(res.Issues) > 0 || len(childIssues) > 0 {
 		var lines []string
 		for _, i := range res.Issues {
 			lines = append(lines, i.String())
 		}
+		lines = append(lines, childIssues...)
 		return nil, valise.New("local_profile_lint_failed", "本地资料文件没有通过校验", "按详情里的字段提示修正后重试").WithDetail(strings.Join(lines, "\n"))
 	}
 	eff := res.Effective
@@ -322,7 +431,14 @@ func (s *Service) checkLocalProfile(data []byte, name string) (*LocalProfileFile
 	f := &LocalProfileFile{
 		ID: id, DisplayName: eff.DisplayName, Version: eff.ProfileVersion, Status: eff.Status,
 		RestoreCap: eff.CapabilityStatus("restore"), Pending: len(newDoc.Pending),
-		Warnings: res.Warnings, Commands: profiles.Commands(eff), ReplacesLocal: replaces, Data: data,
+		Warnings: res.Warnings, Commands: profiles.Commands(eff),
+		ReplacesLocal: replaces, OverridesOfficial: overridesOfficial, OfficialVersion: officialVersion,
+		Data: data,
+	}
+	if set, err := s.Profiles(); err == nil && set != nil {
+		if existing := set.ByID[id]; existing != nil && existing.Effective != nil {
+			f.Diff = diffProfiles(existing.Effective, eff)
+		}
 	}
 	for _, cmd := range profile.Commands(eff) {
 		if len(cmd.Argv) == 0 {

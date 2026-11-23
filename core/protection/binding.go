@@ -25,6 +25,7 @@ type ClientBinding struct {
 	Revision           Revision          `json:"revision"`
 	ServerRevisionSeen Revision          `json:"server_revision_seen"`
 	LocalCopies        []LocalCopy       `json:"local_copies"`
+	CloudCopies        []LocalCopy       `json:"cloud_copies,omitempty"`
 }
 
 type BindingFile struct {
@@ -87,7 +88,15 @@ func (b ClientBinding) Validate() error {
 	if err := ValidateAgent(b.AgentRef); err != nil {
 		return err
 	}
-	return ValidateLocalCopies(b.LocalCopies)
+	if err := ValidateLocalCopies(b.LocalCopies); err != nil {
+		return err
+	}
+	if b.CloudCopies != nil {
+		if err := ValidateLocalCopies(b.CloudCopies); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (f BindingFile) Validate() error {

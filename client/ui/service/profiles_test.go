@@ -140,21 +140,198 @@ func TestLocalProfileImportAndReplace(t *testing.T) {
 	}
 }
 
-func TestLocalProfileOfficialConflictAndParent(t *testing.T) {
+func TestLocalProfileOfficialOverrideDiffRemoveAndParent(t *testing.T) {
 	s := newService(t, "ssh")
 	installTestPack(t, s, minisigntest.New(), localDemoYAML)
-	_, err := s.ReadLocalProfileFile(writeTemp(t, "demo.yaml", localDemoYAML))
-	wantCode(t, err, "local_profile_official_conflict")
-	// A child resolves its parent from the official pack.
-	f, err := s.ReadLocalProfileFile(writeTemp(t, "child.yaml", localChildYAML))
+
+	overrideYAML := `schema: valise-profile/1
+id: demo
+display_name: Demo Custom
+profile_version: 3
+status: draft
+detect: { binaries: [demo], state_dir_candidates: ["${HOME}/.demo"], markers_any: [demo.json] }
+paths:
+  - { root: state, glob: "demo.json", category: config }
+  - { root: state, glob: "memory/*.md", category: memory }
+consistency:
+  sqlite:
+    - { root: state, glob: "state.db" }
+provenance: { kind: binary, binary: { name: demo } }
+service:
+  candidates: [ { scope: user, unit: demo.service } ]
+  install_argv: [demo, service, install]
+entries:
+  - { id: web, kind: web, host: 127.0.0.1, port: 8080, path: / }
+actions:
+  - { id: ping, name: Ping, explain: test, risk: read, argv: [/bin/echo, pong], output: text }
+agent_kit:
+  skills_dir: { root: state, path: "skills/" }
+native_cli: [/bin/echo, onboard-v2]
+native_session_cli: [/bin/echo, chat]
+`
+	f, err := s.ReadLocalProfileFile(writeTemp(t, "demo.yaml", overrideYAML))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("official override must be allowed: %v", err)
 	}
-	if f.ID != "demo-child" {
-		t.Fatalf("%+v", f)
+	if !f.OverridesOfficial || f.OfficialVersion != 2 || f.ReplacesLocal || f.Diff == nil {
+		t.Fatalf("unexpected override preview: %+v", f)
+	}
+	d := f.Diff
+	if d.OldVersion != 2 || d.NewVersion != 3 ||
+		len(d.AddedEntries) != 1 || d.AddedEntries[0] != "web" ||
+		len(d.AddedActions) != 1 || d.AddedActions[0] != "ping" ||
+		!d.NativeCLIChanged || !d.NativeSessionChanged || !d.ServiceInstallChanged || !d.AgentKitChanged ||
+		d.PathRulesDelta != 1 || d.SQLiteDelta != 1 || len(d.Highlights) == 0 {
+		t.Fatalf("unexpected diff: %+v", d)
 	}
 	if _, err := s.InstallLocalProfile(f); err != nil {
 		t.Fatal(err)
+	}
+	st, err := s.ProfilesStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Overrides) != 1 || st.Overrides[0] != "demo" || len(st.Loaded) != 1 ||
+		!st.Loaded[0].OverridesOfficial || st.Loaded[0].OfficialVersion != 2 || st.Loaded[0].Version != 3 {
+		t.Fatalf("unexpected status after override: %+v", st)
+	}
+
+	// A child resolves its parent (currently the overriding local demo).
+	child, err := s.ReadLocalProfileFile(writeTemp(t, "child.yaml", localChildYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.ID != "demo-child" {
+		t.Fatalf("%+v", child)
+	}
+	if _, err := s.InstallLocalProfile(child); err != nil {
+		t.Fatal(err)
+	}
+
+	// Removing the local override restores the official profile.
+	if err := s.RemoveLocalProfile("demo"); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, s.RemoveLocalProfile("demo"), "local_profile_not_found")
+	st, err = s.ProfilesStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Overrides) != 0 {
+		t.Fatalf("expected no overrides after remove: %+v", st)
+	}
+	foundOfficial := false
+	for _, sum := range st.Loaded {
+		if sum.ID == "demo" && !sum.Local && sum.Version == 2 {
+			foundOfficial = true
+		}
+	}
+	if !foundOfficial {
+		t.Fatalf("official demo v2 not restored: %+v", st.Loaded)
+	}
+}
+
+func TestFetchPackAtomFallback(t *testing.T) {
+	signer := minisigntest.New()
+	tgz, err := profiles.Build("../../../profiles", "../../../kit/tools.yaml", "2026.11.20", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := signer.Sign(tgz, "file:"+profiles.PackAsset)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/releases", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "API rate limit exceeded", http.StatusForbidden)
+	})
+	mux.HandleFunc("/releases.atom", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry><link rel="alternate" type="text/html" href="https://github.com/NazukiMio/Valise/releases/tag/v0.1.0-beta.1"/></entry>
+  <entry><link rel="alternate" type="text/html" href="https://github.com/NazukiMio/Valise/releases/tag/profiles-2026.11.10"/></entry>
+  <entry><link rel="alternate" type="text/html" href="https://github.com/NazukiMio/Valise/releases/tag/profiles-2026.11.20"/></entry>
+</feed>`))
+	})
+	mux.HandleFunc("/dl/profiles-2026.11.20/"+profiles.PackAsset, func(w http.ResponseWriter, r *http.Request) { w.Write(tgz) })
+	mux.HandleFunc("/dl/profiles-2026.11.20/"+profiles.PackSigAsset, func(w http.ResponseWriter, r *http.Request) { w.Write(sig) })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	oldAPI, oldAtom := ReleasesAPI, ReleasesAtomURL
+	ReleasesAPI = srv.URL + "/releases"
+	ReleasesAtomURL = srv.URL + "/releases.atom"
+	defer func() {
+		ReleasesAPI, ReleasesAtomURL = oldAPI, oldAtom
+	}()
+
+	s := newService(t, "ssh")
+	s.Release.BaseURL = srv.URL + "/dl"
+	s.Release.PublicKey = signer.PublicKey
+	f, err := s.FetchPack(context.Background(), "")
+	if err != nil {
+		t.Fatalf("expected Atom fallback to succeed on API 403: %v", err)
+	}
+	if f.From != "profiles-2026.11.20" || f.SignatureErr != nil {
+		t.Fatalf("unexpected fetched pack: from=%q sigErr=%v", f.From, f.SignatureErr)
+	}
+}
+
+func TestFetchPackAtomRejectsTraversalTags(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/releases.atom", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry><link rel="alternate" type="text/html" href="https://github.com/NazukiMio/Valise/releases/tag/profiles-2099.01.01%2f..%2fevil"/></entry>
+  <entry><link rel="alternate" type="text/html" href="https://github.com/NazukiMio/Valise/releases/tag/profiles-2099.02.02..evil"/></entry>
+  <entry><link rel="alternate" type="text/html" href="https://github.com/NazukiMio/Valise/releases/tag/profiles-2099.03.03%2e%2e"/></entry>
+  <entry><link rel="alternate" type="text/html" href="https://github.com/NazukiMio/Valise/releases/tag/profiles-2026.11.20?ref=atom"/></entry>
+</feed>`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	oldAtom := ReleasesAtomURL
+	ReleasesAtomURL = srv.URL + "/releases.atom"
+	defer func() { ReleasesAtomURL = oldAtom }()
+
+	s := newService(t, "ssh")
+	tag, err := s.latestPackTagFromAtom(context.Background(), srv.Client())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tag != "profiles-2026.11.20" {
+		t.Fatalf("expected traversal tags to be ignored, got %q", tag)
+	}
+
+	if _, err := s.FetchPack(context.Background(), "profiles-2026..11"); err == nil {
+		t.Fatal("expected FetchPack to reject tag containing '..'")
+	} else {
+		wantCode(t, err, "pack_bad_tag")
+	}
+}
+
+func TestSyncProfileToInstances(t *testing.T) {
+	s, _ := enrollWorld(t)
+	ctx := context.Background()
+	if _, err := s.Enroll(ctx, "box", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatal(err)
+	}
+	// Bump local profile version and sync to one reachable + one missing host.
+	updated := strings.Replace(demoProfile, "profile_version: 1", "profile_version: 2", 1)
+	if err := os.WriteFile(filepath.Join(s.Dirs.Data, "profiles", "demo.yaml"), []byte(updated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outcomes, err := s.SyncProfileToInstances(ctx, "demo", []ProfileSyncTarget{
+		{Host: "box", InstanceID: "demo"},
+		{Host: "missing-host", InstanceID: "demo"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 2 || !outcomes[0].OK || outcomes[0].Written == "" || outcomes[1].OK || outcomes[1].Err == "" {
+		t.Fatalf("unexpected sync outcomes: %+v", outcomes)
+	}
+	insts, err := s.Instances(ctx, "box")
+	if err != nil || len(insts) != 1 || insts[0].ProfileVersion != 2 {
+		t.Fatalf("expected synced instance to have v2: %+v %v", insts, err)
 	}
 }
 

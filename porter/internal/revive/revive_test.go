@@ -562,3 +562,62 @@ func TestMigrateCarriesKeptNestedBody(t *testing.T) {
 		}
 	}
 }
+
+func TestInspectBinaryFoundAndDataOnlyMigrate(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.p.Detect = &profile.Detect{
+		Binaries:           []string{"demo-bin"},
+		StateDirCandidates: []string{"${HOME}/.demo"},
+	}
+
+	// Without binary on PATH: BinaryFound is false, StateDir still resolves with empty Roots.
+	facts, err := Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{Profile: w.p, InstanceID: "demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.BinaryFound || facts.StateDir != w.state {
+		t.Fatalf("expected BinaryFound=false StateDir=%s, got %+v", w.state, facts)
+	}
+
+	// With binary on PATH: BinaryFound is true.
+	write(t, filepath.Join(w.bin, "demo-bin"), "#!/bin/sh\nexit 0\n", 0o755)
+	facts, err = Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{
+		Profile:    w.p,
+		InstanceID: "demo",
+		Roots:      []revive.RootPlan{{ID: "state", Path: w.state}},
+	})
+	if err != nil || !facts.BinaryFound || len(facts.Roots) != 1 || !facts.Roots[0].Exists {
+		t.Fatalf("expected BinaryFound=true and existing state root, got %+v %v", facts, err)
+	}
+
+	// Data-only migrate (Unit == "" / SkipService) with BodyKeep and nested body dirs under state:
+	// atomically swaps directories, carries nested body dir, writes record, finishes in StateRestored,
+	// and leaves .valise-prev-* intact.
+	p := w.plan()
+	p.Mode = revive.ModeMigrate
+	p.Carry = false
+	p.Unit = ""
+	p.Body = revive.BodyPlan{Action: revive.BodyKeep, Dirs: []string{"state/runtime"}}
+	p.Record = &enroll.Record{
+		InstanceID:     "demo",
+		ProfileID:      w.p.ID,
+		ProfileVersion: w.p.ProfileVersion,
+		Roots:          map[string]string{"state": w.state},
+	}
+	w.stage(t, p, snapshot)
+	res, err := w.r.Swap(ctx, p.OpID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.State != revive.StateRestored || len(res.Prev) != 1 || !exists(res.Prev[0]) {
+		t.Fatalf("expected StateRestored with intact prev dir, got %+v", res)
+	}
+	if read(t, filepath.Join(w.state, "SOUL.md")) != "old soul" || read(t, filepath.Join(w.state, "runtime/bin/tool")) != "body binary" {
+		t.Fatal("migrated soul or kept nested body missing")
+	}
+	rec, err := porterenroll.ReadRecord(w.home, "demo")
+	if err != nil || rec == nil || rec.Roots["state"] != w.state {
+		t.Fatalf("expected record written on target, got %+v %v", rec, err)
+	}
+}

@@ -191,4 +191,74 @@ func TestWriteLocalFile(t *testing.T) {
 	if err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("%v %v", err, st)
 	}
+	if err := RemoveLocalFile(dir, "../bad"); err == nil {
+		t.Error("bad id accepted by RemoveLocalFile")
+	}
+	if err := RemoveLocalFile(dir, "my-profile"); err != nil {
+		t.Fatalf("RemoveLocalFile: %v", err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatalf("expected local file removed, got %v", err)
+	}
+}
+
+func TestLocalOverrideOfOfficialProfile(t *testing.T) {
+	signer := minisigntest.New()
+	data := t.TempDir()
+	tgz := buildPack(t)
+	sig := signer.Sign(tgz, "file:"+PackAsset)
+	if _, err := Install(data, tgz, sig, signer.PublicKey); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read an official profile from the repository and write a valid local override for it.
+	raw, err := os.ReadFile(filepath.Join(repoProfiles, "dsh.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	overridden := strings.Replace(string(raw), "display_name: ", "display_name: LocalOverride-", 1)
+	if _, err := WriteLocalFile(data, "dsh", []byte(overridden)); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Load(data, signer.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Rejected) != 0 {
+		t.Fatalf("unexpected rejected: %v", s.Rejected)
+	}
+	l := s.ByID["dsh"]
+	if l == nil || !l.Local || !l.OverridesOfficial || l.Official == nil {
+		t.Fatalf("expected dsh to override official profile, got %+v", l)
+	}
+	if !strings.HasPrefix(l.Effective.DisplayName, "LocalOverride-") || strings.HasPrefix(l.Official.DisplayName, "LocalOverride-") {
+		t.Fatalf("effective=%q official=%q", l.Effective.DisplayName, l.Official.DisplayName)
+	}
+
+	// If the local override fails lint, it is recorded in Rejected and the official profile stays active.
+	brokenOverride := strings.Replace(string(raw), "status: ", "status: invalid-status-", 1)
+	if _, err := WriteLocalFile(data, "dsh", []byte(brokenOverride)); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Load(data, signer.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Rejected) != 1 {
+		t.Fatalf("expected 1 rejected local override, got %v", s.Rejected)
+	}
+	l = s.ByID["dsh"]
+	if l == nil || l.Local || l.OverridesOfficial || l.Official != nil {
+		t.Fatalf("expected official dsh fallback active, got %+v", l)
+	}
+
+	// Removing the local override restores clean loading.
+	if err := RemoveLocalFile(data, "dsh"); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Load(data, signer.PublicKey)
+	if err != nil || len(s.Rejected) != 0 || s.ByID["dsh"].Local {
+		t.Fatalf("after RemoveLocalFile: %+v %v", s, err)
+	}
 }

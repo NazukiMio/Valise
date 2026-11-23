@@ -130,7 +130,7 @@ func TestManageTab(t *testing.T) {
 		t.Error("still shown after 标记已读")
 	}
 	click(t, tt, "修改…")
-	hasAll(t, tt.Texts(), "每天自动备份", "几点", "时区", "按周", "按季度", "保存")
+	hasAll(t, tt.Texts(), "定时备份频率", "每天", "几点", "时区", "按周", "按季度", "保存")
 	ps.sched = nil
 	ps.backup = &backupRun{task: &service.BackupTask{Run: &protection.BackupRun{Components: []protection.BackupComponent{
 		{Kind: "server_backup", State: "succeeded"}, {Kind: "server_copy", TargetRef: &protection.LocationRef{ID: "gdrive"}, State: "failed"}}}}}

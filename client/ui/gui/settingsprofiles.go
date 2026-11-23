@@ -14,16 +14,20 @@ import (
 )
 
 type profilesState struct {
-	started      bool
-	loading      bool
-	picking      bool
-	status       *service.ProfilesStatus
-	statusErr    error
-	fetchJ       job
-	installJ     job
-	pending      *service.PackFile
-	pendingLocal *service.LocalProfileFile
-	doneNote     string
+	started       bool
+	loading       bool
+	picking       bool
+	status        *service.ProfilesStatus
+	statusErr     error
+	fetchJ        job
+	installJ      job
+	pending       *service.PackFile
+	pendingLocal  *service.LocalProfileFile
+	doneNote      string
+	syncProfileID string
+	syncTargets   []service.ProfileSyncTarget
+	syncJ         job
+	syncOutcomes  []service.ProfileSyncOutcome
 }
 
 func (a *App) ensureProfilesState() *profilesState {
@@ -51,6 +55,9 @@ func (a *App) profilesSettings(c *ui.Context) {
 		a.readProfilesStatus()
 	}
 	a.profilesStatusCard(c, ps)
+	if len(ps.syncTargets) > 0 || len(ps.syncOutcomes) > 0 || ps.syncJ.busy || ps.syncJ.err != nil {
+		a.profileSyncCard(c, ps)
+	}
 	if ps.pending != nil {
 		a.profilesPreviewCard(c, ps, ps.pending)
 	}
@@ -60,7 +67,7 @@ func (a *App) profilesSettings(c *ui.Context) {
 }
 
 func (a *App) profilesStatusCard(c *ui.Context, ps *profilesState) {
-	busy := ps.loading || ps.picking || ps.fetchJ.busy || ps.installJ.busy
+	busy := ps.loading || ps.picking || ps.fetchJ.busy || ps.installJ.busy || ps.syncJ.busy
 	card(ui.Column(c)).Gap(8).Children(func() {
 		sectionTitle(ui.Text(c, T("profiles.title")))
 		if ps.loading && ps.status == nil && ps.statusErr == nil {
@@ -92,6 +99,23 @@ func (a *App) profilesStatusCard(c *ui.Context, ps *profilesState) {
 			if len(st.Local) > 0 {
 				muted(ui.Text(c, T("profiles.local_list", "list", strings.Join(st.Local, T("common.list_sep"))))).Wrap()
 			}
+			var overrides []service.ProfileSummary
+			for _, sum := range st.Loaded {
+				if sum.OverridesOfficial {
+					overrides = append(overrides, sum)
+				}
+			}
+			if len(overrides) > 0 {
+				subPanel(ui.Column(c)).Gap(6).Children(func() {
+					for _, sum := range overrides {
+						id := sum.ID
+						ui.Row(c.Key("ovr-" + id)).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.Text(c, T("profiles.override_item", "id", id, "local", sum.Version, "official", sum.OfficialVersion)).FontSize(fsSub).TextColor(palette.Warn).Grow(1).Wrap()
+							ui.Button(c, T("profiles.restore_official")).Disabled(busy).OnClick(func() { a.restoreOfficialProfile(id) })
+						})
+					}
+				})
+			}
 			if len(st.Rejected) > 0 {
 				ui.Text(c, T("profiles.rejected_list", "list", strings.Join(st.Rejected, T("common.list_sep")))).TextColor(palette.Warn).Wrap()
 			}
@@ -117,8 +141,26 @@ func (a *App) profilesStatusCard(c *ui.Context, ps *profilesState) {
 				ui.Button(c, T("profiles.pick_file")).Disabled(busy).OnClick(func() { a.pickPackLocal() })
 				ui.Button(c, T("profiles.pick_yaml")).Disabled(busy).OnClick(func() { a.pickProfileLocal() })
 			}
-			ui.Button(c, T("common.refresh")).Disabled(busy).OnClick(func() { ps.doneNote = ""; a.readProfilesStatus() })
+			ui.Button(c, T("common.refresh")).Disabled(busy).OnClick(func() { ps.doneNote, ps.syncTargets, ps.syncOutcomes = "", nil, nil; a.readProfilesStatus() })
 		})
+	})
+}
+
+func (a *App) restoreOfficialProfile(id string) {
+	ps := a.ensureProfilesState()
+	if ps.loading || ps.picking || ps.fetchJ.busy || ps.installJ.busy || ps.syncJ.busy {
+		return
+	}
+	ps.doneNote, ps.syncTargets, ps.syncOutcomes = "", nil, nil
+	a.start(&ps.installJ, time.Minute, func(context.Context) error {
+		return a.svc.RemoveLocalProfile(id)
+	}, func(err error) {
+		if err != nil {
+			return
+		}
+		ps.doneNote = T("profiles.restore_official_done", "id", id)
+		a.reloadProfiles()
+		a.readProfilesStatus()
 	})
 }
 
@@ -168,10 +210,10 @@ func (a *App) profilesPreviewCard(c *ui.Context, ps *profilesState, pf *service.
 
 func (a *App) fetchPackOnline() {
 	ps := a.ensureProfilesState()
-	if ps.loading || ps.picking || ps.fetchJ.busy || ps.installJ.busy {
+	if ps.loading || ps.picking || ps.fetchJ.busy || ps.installJ.busy || ps.syncJ.busy {
 		return
 	}
-	ps.doneNote, ps.installJ.err, ps.pending, ps.pendingLocal = "", nil, nil, nil
+	ps.doneNote, ps.installJ.err, ps.pending, ps.pendingLocal, ps.syncTargets, ps.syncOutcomes = "", nil, nil, nil, nil, nil
 	var pf *service.PackFile
 	a.start(&ps.fetchJ, 2*time.Minute, func(ctx context.Context) (err error) {
 		a.says(&ps.fetchJ)(T("profiles.fetching"))
@@ -186,10 +228,10 @@ func (a *App) fetchPackOnline() {
 
 func (a *App) pickPackLocal() {
 	ps := a.ensureProfilesState()
-	if a.pickFile == nil || ps.loading || ps.picking || ps.fetchJ.busy || ps.installJ.busy {
+	if a.pickFile == nil || ps.loading || ps.picking || ps.fetchJ.busy || ps.installJ.busy || ps.syncJ.busy {
 		return
 	}
-	ps.picking, ps.doneNote, ps.fetchJ.err, ps.installJ.err, ps.pending, ps.pendingLocal = true, "", nil, nil, nil, nil
+	ps.picking, ps.doneNote, ps.fetchJ.err, ps.installJ.err, ps.pending, ps.pendingLocal, ps.syncTargets, ps.syncOutcomes = true, "", nil, nil, nil, nil, nil, nil
 	a.run(func() {
 		path, err := a.pickFile(T("profiles.pick_title"), T("profiles.pick_msg"))
 		var pf *service.PackFile

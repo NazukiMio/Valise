@@ -24,11 +24,15 @@ type serverScan struct {
 
 // adoption is one agent being adopted: the report first, then accepting.
 type adoption struct {
-	busy    bool
-	res     *service.EnrollResult
-	err     error
-	assign  map[string]string // "<root>:<prefix>" → category; absent: kept as sensitive
-	written bool
+	busy      bool
+	res       *service.EnrollResult
+	err       error
+	assign    map[string]string // "<root>:<prefix>" → category; absent: kept as sensitive
+	written   bool
+	planBusy  bool
+	planDone  bool
+	planSched bool
+	planErr   error
 }
 
 // installable is a harness with an official install plan.
@@ -147,6 +151,9 @@ func (a *App) foundCard(c *ui.Context, host string, sc *serverScan, d service.De
 		}
 		if ad.res != nil && ad.res.Report != nil && !ad.written {
 			a.adoptReport(c, host, sc, d, ad)
+		}
+		if ad.written {
+			a.adoptPlanCard(c, host, d, ad)
 		}
 	})
 }

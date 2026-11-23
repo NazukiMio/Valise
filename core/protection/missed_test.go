@@ -215,3 +215,39 @@ func TestComputeCopyStatus(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestScheduledTimesAndComputeMissedV3Cadences(t *testing.T) {
+	yes := true
+
+	// Hourly every 6 hours at :15 UTC
+	hourly := Schedule{Enabled: &yes, Cadence: "hourly", EveryHours: 6, DailyAt: "00:15", Timezone: "UTC"}
+	slots, err := ScheduledTimes(hourly, utc(2026, 11, 5, 0, 0), utc(2026, 11, 5, 23, 59))
+	if err != nil || len(slots) != 4 ||
+		!slots[0].Equal(utc(2026, 11, 5, 0, 15)) ||
+		!slots[1].Equal(utc(2026, 11, 5, 6, 15)) ||
+		!slots[2].Equal(utc(2026, 11, 5, 12, 15)) ||
+		!slots[3].Equal(utc(2026, 11, 5, 18, 15)) {
+		t.Fatalf("hourly slots: %v %v", slots, err)
+	}
+
+	// Weekly on Mon, Thu at 03:00 UTC (2026-11-02 is Mon, 2026-11-05 is Thu)
+	weekly := Schedule{Enabled: &yes, Cadence: "weekly", Weekdays: []string{"Mon", "Thu"}, DailyAt: "03:00", Timezone: "UTC"}
+	slots, err = ScheduledTimes(weekly, utc(2026, 11, 1, 0, 0), utc(2026, 11, 8, 0, 0))
+	if err != nil || len(slots) != 2 ||
+		!slots[0].Equal(utc(2026, 11, 2, 3, 0)) ||
+		!slots[1].Equal(utc(2026, 11, 5, 3, 0)) {
+		t.Fatalf("weekly slots: %v %v", slots, err)
+	}
+
+	// Monthly on day 15 at 04:00 UTC, ComputeMissed across 35-day horizon
+	d := NewDefault()
+	d.Schedule = Schedule{Enabled: &yes, Cadence: "monthly", DayOfMonth: 15, DailyAt: "04:00", Timezone: "UTC"}
+	d.Period = Period{Unit: "month", Timezone: "UTC"}
+	plan := ServerPlan{SchemaVersion: Schema, AgentRef: missedAgent, Revision: 1, Desired: d, AcceptedAt: utc(2026, 10, 1, 0, 0)}
+	// Late run on Oct 16 (caught up before Nov 15 next slot)
+	runs := []BackupRun{timerRun(utc(2026, 10, 16, 4, 0), "succeeded")}
+	missed, doubt := ComputeMissed(plan, runs, utc(2026, 10, 20, 12, 0))
+	if doubt || len(missed) != 1 || missed[0].State != "caught_up" || !missed[0].ScheduledAt.Equal(utc(2026, 10, 15, 4, 0)) {
+		t.Fatalf("monthly ComputeMissed: %+v doubt=%v", missed, doubt)
+	}
+}

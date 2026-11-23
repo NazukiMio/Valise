@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -100,8 +101,7 @@ func (s *Service) readSystem(ctx context.Context, host, instance string) (*syste
 		}
 		if v.Mode == "accepted" && v.ServerPlan != nil && v.ServerPlan.Schedule.Enabled != nil && *v.ServerPlan.Schedule.Enabled {
 			out.scheduled = true
-			sc := v.ServerPlan.Schedule
-			out.schedule = "每天 " + sc.DailyAt + "（" + sc.Timezone + "）"
+			out.schedule = formatProtectionSchedule(v.ServerPlan.Schedule)
 			if out.status != nil && out.status.Linger == "unknown" && v.Timer.Linger {
 				out.status.Linger = "yes"
 			}
@@ -116,6 +116,43 @@ func unsupportedOK(err error) error {
 		return nil
 	}
 	return err
+}
+
+func formatProtectionSchedule(sc protection.Schedule) string {
+	tz := ""
+	if sc.Timezone != "" {
+		tz = "（" + sc.Timezone + "）"
+	}
+	switch sc.EffectiveCadence() {
+	case "hourly":
+		base := fmt.Sprintf("每 %d 小时", sc.EveryHours)
+		if _, min, ok := strings.Cut(sc.DailyAt, ":"); ok && min != "" && min != "00" {
+			base += " :" + min
+		}
+		return base + tz
+	case "weekly":
+		return "每周" + joinChineseWeekdays(sc.Weekdays) + " " + sc.DailyAt + tz
+	case "monthly":
+		return fmt.Sprintf("每月 %d 日 %s%s", sc.DayOfMonth, sc.DailyAt, tz)
+	default:
+		return "每天 " + sc.DailyAt + tz
+	}
+}
+
+func joinChineseWeekdays(days []string) string {
+	names := map[string]string{
+		"Mon": "一", "Tue": "二", "Wed": "三", "Thu": "四",
+		"Fri": "五", "Sat": "六", "Sun": "日",
+	}
+	out := make([]string, 0, len(days))
+	for _, d := range days {
+		if zh, ok := names[d]; ok {
+			out = append(out, zh)
+		} else if d != "" {
+			out = append(out, d)
+		}
+	}
+	return strings.Join(out, "、")
 }
 
 // systemItems adds the linger and clock items. legacyTimer and

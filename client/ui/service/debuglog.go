@@ -90,7 +90,7 @@ func DebugLogEnvOverride() string {
 
 // DebugLogEnabled reports whether client debug diagnostic logging is active.
 // Precedence: VALISE_DEBUG ("1"/"0") > Config.DebugLog > Version containing
-// "dev" or "test" (case-insensitive); release builds default to false.
+// "dev", "test", "beta" or "rc" (case-insensitive); release builds default to false.
 func (s *Service) DebugLogEnabled() bool {
 	if s == nil {
 		return false
@@ -108,7 +108,12 @@ func (s *Service) DebugLogEnabled() bool {
 		return *cfg
 	}
 	v := strings.ToLower(strings.TrimSpace(s.Version))
-	return strings.Contains(v, "dev") || strings.Contains(v, "test")
+	for _, k := range []string{"dev", "test", "beta", "rc"} {
+		if strings.Contains(v, k) {
+			return true
+		}
+	}
+	return false
 }
 
 // SetDebugLog persists the debug_log setting to config.json and updates the

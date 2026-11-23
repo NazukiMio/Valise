@@ -33,11 +33,25 @@ type ReviveOptions struct {
 	// AllowSnapshotProfile revives with the profile stored in the snapshot
 	// when the client has no profile of that id and version.
 	AllowSnapshotProfile bool `json:"allow_snapshot_profile"`
+	// AllowVersionMismatch accepts keeping the target's own program body when
+	// it differs from the snapshot's (or when none can be rebuilt there): only
+	// configuration, memory and assets are moved over.
+	AllowVersionMismatch bool `json:"allow_version_mismatch,omitempty"`
+	// SkipService moves data and dossier only: the service is neither
+	// installed nor started on the target.
+	SkipService bool `json:"skip_service,omitempty"`
 	// Source reads the snapshot from a copy instead of From's vault
 	// (docs/ARCHITECTURE.md 8.2.3): repo:<名>[/<服务器名>], dir:<路径> or
 	// cloud:<名>[/<服务器名>].
 	Source string `json:"source,omitempty"`
 	Fault  string `json:"-"` // drills only
+}
+
+// DossierReviveSummary is the snapshot's dossier as it lands on the target.
+type DossierReviveSummary struct {
+	LocalOverrides int                  `json:"local_overrides"`
+	LocalSQLite    []string             `json:"local_sqlite,omitempty"` // root:path
+	ExternalRefs   []enroll.ExternalRef `json:"external_refs,omitempty"`
 }
 
 // RevivePlan is shown to the user before anything changes.
@@ -57,18 +71,25 @@ type RevivePlan struct {
 	ProfileLocal bool   `json:"profile_local"`
 	// ProfileFromSnapshot: the profile came from the snapshot header, not
 	// reviewed by this client.
-	ProfileFromSnapshot bool               `json:"profile_from_snapshot"`
-	Files               int                `json:"files"`
-	Bytes               int64              `json:"bytes"`
-	Excluded            []string           `json:"excluded_exclusive_secrets,omitempty"`
-	RestoreSecret       bool               `json:"restores_secrets"`
-	StopSource          string             `json:"stop_source_unit,omitempty"` // migrate: unit stopped on From
-	InstallArgv         []string           `json:"service_install_argv,omitempty"`
-	Downtime            string             `json:"downtime"`
-	NeedBytes           int64              `json:"need_bytes"`
-	FreeBytes           uint64             `json:"free_bytes"`
-	Warnings            []string           `json:"warnings,omitempty"`
-	Blockers            []valise.UserError `json:"blockers,omitempty"`
+	ProfileFromSnapshot bool     `json:"profile_from_snapshot"`
+	Files               int      `json:"files"`
+	Bytes               int64    `json:"bytes"`
+	Excluded            []string `json:"excluded_exclusive_secrets,omitempty"`
+	RestoreSecret       bool     `json:"restores_secrets"`
+	StopSource          string   `json:"stop_source_unit,omitempty"` // migrate: unit stopped on From
+	InstallArgv         []string `json:"service_install_argv,omitempty"`
+	// Dossier is what the snapshot's record carries over (nil when empty).
+	Dossier *DossierReviveSummary `json:"dossier,omitempty"`
+	// BodySummary compares the snapshot's body with the target's when they
+	// differ or the body is not carried.
+	BodySummary string `json:"body_summary,omitempty"`
+	// DataOnly: only data and dossier move; no service is installed or started.
+	DataOnly  bool               `json:"data_only,omitempty"`
+	Downtime  string             `json:"downtime"`
+	NeedBytes int64              `json:"need_bytes"`
+	FreeBytes uint64             `json:"free_bytes"`
+	Warnings  []string           `json:"warnings,omitempty"`
+	Blockers  []valise.UserError `json:"blockers,omitempty"`
 	// Nested are other agents inside the target state dir: a swap is
 	// refused (a restore test, which does not swap, is not).
 	Nested []string `json:"nested,omitempty"`
@@ -95,6 +116,8 @@ type RevivePlan struct {
 	// sourceAgent is the source generation from a bound snapshot binding.
 	sourceAgent *identity.AgentRef
 }
+
+func (p *RevivePlan) warn(w string) { p.Warnings = append(p.Warnings, w) }
 
 func (p *RevivePlan) block(code, reason, suggestion string) {
 	p.Blockers = append(p.Blockers, *valise.New(code, reason, suggestion))
@@ -345,8 +368,10 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		rp.sqlite[sq.Root+":"+sq.Path] = true
 	}
 
+	rp.DataOnly = o.SkipService
+	rp.summarizeDossier(head)
 	if !o.testOnly {
-		planBody(rp, &plan, head, facts, prof, o.Mode)
+		planBodyOpts(rp, &plan, head, facts, prof, o)
 		if beside {
 			how := ""
 			if prof.Relocation != nil {
@@ -355,6 +380,9 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 			rp.Warnings = append(rp.Warnings, "副本和原实例在同一台服务器上：Valise 只把文件放进你指定的目录，不启动、不停止任何服务；副本要用的服务、端口与登录由你另行配置"+how)
 		} else {
 			planService(rp, &plan, facts, prof)
+		}
+		if rp.DataOnly && plan.Unit != "" {
+			plan.Unit, plan.InstallService, rp.InstallArgv = "", false, nil
 		}
 	} else {
 		plan.TestOnly = true
@@ -385,22 +413,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		rp.Warnings = append(rp.Warnings, "目标启动前会停止原服务器上的 "+plan.Unit+"（原实例的文件不动）；复活失败时会重新启动它")
 	}
 	if o.Mode != revive.ModeRollback {
-		rootsMap := map[string]string{}
-		for _, r := range roots {
-			rootsMap[r.ID] = r.Path
-		}
-		rec := enroll.Record{InstanceID: instance, ProfileID: prof.ID, ProfileVersion: prof.ProfileVersion, Roots: rootsMap,
-			Provenance: head.Provenance, LocalOverrides: append([]profile.Override{}, head.LocalOverrides...),
-			LocalSQLite:  append([]profile.SQLiteRef(nil), head.LocalSQLite...),
-			ExternalRefs: append([]enroll.ExternalRef(nil), head.ExternalRefs...),
-			EnrolledAt:   time.Now().UTC(), Name: head.Name}
-		if len(head.Env) > 0 {
-			rec.Env = map[string]string{}
-			for k, v := range head.Env { // a path-based selection follows the new state dir
-				rec.Env[k] = strings.ReplaceAll(v, head.Roots[profile.StateRoot], rootsMap[profile.StateRoot])
-			}
-		}
-		plan.Record = &rec
+		plan.Record = planRecord(instance, prof, roots, head, facts, rp, plan, o)
 	}
 
 	if !o.testOnly {
@@ -531,7 +544,113 @@ func mapRoots(o ReviveOptions, head *vault.Snapshot, first revive.InspectResult,
 
 // planBody decides how the body is handled.
 func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts revive.InspectResult, prof profile.Profile, mode string) {
+	planBodyOpts(rp, plan, head, facts, prof, ReviveOptions{Mode: mode})
+}
+
+func planRecord(instance string, prof profile.Profile, roots []revive.RootPlan, head *vault.Snapshot, facts revive.InspectResult, rp *RevivePlan, plan revive.Plan, o ReviveOptions) *enroll.Record {
+	rootsMap := map[string]string{}
+	for _, r := range roots {
+		rootsMap[r.ID] = r.Path
+	}
+	rec := enroll.Record{InstanceID: instance, ProfileID: prof.ID, ProfileVersion: prof.ProfileVersion, Roots: rootsMap,
+		Provenance: head.Provenance, LocalOverrides: append([]profile.Override{}, head.LocalOverrides...),
+		LocalSQLite:  append([]profile.SQLiteRef(nil), head.LocalSQLite...),
+		ExternalRefs: append([]enroll.ExternalRef(nil), head.ExternalRefs...),
+		EnrolledAt:   time.Now().UTC(), Name: head.Name}
+	if len(head.Env) > 0 {
+		rec.Env = map[string]string{}
+		for k, v := range head.Env { // a path-based selection follows the new state dir
+			rec.Env[k] = strings.ReplaceAll(v, head.Roots[profile.StateRoot], rootsMap[profile.StateRoot])
+		}
+	}
+	if plan.Body.Action == revive.BodyKeep && (rp.DataOnly || o.AllowVersionMismatch || hasProvenance(facts.Provenance)) {
+		rec.Provenance = facts.Provenance // the body that really is on the target
+	}
+	return &rec
+}
+
+// hasProvenance reports whether facts identify a body installed on the target.
+func hasProvenance(p enroll.Provenance) bool {
+	return (p.Git != nil && p.Git.Commit != "") ||
+		(p.NPM != nil && p.NPM.Version != "") ||
+		(p.Tool != nil && p.Tool.Version != "") ||
+		(p.Binary != nil && p.Binary.Path != "")
+}
+
+func describeBody(p enroll.Provenance, arch string) string {
+	switch {
+	case p.Git != nil && p.Git.Commit != "":
+		return "git " + shortCommit(p.Git.Commit) + "（" + arch + "）"
+	case p.NPM != nil && p.NPM.Version != "":
+		return p.NPM.Package + "@" + p.NPM.Version + "（" + arch + "）"
+	case (p.Tool != nil && p.Tool.Version != "") || (p.Binary != nil && p.Binary.Path != ""):
+		return "已安装的程序（" + arch + "）"
+	}
+	return "未能识别版本的程序（" + arch + "）"
+}
+
+func sourceArch(head *vault.Snapshot) string {
+	if head.Runtime != nil && head.Runtime.Arch != "" {
+		return head.Runtime.OS + "/" + head.Runtime.Arch
+	}
+	return "来源架构未记录"
+}
+
+func shortCommit(c string) string {
+	if len(c) > 12 {
+		return c[:12]
+	}
+	return c
+}
+
+// summarizeDossier lists what the snapshot's record carries to the target.
+func (p *RevivePlan) summarizeDossier(head *vault.Snapshot) {
+	if len(head.LocalOverrides) == 0 && len(head.LocalSQLite) == 0 && len(head.ExternalRefs) == 0 {
+		return
+	}
+	d := &DossierReviveSummary{LocalOverrides: len(head.LocalOverrides), ExternalRefs: append([]enroll.ExternalRef(nil), head.ExternalRefs...)}
+	for _, q := range head.LocalSQLite {
+		d.LocalSQLite = append(d.LocalSQLite, q.Root+":"+q.Glob)
+	}
+	p.Dossier = d
+	if len(d.ExternalRefs) > 0 {
+		var refs []string
+		for _, r := range d.ExternalRefs {
+			refs = append(refs, r.Path+"（"+r.Kind+"）")
+		}
+		p.warn("以下位于 roots 之外的目录/符号链接不会自动随快照搬运，请在新服务器自行核对路径：" + strings.Join(refs, "；"))
+	}
+}
+
+func planBodyOpts(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts revive.InspectResult, prof profile.Profile, o ReviveOptions) {
+	mode := o.Mode
 	pv := head.Provenance
+	var nested []string
+	targetHas := hasProvenance(facts.Provenance) || facts.BinaryFound
+	// keepTarget handles a body that cannot be matched or rebuilt: either a
+	// blocker with both ways out, or (opted in) the target's own body stays.
+	keepTarget := func(code, reason string) {
+		src := describeBody(pv, sourceArch(head))
+		dst := describeBody(facts.Provenance, facts.OS+"/"+facts.Arch)
+		switch {
+		case targetHas && !o.AllowVersionMismatch:
+			rp.BodySummary = "来源 " + src + "；目标 " + dst
+			rp.block("body_version_mismatch", "目标服务器已安装另一版本的程序：来源 "+src+"，目标 "+dst+"。"+reason,
+				"目标已安装另一版本的程序；勾选放行后将保留目标已有程序身体，仅迁入配置、记忆与资产")
+		case targetHas:
+			plan.Body = revive.BodyPlan{Action: revive.BodyKeep, Dirs: nested}
+			rp.BodySummary = "来源 " + src + "；目标 " + dst + "（保留目标程序）"
+			rp.warn("已放行版本不一致：保留目标上已有的程序身体（" + dst + "），只迁入配置、记忆与资产；来源版本 " + src + " 的行为可能与目标程序不同")
+		case !o.AllowVersionMismatch:
+			rp.BodySummary = "来源 " + src + "；目标未安装"
+			rp.block(code, reason, "在目标服务器安装该 Harness 后重试，或勾选仅迁移数据与档案（不带程序身体，不启动服务）")
+		default:
+			plan.Body = revive.BodyPlan{Action: revive.BodyKeep}
+			rp.DataOnly = true
+			rp.BodySummary = "来源 " + src + "；目标未安装（仅迁移数据与档案）"
+			rp.warn("目标服务器没有该程序，也无法重建：本次只迁移数据与档案（不带程序身体，不启动服务）；在目标安装程序并配置服务后才能运行")
+		}
+	}
 	var dirs []string
 	if prof.Body != nil {
 		for _, b := range prof.Body.Paths {
@@ -551,7 +670,6 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 	}
 	// A kept or reinstalled body inside a replaced root travels with the
 	// swap (docs/ARCHITECTURE.md 8.2.1); only roots the target has.
-	var nested []string
 	for _, d := range dirs {
 		root, _, _ := strings.Cut(d, "/")
 		for _, f := range facts.Roots {
@@ -563,8 +681,12 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 	switch {
 	case pv.NPM != nil && pv.NPM.Version == "":
 		// Nothing was recorded at enrollment: say so, not "changed".
+		if o.AllowVersionMismatch {
+			keepTarget("provenance_missing", "")
+			return
+		}
 		rp.block("provenance_missing", "接入时没有记下 "+pv.NPM.Package+" 的来源版本，无法核对目标上的身体",
-			"在原服务器上重新接入（让 Valise 记下来源），再建立备份；或按官方文档在目标上全新安装："+freshDoc(prof))
+			"在原服务器上重新接入（让 Valise 记下来源），再建立备份；或按官方文档在目标上全新安装："+freshDoc(prof)+"；或放行版本不一致（保留目标程序/仅迁移数据）")
 		return
 	case pv.NPM != nil:
 		installed := facts.Provenance.NPM != nil && facts.Provenance.NPM.Version == pv.NPM.Version
@@ -572,9 +694,17 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 			plan.Body = revive.BodyPlan{Action: revive.BodyKeep, Dirs: nested}
 			return
 		}
+		if o.AllowVersionMismatch && (targetHas || !facts.Tools["npm"]) {
+			keepTarget("runtime_missing", "")
+			return
+		}
 		if !facts.Tools["npm"] {
 			rp.block("runtime_missing", "目标服务器的登录 PATH 中没有 npm，无法按来源安装 "+pv.NPM.Package,
 				"先在目标服务器上安装 Node.js 与 npm（用户级即可），参考 "+freshDoc(prof))
+			return
+		}
+		if o.AllowVersionMismatch && (pv.NPM.Integrity == "" || facts.RegistryCheck != pv.NPM.Integrity) {
+			keepTarget("provenance_changed", "")
 			return
 		}
 		if pv.NPM.Integrity == "" {
@@ -596,9 +726,10 @@ func planBody(rp *RevivePlan, plan *revive.Plan, head *vault.Snapshot, facts rev
 			plan.Body = revive.BodyPlan{Action: revive.BodyMoveDirs, Dirs: dirs}
 		case same && mode == revive.ModeRollback:
 			plan.Body = revive.BodyPlan{Action: revive.BodyMoveDirs, Dirs: dirs}
+		case same:
+			plan.Body = revive.BodyPlan{Action: revive.BodyKeep, Dirs: nested}
 		default:
-			rp.block("body_rebuild_unverified", "目标服务器上没有同一 commit 的身体，而 harness 资料的重建步骤（bootstrap_argv）尚未核实",
-				"在目标服务器上按官方文档安装同一版本后重试（"+freshDoc(prof)+"），或使用同架构、同路径的 raw 快照")
+			keepTarget("body_rebuild_unverified", "目标服务器上没有同一 commit 的身体，而 harness 资料的重建步骤（bootstrap_argv）尚未核实")
 		}
 	default:
 		plan.Body = revive.BodyPlan{Action: revive.BodyKeep, Dirs: nested}
@@ -657,6 +788,10 @@ func freshDoc(p profile.Profile) string {
 
 // planService picks the unit and whether it must be installed.
 func planService(rp *RevivePlan, plan *revive.Plan, facts revive.InspectResult, prof profile.Profile) {
+	if rp.DataOnly {
+		rp.warn("本次仅迁移数据与档案（不启动服务）；在目标安装配置服务后即可启动运行")
+		return
+	}
 	if prof.Service == nil || len(prof.Service.Candidates) == 0 {
 		rp.Warnings = append(rp.Warnings, "这个 harness 没有服务单元（前台运行）：Valise 只恢复文件，不会启动它")
 		return
@@ -670,7 +805,7 @@ func planService(rp *RevivePlan, plan *revive.Plan, facts revive.InspectResult, 
 	}
 	if !loaded {
 		if len(prof.Service.InstallArgv) == 0 {
-			rp.block("service_missing", "目标服务器上没有服务 "+plan.Unit+"，harness 资料也没有声明安装命令", "手动安装该服务后重试")
+			rp.block("service_missing", "目标服务器上没有服务 "+plan.Unit+"，harness 资料也没有声明安装命令", "手动在目标安装该服务后重试；或勾选「仅迁移数据与档案」（--data-only）先把数据搬过去，不启动服务")
 			return
 		}
 		plan.InstallService = true

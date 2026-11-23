@@ -56,4 +56,13 @@ func TestBindingRevisionRoundtripAndIdentity(t *testing.T) {
 	if err = file.Validate(); err == nil {
 		t.Fatal("foreign client binding accepted")
 	}
+	// CloudCopies optional: nil is valid, non-nil validates duplicate/missing choices.
+	binding.CloudCopies = []LocalCopy{{RepoID: "cloud-1", AfterBackup: &enabled, OnClientOpen: &enabled}}
+	if err := binding.Validate(); err != nil {
+		t.Fatal("valid CloudCopies rejected:", err)
+	}
+	binding.CloudCopies = []LocalCopy{{RepoID: "cloud-1"}}
+	if err := binding.Validate(); err == nil {
+		t.Fatal("incomplete CloudCopies accepted")
+	}
 }

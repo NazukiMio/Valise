@@ -21,6 +21,10 @@ const Capability = "protection-plan/1"
 // change methods only to a porter declaring it: older porters decode unknown
 // JSON fields leniently and would silently drop catch_up.
 const CapabilityV2 = "protection-plan/2"
+
+// CapabilityV3 adds hourly, weekly and monthly schedule cadences, and allows
+// disabled schedules to omit daily_at.
+const CapabilityV3 = "protection-plan/3"
 const (
 	MethodGet       = "protection_get"
 	MethodPrepare   = "protection_prepare"
@@ -59,10 +63,29 @@ type Schedule struct {
 	// CatchUp (protection-plan/2) runs one missed backup after boot or
 	// resume (systemd Persistent=true). Absent means off.
 	CatchUp *bool `json:"catch_up,omitempty"`
+	// Cadence (protection-plan/3) selects "daily" (default when ""), "hourly",
+	// "weekly", or "monthly".
+	Cadence    string   `json:"cadence,omitempty"`
+	EveryHours int      `json:"every_hours,omitempty"`
+	Weekdays   []string `json:"weekdays,omitempty"`
+	DayOfMonth int      `json:"day_of_month,omitempty"`
 }
 
 // CatchUpEnabled treats an absent catch_up as off.
 func (s Schedule) CatchUpEnabled() bool { return s.CatchUp != nil && *s.CatchUp }
+
+// EffectiveCadence returns the schedule's cadence, defaulting "" to "daily".
+func (s Schedule) EffectiveCadence() string {
+	if s.Cadence == "" {
+		return "daily"
+	}
+	return s.Cadence
+}
+
+// UsesV3 reports whether the schedule uses protection-plan/3 cadence fields.
+func (s Schedule) UsesV3() bool {
+	return s.EffectiveCadence() != "daily" || s.EveryHours != 0 || len(s.Weekdays) > 0 || s.DayOfMonth != 0
+}
 
 type Period struct {
 	Unit            string `json:"unit"`

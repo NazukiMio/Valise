@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"valise/core/protection"
 	"valise/core/valise"
 )
 
@@ -481,5 +482,44 @@ exec "$@"
 	_, err = sVPS.runSystemStep(ctx, "vps", FixDirect, []string{"sudo", "-S", "loginctl", "enable-linger", "agent"}, InstallIO{})
 	if err == nil || !strings.Contains(err.Error(), "SSH 管理登录未通过（非 sudo 失败）") {
 		t.Fatalf("expected SSH admin login error prefix on probe SSH err, got: %v", err)
+	}
+}
+
+func TestFormatProtectionScheduleCadences(t *testing.T) {
+	cases := []struct {
+		name string
+		sc   protection.Schedule
+		want string
+	}{
+		{
+			name: "daily default",
+			sc:   protection.Schedule{DailyAt: "03:30", Timezone: "Asia/Shanghai"},
+			want: "每天 03:30（Asia/Shanghai）",
+		},
+		{
+			name: "hourly without daily_at",
+			sc:   protection.Schedule{Cadence: "hourly", EveryHours: 6, Timezone: "UTC"},
+			want: "每 6 小时（UTC）",
+		},
+		{
+			name: "hourly with minute offset",
+			sc:   protection.Schedule{Cadence: "hourly", EveryHours: 4, DailyAt: "00:15", Timezone: "Asia/Shanghai"},
+			want: "每 4 小时 :15（Asia/Shanghai）",
+		},
+		{
+			name: "weekly",
+			sc:   protection.Schedule{Cadence: "weekly", Weekdays: []string{"Mon", "Thu", "Sun"}, DailyAt: "02:00", Timezone: "Asia/Shanghai"},
+			want: "每周一、四、日 02:00（Asia/Shanghai）",
+		},
+		{
+			name: "monthly",
+			sc:   protection.Schedule{Cadence: "monthly", DayOfMonth: 15, DailyAt: "04:00", Timezone: "UTC"},
+			want: "每月 15 日 04:00（UTC）",
+		},
+	}
+	for _, tc := range cases {
+		if got := formatProtectionSchedule(tc.sc); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

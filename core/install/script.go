@@ -22,10 +22,11 @@ var (
 
 // CheckScript runs the section 7 static checks against a downloaded script
 // body. Unlike CheckCommand (which checks literal non-shell argv), normal
-// shell syntax such as $(uname -m) and # comments is allowed, while
-// unreadable/binary payloads, decoding/obfuscation, curl|sh pipelines,
-// eval on dynamic/downloaded data, destructive commands, and disabling
-// security services are refused without bypass.
+// shell syntax such as $(uname -m) and # comments is allowed. Unreadable or
+// binary payloads, fork bombs, destructive commands, and disabling security
+// services are refused without bypass; in-script secondary download pipes,
+// decoding/obfuscation, and dynamic eval emit high-risk warnings that require
+// explicit user confirmation.
 func CheckScript(body []byte, home string) []Finding {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return []Finding{{Refuse: true, Rule: RuleHidden, Reason: "脚本内容为空，实际执行的内容无法事先展示"}}
@@ -35,21 +36,36 @@ func CheckScript(body []byte, home string) []Finding {
 	}
 
 	var out []Finding
+	var curLine int
+	var curSnippet string
 	add := func(refuse bool, rule, reason string) {
+		// Inside a downloaded script body, only destructive and security-disabling
+		// rules are permanent hard refusals; hidden/inline/pipe findings become
+		// high-risk warnings requiring confirmation.
+		refuse = refuse && (rule == RuleDestroy || rule == RuleSecurityOff)
 		for _, f := range out {
 			if f.Rule == rule && f.Reason == reason {
 				return
 			}
 		}
-		out = append(out, Finding{Refuse: refuse, Rule: rule, Reason: reason})
+		out = append(out, Finding{
+			Refuse:  refuse,
+			Rule:    rule,
+			Reason:  reason,
+			Line:    curLine,
+			Snippet: curSnippet,
+		})
 	}
 
-	for _, line := range logicalScriptLines(string(body)) {
+	for _, sl := range logicalScriptLines(string(body)) {
+		line := sl.text
+		curLine = sl.line
+		curSnippet = trimSnippet(line)
 		if reDecode.MatchString(line) || reBase64Extra.MatchString(line) {
-			add(true, RuleHidden, "脚本里包含解码隐藏内容的命令，实际执行的内容无法事先展示")
+			add(false, RuleHidden, "脚本里包含解码隐藏内容的命令，实际执行的内容无法事先展示")
 		}
 		if rePipeShell.MatchString(line) || reProcSubShell.MatchString(line) {
-			add(true, RulePipeToShell, "脚本内部把网络内容直接交给解释器执行")
+			add(false, RulePipeToShell, "脚本内部把网络内容直接交给解释器执行")
 		}
 		if reForkBomb.MatchString(line) {
 			add(true, RuleDestroy, "fork 炸弹，会耗尽服务器资源")
@@ -68,6 +84,14 @@ func CheckScript(body []byte, home string) []Finding {
 	return out
 }
 
+func trimSnippet(s string) string {
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > 120 {
+		return string(r[:120])
+	}
+	return s
+}
+
 func isReadableScript(body []byte) bool {
 	if !utf8.Valid(body) {
 		return false
@@ -80,18 +104,31 @@ func isReadableScript(body []byte) bool {
 	return true
 }
 
+type scriptLine struct {
+	line int
+	text string
+}
+
 // logicalScriptLines strips # comment lines, joins backslash continuations,
-// and drops unquoted inline # comments.
-func logicalScriptLines(text string) []string {
+// drops unquoted inline # comments, and preserves the 1-based starting line
+// number of each logical line.
+func logicalScriptLines(text string) []scriptLine {
 	raw := strings.Split(text, "\n")
-	var out []string
+	var out []scriptLine
 	var cur strings.Builder
-	for _, ln := range raw {
+	startLine := 0
+	for i, ln := range raw {
 		ln = strings.TrimSuffix(ln, "\r")
 		if cur.Len() == 0 && strings.HasPrefix(strings.TrimSpace(ln), "#") {
 			continue
 		}
 		ln = stripInlineComment(ln)
+		if cur.Len() == 0 && strings.TrimSpace(ln) == "" {
+			continue
+		}
+		if startLine == 0 {
+			startLine = i + 1
+		}
 		if hasLineContinuation(ln) {
 			cur.WriteString(strings.TrimSuffix(ln, "\\"))
 			cur.WriteByte(' ')
@@ -99,12 +136,13 @@ func logicalScriptLines(text string) []string {
 		}
 		cur.WriteString(ln)
 		if s := strings.TrimSpace(cur.String()); s != "" {
-			out = append(out, s)
+			out = append(out, scriptLine{line: startLine, text: s})
 		}
 		cur.Reset()
+		startLine = 0
 	}
 	if s := strings.TrimSpace(cur.String()); s != "" {
-		out = append(out, s)
+		out = append(out, scriptLine{line: startLine, text: s})
 	}
 	return out
 }
@@ -178,7 +216,7 @@ func checkScriptLineStatements(line, home string, add func(bool, string, string)
 		words := stripLeadingKeywordsAndEnv(st.words)
 		if len(words) > 0 {
 			if inDownloadPipe && isInterpreterTarget(words) {
-				add(true, RulePipeToShell, "脚本内部把网络内容直接交给解释器执行")
+				add(false, RulePipeToShell, "脚本内部把网络内容直接交给解释器执行")
 			}
 			if st.sep == "|" && isDownloaderStmt(words) {
 				inDownloadPipe = true
@@ -186,7 +224,7 @@ func checkScriptLineStatements(line, home string, add func(bool, string, string)
 			if path.Base(words[0]) == "eval" {
 				joined := strings.Join(words[1:], " ")
 				if strings.ContainsAny(joined, "$`") || reInlineBad.MatchString(joined) {
-					add(true, RuleHidden, "脚本通过 eval 执行动态或隐藏代码，实际执行的内容无法事先展示")
+					add(false, RuleHidden, "脚本通过 eval 执行动态或隐藏代码，实际执行的内容无法事先展示")
 				} else {
 					add(false, RuleInline, "脚本包含 eval 内联执行")
 				}

@@ -39,6 +39,45 @@ func sayCopies(d protection.Desired) protection.Desired {
 	return d
 }
 
+// ensureScheduleDefaults guarantees a valid DailyAt, Timezone, Period, and
+// non-nil ServerCopies whenever an initial or updated plan is prepared.
+func ensureScheduleDefaults(d protection.Desired) protection.Desired {
+	if d.Scope.Kind == "" {
+		d.Scope.Kind = "preset"
+	}
+	if d.Scope.Tier == "" {
+		d.Scope.Tier = "full"
+	}
+	if d.Schedule.Enabled == nil {
+		off := false
+		d.Schedule.Enabled = &off
+	}
+	if d.Schedule.DailyAt == "" && d.Schedule.EffectiveCadence() != "hourly" {
+		d.Schedule.DailyAt = "04:40"
+	}
+	if d.Schedule.Timezone == "" {
+		d.Schedule.Timezone = localZone()
+	}
+	if d.Period.Unit == "" {
+		d.Period.Unit = "month"
+	}
+	if d.Period.Timezone == "" {
+		d.Period.Timezone = d.Schedule.Timezone
+	}
+	return sayCopies(d)
+}
+
+// defaultProtectionDesired builds the initial full-tier protection plan.
+func defaultProtectionDesired(dailyAuto bool) protection.Desired {
+	d := ensureScheduleDefaults(protection.NewDefault())
+	d.Schedule.Enabled = &dailyAuto
+	if dailyAuto {
+		catch := false
+		d.Schedule.CatchUp = &catch
+	}
+	return d
+}
+
 func parseRetention(text string) (int, bool) {
 	text = strings.TrimSpace(text)
 	if text == "" {

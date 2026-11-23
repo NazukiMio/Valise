@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 	"valise/client/config"
+	"valise/core/enroll"
 	"valise/core/journey"
 	"valise/core/revive"
 	"valise/core/valise"
@@ -175,4 +176,52 @@ func TestCloneOnTheOnlyServer(t *testing.T) {
 		t.Fatalf("copy plan not started: err %v busy %v started %d", r.j.err, r.j.busy, started)
 	}
 	r.j.cancel()
+}
+
+func TestRestorePlanDossierAndDecoupledBlockers(t *testing.T) {
+	a, tt, r := restoreWorld(t)
+	r.step = "plan"
+	r.mode = revive.ModeMigrate
+	r.origin, r.target = "home", "cloud"
+	r.plan = &service.PreparedRestore{Revive: &service.RevivePlan{
+		Target: "cloud", From: "home",
+		BodySummary: "来源 git abc123（linux/amd64）；目标 git def456（linux/arm64）",
+		Dossier: &service.DossierReviveSummary{
+			LocalOverrides: 2,
+			LocalSQLite:    []string{"state:db.sqlite"},
+			ExternalRefs:   []enroll.ExternalRef{{Path: "/opt/ext", Kind: "dir"}},
+		},
+		Plan: revive.Plan{Mode: revive.ModeMigrate, InstanceID: "xiaoman", Tier: "full", Body: revive.BodyPlan{Action: revive.BodyKeep}},
+		Blockers: []valise.UserError{
+			{Code: "body_version_mismatch", Reason: "版本差异"},
+			{Code: "service_missing", Reason: "缺少服务"},
+		},
+	}}
+	tt.Frame()
+	tt.Advance(time.Second)
+	hasAll(t, tt.Texts(),
+		T("restore.dossier"),
+		T("restore.dossier_value", "overrides", 2, "sqlite", 1, "external", 1),
+		T("restore.allow_version_mismatch"),
+		T("restore.allow_skip_service"),
+		T("restore.replan"),
+	)
+	if tt.HasText(T("restore.prepare")) {
+		t.Fatalf("offered execute before resolving opt-in blockers: %q", tt.Texts())
+	}
+	click(t, tt, T("restore.allow_version_mismatch"))
+	click(t, tt, T("restore.allow_skip_service"))
+	if !r.allowVersionMismatch || !r.skipService {
+		t.Fatalf("checkboxes did not update flow flags: mismatch=%v skipSvc=%v", r.allowVersionMismatch, r.skipService)
+	}
+
+	// body_rebuild_unverified offers data-only opt-in and target install shortcut.
+	r.plan.Revive.Blockers = []valise.UserError{{Code: "body_rebuild_unverified", Reason: "无法重建"}}
+	tt.Frame()
+	tt.Advance(time.Second)
+	hasAll(t, tt.Texts(), T("restore.allow_body_data_only"), T("restore.go_install_target"), T("restore.replan"))
+	click(t, tt, T("restore.go_install_target"))
+	if a.router.Path() != "/servers/cloud/agents" {
+		t.Fatalf("install shortcut went to %s", a.router.Path())
+	}
 }

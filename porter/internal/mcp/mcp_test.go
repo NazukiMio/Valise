@@ -411,3 +411,54 @@ func TestStatusIncludesProtectionPlan(t *testing.T) {
 		t.Fatalf("unexpected protection_plan: %+v", pp)
 	}
 }
+
+func TestSummarizePlanCadences(t *testing.T) {
+	yes, no := true, false
+	cases := []struct {
+		name string
+		sc   cp.Schedule
+		want string
+	}{
+		{
+			name: "disabled",
+			sc:   cp.Schedule{Enabled: &no, Timezone: "UTC"},
+			want: "off",
+		},
+		{
+			name: "daily",
+			sc:   cp.Schedule{Enabled: &yes, DailyAt: "03:30", Timezone: "Asia/Shanghai"},
+			want: "03:30 (Asia/Shanghai)",
+		},
+		{
+			name: "hourly without daily_at",
+			sc:   cp.Schedule{Enabled: &yes, Cadence: "hourly", EveryHours: 6, Timezone: "UTC"},
+			want: "every 6h (UTC)",
+		},
+		{
+			name: "hourly with minute offset",
+			sc:   cp.Schedule{Enabled: &yes, Cadence: "hourly", EveryHours: 3, DailyAt: "00:20", Timezone: "UTC"},
+			want: "every 3h at :20 (UTC)",
+		},
+		{
+			name: "weekly",
+			sc:   cp.Schedule{Enabled: &yes, Cadence: "weekly", Weekdays: []string{"Mon", "Thu"}, DailyAt: "02:00", Timezone: "Asia/Shanghai"},
+			want: "Mon,Thu 02:00 (Asia/Shanghai)",
+		},
+		{
+			name: "monthly",
+			sc:   cp.Schedule{Enabled: &yes, Cadence: "monthly", DayOfMonth: 10, DailyAt: "05:00", Timezone: "UTC"},
+			want: "day 10 05:00 (UTC)",
+		},
+	}
+	for _, tc := range cases {
+		got := summarizePlan(&cp.ServerPlan{
+			Desired: cp.Desired{
+				Scope:    cp.Scope{Kind: "preset", Tier: vault.TierFull},
+				Schedule: tc.sc,
+			},
+		})
+		if got.Schedule != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got.Schedule, tc.want)
+		}
+	}
+}

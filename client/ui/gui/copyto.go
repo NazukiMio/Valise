@@ -2,10 +2,12 @@ package gui
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 
+	"valise/client/config"
 	"valise/core/protection"
 	"valise/core/vaultrpc"
 	"valise/ui/service"
@@ -14,7 +16,7 @@ import (
 // 备份后复制到 (docs/UI.md 7.9, ARCHITECTURE.md 7.4): one dialog, two
 // halves. Above, where the server copies by itself: the plan's copies,
 // changed through the plan (prepare, confirm, the server checks). Below,
-// the folders this computer fills: its own binding, kept here only.
+// the folders and cloud drives this computer fills: its own binding, kept here only.
 
 type copyEdit struct {
 	read    job
@@ -22,6 +24,7 @@ type copyEdit struct {
 	server  map[string]*serverCopyEdit
 	local   *service.LocalCopiesView
 	repos   map[string]*[2]bool // after a backup, when Valise opens
+	clouds  map[string]*[2]bool // after a backup, when Valise opens
 	saveJ   job
 }
 
@@ -34,7 +37,11 @@ type serverCopyEdit struct {
 var copyEvery = []string{"1h", "24h", "168h"}
 
 func (a *App) openCopyTo(row *agentRow, ps *protState) {
-	e := &copyEdit{server: map[string]*serverCopyEdit{}, repos: map[string]*[2]bool{}}
+	e := &copyEdit{
+		server: map[string]*serverCopyEdit{},
+		repos:  map[string]*[2]bool{},
+		clouds: map[string]*[2]bool{},
+	}
 	ps.copyTo = e
 	host, inst := row.Server, row.Instance
 	var st *vaultrpc.StatusResult
@@ -49,6 +56,7 @@ func (a *App) openCopyTo(row *agentRow, ps *protState) {
 		if err != nil {
 			return
 		}
+		ps.localCopies = lc
 		e.targets, e.local = st.Targets, lc
 		for _, t := range st.Targets {
 			e.server[t.Name] = &serverCopyEdit{every: "24h"}
@@ -58,14 +66,20 @@ func (a *App) openCopyTo(row *agentRow, ps *protState) {
 				s.on, s.every = cp.Enabled != nil && *cp.Enabled, cp.MinimumInterval
 			}
 		}
-		for _, r := range a.svc.Repos() {
-			e.repos[r.Name] = &[2]bool{true, true}
+		for _, l := range lc.Repos {
+			e.repos[l.RepoID] = &[2]bool{l.AfterBackup != nil && *l.AfterBackup, l.OnClientOpen != nil && *l.OnClientOpen}
 		}
-		if lc.Binding != nil {
-			for _, l := range lc.Binding.LocalCopies {
-				if b := e.repos[l.RepoID]; b != nil {
-					b[0], b[1] = l.AfterBackup != nil && *l.AfterBackup, l.OnClientOpen != nil && *l.OnClientOpen
-				}
+		for _, r := range a.svc.Repos() {
+			if e.repos[r.Name] == nil {
+				e.repos[r.Name] = &[2]bool{true, true}
+			}
+		}
+		for _, cl := range lc.Clouds {
+			e.clouds[cl.RepoID] = &[2]bool{cl.AfterBackup != nil && *cl.AfterBackup, cl.OnClientOpen != nil && *cl.OnClientOpen}
+		}
+		for _, cl := range a.svc.Config.Clouds {
+			if e.clouds[cl.Name] == nil {
+				e.clouds[cl.Name] = &[2]bool{true, true}
 			}
 		}
 	})
@@ -85,7 +99,7 @@ func (a *App) copyToDialog(c *ui.Context, row *agentRow, ps *protState) {
 				errorBox(c, e.read.err, a.fold("copyto-err"))
 			}
 			a.serverCopies(c, e)
-			a.localCopies(c, e)
+			a.localCopies(c, row, ps, e)
 			if e.saveJ.busy {
 				a.jobLine(c, &e.saveJ)
 				return
@@ -128,34 +142,88 @@ func (a *App) serverCopies(c *ui.Context, e *copyEdit) {
 	}
 }
 
-func (a *App) localCopies(c *ui.Context, e *copyEdit) {
+func (a *App) localCopies(c *ui.Context, row *agentRow, ps *protState, e *copyEdit) {
 	ui.Text(c, T("copyto.local")).Bold()
 	muted(ui.Text(c, T("copyto.local_what"))).Wrap()
 	if e.local != nil && !e.local.Planned {
 		muted(ui.Text(c, T("copyto.local_need_plan"))).Wrap()
+		if !e.saveJ.busy {
+			ui.Row(c).Children(func() {
+				ui.Button(c, T("copyto.enable_default_plan")).OnClick(func() { a.enableDefaultPlanForCopyTo(row, ps, e) })
+			})
+		}
 		return
 	}
-	if len(e.repos) == 0 {
+	repoNames := orderedCopyNames(repoConfigNames(a.svc.Repos()), e.repos)
+	cloudNames := orderedCopyNames(cloudConfigNames(a.svc.Config.Clouds), e.clouds)
+	if len(repoNames) == 0 && len(cloudNames) == 0 {
 		muted(ui.Text(c, T("copyto.local_none"))).Wrap()
+		return
 	}
-	for _, r := range a.svc.Repos() {
-		b := e.repos[r.Name]
-		if b == nil {
-			continue
-		}
-		ui.Row(c.Key("lc-"+r.Name)).Gap(14).Padding(8, 12).Radius(8).Background(palette.Board).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, r.Name).Bold().Grow(1)
+	for _, name := range repoNames {
+		b := e.repos[name]
+		ui.Row(c.Key("lc-"+name)).Gap(14).Padding(8, 12).Radius(8).Background(palette.Board).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, name).Bold().Grow(1)
+			ui.Checkbox(c, &b[0], T("copyto.after_backup"))
+			ui.Checkbox(c, &b[1], T("copyto.on_open"))
+		})
+	}
+	for _, name := range cloudNames {
+		b := e.clouds[name]
+		ui.Row(c.Key("cc-"+name)).Gap(14).Padding(8, 12).Radius(8).Background(palette.Board).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Grow(1).Children(func() {
+				ui.Text(c, name).Bold()
+				plainTag(c, T("loc.kind.cloud"))
+			})
 			ui.Checkbox(c, &b[0], T("copyto.after_backup"))
 			ui.Checkbox(c, &b[1], T("copyto.on_open"))
 		})
 	}
 }
 
-// saveCopyTo changes the binding only for folders that changed, then the
-// plan only when the server half changed.
+func (a *App) enableDefaultPlanForCopyTo(row *agentRow, ps *protState, e *copyEdit) {
+	if ps.ref == nil || e.saveJ.busy {
+		return
+	}
+	var rev protection.Revision
+	switch {
+	case ps.view != nil && ps.view.ServerPlan != nil:
+		rev = ps.view.ServerPlan.Revision
+	case ps.view != nil && ps.view.SupersededPlan != nil:
+		rev = ps.view.SupersededPlan.Revision
+	}
+	d := ensureScheduleDefaults(ps.desired())
+	host, ref := row.Server, *ps.ref
+	a.start(&e.saveJ, 5*time.Minute, func(ctx context.Context) error {
+		a.says(&e.saveJ)(T("protect.preparing"))
+		fc, err := a.svc.PrepareProtectionChange(ctx, host, protection.PrepareParams{AgentRef: ref, ExpectedRevision: rev, Desired: d})
+		if err != nil {
+			return err
+		}
+		a.confirm(fc.PlanID)
+		a.says(&e.saveJ)(T("protect.applying"))
+		t, err := a.svc.StartProtectionChange(ctx, fc.PlanID, "desktop-"+fc.PlanID)
+		for err == nil && t.State != "succeeded" && t.State != "failed" && t.State != "cancelled" && ctx.Err() == nil {
+			time.Sleep(time.Second)
+			t, err = a.svc.GetProtectionTask(ctx, t.TaskRef)
+		}
+		if err == nil && t.Error != nil {
+			err = taskErr(t.Error)
+		}
+		return err
+	}, func(err error) {
+		if err == nil {
+			a.readProt(host, ps)
+			a.openCopyTo(row, ps)
+		}
+	})
+}
+
+// saveCopyTo changes the binding for folders/clouds that changed (or creates
+// the initial binding when none exists yet), then the server plan if changed.
 func (a *App) saveCopyTo(row *agentRow, ps *protState) {
 	e := ps.copyTo
-	d := ps.desired()
+	d := ensureScheduleDefaults(ps.desired())
 	var copies []protection.ServerCopy
 	for _, t := range e.targets {
 		s := e.server[t.Name]
@@ -171,21 +239,33 @@ func (a *App) saveCopyTo(row *agentRow, ps *protState) {
 	planChanged := !sameCopies(d.ServerCopies, copies)
 	var changes []service.LocalCopyChange
 	if e.local.Planned {
-		was := map[string][2]bool{}
+		wasRepo, wasCloud := map[string][2]bool{}, map[string][2]bool{}
+		hasCloudBinding := false
 		if e.local.Binding != nil {
 			for _, l := range e.local.Binding.LocalCopies {
-				was[l.RepoID] = [2]bool{l.AfterBackup != nil && *l.AfterBackup, l.OnClientOpen != nil && *l.OnClientOpen}
+				wasRepo[l.RepoID] = [2]bool{l.AfterBackup != nil && *l.AfterBackup, l.OnClientOpen != nil && *l.OnClientOpen}
+			}
+			if e.local.Binding.CloudCopies != nil {
+				hasCloudBinding = true
+				for _, l := range e.local.Binding.CloudCopies {
+					wasCloud[l.RepoID] = [2]bool{l.AfterBackup != nil && *l.AfterBackup, l.OnClientOpen != nil && *l.OnClientOpen}
+				}
 			}
 		}
-		for _, r := range a.svc.Repos() {
-			b, ok := e.repos[r.Name]
-			before, saved := was[r.Name]
-			if !saved {
-				before = [2]bool{true, true}
-			}
-			if ok && *b != before {
+		for _, name := range orderedCopyNames(repoConfigNames(a.svc.Repos()), e.repos) {
+			b := e.repos[name]
+			before, saved := wasRepo[name]
+			if e.local.Binding == nil || !saved || *b != before {
 				after, opened := b[0], b[1]
-				changes = append(changes, service.LocalCopyChange{Repo: r.Name, AfterBackup: &after, OnClientOpen: &opened})
+				changes = append(changes, service.LocalCopyChange{Kind: "repo", Repo: name, AfterBackup: &after, OnClientOpen: &opened})
+			}
+		}
+		for _, name := range orderedCopyNames(cloudConfigNames(a.svc.Config.Clouds), e.clouds) {
+			b := e.clouds[name]
+			before, saved := wasCloud[name]
+			if e.local.Binding == nil || !hasCloudBinding || !saved || *b != before {
+				after, opened := b[0], b[1]
+				changes = append(changes, service.LocalCopyChange{Kind: "cloud", Repo: name, AfterBackup: &after, OnClientOpen: &opened})
 			}
 		}
 	}
@@ -194,6 +274,8 @@ func (a *App) saveCopyTo(row *agentRow, ps *protState) {
 		if planChanged {
 			d.ServerCopies = copies
 			a.applyDesired(row, ps, d)
+		} else if len(changes) > 0 {
+			a.readProt(row.Server, ps)
 		}
 	}
 	if len(changes) == 0 {
@@ -201,11 +283,18 @@ func (a *App) saveCopyTo(row *agentRow, ps *protState) {
 		return
 	}
 	host, inst := row.Server, row.Instance
+	var refreshed *service.LocalCopiesView
 	a.start(&e.saveJ, time.Minute, func(ctx context.Context) error {
-		_, err := a.svc.SetLocalCopies(ctx, host, inst, changes)
-		return err
+		if _, err := a.svc.SetLocalCopies(ctx, host, inst, changes); err != nil {
+			return err
+		}
+		refreshed, _ = a.svc.LocalCopies(ctx, host, inst)
+		return nil
 	}, func(err error) {
 		if err == nil {
+			if refreshed != nil {
+				ps.localCopies = refreshed
+			}
 			plan()
 		}
 	})
@@ -221,4 +310,39 @@ func sameCopies(x, y []protection.ServerCopy) bool {
 		}
 	}
 	return true
+}
+
+func repoConfigNames(repos []config.Repo) []string {
+	out := make([]string, 0, len(repos))
+	for _, r := range repos {
+		out = append(out, r.Name)
+	}
+	return out
+}
+
+func cloudConfigNames(clouds []config.Cloud) []string {
+	out := make([]string, 0, len(clouds))
+	for _, c := range clouds {
+		out = append(out, c.Name)
+	}
+	return out
+}
+
+func orderedCopyNames(preferred []string, m map[string]*[2]bool) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, name := range preferred {
+		if m[name] != nil && !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	var extra []string
+	for name, b := range m {
+		if b != nil && !seen[name] {
+			extra = append(extra, name)
+		}
+	}
+	sort.Strings(extra)
+	return append(out, extra...)
 }

@@ -39,6 +39,12 @@ func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.Inspect
 				break
 			}
 		}
+		for _, bin := range p.Profile.Detect.Binaries {
+			if _, err := e.LookPath(bin); err == nil {
+				res.BinaryFound = true
+				break
+			}
+		}
 	}
 	var roots []enroll.Root
 	for _, rp := range p.Roots {
@@ -71,7 +77,11 @@ func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.Inspect
 		_, err := e.LookPath(t)
 		res.Tools[t] = err == nil
 	}
-	res.Provenance = porterenroll.Provenance(ctx, e, &p.Profile, roots)
+	provRoots := roots
+	if len(provRoots) == 0 && res.StateDir != "" {
+		provRoots = []enroll.Root{{ID: profile.StateRoot, Path: res.StateDir}}
+	}
+	res.Provenance = porterenroll.Provenance(ctx, e, &p.Profile, provRoots)
 	if p.Provenance.NPM != nil && p.Provenance.NPM.Registry != "" && res.Tools["npm"] {
 		out, err := e.Run(ctx, 60*time.Second, "", "npm", "view", p.Provenance.NPM.Package+"@"+p.Provenance.NPM.Version,
 			"dist.integrity", "--registry", p.Provenance.NPM.Registry)

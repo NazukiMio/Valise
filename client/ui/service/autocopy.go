@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"valise/core/identity"
+	"valise/core/protection"
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
@@ -108,7 +109,9 @@ func (s *Service) AutoCopy(ctx context.Context, host string, trigger CopyTrigger
 	if !st.Exists || st.ServerName == "" {
 		return res, nil
 	}
-	wanted := s.wantedRepos(ctx, host, trigger, o.Instance, instancesOf(st.Leaves))
+	insts := instancesOf(st.Leaves)
+	wanted := s.wantedRepos(ctx, host, trigger, o.Instance, insts)
+	wantedCloud := s.wantedClouds(ctx, host, trigger, o.Instance, insts)
 	for _, r := range s.Config.Repos {
 		out := AutoCopyOutcome{Location: r.Name, Kind: "repo"}
 		switch {
@@ -139,6 +142,11 @@ func (s *Service) AutoCopy(ctx context.Context, host string, trigger CopyTrigger
 	}
 	for _, c := range s.Config.Clouds {
 		out := AutoCopyOutcome{Location: c.Name, Kind: "cloud"}
+		if !wantedCloud(c.Name) {
+			out.State = CopyOff
+			res.Locations = append(res.Locations, out)
+			continue
+		}
 		if o.Progress != nil {
 			o.Progress(c.Name)
 		}
@@ -234,6 +242,63 @@ func (s *Service) wantedRepos(ctx context.Context, host string, trigger CopyTrig
 		return all
 	}
 	return repoRule(ctx, trigger, instances, refs, NewProtectionBindingStore(s.Dirs.Data, s.Config.Repos))
+}
+
+// wantedClouds applies the same bindings to cloud drives. Unlike a repository,
+// a cloud with no saved choice (or no binding at all) is wanted.
+func (s *Service) wantedClouds(ctx context.Context, host string, trigger CopyTrigger, instance string, instances []string) func(string) bool {
+	if trigger == TriggerBackup {
+		instances = []string{instance}
+	}
+	all := func(string) bool { return true }
+	if len(instances) == 0 || instances[0] == "" {
+		return all
+	}
+	refs, err := s.agentRefs(ctx, host, instances)
+	if err != nil {
+		return all
+	}
+	return cloudRule(ctx, trigger, instances, refs, s.bindingStore())
+}
+
+// cloudRule is repoRule's counterpart for clouds: a location is wanted when
+// any considered instance has no choice for it, or its choice says so.
+func cloudRule(ctx context.Context, trigger CopyTrigger, instances []string, refs map[string]identity.AgentRef, store *ProtectionBindingStore) func(string) bool {
+	all := func(string) bool { return true }
+	var bindings []*protection.ClientBinding
+	for _, inst := range instances {
+		ref, ok := refs[inst]
+		if !ok {
+			return all
+		}
+		b, err := store.Read(ctx, ref)
+		if err != nil || b == nil {
+			return all
+		}
+		bindings = append(bindings, b)
+	}
+	return func(name string) bool {
+		for _, b := range bindings {
+			found := false
+			for _, c := range b.CloudCopies {
+				if c.RepoID != name {
+					continue
+				}
+				found = true
+				on := c.OnClientOpen
+				if trigger == TriggerBackup {
+					on = c.AfterBackup
+				}
+				if on != nil && *on {
+					return true
+				}
+			}
+			if !found {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 // repoRule is the rule itself, over the instances' refs and the store.

