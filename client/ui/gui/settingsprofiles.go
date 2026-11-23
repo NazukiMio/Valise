@@ -84,20 +84,20 @@ func (a *App) profilesStatusCard(c *ui.Context, ps *profilesState) {
 				if list != "" || len(st.Clouds) > 0 {
 					subPanel(ui.Column(c)).Gap(4).Children(func() {
 						if list != "" {
-							mono(muted(ui.Text(c, list))).Wrap()
+							mono(muted(ui.Text(c, list))).Wrap().Selectable()
 						}
 						if len(st.Clouds) > 0 {
-							muted(ui.Text(c, T("profiles.clouds_list", "list", strings.Join(st.Clouds, T("common.dot_sep"))))).Wrap()
+							muted(ui.Text(c, T("profiles.clouds_list", "list", strings.Join(st.Clouds, T("common.dot_sep"))))).Wrap().Selectable()
 						}
 					})
 				}
 			case st.PackProblem != "":
-				ui.Text(c, T("profiles.problem", "reason", st.PackProblem)).TextColor(palette.Warn).Wrap()
+				ui.Text(c, T("profiles.problem", "reason", st.PackProblem)).TextColor(palette.Warn).Wrap().Selectable()
 			default:
 				ui.Text(c, T("profiles.none")).TextColor(palette.Warn).Wrap()
 			}
 			if len(st.Local) > 0 {
-				muted(ui.Text(c, T("profiles.local_list", "list", strings.Join(st.Local, T("common.list_sep"))))).Wrap()
+				muted(ui.Text(c, T("profiles.local_list", "list", strings.Join(st.Local, T("common.list_sep"))))).Wrap().Selectable()
 			}
 			var overrides []service.ProfileSummary
 			for _, sum := range st.Loaded {
@@ -109,15 +109,19 @@ func (a *App) profilesStatusCard(c *ui.Context, ps *profilesState) {
 				subPanel(ui.Column(c)).Gap(6).Children(func() {
 					for _, sum := range overrides {
 						id := sum.ID
+						key := "profiles.override_item"
+						if sum.LocalStale {
+							key = "profiles.override_stale_item"
+						}
 						ui.Row(c.Key("ovr-" + id)).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.Text(c, T("profiles.override_item", "id", id, "local", sum.Version, "official", sum.OfficialVersion)).FontSize(fsSub).TextColor(palette.Warn).Grow(1).Wrap()
+							ui.Text(c, T(key, "id", id, "local", sum.Version, "official", sum.OfficialVersion)).FontSize(fsSub).TextColor(palette.Warn).Grow(1).Wrap().Selectable()
 							ui.Button(c, T("profiles.restore_official")).Disabled(busy).OnClick(func() { a.restoreOfficialProfile(id) })
 						})
 					}
 				})
 			}
 			if len(st.Rejected) > 0 {
-				ui.Text(c, T("profiles.rejected_list", "list", strings.Join(st.Rejected, T("common.list_sep")))).TextColor(palette.Warn).Wrap()
+				ui.Text(c, T("profiles.rejected_list", "list", strings.Join(st.Rejected, T("common.list_sep")))).TextColor(palette.Warn).Wrap().Selectable()
 			}
 		}
 		if ps.fetchJ.busy {
@@ -168,16 +172,16 @@ func (a *App) profilesPreviewCard(c *ui.Context, ps *profilesState, pf *service.
 	busy := ps.fetchJ.busy || ps.installJ.busy
 	card(ui.Column(c)).Gap(10).Children(func() {
 		sectionTitle(ui.Text(c, T("profiles.preview_title", "version", pf.Pack.Manifest.Version)))
-		mono(muted(ui.Text(c, pf.From))).Wrap()
+		mono(muted(ui.Text(c, pf.From))).Wrap().Selectable()
 		list := formatPackEntries(pf.Pack.Manifest.Profiles)
 		clouds := formatPackClouds(pf.Pack.Kit)
 		if list != "" || clouds != "" {
 			subPanel(ui.Column(c)).Gap(4).Children(func() {
 				if list != "" {
-					mono(ui.Text(c, list)).Wrap()
+					mono(ui.Text(c, list)).Wrap().Selectable()
 				}
 				if clouds != "" {
-					muted(ui.Text(c, T("profiles.clouds_list", "list", clouds))).Wrap()
+					muted(ui.Text(c, T("profiles.clouds_list", "list", clouds))).Wrap().Selectable()
 				}
 			})
 		}
@@ -196,7 +200,7 @@ func (a *App) profilesPreviewCard(c *ui.Context, ps *profilesState, pf *service.
 			ui.Collapsible(c, T("profiles.unverified_cmds"), a.fold("profiles-cmds"), func() {
 				subPanel(ui.Column(c)).Gap(4).Children(func() {
 					for _, cmd := range cmds {
-						mono(ui.Text(c, cmd)).FontSize(fsCaption).Wrap()
+						mono(ui.Text(c, cmd)).FontSize(fsCaption).Wrap().Selectable()
 					}
 				})
 			})

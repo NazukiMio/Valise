@@ -48,3 +48,12 @@ func TestConnTooLarge(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestTierOfInstanceForget(t *testing.T) {
+	if got := TierOf("instance_forget"); got != TierOwner {
+		t.Fatalf("TierOf(instance_forget) = %q, want %q", got, TierOwner)
+	}
+	if !Classified("instance_forget") {
+		t.Fatal("instance_forget must be classified")
+	}
+}

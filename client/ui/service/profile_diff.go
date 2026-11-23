@@ -24,6 +24,7 @@ type ProfileSummary struct {
 	Local             bool   `json:"local,omitempty"`
 	OverridesOfficial bool   `json:"overrides_official,omitempty"`
 	OfficialVersion   int    `json:"official_version,omitempty"`
+	LocalStale        bool   `json:"local_stale,omitempty"`
 }
 
 // ProfileDiff summarizes structural differences between an existing effective

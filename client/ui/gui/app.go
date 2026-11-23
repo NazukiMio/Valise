@@ -71,11 +71,12 @@ func New(svc *service.Service) *App {
 		openDebugDir: svc.OpenDebugLogDir,
 		run:          func(f func()) { go f() }, update: func(f func()) { f() }}
 	a.hooks = hooks{entryOpener: svc.OpenEntry, openURL: service.OpenURL,
-		scanTimeline: svc.ScanTimelineInScope, runRestoreTest: svc.RunSelectedRestoreTest}
+		scanTimeline: svc.ScanTimelineInScope, runRestoreTest: svc.RunSelectedRestoreTest,
+		inspectPlacement: svc.InspectTargetPlacement}
 	a.agentData = agentData{harness: map[string]string{}, hasSessionCLI: map[string]bool{}, display: map[string]*profile.Display{}, vaultNames: map[string]string{},
 		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{}}
 	a.prefs = prefs{View: "cards", Dismissed: map[string]string{}}
-	a.entries, a.natives, a.agentKits = map[string]*entryState{}, map[string]*nativeState{}, map[string]*agentKitState{}
+	a.entries, a.natives, a.agentKits, a.agentServices = map[string]*entryState{}, map[string]*nativeState{}, map[string]*agentKitState{}, map[string]*agentServiceState{}
 	a.timelineScope = service.TimelineScanRequest{LocalOnly: true}
 	a.health, a.proposals = map[string]*healthState{}, map[string]*proposalsState{}
 	a.prots = map[string]*protState{}

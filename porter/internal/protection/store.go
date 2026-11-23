@@ -110,6 +110,57 @@ func read(path string, v any) error {
 // returns (nil, nil) if unset.
 func (s Store) LoadPlan(instance string) (*cp.ServerPlan, error) { return s.load(instance) }
 
+// ForgetInstance removes the instance's protection plan and any protection-change
+// records under the store lock. It returns resource_busy if a transaction currently
+// holds the store lock.
+func (s Store) ForgetInstance(instance string) ([]string, error) {
+	if enroll.ValidInstanceID(instance) != nil {
+		return nil, fail("instance_invalid", "实例名无效")
+	}
+	planFile := s.planPath(instance)
+	stateDir := s.state()
+	_, planErr := os.Stat(planFile)
+	_, stateErr := os.Stat(stateDir)
+	if errors.Is(planErr, os.ErrNotExist) && errors.Is(stateErr, os.ErrNotExist) {
+		return nil, nil
+	}
+	unlock, err := s.lock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	var removed []string
+	if err := removeSync(planFile); err != nil {
+		return removed, err
+	} else if planErr == nil {
+		removed = append(removed, planFile)
+	}
+	entries, err := os.ReadDir(stateDir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return removed, err
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		p := filepath.Join(stateDir, e.Name())
+		match := e.Name() == instance+".json"
+		if !match {
+			var r record
+			if read(p, &r) == nil && r.AgentRef.InstanceID == instance {
+				match = true
+			}
+		}
+		if match {
+			if err := removeSync(p); err != nil {
+				return removed, err
+			}
+			removed = append(removed, p)
+		}
+	}
+	return removed, nil
+}
+
 func (s Store) load(instance string) (*cp.ServerPlan, error) {
 	if enroll.ValidInstanceID(instance) != nil {
 		return nil, fail("instance_invalid", "实例名无效")

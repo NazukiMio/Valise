@@ -57,25 +57,7 @@ func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 		if r.mode == revive.ModeClone {
 			labeled(c, T("restore.copy_id"), func() { ui.TextInput(c, &r.id).Label(T("restore.copy_id")) })
 		}
-		roots := func() {
-			labeled(c, T("restore.root"), func() {
-				ui.TextArea(c, &r.roots).Height(90).Label(T("restore.root")).Placeholder(T("restore.root_example"))
-			})
-		}
-		switch {
-		case r.mode == revive.ModeRollback:
-		case r.mode == revive.ModeClone && r.target == r.origin:
-			// A copy beside the original needs its own directories, so
-			// the mapping is asked for outright (docs/UI.md 7.11).
-			ui.Text(c, T("restore.path_mapping")).Bold()
-			muted(ui.Text(c, T("restore.same_server_hint"))).Wrap()
-			roots()
-		default:
-			ui.Collapsible(c, T("restore.path_mapping"), a.fold("restore-roots"), func() {
-				muted(ui.Text(c, T("restore.path_hint"))).Wrap()
-				roots()
-			})
-		}
+		a.restorePlacementUI(c, r)
 	})
 	muted(ui.Text(c, T("restore.plan_note"))).Wrap()
 	ui.Row(c).Justify(ui.End).Children(func() {
@@ -132,12 +114,12 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 		for _, root := range p.Plan.Roots {
 			fact(c, root.ID, root.Path)
 		}
-		mono(muted(ui.Text(c, p.Plan.OpID))).Wrap()
+		mono(muted(ui.Text(c, p.Plan.OpID))).Wrap().Selectable()
 		for _, cmd := range service.RestoreCommands(p) {
-			mono(ui.Text(c, cmd)).Wrap()
+			mono(ui.Text(c, cmd)).Wrap().Selectable()
 		}
 		for _, file := range p.Excluded {
-			mono(muted(ui.Text(c, file))).Wrap()
+			mono(muted(ui.Text(c, file))).Wrap().Selectable()
 		}
 	})
 	if p.RestoreSecret || len(p.Excluded) > 0 {
@@ -154,7 +136,7 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 	if u := p.UnverifiedSource; u != nil {
 		card(ui.Column(c)).Gap(6).Children(func() {
 			ui.Text(c, T("restore.unverified")).Bold().TextColor(palette.Warn)
-			muted(ui.Text(c, T("restore.unverified_info", "id", u.InstanceID, "profile", u.ProfileID, "version", u.ProfileVersion, "server", u.SourceServer, "period", u.Period, "time", u.CreatedAt.Local().Format("2006-01-02 15:04"), "tier", tierText(u.Tier)))).Wrap()
+			muted(ui.Text(c, T("restore.unverified_info", "id", u.InstanceID, "profile", u.ProfileID, "version", u.ProfileVersion, "server", u.SourceServer, "period", u.Period, "time", u.CreatedAt.Local().Format("2006-01-02 15:04"), "tier", tierText(u.Tier)))).Wrap().Selectable()
 			ui.RadioGroup(c, func() {
 				ui.Radio(c, &r.sourceChoice, "proceed", T("restore.proceed"))
 				if u.BackupFirst {
@@ -183,9 +165,7 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 				allow = true
 			case "body_rebuild_unverified":
 				ui.Checkbox(c, &r.allowVersionMismatch, T("restore.allow_body_data_only"))
-				ui.Row(c).Children(func() {
-					ui.Button(c, T("restore.go_install_target")).OnClick(func() { a.navigate("/servers/" + p.Target + "/agents") })
-				})
+				a.restoreMissingBodyBox(c, r, p)
 				allow = true
 			case "service_missing":
 				ui.Checkbox(c, &r.skipService, T("restore.allow_skip_service"))
@@ -198,7 +178,7 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 	}
 	if len(p.Nested) > 0 {
 		hard = true
-		ui.Text(c, T("restore.nested", "names", strings.Join(p.Nested, ", "))).Wrap().TextColor(palette.Warn)
+		ui.Text(c, T("restore.nested", "names", strings.Join(p.Nested, ", "))).Wrap().TextColor(palette.Warn).Selectable()
 	}
 	ui.Row(c).Gap(10).Justify(ui.End).Children(func() {
 		ui.Button(c, T("restore.edit")).OnClick(func() { r.step = "setup" })

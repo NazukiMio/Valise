@@ -151,6 +151,11 @@ func (a *App) stateLine(c *ui.Context, r agentRow) {
 	switch {
 	case r.Retired():
 		muted(ui.Text(c, r.Note)).MaxLines(2)
+	case r.StateMissing:
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Box(c).Size(7, 7).Radius(4).Background(palette.Warn)
+			ui.Text(c, T("agent.state_missing.short")).FontSize(12).Bold().TextColor(palette.Warn)
+		})
 	case trouble(r):
 		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 			ui.Box(c).Size(7, 7).Radius(4).Background(palette.Warn)

@@ -133,12 +133,52 @@ func TestCLITargetRemoveAndNativeShellUsage(t *testing.T) {
 		}
 	}
 	out, _, _ = runCLI(t, cfg, "", "help")
-	for _, want := range []string{"native <服务器> --instance <id> [--session|--shell]", "target remove <服务器> <名称>"} {
+	for _, want := range []string{"native <服务器> --instance <id> [--session|--shell]", "target remove <服务器> <名称>", "agent forget <服务器> <实例> [--yes]"} {
 		if !strings.Contains(out, want) {
 			_, errOut, _ := runCLI(t, cfg, "")
 			if !strings.Contains(errOut+out, want) {
 				t.Errorf("usage lacks %q", want)
 			}
 		}
+	}
+}
+
+func TestCLIAgentForget(t *testing.T) {
+	e := fakesshenv.New(t)
+	home := e.AddHost("box")
+	e.InstallPorter("box")
+	cfg := t.TempDir()
+	os.WriteFile(filepath.Join(cfg, "config.json"), []byte(`{"ssh_binary":"`+e.SSH+`"}`), 0o600)
+	os.MkdirAll(filepath.Join(home, ".demo"), 0o755)
+	os.WriteFile(filepath.Join(home, ".demo/demo.json"), []byte("{}"), 0o644)
+	os.MkdirAll(filepath.Join(home, ".local/bin"), 0o755)
+	os.WriteFile(filepath.Join(home, ".local/bin/demo"), []byte("#!/bin/sh\necho demo 1.0\n"), 0o755)
+	os.MkdirAll(filepath.Join(cfg, "profiles"), 0o755)
+	os.WriteFile(filepath.Join(cfg, "profiles/demo.yaml"), []byte(`schema: valise-profile/1
+id: demo
+display_name: Demo
+profile_version: 1
+status: draft
+detect: { binaries: [demo], state_dir_candidates: ["${HOME}/.demo"], markers_any: [demo.json] }
+paths:
+  - { root: state, glob: "demo.json", category: config }
+provenance: { kind: binary, binary: { name: demo } }
+`), 0o644)
+
+	if out, errOut, code := runCLI(t, cfg, "", "enroll", "box", "--profile", "demo", "--accept"); code != 0 {
+		t.Fatalf("enroll code=%d out=%s err=%s", code, out, errOut)
+	}
+	// Cancel when interactive prompt declines.
+	out, errOut, code := runCLI(t, cfg, "n\n", "agent", "forget", "box", "demo")
+	if code != 0 || !strings.Contains(out, "已取消") {
+		t.Fatalf("cancel code=%d out=%s err=%s", code, out, errOut)
+	}
+	// Succeeds with --yes and leaves backups/live dir untouched.
+	out, errOut, code = runCLI(t, cfg, "", "agent", "forget", "box", "demo", "--yes")
+	if code != 0 || !strings.Contains(out, "已从 Valise 移出实例 demo") || !strings.Contains(out, "已有备份未受影响") {
+		t.Fatalf("forget code=%d out=%s err=%s", code, out, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".demo/demo.json")); err != nil {
+		t.Fatalf("live dir deleted unexpectedly: %v", err)
 	}
 }

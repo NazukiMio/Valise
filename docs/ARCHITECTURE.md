@@ -101,7 +101,7 @@ GUI 为最终用户交付，TUI 为资源紧凑环境的交互入口，CLI 与�
 管理钥匙在概念上是**开发者模式钥匙**：只拦有安全风险的操作，不能成为基本功能的门槛。日常钥匙在本机没有口令保护，所以会写入 agent 目录或改变备份去向的基本操作，需要证明"你是主人"，这一级用用户本来就有的 **Valise 口令**，不需要管理钥匙。
 
 - **日常操作**（只要日常钥匙）：`hello`/doctor、状态与实例列表、登记报告（只读）、建立备份、同步到远程备份位置、远程备份位置列表、体检、`seal_log`、拉取与校验、技能状态、定时器状态、管理页隧道（不含令牌）、本地页面转发、只读且不输出机密的管理动作、追加审计记录（`install_audit`：管理操作结束后补记，不能因为管理窗口到期而丢失；它只追加，不改变任何受保护的东西）、**首次给服务器起名**（起好后 porter 拒绝修改），以及**服务器上还没有任何收件人时登记第一把加密公钥**（此前没有任何备份可被泄露）。
-- **主人操作**（日常钥匙 + Valise 口令证明）：恢复（含 resume）、安装或卸载技能、接受登记与归档建议、重新接入、设置周期与定时器、添加或修改同步目标与自动同步、增加收件人、登录授权、代取管理页令牌、`manage` 风险的管理动作与输出机密的只读动作、服务启停、**不敏感的删除**（见下）。
+- **主人操作**（日常钥匙 + Valise 口令证明）：恢复（含 resume）、安装或卸载技能、接受登记与归档建议、重新接入、移除已卸载实例的登记记录（`instance_forget`）、设置周期与定时器、添加或修改同步目标与自动同步、增加收件人、登录授权、代取管理页令牌、`manage` 风险的管理动作与输出机密的只读动作、服务启停与重启（`service_control` 的 `start` / `stop` / `restart` / `status`）、**不敏感的删除**（见下）。
 - **开发者模式**（管理登录：管理钥匙或服务器密码）：服务器终端、原生界面、harness 安装、工具安装、`config` / `danger` 风险的管理动作、更新 porter、两边一起改端口、移除收件人、**敏感的删除**、创建管理钥匙、迁移到日常钥匙。
 - **主人证明**（由 porter 执行，不只是界面）：在日常连接中，客户端调用 `owner_challenge`，porter 生成 32 字节随机数，用标准 age 加密给 `recipients.txt` 中的全部收件人后返回；客户端用 `keystore.age` 中的身份解密（需要 Valise 口令，或在启用本机 PIN 时按 PIN 快捷解开），以 `owner_prove` 回传；porter 以常数时间比较，正确后**本次会话**开放主人操作。服务器还没有收件人时无法证明，提示先登记加密钥匙。只用 age，不涉及自研密码学。未启用快捷解锁时客户端解开的身份在内存中保持与管理钥匙相同的免输时间窗口（默认 **30 分钟**），启用 6 位 PIN 后每次触发主人操作重新验证 PIN，退出 Valise 即清除；CLI 每条命令单独询问。
 - **主人操作需要的独立子命令**（`stage-write`、`login-run`）：日常强制命令只在出示一次性许可时放行。许可由已证明的会话调用 `owner_grant` 签发：porter 生成随机令牌，在私有目录记录"子命令 + 参数（如 op_id）+ 5 分钟有效期"，子命令带 `--grant <令牌>` 运行时核对并立即作废。
@@ -211,6 +211,7 @@ Valise 口令加密这台电脑的加密钥匙（`keystore.age`）。忘了口�
 - **内容**：`profile`（id 与版本）、`updated_at`；安装级事实：`provenance`（程序与来源）、`service`、`entries`（以默认 agent 的检测为准）；`agents[]`：每个 agent 的 `instance_id`、`name`、`env`（多实例，PROFILES.md 1.3）、`roots`、`local_overrides`、`local_sqlite`（用户确认纳入 `VACUUM INTO` 的实例专属库规则，不能削弱 Profile `secret_tables`）、`external_refs`（用户确认已知的 `roots` 外目录/软链缺口，不自动纳入备份）、`entry_ports`、`enrolled_at`、`superseded`，以及之后加入的 `evidence`（在这里成功过的操作，PROFILES.md 1 的核实证据）与读到的审批状态。
 - **按 agent 的有效 profile**：由通用 profile 与档案现算（`profile.ForAgent`）：命名 agent 不带 `entries`、`body`、`provenance`，服务只在 `named[].service: shared` 时保留。封存、管理动作、审批检查、登录、恢复都用它。
 - **旧记录只读兼容（2026-11-14）**：列表、记录和 profile 查询只读；已有档案优先，没有已提交档案的旧 Agent 仍从 `instances/<id>.json` 及旧 profile 投影，保持未绑定身份，不建立或改写档案。明确的接入/记录写入、改端口等既有写操作才在原互斥内转换其所属安装的旧记录。旧文件改名保留，已有归档不覆盖；显式移除记录时也封存其重复旧记录，避免查询令已移除的 Agent 重新出现。
+- **状态目录缺失检测与移除实例记录（`MissingRoots` 与 `instance_forget`，2026-11-23）**：`instance_list` 对每个未被取代的实例检查其登记的 `roots` 目录是否存在于磁盘（`os.Stat(p)` 缺失或非目录时，将该 root ID 列入 `InstanceSummary.MissingRoots`）。当用户在服务器上自行卸载了 harness 或删除了状态目录时，界面据此识别“状态目录已不存在”并提供：① 从备份恢复；② **从 Valise 移除此实例记录**（`instance_forget`，`TierOwner`，能力 `instance-forget/1`）。`instance_forget` 尽力停止并移除该实例的定时备份单元（`valise-seal@<id>.timer` / `.service`），删除其保护计划配置（`~/.config/valise/protection/<id>.json`）及已结束的保护计划变更记录、待确认归档建议（`<InstancesDir>/<id>.proposals.json`）、旧版声明与 MCP 状态文件、身份绑定（`~/.config/valise/identity/agents/<id>.json`）以及档案中的该实例条目（若为该安装的最后一个实例则一并移除档案与 profile 副本），并写入 `instance_forget` 审计记录；**绝不删除任何备份库（`vaults/`）、活动目录（`r.Roots`）或 `.valise-prev-*` 目录**。
 - **重新检测**：结果与保存的档案不同时，客户端列出差异（版本、新出现的 agent、审批状态等），用户确认后才保存（UI.md 9.x）。
 - **显示名**：profile 的 `terms.agent` 是 harness 自己对一个 agent 的叫法（如 Hermes、OpenClaw 都叫 profile）；界面按它显示，内部统一称 agent。
 

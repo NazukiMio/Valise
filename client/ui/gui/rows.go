@@ -21,6 +21,12 @@ type agentRow struct {
 	Entry                                           string // "" when the harness has no admin page
 	Note                                            string // migrated or superseded
 	Roots                                           []string
+	MissingRoots                                    []string
+	StateMissing                                    bool
+	ServiceUnit                                     string
+	ServiceLoaded                                   bool
+	ServiceActive                                   string
+	ServiceSummary                                  string
 	HasService                                      bool
 	HasNative                                       bool
 	Profile                                         string // profile id, for its display
@@ -45,6 +51,14 @@ func (a *App) agentRows(res service.AgentListResult) []agentRow {
 		r.Service, r.ServiceTone = serviceText(in.Service)
 		r.HasService, r.Profile = len(in.Service) > 0, in.ProfileID
 		r.HasNative = in.NativeCLI
+		r.MissingRoots = append([]string(nil), in.MissingRoots...)
+		r.StateMissing = in.StateMissing()
+		if len(in.Service) > 0 {
+			r.ServiceUnit = in.Service[0].Unit
+			r.ServiceLoaded = in.Service[0].LoadState == "loaded"
+			r.ServiceActive = in.Service[0].Active
+			r.ServiceSummary = r.Service
+		}
 		if len(in.Entries) > 0 {
 			r.Entry = T("entry.closed")
 			for _, e := range in.Entries {

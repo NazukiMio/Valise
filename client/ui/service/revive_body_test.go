@@ -176,7 +176,7 @@ func TestPlanServiceDataOnlyAndMissing(t *testing.T) {
 	}
 	rp, plan = &RevivePlan{}, revive.Plan{}
 	planService(rp, &plan, revive.InspectResult{}, prof)
-	if len(rp.Blockers) != 1 || rp.Blockers[0].Code != "service_missing" || !strings.Contains(rp.Blockers[0].Suggestion, "--data-only") {
+	if len(rp.Blockers) != 1 || rp.Blockers[0].Code != "service_missing" || !strings.Contains(rp.Blockers[0].Suggestion, "仅迁移数据与档案") || strings.Contains(rp.Blockers[0].Suggestion, "--data-only") {
 		t.Fatalf("missing: %+v", rp.Blockers)
 	}
 }

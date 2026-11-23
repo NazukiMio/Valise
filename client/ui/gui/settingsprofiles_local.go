@@ -38,8 +38,8 @@ func (a *App) localProfilePreviewCard(c *ui.Context, ps *profilesState, f *servi
 	busy := ps.fetchJ.busy || ps.installJ.busy || ps.syncJ.busy
 	card(ui.Column(c)).Gap(10).Children(func() {
 		sectionTitle(ui.Text(c, T("profiles.local_preview_title", "name", f.DisplayName, "id", f.ID)))
-		mono(muted(ui.Text(c, f.From))).Wrap()
-		muted(ui.Text(c, T("profiles.local_meta", "id", f.ID, "version", f.Version, "status", f.Status, "pending", f.Pending, "restore", f.RestoreCap))).Wrap()
+		mono(muted(ui.Text(c, f.From))).Wrap().Selectable()
+		muted(ui.Text(c, T("profiles.local_meta", "id", f.ID, "version", f.Version, "status", f.Status, "pending", f.Pending, "restore", f.RestoreCap))).Wrap().Selectable()
 		if f.OverridesOfficial {
 			notice(c, "warn", T("profiles.local_overrides_official", "id", f.ID, "version", f.OfficialVersion))
 		}
@@ -53,7 +53,7 @@ func (a *App) localProfilePreviewCard(c *ui.Context, ps *profilesState, f *servi
 					muted(ui.Text(c, T("profiles.diff_none"))).FontSize(fsSub).Wrap()
 				}
 				for i, h := range f.Diff.Highlights {
-					ui.Text(c.Key(i), "• "+h).FontSize(fsSub).Wrap()
+					ui.Text(c.Key(i), "• "+h).FontSize(fsSub).Wrap().Selectable()
 				}
 			})
 		}
@@ -61,7 +61,7 @@ func (a *App) localProfilePreviewCard(c *ui.Context, ps *profilesState, f *servi
 			ui.Collapsible(c, T("profiles.local_warnings"), a.fold("profiles-local-warn"), func() {
 				subPanel(ui.Column(c)).Gap(4).Children(func() {
 					for _, w := range f.Warnings {
-						mono(ui.Text(c, w.String())).FontSize(fsCaption).Wrap()
+						mono(ui.Text(c, w.String())).FontSize(fsCaption).Wrap().Selectable()
 					}
 				})
 			})
@@ -73,7 +73,7 @@ func (a *App) localProfilePreviewCard(c *ui.Context, ps *profilesState, f *servi
 					muted(ui.Text(c, T("profiles.local_no_cmds"))).Wrap()
 				}
 				for _, cmd := range f.Commands {
-					mono(ui.Text(c, cmd)).FontSize(fsCaption).Wrap()
+					mono(ui.Text(c, cmd)).FontSize(fsCaption).Wrap().Selectable()
 				}
 			})
 		})
@@ -82,7 +82,7 @@ func (a *App) localProfilePreviewCard(c *ui.Context, ps *profilesState, f *servi
 			ui.Column(c).Padding(10, 12).Gap(4).Radius(8).Background(palette.ErrorBg).Border(1, palette.ErrorBorder).Children(func() {
 				ui.Text(c, T("profiles.local_refused")).TextColor(palette.Danger).Wrap()
 				for _, cmd := range f.RefusedCmds {
-					mono(ui.Text(c, cmd)).FontSize(fsCaption).TextColor(palette.Danger).Wrap()
+					mono(ui.Text(c, cmd)).FontSize(fsCaption).TextColor(palette.Danger).Wrap().Selectable()
 				}
 			})
 		}

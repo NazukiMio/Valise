@@ -140,12 +140,12 @@ func (a *App) proposalsCard(c *ui.Context, row *agentRow) {
 			subPanel(ui.Column(c.Key("prop-" + prop.ID))).Gap(6).Children(func() {
 				proposalHead(c, prop)
 				if prop.Reason != "" {
-					ui.Text(c, prop.Reason).FontSize(fsSub).Wrap()
+					ui.Text(c, prop.Reason).FontSize(fsSub).Wrap().Selectable()
 				}
 				switch prop.EffectiveKind() {
 				case agentkit.ProposalKindSQLite:
 					if prop.SQLite != nil && len(prop.SQLite.SecretTables) > 0 {
-						muted(ui.Text(c, T("prop.sqlite_tables", "tables", strings.Join(prop.SQLite.SecretTables, ", ")))).FontSize(fsSub).Wrap()
+						muted(ui.Text(c, T("prop.sqlite_tables", "tables", strings.Join(prop.SQLite.SecretTables, ", ")))).FontSize(fsSub).Wrap().Selectable()
 					}
 				case agentkit.ProposalKindExternalRef:
 					if prop.ExternalRef != nil {
@@ -187,9 +187,14 @@ func (a *App) proposalsCard(c *ui.Context, row *agentRow) {
 					plainTag(c, T("prop.demotion_tag"))
 					muted(ui.Text(c, when(prop.Created, c.Now()))).FontSize(fsSub)
 				})
-				mono(ui.Text(c, prop.Rule.Root+":"+prop.Rule.Glob+" -> "+prop.Rule.Category)).FontSize(fsSub).Wrap()
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					mono(ui.Text(c, prop.Rule.Root+":"+prop.Rule.Glob+" -> "+prop.Rule.Category)).FontSize(fsSub).Grow(1).Wrap().Selectable()
+					if lbl := proposalCategoryLabel(prop.Rule.Category); lbl != "" {
+						plainTag(c, lbl)
+					}
+				})
 				if prop.Reason != "" {
-					ui.Text(c, prop.Reason).FontSize(fsSub).Wrap()
+					ui.Text(c, prop.Reason).FontSize(fsSub).Wrap().Selectable()
 				}
 				muted(ui.Text(c, T("prop.demotion_brief"))).FontSize(fsSub).Wrap()
 				if !st.actJ.busy {
@@ -214,7 +219,7 @@ func proposalHead(c *ui.Context, prop agentkit.Proposal) {
 			muted(ui.Text(c, when(prop.Created, c.Now()))).FontSize(fsSub)
 		})
 		if prop.SQLite != nil {
-			mono(ui.Text(c, prop.SQLite.Root+":"+prop.SQLite.Glob)).FontSize(fsSub).Wrap()
+			mono(ui.Text(c, prop.SQLite.Root+":"+prop.SQLite.Glob)).FontSize(fsSub).Wrap().Selectable()
 		}
 	case agentkit.ProposalKindExternalRef:
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -222,14 +227,26 @@ func proposalHead(c *ui.Context, prop agentkit.Proposal) {
 			muted(ui.Text(c, when(prop.Created, c.Now()))).FontSize(fsSub)
 		})
 		if prop.ExternalRef != nil {
-			mono(ui.Text(c, prop.ExternalRef.Path)).FontSize(fsSub).Wrap()
+			mono(ui.Text(c, prop.ExternalRef.Path)).FontSize(fsSub).Wrap().Selectable()
 		}
 	default:
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			mono(ui.Text(c, prop.Rule.Root+":"+prop.Rule.Glob+" -> "+prop.Rule.Category)).FontSize(fsSub).Grow(1).Wrap()
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+			mono(ui.Text(c, prop.Rule.Root+":"+prop.Rule.Glob+" -> "+prop.Rule.Category)).FontSize(fsSub).Grow(1).Wrap().Selectable()
+			if lbl := proposalCategoryLabel(prop.Rule.Category); lbl != "" {
+				plainTag(c, lbl)
+			}
 			muted(ui.Text(c, when(prop.Created, c.Now()))).FontSize(fsSub)
 		})
 	}
+}
+
+func proposalCategoryLabel(cat string) string {
+	for _, ch := range categoryChoices {
+		if ch.id == cat && ch.id != "" {
+			return T(ch.label)
+		}
+	}
+	return ""
 }
 
 func (a *App) demotionConfirmModal(c *ui.Context, row *agentRow, st *proposalsState) {
@@ -243,9 +260,9 @@ func (a *App) demotionConfirmModal(c *ui.Context, row *agentRow, st *proposalsSt
 			dialogTitle(ui.Text(c, T("prop.demotion_title")))
 			notice(c, "warn", T("prop.demotion_warn"))
 			subPanel(ui.Column(c)).Gap(4).Children(func() {
-				mono(ui.Text(c, p.Rule.Root+":"+p.Rule.Glob+" -> "+p.Rule.Category)).FontSize(fsSub).Wrap()
+				mono(ui.Text(c, p.Rule.Root+":"+p.Rule.Glob+" -> "+p.Rule.Category)).FontSize(fsSub).Wrap().Selectable()
 				if p.Reason != "" {
-					ui.Text(c, p.Reason).FontSize(fsSub).Wrap()
+					ui.Text(c, p.Reason).FontSize(fsSub).Wrap().Selectable()
 				}
 			})
 			if st.actJ.busy {

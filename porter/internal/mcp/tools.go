@@ -47,7 +47,7 @@ var toolList = []map[string]any{
 			"root":          map[string]any{"type": "string"},
 			"glob":          map[string]any{"type": "string"},
 			"path":          map[string]any{"type": "string"},
-			"category":      map[string]any{"type": "string", "enum": []string{"memory", "workspace", "state", "skills", "config", "secrets", "cache", "ignore"}},
+			"category":      map[string]any{"type": "string", "enum": []string{"identity", "memory", "workspace", "state", "skills", "config", "secrets", "cache", "ignore"}},
 			"secret_tables": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"ref_kind":      map[string]any{"type": "string", "enum": []string{"external_dir", "symlink_target"}},
 			"reason":        map[string]any{"type": "string"},

@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,31 @@ type AgentReader struct {
 
 func NewAgentReader(s *Service) *AgentReader {
 	return &AgentReader{service: s, cache: map[string]AgentServerObservation{}, now: time.Now}
+}
+
+// InvalidateServer drops any cached observations for host so subsequent reads
+// never surface stale agents from a removed server or forgotten instance.
+func (r *AgentReader) InvalidateServer(host string) {
+	if r == nil || host == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	prefix := host + ":"
+	for k := range r.cache {
+		if k == host || strings.HasPrefix(k, prefix) {
+			delete(r.cache, k)
+		}
+	}
+}
+
+func (s *Service) invalidateAgents(host string) {
+	s.readersMu.Lock()
+	r := s.agentsReader
+	s.readersMu.Unlock()
+	if r != nil {
+		r.InvalidateServer(host)
+	}
 }
 
 type AgentListRequest struct {

@@ -8,6 +8,8 @@ import (
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 
+	"valise/client/config"
+	"valise/core/enroll"
 	"valise/core/journey"
 	"valise/core/profile"
 	"valise/ui/service"
@@ -30,6 +32,8 @@ type hooks struct {
 	newNativeTestTerminal func(io.ReadWriteCloser) (io.Closer, error)          // tests only
 	copyText              func(string) error                                   // the system clipboard; nil hides 复制
 	setAgentLabel         func(context.Context, string, string, string) error  // tests only; nil uses svc
+	inspectPlacement      func(context.Context, service.TargetPlacementRequest) (*service.TargetPlacement, error)
+	forgetInstanceFn      func(context.Context, string, string) (*enroll.InstanceForgetResult, error)
 }
 
 // agentData is what was read about the agents, shared by every page.
@@ -68,14 +72,17 @@ type homeView struct {
 
 // agentView is one agent's page, apart from its journey and health.
 type agentView struct {
-	agentTab     int                    // tabOverview, tabJourney, tabHealth, tabManage
-	iconErr      error                  // choosing an agent's picture failed
-	entries      map[string]*entryState // admin page tunnels by server/instance
-	natives      map[string]*nativeState
-	native       *nativeRun
-	agentRename  *agentRenameState
-	agentKits    map[string]*agentKitState
-	agentKitHook *agentKitOps
+	agentTab         int                    // tabOverview, tabJourney, tabHealth, tabManage
+	iconErr          error                  // choosing an agent's picture failed
+	entries          map[string]*entryState // admin page tunnels by server/instance
+	natives          map[string]*nativeState
+	native           *nativeRun
+	agentRename      *agentRenameState
+	agentKits        map[string]*agentKitState
+	agentKitHook     *agentKitOps
+	agentServices    map[string]*agentServiceState
+	agentServiceHook *agentServiceOps
+	agentForget      *agentForgetState
 }
 
 // journeyView is the timeline and the point open in it.
@@ -137,30 +144,69 @@ func (v *locationsView) clearCloudSecret() {
 
 // serversView is the servers pages: the list, adding, installing, settings.
 type serversView struct {
-	servers        load[[]serverRow]
-	removed        []service.RemovedServer      // removed servers, read with the list
-	wiz            *wizard                      // the add-server wizard, nil when closed
-	scans          map[string]*serverScan       // agents found by server
-	installs       map[string]*installRun       // by server/profile
-	customInstalls map[string]*customInstallRun // by server
-	passes         map[string]*passState        // admin pass actions by server
-	settings       map[string]*settingsState
-	serverTab      int           // the server detail's tab: 0 overview, 1 settings
-	rebuild        *rebuildState // rebuilding the admin passes
-	forgetting     string        // the removed server whose record is being forgotten
-	forgetErr      error
-	serverShell    *serverShellRun // the server command line, nil when none
-	kitHook        *kitOps         // tests only
-	cleanupHook    *cleanupOps     // tests only
+	servers             load[[]serverRow]
+	removed             []service.RemovedServer      // removed servers, read with the list
+	wiz                 *wizard                      // the add-server wizard, nil when closed
+	scans               map[string]*serverScan       // agents found by server
+	installs            map[string]*installRun       // by server/profile
+	customInstalls      map[string]*customInstallRun // by server
+	savedInstalls       []config.SavedInstall
+	savedInstallsLoaded bool
+	savedInstallsErr    error
+	passes              map[string]*passState // admin pass actions by server
+	settings            map[string]*settingsState
+	serverTab           int           // the server detail's tab: 0 overview, 1 settings
+	rebuild             *rebuildState // rebuilding the admin passes
+	forgetting          string        // the removed server whose record is being forgotten
+	forgetErr           error
+	serverShell         *serverShellRun // the server command line, nil when none
+	kitHook             *kitOps         // tests only
+	cleanupHook         *cleanupOps     // tests only
 }
 
 // closeInstall lets go of one install screen's plan, output and result.
 func (v *serversView) closeInstall(key string) { delete(v.installs, key) }
 
-// forgetServer lets go of what was read about a server that left.
-func (v *serversView) forgetServer(name string) {
-	delete(v.settings, name)
-	delete(v.passes, name)
+// forgetServer lets go of everything cached in memory about a server that left.
+func (a *App) forgetServer(name string) {
+	delete(a.scans, name)
+	delete(a.customInstalls, name)
+	delete(a.settings, name)
+	delete(a.passes, name)
+	prefix := name + "/"
+	deleteByPrefix(a.installs, prefix)
+	deleteByPrefix(a.prots, prefix)
+	deleteByPrefix(a.natives, prefix)
+	deleteByPrefix(a.agentKits, prefix)
+	deleteByPrefix(a.health, prefix)
+	deleteByPrefix(a.proposals, prefix)
+	deleteByPrefix(a.agentServices, prefix)
+	for k := range a.entries {
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			a.closeEntry(k)
+		}
+	}
+}
+
+// forgetInstance clears per-instance cached state after an instance is forgotten.
+func (a *App) forgetInstance(host, instance string) {
+	key := host + "/" + instance
+	delete(a.prots, key)
+	delete(a.natives, key)
+	delete(a.agentKits, key)
+	delete(a.health, key)
+	delete(a.proposals, key)
+	delete(a.agentServices, key)
+	a.closeEntry(key)
+	delete(a.scans, host)
+}
+
+func deleteByPrefix[V any](m map[string]V, prefix string) {
+	for k := range m {
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			delete(m, k)
+		}
+	}
 }
 
 // keysView is the settings page's keys, backup, personalization and profiles.

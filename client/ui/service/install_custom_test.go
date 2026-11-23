@@ -275,3 +275,61 @@ func TestCustomInstallRiskSentenceAndRefusal(t *testing.T) {
 		wantCode(t, err, "install_custom_refused")
 	}
 }
+
+func TestSavedCustomInstallsCRUD(t *testing.T) {
+	s := newService(t, "ssh")
+
+	// Empty initially.
+	list, err := s.SavedInstalls()
+	if err != nil || len(list) != 0 {
+		t.Fatalf("initial SavedInstalls: %+v %v", list, err)
+	}
+
+	// Rejects insecure HTTP URL cleanly.
+	if _, err := s.SaveCustomInstall("", "http://example.invalid/install.sh", ""); err == nil {
+		t.Fatal("expected insecure http URL rejected")
+	} else {
+		wantCode(t, err, "install_custom_insecure_url")
+	}
+
+	// Save script URL without explicit name -> derives host/filename.
+	saved1, err := s.SaveCustomInstall("", "curl -fsSL https://install.example.invalid/setup.sh | bash", "demo")
+	if err != nil {
+		t.Fatalf("SaveCustomInstall script: %v", err)
+	}
+	if saved1.ID == "" || saved1.Name != "install.example.invalid/setup.sh" || saved1.ProfileID != "demo" {
+		t.Fatalf("unexpected saved1: %+v", saved1)
+	}
+
+	// Save argv command without explicit name -> derives first 2 tokens.
+	saved2, err := s.SaveCustomInstall("", "npm install -g example-cli", "")
+	if err != nil {
+		t.Fatalf("SaveCustomInstall argv: %v", err)
+	}
+	if saved2.ID == "" || saved2.Name != "npm install" {
+		t.Fatalf("unexpected saved2: %+v", saved2)
+	}
+
+	// Save explicit name updates existing raw+profile entry preserving ID.
+	updated, err := s.SaveCustomInstall("My Installer", "curl -fsSL https://install.example.invalid/setup.sh | bash", "demo")
+	if err != nil {
+		t.Fatalf("SaveCustomInstall update: %v", err)
+	}
+	if updated.ID != saved1.ID || updated.Name != "My Installer" {
+		t.Fatalf("expected updated entry with same ID %s, got %+v", saved1.ID, updated)
+	}
+
+	list, err = s.SavedInstalls()
+	if err != nil || len(list) != 2 {
+		t.Fatalf("expected 2 saved installs, got %+v %v", list, err)
+	}
+
+	// Delete one.
+	if err := s.DeleteCustomInstall(saved1.ID); err != nil {
+		t.Fatalf("DeleteCustomInstall: %v", err)
+	}
+	list, err = s.SavedInstalls()
+	if err != nil || len(list) != 1 || list[0].ID != saved2.ID {
+		t.Fatalf("expected only saved2 remaining, got %+v %v", list, err)
+	}
+}

@@ -192,7 +192,9 @@ func sortTrouble(rows []agentRow) {
 	sort.SliceStable(rows, func(i, j int) bool { return trouble(rows[i]) && !trouble(rows[j]) })
 }
 
-func trouble(r agentRow) bool { return r.HasService && r.ServiceTone != "ok" }
+func trouble(r agentRow) bool {
+	return (!r.Retired() && r.StateMissing) || (r.HasService && r.ServiceTone != "ok")
+}
 
 // agentCells are the facts of one agent's status board, each in its own
 // cell: the service, the admin page's port, the newest backup this computer

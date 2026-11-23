@@ -39,6 +39,7 @@ type DossierProposalItem struct {
 }
 
 var allowedClassifyCategories = map[string]bool{
+	profile.CategoryIdentity:  true,
 	profile.CategoryMemory:    true,
 	profile.CategoryWorkspace: true,
 	profile.CategoryState:     true,
@@ -276,7 +277,7 @@ func pathInsideRoot(full, realRoot string) bool {
 
 func buildClassifyProposal(rec *enroll.Record, p *profile.Profile, cls *profile.Classifier, it DossierProposalItem, now time.Time) (*agentkit.Proposal, string) {
 	if !allowedClassifyCategories[it.Category] {
-		return nil, "类别只允许 memory、workspace、state、skills、config、secrets、cache 或 ignore"
+		return nil, "类别只允许 identity、memory、workspace、state、skills、config、secrets、cache 或 ignore"
 	}
 	demotion := it.Category == profile.CategoryCache || it.Category == profile.CategoryIgnore
 	if demotion && it.Reason == "" {

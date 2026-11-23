@@ -86,7 +86,7 @@ func notice(c *ui.Context, tone, text string) {
 	bg, border := toneGround(tone)
 	ui.Row(c).Gap(spItem).Padding(spItem, spGroup).Radius(radPanel).Background(bg).Border(1, border).AlignItems(ui.Center).Children(func() {
 		ui.Icon(c, icons.alert).FontSize(fsTitle3).TextColor(toneInk(tone))
-		ui.Text(c, text).FontSize(fsSub).Grow(1).Wrap()
+		ui.Text(c, text).FontSize(fsSub).Grow(1).Wrap().Selectable()
 	})
 }
 
@@ -96,7 +96,7 @@ func statusRow(c *ui.Context, tone, label, value string) {
 	ui.Row(c.Key("st-" + label)).Gap(spItem).AlignItems(ui.Start).Children(func() {
 		ui.Box(c).Padding(6, 0, 0, 0).Children(func() { toneDot(c, tone) })
 		ui.Text(c, label).FontSize(fsSub).TextColor(palette.TextSub).Width(cur.Sizes.LabelWidth + 24).Wrap()
-		v := ui.Text(c, value).FontSize(fsSub).Grow(1).Wrap()
+		v := ui.Text(c, value).FontSize(fsSub).Grow(1).Wrap().Selectable()
 		if tone == "warn" || tone == "danger" {
 			v.TextColor(toneInk(tone))
 		}

@@ -94,6 +94,7 @@ func (s *Service) ProfilesStatus() (*ProfilesStatus, error) {
 			}
 			if l.Official != nil {
 				sum.OfficialVersion = l.Official.ProfileVersion
+				sum.LocalStale = l.OverridesOfficial && l.Official.ProfileVersion > 0 && l.Effective.ProfileVersion <= l.Official.ProfileVersion
 			}
 			st.Loaded = append(st.Loaded, sum)
 		}

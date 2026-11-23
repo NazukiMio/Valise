@@ -50,6 +50,7 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 
 - 对已登记且未被取代的同一实例重新检测、升级 profile 或修改显示名，保留 generation；接受 roots / 来源变化仍须重新预检，所有旧执行计划失效。
 - 明确作为新实例接入、清理记录后重新使用 id、重新接入已被取代的 id：创建新 generation。选择继续旧实例的特殊情况须展示已有身份与路径，不凭同名推断。
+- 移除已卸载或不再纳管的实例记录（`instance_forget`，`TierOwner`，能力 `instance-forget/1`）：停止并移除该实例的 systemd 定时备份单元，清理服务器端档案记录（`RemoveRecord`）、保护计划（`protection/<id>.json`）、待审批提案（`<id>.proposals.json`）、旧声明与身份绑定（`identity/agents/<id>.json`），保留全部备份库、活动目录与 `.valise-prev-*`。受管服务控制 `service_control`（`TierOwner`）除 `start` / `stop` / `status` 外支持 `restart`（先 `reset-failed` 再 `systemctl --user restart <unit>`）。
 - 恢复当前实例保留目标 generation；记录“由 SnapshotRef 恢复”，不把时间点之前的世代重新写成当前世代。
 - 成功迁移：目标拥有新的 AgentRef，以 `migration_completed` 边接续原旅程。创建副本：新 AgentRef 与独立旅程，仅有 `clone_from` 来源关系。失败、回退、仅暂存通过、仅文件恢复都不生成成功迁移边。
 - 迁移关系字段：`relation_id`, `kind`, `source_agent?`, `source_snapshot`, `target_agent`, `operation_ref`, `verified_at`, `source_disposition`。source_disposition = stopped_verified / exclusive_omitted / unresolved；unresolved 不能宣称完整迁移完成。
@@ -122,7 +123,7 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 
 | 方法 | 请求 | 结果 |
 | --- | --- | --- |
-| `ListAgents` | 服务器筛选、是否含旧实例、cursor/limit、refresh_policy | AgentSummary：AgentRef/legacy 定位、安装归属、显示名、各自 Observation 的运行/保护/健康摘要、可用能力；部分失败独立列出 |
+| `ListAgents` | 服务器筛选、是否含旧实例、cursor/limit、refresh_policy | AgentSummary：AgentRef/legacy 定位、安装归属、显示名、各自 Observation 的运行/保护/健康摘要、可用能力；底层 `enroll.InstanceSummary` 携带 `missing_roots`（服务器上已缺失的登记 root ID 列表，如 `state` 被外部卸载）；部分失败独立列出 |
 | `GetAgent` | AgentRef 或 legacy 定位 | 详情、来源、已接受布局版本、共享服务影响、入口元信息；敏感 URL 和环境内容不返回 |
 | `ListTimeline` | subject（AgentRef 或一个已打开备份库集合）、from/to、tier、cursor/limit | TimelinePoint、缺口与查询完整性；不依赖连接原服务器 |
 | `GetTimelinePoint` | SnapshotRef + 可选 location_refs | 当时 tier、时间/大小、已知原因、每处材料/校验 Observation、已记录恢复动作 |

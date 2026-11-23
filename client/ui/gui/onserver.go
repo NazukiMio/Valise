@@ -101,6 +101,7 @@ func (a *App) onServerPage(c *ui.Context, host string) {
 	// Installing stays offered beside agents already found: another
 	// harness can be installed, or the first one (docs/UI.md 7.5).
 	a.installTiles(c, host, len(sc.found) == 0)
+	a.agentForgetModal(c)
 }
 
 func section(c *ui.Context, title string) {
@@ -134,9 +135,11 @@ func (a *App) foundCard(c *ui.Context, host string, sc *serverScan, d service.De
 				ui.Text(c, T("adopt.profile_outdated")).FontSize(12).TextColor(palette.Warn)
 				ui.PrimaryButton(c, T("adopt.update_profile")).OnClick(func() { a.adopt(host, sc, d, false) })
 				ui.Button(c, T("common.view")).OnClick(func() { a.router.Push("/agents/" + host + "/" + orText(d.Enrolled, d.ID)) })
+				quietButton(c, T("agent.forget.stale_record")).OnClick(func() { a.openAgentForget(host, d.Enrolled, nameFor(a, d)) })
 			case d.Enrolled != "" && (ad == nil || !ad.busy && ad.res == nil) || ad != nil && ad.written:
 				ui.Text(c, T("adopt.done")).FontSize(12).TextColor(palette.Ok)
 				ui.Button(c, T("common.view")).OnClick(func() { a.router.Push("/agents/" + host + "/" + orText(d.Enrolled, d.ID)) })
+				quietButton(c, T("agent.forget.stale_record")).OnClick(func() { a.openAgentForget(host, d.Enrolled, nameFor(a, d)) })
 			case ad != nil && ad.busy:
 				ui.Spinner(c)
 			case ad == nil || ad.res == nil:
@@ -212,7 +215,7 @@ func assignRule(key, cat string) string {
 // categoryChoices are what an unrecognized file can be filed as; the first
 // is the default, keeping it with the secrets (ARCHITECTURE.md 5).
 var categoryChoices = []struct{ id, label string }{
-	{"", "category.sensitive"}, {"memory", "category.memory"}, {"config", "category.config"}, {"sessions", "category.sessions"}, {"state", "category.state"},
+	{"", "category.sensitive"}, {"identity", "category.identity"}, {"memory", "category.memory"}, {"config", "category.config"}, {"sessions", "category.sessions"}, {"state", "category.state"},
 	{"workspace", "category.workspace"}, {"cache", "category.cache"}, {"ignore", "category.ignore"},
 }
 
@@ -291,6 +294,7 @@ func idOf(label string) string {
 // way to another one, together with pasting a custom official URL/command.
 func (a *App) installTiles(c *ui.Context, host string, first bool) {
 	if !first && len(a.installable) == 0 {
+		a.savedInstallTiles(c, host)
 		a.customInstallTile(c, host)
 		return
 	}
@@ -302,6 +306,7 @@ func (a *App) installTiles(c *ui.Context, host string, first bool) {
 	muted(ui.Text(c, sub)).FontSize(13).Wrap()
 	if len(a.installable) == 0 {
 		muted(ui.Text(c, T("onserver.no_plans")))
+		a.savedInstallTiles(c, host)
 		a.customInstallTile(c, host)
 		return
 	}
@@ -324,5 +329,14 @@ func (a *App) installTiles(c *ui.Context, host string, first bool) {
 			})
 		}
 	})
+	a.savedInstallTiles(c, host)
 	a.customInstallTile(c, host)
+}
+
+func nameFor(a *App, d service.DetectedInstance) string {
+	name := orText(a.harness[d.ProfileID], d.ProfileID)
+	if d.Name != "" {
+		return name + " · " + d.Name
+	}
+	return name
 }

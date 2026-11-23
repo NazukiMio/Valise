@@ -205,3 +205,53 @@ func (s *ProtectionBindingStore) CompareAndSwapCopies(ctx context.Context, agent
 	binding = cloneProtection(binding)
 	return &binding, nil
 }
+
+// Delete removes any saved local protection binding for agent. It is a no-op
+// when the bindings file does not exist or contains no matching entry.
+func (s *ProtectionBindingStore) Delete(ctx context.Context, agent identity.AgentRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := protection.ValidateAgent(agent); err != nil {
+		return err
+	}
+	if s.dir == "" {
+		return protectionError("request_invalid", "缺少客户端状态目录")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := os.Stat(s.dir); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return protectionError("record_corrupt", "无法读取客户端状态目录")
+	}
+	unlock, err := protectionStoreLock(filepath.Join(s.dir, ".protection-bindings.lock"))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	file, exists, err := s.readFile()
+	if err != nil || !exists {
+		return err
+	}
+	kept := make([]protection.ClientBinding, 0, len(file.Bindings))
+	removed := false
+	for _, b := range file.Bindings {
+		if b.AgentRef == agent {
+			removed = true
+			continue
+		}
+		kept = append(kept, b)
+	}
+	if !removed {
+		return nil
+	}
+	file.Bindings = kept
+	if err := file.Validate(); err != nil {
+		return err
+	}
+	return protectionAtomic(filepath.Join(s.dir, "protection-bindings.json"), file)
+}

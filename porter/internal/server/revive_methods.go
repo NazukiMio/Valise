@@ -132,6 +132,9 @@ func init() {
 		if p.Action == "stop" {
 			return struct{}{}, porterrevive.StopUnit(ctx, e, p.Unit)
 		}
+		if p.Action == "restart" {
+			return struct{}{}, porterrevive.RestartUnit(ctx, e, p.Unit)
+		}
 		if p.Action == "status" {
 			state, err := porterrevive.SourceStatus(ctx, e, p.Unit)
 			return struct {

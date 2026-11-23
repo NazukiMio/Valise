@@ -12,6 +12,7 @@ import (
 
 	"valise/core/identity"
 	"valise/core/protection"
+	"valise/core/vault"
 	"valise/core/vaultrpc"
 	"valise/ui/service"
 )
@@ -28,6 +29,7 @@ type protState struct {
 	read        job
 
 	sched   *schedEdit
+	tier    *tierEdit
 	copyTo  *copyEdit
 	changeJ job
 	task    *service.ProtectionTask
@@ -155,7 +157,9 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 				}
 			}
 		})
-		settingRow(c, T("protect.what"), T("protect.full"), "", nil)
+		settingRow(c, T("protect.what"), tierText(orText(d.Scope.Tier, vault.TierFull)), "", func() {
+			ui.Button(c, T("protect.change_tier")).OnClick(func() { ps.tier = newTierEdit(d) })
+		})
 		settingRow(c, T("protect.schedule"), scheduleText(d.Schedule), "", func() {
 			ui.Button(c, T("protect.change")).OnClick(func() { ps.sched = newSchedEdit(d) })
 		})
@@ -179,6 +183,9 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 	})
 	if ps.sched != nil {
 		a.scheduleDialog(c, row, ps)
+	}
+	if ps.tier != nil {
+		a.tierDialog(c, row, ps)
 	}
 	if ps.copyTo != nil {
 		a.copyToDialog(c, row, ps)
@@ -325,3 +332,5 @@ func localZone() string {
 	}
 	return "UTC"
 }
+
+// Legacy catalog key "protect.full" is retained for locale compatibility.

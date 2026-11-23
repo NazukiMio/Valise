@@ -27,13 +27,13 @@ func errorBox(c *ui.Context, err error, open *bool) {
 	}
 	ui.Column(c).Padding(14, 16).Gap(6).Radius(10).Background(palette.ErrorBg).
 		Border(1, palette.ErrorBorder).Children(func() {
-		ui.Text(c, reason).Bold().TextColor(palette.Danger)
+		ui.Text(c, reason).Bold().TextColor(palette.Danger).Selectable()
 		if suggestion != "" {
-			ui.Text(c, suggestion).TextColor(palette.Text)
+			ui.Text(c, suggestion).TextColor(palette.Text).Selectable()
 		}
 		if detail != "" {
 			ui.Collapsible(c, T("error.tech_info"), open, func() {
-				muted(ui.Text(c, detail)).Font(cur.Fonts.Mono)
+				muted(ui.Text(c, detail)).Font(cur.Fonts.Mono).Selectable()
 			})
 		}
 	})

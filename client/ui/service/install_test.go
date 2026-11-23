@@ -1,10 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -40,5 +42,48 @@ func TestPlanInstallExisting(t *testing.T) {
 	}
 	if plan, err = s.PlanInstall(ctx, "box", "demo"); err != nil || plan.Existing == nil || plan.Existing.Enrolled != "demo" {
 		t.Fatalf("%+v %v", plan, err)
+	}
+}
+
+func TestRunInstallWithLocalPTY(t *testing.T) {
+	body := []byte(cleanDemoScript)
+	s, _, _ := installScriptWorld(t, body, sha256Hex(body))
+	ctx := context.Background()
+
+	plan, err := s.PlanInstall(ctx, "box", "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	var mu sync.Mutex
+	var events []bool
+	tio := InstallIO{
+		Stdin:  strings.NewReader(""),
+		Stdout: &out,
+		Stderr: &out,
+		PTY:    true,
+		OnResize: func(fn func(cols, rows, wpx, hpx int)) {
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, fn != nil)
+			if fn != nil {
+				fn(120, 40, 960, 640)
+			}
+		},
+	}
+	res, err := s.RunInstall(ctx, plan, tio)
+	if err != nil {
+		t.Fatalf("RunInstall PTY: %v\n%s", err, out.String())
+	}
+	if !res.Completed || res.Found == nil || res.Found.ProfileID != "demo" {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if !strings.Contains(out.String(), "installed args=--ver 1") {
+		t.Fatalf("expected script output in PTY buffer, got %q", out.String())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(events) != 2 || !events[0] || events[1] {
+		t.Fatalf("expected OnResize register then clear, got %v", events)
 	}
 }

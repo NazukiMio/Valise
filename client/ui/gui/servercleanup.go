@@ -225,10 +225,12 @@ func (a *App) cleanupCard(c *ui.Context, host string, ss *settingsState) {
 		}
 		if st.busy && len(prevEntries) == 0 && len(oldEntries) == 0 {
 			muted(ui.Text(c, T("cleanup.loading")))
+			a.missingInstancesCleanupSection(c, host)
 			return
 		}
 		if st.started && !st.busy && st.prevErr == nil && st.oldErr == nil && len(prevEntries) == 0 && len(oldEntries) == 0 {
 			muted(ui.Text(c, T("cleanup.empty")))
+			a.missingInstancesCleanupSection(c, host)
 			return
 		}
 		if len(prevEntries) > 0 || len(oldEntries) > 0 {
@@ -246,7 +248,9 @@ func (a *App) cleanupCard(c *ui.Context, host string, ss *settingsState) {
 				a.oldEntryRow(c.Key("old-"+e.InstanceID), st, e)
 			}
 		}
+		a.missingInstancesCleanupSection(c, host)
 	})
+	a.agentForgetModal(c)
 	if st.askPrev != nil {
 		a.prevDropDialog(c, host, st)
 	}

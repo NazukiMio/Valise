@@ -260,6 +260,11 @@ func (s *Service) planStep(ctx context.Context, planID, profileID string, st pro
 type InstallIO struct {
 	Stdin          io.Reader
 	Stdout, Stderr io.Writer
+	// PTY opens a local pseudo-terminal for the interactive ssh child and
+	// exports standard terminal environment variables while preserving
+	// SSH_ASKPASS. OnResize receives a window-size callback for live SIGWINCH.
+	PTY      bool
+	OnResize func(func(cols, rows, wpx, hpx int))
 	// Step is told before each step runs.
 	Step func(i int, st PlanStep)
 }
@@ -377,6 +382,15 @@ func runTTY(ctx context.Context, t *ssh.Transport, porterPath string, dirs, argv
 
 // runLineTTY runs one remote command line under a remote terminal.
 func runLineTTY(ctx context.Context, t *ssh.Transport, line string, tio InstallIO) (int, error) {
+	if tio.PTY {
+		return runInteractiveCmd(ctx, t.TTYCommand(ctx, line), NativeIO{
+			Stdin:    tio.Stdin,
+			Stdout:   tio.Stdout,
+			Stderr:   tio.Stderr,
+			PTY:      true,
+			OnResize: tio.OnResize,
+		}, t.ConnError(""), valise.New("install_exec_failed", "安装命令没有启动", "检查服务器连接后重试"))
+	}
 	cmd := t.TTYCommand(ctx, line)
 	cmd.Stdout, cmd.Stderr = tio.Stdout, tio.Stderr
 	var err error

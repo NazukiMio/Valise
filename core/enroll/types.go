@@ -7,21 +7,25 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"time"
 
 	"valise/core/identity"
 	"valise/core/profile"
 )
 
-// RPC method names.
+// RPC method names and capabilities.
 const (
-	MethodDetect        = "detect"
-	MethodScan          = "enroll_scan"
-	MethodInstanceGet   = "instance_get"
-	MethodInstanceWrite = "instance_write"
-	MethodInstanceList  = "instance_list"
-	MethodEntryPortSet  = "entry_port_set"
-	MethodLabelSet      = "agent_label_set"
+	MethodDetect         = "detect"
+	MethodScan           = "enroll_scan"
+	MethodInstanceGet    = "instance_get"
+	MethodInstanceWrite  = "instance_write"
+	MethodInstanceList   = "instance_list"
+	MethodInstanceForget = "instance_forget"
+	MethodEntryPortSet   = "entry_port_set"
+	MethodLabelSet       = "agent_label_set"
+
+	ForgetCapability = "instance-forget/1"
 )
 
 var idRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -378,6 +382,28 @@ type InstanceSummary struct {
 	// Identity is filled only by porters declaring identity/2; absent
 	// means the client must read identity_get (identity/1) itself.
 	Identity *identity.Binding `json:"identity,omitempty"`
+	// MissingRoots lists enrolled root IDs whose directory on the server is
+	// missing or no longer a directory (e.g. uninstalled outside Valise).
+	MissingRoots []string `json:"missing_roots,omitempty"`
+}
+
+// StateMissing reports whether the instance's state root directory is missing.
+func (s InstanceSummary) StateMissing() bool {
+	return slices.Contains(s.MissingRoots, profile.StateRoot)
+}
+
+// InstanceForgetParams asks porter to remove an instance's enrollment record,
+// timers, protection plan, proposals and identity binding without touching
+// vaults, live directories or .valise-prev-* leftovers.
+type InstanceForgetParams struct {
+	InstanceID string `json:"instance_id"`
+}
+
+// InstanceForgetResult reports what server metadata was removed.
+type InstanceForgetResult struct {
+	InstanceID string   `json:"instance_id"`
+	Removed    []string `json:"removed,omitempty"`
+	Warnings   []string `json:"warnings,omitempty"`
 }
 
 // InstanceListResult lists the enrolled instances, sorted by id.

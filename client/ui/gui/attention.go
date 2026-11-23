@@ -144,6 +144,9 @@ func agentVerdict(r agentRow, newest *time.Time, now time.Time) (string, bool) {
 	if r.Note != "" {
 		return T("agent.verdict.moved", "note", r.Note), true
 	}
+	if r.StateMissing {
+		return T("agent.verdict.state_missing"), true
+	}
 	if r.HasService && r.ServiceTone != "ok" {
 		if r.Service == T("service.unknown") {
 			return T("agent.verdict.unknown"), true

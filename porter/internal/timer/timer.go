@@ -194,6 +194,42 @@ func Seal(ctx context.Context, e *porterenroll.Env, home, instance string) error
 	})
 }
 
+// RemoveInstance stops and deletes a single instance's timed seal units on a
+// best-effort basis for instance_forget. Non-fatal systemctl or removal
+// failures are returned as warnings rather than aborting cleanup.
+func RemoveInstance(ctx context.Context, e *porterenroll.Env, home, instance string) (removed []string, warnings []string) {
+	svc, tmr := UnitNames(instance)
+	dir := unitDir(home)
+	tmrPath := filepath.Join(dir, tmr)
+	svcPath := filepath.Join(dir, svc)
+	_, tmrErr := os.Stat(tmrPath)
+	_, svcErr := os.Stat(svcPath)
+	if tmrErr != nil && svcErr != nil {
+		return nil, nil
+	}
+	warnedSystemctl := false
+	if e == nil {
+		warnings = append(warnings, "无法运行 systemctl --user 停用定时器 "+tmr+"，已直接清理单元文件")
+		warnedSystemctl = true
+	} else if out, err := e.Run(ctx, runTimeout, home, "systemctl", "--user", "disable", "--now", tmr); err != nil || out.Code != 0 {
+		warnings = append(warnings, "未能通过 systemctl --user 停用定时器 "+tmr+"，已直接清理单元文件")
+		warnedSystemctl = true
+	}
+	for _, p := range []string{tmrPath, svcPath} {
+		if err := os.Remove(p); err == nil {
+			removed = append(removed, p)
+		} else if !os.IsNotExist(err) {
+			warnings = append(warnings, "无法删除定时器单元文件 "+p)
+		}
+	}
+	if len(removed) > 0 && e != nil && !warnedSystemctl {
+		if out, err := e.Run(ctx, runTimeout, home, "systemctl", "--user", "daemon-reload"); err != nil || out.Code != 0 {
+			warnings = append(warnings, "systemctl --user daemon-reload 未成功")
+		}
+	}
+	return removed, warnings
+}
+
 // RemoveAll stops and deletes every timed seal on the server, for removing
 // the server from Valise (docs/ARCHITECTURE.md 2.3). Protection plans stay
 // as records; with the units gone nothing seals on its own any more. It

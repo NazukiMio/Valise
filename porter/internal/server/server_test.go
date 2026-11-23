@@ -4,15 +4,23 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"valise/core/enroll"
+	"valise/core/identity"
+	"valise/core/profile"
 	"valise/core/revive"
 	"valise/core/rpc"
+	porterenroll "valise/porter/internal/enroll"
+	porteridentity "valise/porter/internal/identity"
 	porterrevive "valise/porter/internal/revive"
+	"valise/porter/internal/seal"
 )
 
 func serve(t *testing.T, home string, lines ...string) []rpc.Response {
@@ -111,5 +119,203 @@ func TestMethodsClassified(t *testing.T) {
 		if !rpc.Classified(m) {
 			t.Errorf("method %q has no tier in core/rpc/tier.go", m)
 		}
+	}
+}
+
+func TestInstanceListMissingRootsAndInstanceForget(t *testing.T) {
+	home := t.TempDir()
+	stateDir := filepath.Join(home, ".hermes")
+	wsDir := filepath.Join(home, "workspace")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(wsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := profile.Profile{
+		ID: "hermes", ProfileVersion: 14, Status: "draft",
+		Roots: []profile.Root{{ID: "workspace", Default: wsDir}},
+	}
+	rec := enroll.Record{
+		InstanceID: "hermes", ProfileID: "hermes", ProfileVersion: 14,
+		Roots: map[string]string{"state": stateDir, "workspace": wsDir},
+	}
+	if _, _, err := porterenroll.AcceptRecord(home, rec, p); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate protection plan, pending change, timer units, proposals, declaration, vault & prev dir.
+	protFile := filepath.Join(home, ".config", "valise", "protection", "hermes.json")
+	protChangeFile := filepath.Join(home, ".local", "state", "valise", "protection-changes", "hermes.json")
+	unitDir := filepath.Join(home, ".config", "systemd", "user")
+	tmrFile := filepath.Join(unitDir, "valise-seal@hermes.timer")
+	svcFile := filepath.Join(unitDir, "valise-seal@hermes.service")
+	propFile := filepath.Join(porterenroll.InstancesDir(home), "hermes.proposals.json")
+	declFile := filepath.Join(porterenroll.InstancesDir(home), "hermes.declaration.json")
+	vaultDir := filepath.Join(home, ".local", "share", "valise", "vaults", "hermes", "2026-11")
+	prevDir := filepath.Join(home, ".valise-prev-op1-state")
+
+	for _, f := range []string{protFile, protChangeFile, tmrFile, svcFile, propFile, declFile} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range []string{vaultDir, prevDir} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "keep.txt"), []byte("keep"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 1. Both roots exist -> MissingRoots is empty.
+	resps := serve(t, home, helloReq, `{"jsonrpc":"2.0","id":2,"method":"instance_list","params":{}}`)
+	var h rpc.HelloResult
+	if err := json.Unmarshal(resps[0].Result, &h); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(h.Capabilities, enroll.ForgetCapability) {
+		t.Fatalf("hello capabilities missing %q: %v", enroll.ForgetCapability, h.Capabilities)
+	}
+	var list1 enroll.InstanceListResult
+	if err := json.Unmarshal(resps[1].Result, &list1); err != nil {
+		t.Fatal(err)
+	}
+	if len(list1.Instances) != 1 || len(list1.Instances[0].MissingRoots) != 0 || list1.Instances[0].StateMissing() {
+		t.Fatalf("unexpected MissingRoots when state exists: %+v", list1.Instances)
+	}
+
+	// 2. Remove stateDir outside Valise -> MissingRoots contains "state", StateMissing() is true.
+	if err := os.RemoveAll(stateDir); err != nil {
+		t.Fatal(err)
+	}
+	resps = serve(t, home, helloReq, `{"jsonrpc":"2.0","id":2,"method":"instance_list","params":{}}`)
+	var list2 enroll.InstanceListResult
+	if err := json.Unmarshal(resps[1].Result, &list2); err != nil {
+		t.Fatal(err)
+	}
+	if len(list2.Instances) != 1 || !slices.Equal(list2.Instances[0].MissingRoots, []string{"state"}) || !list2.Instances[0].StateMissing() {
+		t.Fatalf("expected MissingRoots=[state], got %+v", list2.Instances)
+	}
+
+	// 3. Daily connection without owner proof must be rejected with owner_required.
+	var dailyOut bytes.Buffer
+	dailyCfg := Config{
+		Version: "test", Home: home, Tier: rpc.TierDaily,
+		DetectTools: func(context.Context) []rpc.Tool { return nil },
+	}
+	if err := Serve(context.Background(), strings.NewReader(helloReq+"\n"+`{"jsonrpc":"2.0","id":2,"method":"instance_forget","params":{"instance_id":"hermes"}}`+"\n"), &dailyOut, dailyCfg); err != nil {
+		t.Fatal(err)
+	}
+	dec := json.NewDecoder(&dailyOut)
+	var r1, r2 rpc.Response
+	_ = dec.Decode(&r1)
+	_ = dec.Decode(&r2)
+	if r2.Error == nil || r2.Error.Data == nil || r2.Error.Data.Code != rpc.OwnerRequiredCode {
+		t.Fatalf("expected owner_required on unproved daily tier, got %+v", r2)
+	}
+
+	// 4. Call instance_forget -> removes dossier, protection, timer, proposals, declaration, identity; keeps vault, wsDir, prevDir.
+	resps = serve(t, home, helloReq, `{"jsonrpc":"2.0","id":2,"method":"instance_forget","params":{"instance_id":"hermes"}}`)
+	if resps[1].Error != nil {
+		t.Fatalf("instance_forget error: %+v", resps[1].Error)
+	}
+	var forgetRes enroll.InstanceForgetResult
+	if err := json.Unmarshal(resps[1].Result, &forgetRes); err != nil {
+		t.Fatal(err)
+	}
+	if forgetRes.InstanceID != "hermes" || len(forgetRes.Removed) == 0 {
+		t.Fatalf("unexpected forget result: %+v", forgetRes)
+	}
+
+	for _, gone := range []string{
+		protFile, protChangeFile, tmrFile, svcFile, propFile, declFile,
+		porterenroll.DossierPath(home, "hermes"),
+		filepath.Join(porterenroll.DossiersDir(home), "hermes.profile.json"),
+		filepath.Join(porteridentity.Dir(home), "agents", "hermes.json"),
+	} {
+		if _, err := os.Stat(gone); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be removed, stat err = %v", gone, err)
+		}
+	}
+	if b := porteridentity.ListBinding(home, "hermes"); b.IdentityState != identity.LegacyUnbound {
+		t.Fatalf("expected identity binding removed (legacy_unbound), got %+v", b)
+	}
+
+	// HARD INVARIANT: vault, remaining live root (wsDir), and .valise-prev-* must stay intact.
+	for _, kept := range []string{
+		filepath.Join(vaultDir, "keep.txt"),
+		filepath.Join(prevDir, "keep.txt"),
+		wsDir,
+	} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Fatalf("hard invariant violated: %s was touched: %v", kept, err)
+		}
+	}
+	auditBytes, err := os.ReadFile(seal.Paths{Home: home}.Audit())
+	if err != nil || !strings.Contains(string(auditBytes), `"op":"instance_forget"`) {
+		t.Fatalf("expected instance_forget in audit log, got %q (err=%v)", string(auditBytes), err)
+	}
+}
+
+func TestServiceControlRestart(t *testing.T) {
+	home := t.TempDir()
+	binDir := filepath.Join(home, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logFile := filepath.Join(home, "systemctl.log")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/systemctl.log\"\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(binDir, "systemctl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := &porterenroll.Env{Home: home, Vars: []string{"PATH=" + binDir + ":/usr/bin:/bin", "HOME=" + home}}
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	defer inR.Close()
+	defer outR.Close()
+	cfg := Config{
+		Version: "test", Home: home,
+		DetectTools: func(context.Context) []rpc.Tool { return nil },
+		LoadEnv: func(_ context.Context, _ string) *porterenroll.Env {
+			return env
+		},
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- Serve(context.Background(), inR, outW, cfg)
+		outW.Close()
+	}()
+	dec := json.NewDecoder(outR)
+	for _, line := range []string{
+		helloReq,
+		`{"jsonrpc":"2.0","id":2,"method":"service_control","params":{"unit":"hermes-gateway.service","action":"restart"}}`,
+	} {
+		if _, err := io.WriteString(inW, line+"\n"); err != nil {
+			t.Fatal(err)
+		}
+		var resp rpc.Response
+		if err := dec.Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		if resp.Error != nil {
+			t.Fatalf("request %s failed: %+v", line, resp.Error)
+		}
+	}
+	_ = inW.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	logged, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logged), "--user reset-failed hermes-gateway.service") ||
+		!strings.Contains(string(logged), "--user restart hermes-gateway.service") {
+		t.Fatalf("unexpected systemctl invocations:\n%s", string(logged))
 	}
 }

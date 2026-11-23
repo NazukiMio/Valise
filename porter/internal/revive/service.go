@@ -68,6 +68,18 @@ func StartUnit(ctx context.Context, e *porterenroll.Env, unit string) error {
 	return nil
 }
 
+// RestartUnit restarts a unit.
+func RestartUnit(ctx context.Context, e *porterenroll.Env, unit string) error {
+	if !unitRe.MatchString(unit) {
+		return valise.New("unit_invalid", "服务单元名无效："+unit, "检查 profile")
+	}
+	_, _, _ = systemctl(ctx, e, "reset-failed", unit)
+	if _, code, err := systemctl(ctx, e, "restart", unit); err != nil || code != 0 {
+		return valise.New("service_restart_failed", "无法重启服务 "+unit, "在服务器上运行 systemctl --user status "+unit+" 查看原因")
+	}
+	return nil
+}
+
 // recentLogs returns the unit's last journal lines, shown to the user only.
 func recentLogs(ctx context.Context, e *porterenroll.Env, unit string) string {
 	out, err := e.Run(ctx, 20*time.Second, "", "journalctl", "--user", "-u", unit, "-n", "40", "--no-pager")

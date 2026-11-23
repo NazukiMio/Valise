@@ -89,6 +89,7 @@ func setup(t *testing.T) (*client, string, string, string, *time.Time) {
 	os.MkdirAll(extDir, 0o755)
 
 	write(t, filepath.Join(state, "SOUL.md"), "soul")
+	write(t, filepath.Join(state, "persona.md"), "custom persona")
 	write(t, filepath.Join(state, ".env"), "API_KEY=secret")
 	write(t, filepath.Join(state, "MEMORY.md"), "# Memory\n\n- fact one\n")
 	write(t, filepath.Join(state, "notes/a.md"), "user notes")
@@ -162,11 +163,18 @@ func TestProtocolAndTools(t *testing.T) {
 	tools := c.call("tools/list", nil)["tools"].([]any)
 	var toolNames []string
 	for _, tl := range tools {
-		name := tl.(map[string]any)["name"].(string)
+		m := tl.(map[string]any)
+		name := m["name"].(string)
 		toolNames = append(toolNames, name)
 		for _, banned := range []string{"revive", "delete", "secret", "write", "read_file"} {
 			if strings.Contains(name, banned) {
 				t.Fatalf("tool %s exceeds MCP boundary", name)
+			}
+		}
+		if name == "valise_propose_dossier" {
+			rawSchema, _ := json.Marshal(m["inputSchema"])
+			if !strings.Contains(string(rawSchema), `"identity"`) {
+				t.Fatalf("valise_propose_dossier schema missing identity category: %s", rawSchema)
 			}
 		}
 	}
@@ -271,9 +279,10 @@ func TestProtocolAndTools(t *testing.T) {
 		}
 	}
 
-	// valise_propose_dossier: classify, sqlite, and external_ref validation + Decide persistence.
+	// valise_propose_dossier: classify (including identity), sqlite, and external_ref validation + Decide persistence.
 	sc, text, isErr = c.tool("valise_propose_dossier", map[string]any{"items": []map[string]any{
 		{"kind": "classify", "root": "state", "path": "notes", "category": "memory", "reason": "user custom notes"},
+		{"kind": "classify", "root": "state", "path": "persona.md", "category": "identity", "reason": "custom persona definition"},
 		{"kind": "classify", "root": "state", "path": "runtime.lock", "category": "ignore", "reason": ""},
 		{"kind": "classify", "root": "state", "path": "runtime.lock", "category": "ignore", "reason": "ephemeral runtime lock"},
 		{"kind": "classify", "root": "state", "path": ".env", "category": "memory", "reason": "bad"},
@@ -286,30 +295,31 @@ func TestProtocolAndTools(t *testing.T) {
 		t.Fatalf("propose_dossier failed: %s", text)
 	}
 	results := sc["results"].([]any)
-	if len(results) != 8 ||
+	if len(results) != 9 ||
 		!strings.Contains(results[0].(string), "notes/**") ||
-		!strings.Contains(results[1].(string), "拒绝") ||
-		!strings.Contains(results[2].(string), "降级") ||
-		!strings.Contains(results[3].(string), "拒绝") ||
-		!strings.Contains(results[4].(string), "sqlite:state:plugins/mem.db") ||
-		!strings.Contains(results[5].(string), "secret_tables") ||
-		!strings.Contains(results[6].(string), "拒绝") ||
-		!strings.Contains(results[7].(string), "symlink_target") {
+		!strings.Contains(results[1].(string), "persona.md → identity") ||
+		!strings.Contains(results[2].(string), "拒绝") ||
+		!strings.Contains(results[3].(string), "降级") ||
+		!strings.Contains(results[4].(string), "拒绝") ||
+		!strings.Contains(results[5].(string), "sqlite:state:plugins/mem.db") ||
+		!strings.Contains(results[6].(string), "secret_tables") ||
+		!strings.Contains(results[7].(string), "拒绝") ||
+		!strings.Contains(results[8].(string), "symlink_target") {
 		t.Fatalf("propose_dossier results = %v", results)
 	}
 	ps, _ := kit.LoadProposals(home, "demo")
-	if len(ps) != 4 {
-		t.Fatalf("expected 4 pending proposals, got %+v", ps)
+	if len(ps) != 5 {
+		t.Fatalf("expected 5 pending proposals, got %+v", ps)
 	}
 	res, err := kit.Decide(home, agentkit.DecideParams{InstanceID: "demo", Accept: []string{"all"}})
-	if err != nil || len(res.Accepted) != 3 || res.Remaining != 1 {
+	if err != nil || len(res.Accepted) != 4 || res.Remaining != 1 {
 		t.Fatalf("Decide Accept=all = %+v %v", res, err)
 	}
-	if res, err = kit.Decide(home, agentkit.DecideParams{InstanceID: "demo", AcceptDemotions: []string{ps[1].ID}}); err != nil || len(res.Accepted) != 1 || res.Remaining != 0 {
+	if res, err = kit.Decide(home, agentkit.DecideParams{InstanceID: "demo", AcceptDemotions: []string{ps[2].ID}}); err != nil || len(res.Accepted) != 1 || res.Remaining != 0 {
 		t.Fatalf("Decide demotion = %+v %v", res, err)
 	}
 	rec, _ := porterenroll.ReadRecord(home, "demo")
-	if len(rec.LocalOverrides) != 2 || len(rec.LocalSQLite) != 1 || len(rec.ExternalRefs) != 1 {
+	if len(rec.LocalOverrides) != 3 || len(rec.LocalSQLite) != 1 || len(rec.ExternalRefs) != 1 {
 		t.Fatalf("dossier updates missing: ov=%+v sql=%+v ext=%+v", rec.LocalOverrides, rec.LocalSQLite, rec.ExternalRefs)
 	}
 

@@ -188,7 +188,7 @@ func (a *App) restoreResult(c *ui.Context, r *restoreFlow) {
 		}
 		ui.Collapsible(c, T("restore.kept"), a.fold("restore-kept"), func() {
 			for _, path := range t.Prev {
-				mono(muted(ui.Text(c, path))).Wrap()
+				mono(muted(ui.Text(c, path))).Wrap().Selectable()
 			}
 		})
 		if t.SwapState == revive.StateRolledBack {

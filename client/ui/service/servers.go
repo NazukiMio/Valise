@@ -50,7 +50,11 @@ func (s *Service) RemoveServer(alias string) (bool, error) {
 	if i < 0 {
 		return false, nil
 	}
-	return true, config.SaveServers(s.Dirs.Data, slices.Delete(list, i, i+1))
+	if err := config.SaveServers(s.Dirs.Data, slices.Delete(list, i, i+1)); err != nil {
+		return false, err
+	}
+	s.invalidateAgents(alias)
+	return true, nil
 }
 
 // ImportableHosts lists the concrete Host aliases of ~/.ssh/config that are

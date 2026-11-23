@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: hermes
 display_name: Hermes Agent
-profile_version: 13
+profile_version: 14
 status: draft
 harness_versions_tested: ["0.22.5"]
 docs: https://hermes-agent.nousresearch.com
@@ -122,6 +122,7 @@ paths:
   - { root: state, glob: "profile.yaml", category: config }          # SRC: hermes_cli/profiles.py:read_profile_meta
   - { root: state, glob: "hooks/**", category: config }
   - { root: state, glob: "cron/**", category: config }
+  - { root: state, glob: ".no-bundled-skills", category: config, verify: pending }
   - { root: state, glob: "state.db", category: state }
   - { root: state, glob: "kanban.db", category: state }
   - { root: state, glob: "kanban/boards/*/kanban.db", category: state }
@@ -130,14 +131,23 @@ paths:
   # Note: cache/** is intentionally NOT excluded wholesale because cache/browser-profiles/** and
   # cache/{bws,op}_cache*.json are declared as secrets above.
   - { root: state, glob: "cache/model_catalog.json", category: cache } # SRC: hermes_cli/model_catalog.py:_cache_path
+  - { root: state, glob: "cache/pnpm/**", category: cache }
+  - { root: state, glob: "cache/uv/**", category: cache }
+  - { root: state, glob: "cache/partials/**", category: cache }
+  - { root: state, glob: "cache/scratch/**", category: cache }
   - { root: state, glob: "provider_models_cache.json", category: cache } # SRC: hermes_cli/models.py:_provider_models_cache_path
   - { root: state, glob: "checkpoints/**", category: cache }         # SRC: hermes_cli/backup.py:_EXCLUDED_DIRS
   - { root: state, glob: "audio_cache/**", category: cache }         # CFG: TTS output
   - { root: state, glob: "image_cache/**", category: cache, verify: pending }
+  - { root: state, glob: "source-checks/**", category: cache, verify: pending }
   - { root: state, glob: "channel_directory.json", category: cache } # rebuilt listing
   - { root: state, glob: "logs/**", category: ignore }               # CFG
   - { root: state, glob: "telemetry/**", category: ignore }
   - { root: state, glob: ".backup.lock", category: ignore }
+  - { root: state, glob: ".hermes-update-in-progress.lock", category: ignore }
+  - { root: state, glob: "auth.lock", category: ignore }
+  - { root: state, glob: "spawn-ledger.json.lock", category: ignore }
+  - { root: state, glob: "spawn-ledger.json", category: ignore, verify: pending }
   - { root: state, glob: "gateway.pid", category: ignore }
   - { root: state, glob: "cron.pid", category: ignore }
 

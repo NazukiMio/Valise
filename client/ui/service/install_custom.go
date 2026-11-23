@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 
+	"valise/client/config"
 	"valise/client/porter"
 	"valise/core/enroll"
 	"valise/core/install"
@@ -283,4 +284,70 @@ func (s *Service) RunCustomInstall(ctx context.Context, plan *CustomInstallPlan,
 		}
 	}
 	return res, nil
+}
+
+// SavedInstalls lists user-saved custom install URLs/commands on this client.
+func (s *Service) SavedInstalls() ([]config.SavedInstall, error) {
+	return s.Dirs.LoadSavedInstalls()
+}
+
+// SaveCustomInstall validates raw through ParseCustomInstall and persists it
+// as a reusable custom install preset. Selecting a saved preset only fills
+// the input; it never bypasses script download, SHA-256 display, static checks
+// or user confirmation.
+func (s *Service) SaveCustomInstall(name, raw, profileID string) (config.SavedInstall, error) {
+	spec, err := install.ParseCustomInstall(raw)
+	if err != nil {
+		return config.SavedInstall{}, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = defaultSavedInstallName(spec)
+	}
+	profileID = strings.TrimSpace(profileID)
+	item := config.SavedInstall{
+		Name:      name,
+		Raw:       spec.Raw,
+		ProfileID: profileID,
+	}
+	if err := s.Dirs.SaveSavedInstall(item); err != nil {
+		return config.SavedInstall{}, valise.New("saved_install_write", "无法保存常用安装指令", "检查本机数据目录权限后重试").WithDetail(err.Error())
+	}
+	list, err := s.Dirs.LoadSavedInstalls()
+	if err != nil {
+		return config.SavedInstall{}, err
+	}
+	for i := len(list) - 1; i >= 0; i-- {
+		if list[i].Raw == item.Raw && list[i].ProfileID == item.ProfileID {
+			return list[i], nil
+		}
+	}
+	return item, nil
+}
+
+// DeleteCustomInstall deletes one saved custom install preset by ID.
+func (s *Service) DeleteCustomInstall(id string) error {
+	return s.Dirs.DeleteSavedInstall(id)
+}
+
+func defaultSavedInstallName(spec *install.CustomInstallSpec) string {
+	if spec == nil {
+		return ""
+	}
+	switch spec.Kind {
+	case "script":
+		file := install.SafeScriptFilename(spec.URL)
+		if u, err := url.Parse(spec.URL); err == nil && u.Host != "" {
+			return u.Host + "/" + file
+		}
+		return file
+	case "argv":
+		if len(spec.Argv) >= 2 {
+			return strings.Join(spec.Argv[:2], " ")
+		}
+		if len(spec.Argv) == 1 {
+			return spec.Argv[0]
+		}
+	}
+	return spec.Raw
 }

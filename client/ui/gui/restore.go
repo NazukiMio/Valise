@@ -40,6 +40,15 @@ type restoreFlow struct {
 	newIntent                                bool
 	recoverAction                            string
 	exit                                     func()
+
+	placement      *service.TargetPlacement
+	placeLoading   bool
+	placeErr       error
+	placeKey       string
+	placeMode      string
+	customStateDir string
+	extraRoots     map[string]string
+	inlineInstall  *restoreInstallState
 }
 
 func (a *App) openRestore(p journey.TimelinePoint, origin string) {
@@ -118,6 +127,7 @@ func (a *App) prepareRestore(r *restoreFlow) {
 	if r.mode == revive.ModeRollback {
 		r.target = r.origin
 	} else {
+		r.roots = r.resolvedRoots()
 		var err error
 		roots, err = parseRestoreRoots(r.roots)
 		if err != nil {

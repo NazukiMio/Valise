@@ -157,12 +157,12 @@ func (a *App) healthLine(c *ui.Context, row *agentRow, st *healthState, it servi
 			ui.Box(c).Size(8, 8).Radius(4).Background(palette.Line)
 		}
 		ui.Column(c).Grow(1).Gap(3).Children(func() {
-			title := ui.Text(c, it.Title).FontSize(fsBody).Bold().Wrap()
+			title := ui.Text(c, it.Title).FontSize(fsBody).Bold().Wrap().Selectable()
 			if tone == "danger" {
 				title.TextColor(palette.Danger)
 			}
 			if it.Text != "" {
-				muted(ui.Text(c, it.Text)).FontSize(13).Wrap()
+				muted(ui.Text(c, it.Text)).FontSize(13).Wrap().Selectable()
 			}
 		})
 		// A declared repair action, or the built-in linger fix; the clock
@@ -251,7 +251,7 @@ func (a *App) fixReport(c *ui.Context, row *agentRow, st *healthState) {
 				ui.Text(c, f.action.Explain).FontSize(13).Wrap()
 				codeBox(ui.Column(c)).Gap(4).Children(func() {
 					muted(ui.Text(c, T("health.run_cmd", "server", row.Server)))
-					ui.Text(c, strings.Join(f.action.Argv, " ")).FontSize(12).Font(cur.Fonts.Mono).Wrap()
+					ui.Text(c, strings.Join(f.action.Argv, " ")).FontSize(12).Font(cur.Fonts.Mono).Wrap().Selectable()
 				})
 				muted(ui.Text(c, T("health.admin_login"))).FontSize(12).Wrap()
 				ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
@@ -287,16 +287,16 @@ func fixResult(c *ui.Context, f *fixState) {
 		return
 	}
 	exit := T("health.exited", "code", r.Exit)
-	ui.Text(c, exit).FontSize(13).Bold()
+	ui.Text(c, exit).FontSize(13).Bold().Selectable()
 	if r.Checked {
 		s, tone := serviceText(r.Service)
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Box(c).Size(6, 6).Radius(3).Background(toneColor(tone))
-			ui.Text(c, T("health.after", "state", s)).FontSize(13)
+			ui.Text(c, T("health.after", "state", s)).FontSize(13).Selectable()
 		})
 	}
 	if v := r.Verification; v != nil {
-		muted(ui.Text(c, v.Text)).FontSize(12).Wrap()
+		muted(ui.Text(c, v.Text)).FontSize(12).Wrap().Selectable()
 	}
 }
 

@@ -33,6 +33,7 @@ const usage = `用法：valise [--config-dir 目录] [-v] [--accept-risk] <命�
                                                  登记 agent：展示登记报告，加 --accept 才写入实例记录
   tui                                            终端界面：服务器、agent、备份、健康、管理页、登录授权、设置
   agent name <服务器> <实例> [名字]                 在 Valise 里给 agent 起名字；不写名字就跟随 harness 里的名字
+  agent forget <服务器> <实例> [--yes]            从 Valise 移出实例记录（删除定时备份与保护计划；保留已有备份与服务器上的数据目录）
   profiles status                                查看 harness 资料包与本地 profile
   profiles install [--tag profiles-…] [--file <文件>] [--yes]
                                                  安装 harness 资料包（在线拉取最新版，或本地文件；未签名的只能作为本地 profile）
@@ -235,6 +236,8 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		return c.old(ctx, args[1:])
 	case args[0] == "agent" && len(args) > 1 && args[1] == "name":
 		return c.agentName(ctx, args[2:])
+	case args[0] == "agent" && len(args) > 1 && args[1] == "forget":
+		return c.agentForget(ctx, args[2:])
 	case args[0] == "health":
 		return c.health(ctx, args[1:])
 	case args[0] == "restore-test":

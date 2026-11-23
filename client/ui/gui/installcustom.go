@@ -34,6 +34,10 @@ type customInstallRun struct {
 	res        *service.InstallResult
 	err        error
 	acceptRisk bool
+	savePreset bool
+	presetName string
+	copied     string
+	onDone     func(*service.InstallResult, error)
 }
 
 func (a *App) customInstallTile(c *ui.Context, host string) {
@@ -58,14 +62,14 @@ func (a *App) renderScriptFindings(c *ui.Context, fs []install.Finding) {
 			key = "install.finding_refuse"
 		}
 		ui.Column(c.Key(i)).Gap(2).Children(func() {
-			ui.Text(c, "· "+T(key, "reason", f.Reason)).FontSize(12).TextColor(palette.Warn).Wrap()
+			ui.Text(c, "· "+T(key, "reason", f.Reason)).FontSize(12).TextColor(palette.Warn).Wrap().Selectable()
 			switch {
 			case f.Line > 0 && f.Snippet != "":
-				mono(muted(ui.Text(c, T("install.finding_where", "line", f.Line, "snippet", f.Snippet)))).FontSize(fsCaption).Wrap()
+				mono(muted(ui.Text(c, T("install.finding_where", "line", f.Line, "snippet", f.Snippet)))).FontSize(fsCaption).Wrap().Selectable()
 			case f.Line > 0:
-				mono(muted(ui.Text(c, T("install.finding_line", "line", f.Line)))).FontSize(fsCaption).Wrap()
+				mono(muted(ui.Text(c, T("install.finding_line", "line", f.Line)))).FontSize(fsCaption).Wrap().Selectable()
 			case f.Snippet != "":
-				mono(muted(ui.Text(c, f.Snippet))).FontSize(fsCaption).Wrap()
+				mono(muted(ui.Text(c, f.Snippet))).FontSize(fsCaption).Wrap().Selectable()
 			}
 		})
 	}
@@ -80,7 +84,7 @@ func (a *App) scriptPreview(c *ui.Context, foldKey string, script []byte, openDe
 		fold = a.fold(foldKey)
 	}
 	ui.Collapsible(c, T("install.script", "n", lines), fold, func() {
-		codeBox(mono(ui.Text(c, string(script))).FontSize(fsCaption).Wrap())
+		codeBox(mono(ui.Text(c, string(script))).FontSize(fsCaption).Wrap().Selectable())
 	})
 }
 
@@ -90,7 +94,7 @@ func (a *App) openInstallTerminal(conn *installConn, text *tailText) *terminal.T
 			return t
 		}
 	}
-	a.run(func() {
+	go func() {
 		buf := make([]byte, 4096)
 		for {
 			n, err := conn.out.Read(buf)
@@ -102,7 +106,7 @@ func (a *App) openInstallTerminal(conn *installConn, text *tailText) *terminal.T
 				return
 			}
 		}
-	})
+	}()
 	return nil
 }
 
@@ -179,80 +183,118 @@ func (a *App) customInstallPage(c *ui.Context, host string) {
 }
 
 func (a *App) prepareCustomInstall(host string, ci *customInstallRun) {
+	a.prepareCustomInstallForProfile(host, ci, "")
+}
+
+func (a *App) prepareCustomInstallForProfile(host string, ci *customInstallRun, profileID string) {
 	raw := ci.raw
-	ci.planning, ci.planErr, ci.plan, ci.sentence, ci.riskErr = true, nil, nil, "", nil
+	ci.planning, ci.planErr, ci.plan, ci.sentence, ci.riskErr, ci.copied = true, nil, nil, "", nil, ""
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		plan, err := a.svc.PlanCustomInstall(ctx, host, raw, "")
+		plan, err := a.svc.PlanCustomInstall(ctx, host, raw, profileID)
 		a.update(func() { ci.planning, ci.plan, ci.planErr = false, plan, err })
 	})
 }
 
 func (a *App) customPlanView(c *ui.Context, host string, ci *customInstallRun) {
-	p := ci.plan
 	card(ui.Column(c)).Gap(12).Children(func() {
-		sectionTitle(ui.Text(c, T("install.will_do")))
-		muted(ui.Text(c, T("install.custom.source"))).Wrap()
-		if p.URL != "" {
-			mono(muted(ui.Text(c, T("install.custom.url", "url", p.URL)))).Wrap()
-		}
-		if p.SHA256 != "" {
-			mono(muted(ui.Text(c, T("install.custom.sha", "sha", p.SHA256)))).Wrap()
-		}
-		ui.Text(c, T("install.custom.will_run")).FontSize(12).Bold()
-		codeBox(mono(ui.Text(c, strings.Join(p.Command, " "))).FontSize(12).Wrap())
+		a.customPlanBody(c, host, ci, true, func() { ci.plan, ci.riskErr, ci.copied = nil, nil, "" })
+	})
+}
 
-		bg, border := palette.Board, palette.CardBorder
+func (a *App) customPlanBody(c *ui.Context, host string, ci *customInstallRun, allowSave bool, onEdit func()) {
+	p := ci.plan
+	sectionTitle(ui.Text(c, T("install.will_do")))
+	muted(ui.Text(c, T("install.custom.source"))).Wrap()
+	if p.URL != "" {
+		mono(muted(ui.Text(c, T("install.custom.url", "url", p.URL)))).Wrap().Selectable()
+	}
+	if p.SHA256 != "" {
+		mono(muted(ui.Text(c, T("install.custom.sha", "sha", p.SHA256)))).Wrap().Selectable()
+	}
+	ui.Text(c, T("install.custom.will_run")).FontSize(12).Bold()
+	codeBox(mono(ui.Text(c, strings.Join(p.Command, " "))).FontSize(12).Wrap().Selectable())
+
+	bg, border := palette.Board, palette.CardBorder
+	if p.Refused {
+		bg, border = palette.ErrorBg, palette.ErrorBorder
+	} else if len(p.Findings) > 0 {
+		bg, border = palette.AlertBg, palette.AlertBorder
+	}
+	ui.Column(c).Gap(6).Padding(12, 14).Radius(10).Background(bg).Border(1, border).Children(func() {
 		if p.Refused {
-			bg, border = palette.ErrorBg, palette.ErrorBorder
-		} else if len(p.Findings) > 0 {
-			bg, border = palette.AlertBg, palette.AlertBorder
+			ui.Text(c, T("install.custom.refused")).Bold().TextColor(palette.Warn).Wrap()
 		}
-		ui.Column(c).Gap(6).Padding(12, 14).Radius(10).Background(bg).Border(1, border).Children(func() {
-			if p.Refused {
-				ui.Text(c, T("install.custom.refused")).Bold().TextColor(palette.Warn).Wrap()
-			}
-			a.renderScriptFindings(c, p.Findings)
-			if p.Refused {
-				ui.Text(c, T("install.custom.refused_hint")).FontSize(12).TextColor(palette.Warn).Wrap()
-				ui.Row(c).Children(func() {
-					textLink(c, T("install.custom.open_shell"), func() { a.router.Push("/servers/" + host + "/shell") })
-				})
-			}
-		})
+		a.renderScriptFindings(c, p.Findings)
+		if p.Refused {
+			ui.Text(c, T("install.custom.refused_hint")).FontSize(12).TextColor(palette.Warn).Wrap()
+			ui.Row(c).Children(func() {
+				textLink(c, T("install.custom.open_shell"), func() { a.router.Push("/servers/" + host + "/shell") })
+			})
+		}
+	})
 
-		if len(p.Script) > 0 {
-			a.scriptPreview(c, "custom-script-"+p.ID, p.Script, true)
-		}
+	if len(p.Script) > 0 {
+		a.scriptPreview(c, "custom-script-"+p.ID, p.Script, true)
+	}
 
-		if !p.Refused && p.NeedsConfirm {
-			ui.Text(c, T("install.custom.risk_prompt", "sentence", install.RiskSentence)).FontSize(13).Bold().Wrap()
-			ui.TextInput(c, &ci.sentence).Label(T("install.custom.risk_label")).Placeholder(install.RiskSentence)
-			if ci.riskErr != nil {
-				errorBox(c, ci.riskErr, a.fold("custom-risk-err-"+host))
-			}
-		}
-		if !p.Refused {
-			muted(ui.Text(c, T("install.needs_admin"))).Wrap()
-		}
-		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			ui.Button(c, T("install.custom.edit")).OnClick(func() { ci.plan, ci.riskErr = nil, nil })
-			if !p.Refused {
-				label := T("install.custom.run")
-				if p.Kind != "script" {
-					label = T("install.custom.run_cmd")
-				}
-				ui.PrimaryButton(c, label).OnClick(func() {
-					if p.NeedsConfirm && strings.TrimSpace(ci.sentence) != install.RiskSentence {
-						ci.riskErr = valise.New("install_risk_sentence", T("install.custom.risk_mismatch", "sentence", install.RiskSentence), "")
-						return
+	if !p.Refused && p.NeedsConfirm {
+		ui.Text(c, T("install.custom.risk_prompt", "sentence", install.RiskSentence)).FontSize(13).Bold().Wrap().Selectable()
+		if a.copyText != nil {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Button(c, T("install.custom.copy_sentence")).OnClick(func() {
+					if a.copyText(install.RiskSentence) == nil {
+						ci.copied = T("install.custom.copied_sentence")
 					}
-					ci.riskErr = nil
-					a.startCustomInstall(host, ci, false)
 				})
+				if ci.copied != "" {
+					muted(ui.Text(c, ci.copied)).FontSize(fsSub)
+				}
+			})
+		}
+		ui.TextInput(c, &ci.sentence).Label(T("install.custom.risk_label")).Placeholder(install.RiskSentence)
+		if ci.riskErr != nil {
+			errorBox(c, ci.riskErr, a.fold("custom-risk-err-"+host+"-"+p.ID))
+		}
+	}
+	if !p.Refused && allowSave {
+		ui.Checkbox(c, &ci.savePreset, T("install.custom.save_preset"))
+		if ci.savePreset {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.TextInput(c, &ci.presetName).Label(T("install.custom.preset_name")).Placeholder(defaultCustomPresetName(p)).Grow(1)
+				ui.Button(c, T("install.custom.save_now")).OnClick(func() {
+					a.saveCustomInstallPreset(ci.presetName, p.Raw, p.ProfileID)
+					ci.copied = T("install.saved.saved_note")
+				})
+			})
+			if ci.copied != "" && !p.NeedsConfirm {
+				muted(ui.Text(c, ci.copied)).FontSize(fsSub)
 			}
-		})
+		}
+	}
+	if !p.Refused {
+		muted(ui.Text(c, T("install.needs_admin"))).Wrap()
+	}
+	ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+		ui.Button(c, T("install.custom.edit")).OnClick(onEdit)
+		if !p.Refused {
+			label := T("install.custom.run")
+			if p.Kind != "script" {
+				label = T("install.custom.run_cmd")
+			}
+			ui.PrimaryButton(c, label).OnClick(func() {
+				if p.NeedsConfirm && strings.TrimSpace(ci.sentence) != install.RiskSentence {
+					ci.riskErr = valise.New("install_risk_sentence", T("install.custom.risk_mismatch", "sentence", install.RiskSentence), "")
+					return
+				}
+				ci.riskErr = nil
+				if allowSave && ci.savePreset {
+					a.saveCustomInstallPreset(ci.presetName, p.Raw, p.ProfileID)
+				}
+				a.startCustomInstall(host, ci, false)
+			})
+		}
 	})
 }
 
@@ -260,19 +302,29 @@ func (a *App) startCustomInstall(host string, ci *customInstallRun, acceptRisk b
 	conn := newInstallConn()
 	ci.conn, ci.running, ci.err, ci.res, ci.text = conn, true, nil, nil, tailText{}
 	ci.term = a.openInstallTerminal(conn, &ci.text)
-	plan, sentence := ci.plan, ci.sentence
+	plan, sentence, onDone := ci.plan, ci.sentence, ci.onDone
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 		defer cancel()
 		if acceptRisk {
 			ctx = service.WithRiskAccepted(ctx)
 		}
-		res, err := a.svc.RunCustomInstall(ctx, plan, sentence, service.InstallIO{Stdin: conn.in, Stdout: conn.outW, Stderr: conn.outW,
+		res, err := a.svc.RunCustomInstall(ctx, plan, sentence, service.InstallIO{
+			Stdin:    conn.in,
+			Stdout:   conn.outW,
+			Stderr:   conn.outW,
+			PTY:      ci.term != nil,
+			OnResize: conn.SetResize,
 			Step: func(i int, st service.PlanStep) {
 				a.update(func() { ci.step = T("install.step", "n", i+1, "what", st.Summary) })
 			}})
 		conn.Close()
-		a.update(func() { ci.running, ci.res, ci.err = false, res, err })
+		a.update(func() {
+			ci.running, ci.res, ci.err = false, res, err
+			if onDone != nil {
+				onDone(res, err)
+			}
+		})
 	})
 }
 
@@ -291,7 +343,7 @@ func (a *App) customRunView(c *ui.Context, host string, ci *customInstallRun) {
 		case r != nil && r.Found != nil:
 			name := orText(a.harness[r.Found.ProfileID], r.Found.ProfileID)
 			sectionTitle(ui.Text(c, T("install.found"))).TextColor(palette.Ok)
-			muted(ui.Text(c, T("install.found_where", "name", name, "dir", r.Found.StateDir))).Wrap()
+			muted(ui.Text(c, T("install.found_where", "name", name, "dir", r.Found.StateDir))).Wrap().Selectable()
 		case r != nil && r.Completed:
 			sectionTitle(ui.Text(c, T("install.not_found"))).TextColor(palette.Warn)
 			muted(ui.Text(c, T("install.not_found_why"))).Wrap()
@@ -299,7 +351,7 @@ func (a *App) customRunView(c *ui.Context, host string, ci *customInstallRun) {
 			sectionTitle(ui.Text(c, T("install.unfinished"))).TextColor(palette.Warn)
 		}
 		if r != nil && len(r.Exits) > 0 {
-			muted(ui.Text(c, exitLine(r.Exits))).Wrap()
+			muted(ui.Text(c, exitLine(r.Exits))).Wrap().Selectable()
 		}
 		if ci.err != nil {
 			if gated {

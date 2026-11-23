@@ -11,6 +11,7 @@ import (
 	"filippo.io/age"
 
 	"valise/client/keystore"
+	"valise/client/porter"
 	"valise/client/ssh"
 	"valise/core/revive"
 	"valise/core/rpc"
@@ -281,6 +282,7 @@ type ownerPorter struct {
 	t      *ssh.Transport
 	path   string
 	tiered bool
+	found  *porter.Found
 }
 
 func (s *Service) ownerPorter(ctx context.Context, host string) (*ownerPorter, error) {
@@ -293,7 +295,7 @@ func (s *Service) ownerPorter(ctx context.Context, host string) (*ownerPorter, e
 	if err != nil {
 		return nil, err
 	}
-	return &ownerPorter{host: host, t: t, path: found.Path, tiered: tiered}, nil
+	return &ownerPorter{host: host, t: t, path: found.Path, tiered: tiered, found: found}, nil
 }
 
 // call runs one method in its own porter session, proving the owner first

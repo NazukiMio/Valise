@@ -217,15 +217,15 @@ func (a *App) planStep(c *ui.Context, key string, p *service.InstallPlan, i int,
 			}
 		})
 		if st.URL != "" {
-			mono(muted(ui.Text(c, st.URL))).Wrap()
+			mono(muted(ui.Text(c, st.URL))).Wrap().Selectable()
 		}
 		if st.ScriptChanged {
 			a.changedScriptBox(c, p, i, st)
 		} else if st.SHA256 != "" {
-			muted(ui.Text(c, T("install.sha_checked", "sha", st.SHA256))).Wrap()
+			muted(ui.Text(c, T("install.sha_checked", "sha", st.SHA256))).Wrap().Selectable()
 		}
 		if len(st.Command) > 0 && st.Kind != profile.StepScript {
-			mono(ui.Text(c, strings.Join(st.Command, " "))).FontSize(12).Wrap()
+			mono(ui.Text(c, strings.Join(st.Command, " "))).FontSize(12).Wrap().Selectable()
 		}
 		if st.Optional && st.SkipEffect != "" {
 			muted(ui.Text(c, T("install.skip_effect", "what", st.SkipEffect))).Wrap()
@@ -247,8 +247,8 @@ func (a *App) changedScriptBox(c *ui.Context, p *service.InstallPlan, i int, st 
 		} else {
 			ui.Text(c, T("install.script_updated")).Bold().TextColor(palette.Warn).Wrap()
 		}
-		mono(ui.Text(c, T("install.sha_expected", "sha", st.ExpectedSHA256))).FontSize(fsCaption).Wrap()
-		mono(ui.Text(c, T("install.sha_actual", "sha", st.SHA256))).FontSize(fsCaption).Wrap()
+		mono(ui.Text(c, T("install.sha_expected", "sha", st.ExpectedSHA256))).FontSize(fsCaption).Wrap().Selectable()
+		mono(ui.Text(c, T("install.sha_actual", "sha", st.SHA256))).FontSize(fsCaption).Wrap().Selectable()
 		a.renderScriptFindings(c, st.ScriptFindings)
 		if st.ScriptRefused {
 			ui.Text(c, T("install.script_refused_hint")).FontSize(12).TextColor(palette.Warn).Wrap()
@@ -269,7 +269,12 @@ func (a *App) startInstall(host string, ir *installRun) {
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 		defer cancel()
-		res, err := a.svc.RunInstall(ctx, plan, service.InstallIO{Stdin: conn.in, Stdout: conn.outW, Stderr: conn.outW,
+		res, err := a.svc.RunInstall(ctx, plan, service.InstallIO{
+			Stdin:    conn.in,
+			Stdout:   conn.outW,
+			Stderr:   conn.outW,
+			PTY:      ir.term != nil,
+			OnResize: conn.SetResize,
 			Step: func(i int, st service.PlanStep) {
 				a.update(func() { ir.step = T("install.step", "n", i+1, "what", st.Summary) })
 			}})
@@ -293,7 +298,7 @@ func (a *App) installResult(c *ui.Context, key, host string, ir *installRun, nam
 		switch {
 		case r != nil && r.Found != nil:
 			sectionTitle(ui.Text(c, T("install.found"))).TextColor(palette.Ok)
-			muted(ui.Text(c, T("install.found_where", "name", name, "dir", r.Found.StateDir))).Wrap()
+			muted(ui.Text(c, T("install.found_where", "name", name, "dir", r.Found.StateDir))).Wrap().Selectable()
 		case r != nil && r.Completed:
 			sectionTitle(ui.Text(c, T("install.not_found"))).TextColor(palette.Warn)
 			muted(ui.Text(c, T("install.not_found_why"))).Wrap()
@@ -301,7 +306,7 @@ func (a *App) installResult(c *ui.Context, key, host string, ir *installRun, nam
 			sectionTitle(ui.Text(c, T("install.unfinished"))).TextColor(palette.Warn)
 		}
 		if r != nil && len(r.Exits) > 0 {
-			muted(ui.Text(c, exitLine(r.Exits))).Wrap()
+			muted(ui.Text(c, exitLine(r.Exits))).Wrap().Selectable()
 		}
 		if ir.err != nil {
 			errorBox(c, ir.err, a.fold("install-err-"+key))

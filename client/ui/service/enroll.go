@@ -114,6 +114,7 @@ func (s *Service) Enroll(ctx context.Context, host string, opts EnrollOptions) (
 			return res, err
 		}
 		res.Written = w.Path
+		s.invalidateAgents(host)
 	}
 	return res, nil
 }
@@ -225,7 +226,7 @@ func (s *Service) DetectInstances(ctx context.Context, host string) ([]DetectedI
 			d.ProfileVersion = loaded.Effective.ProfileVersion
 		}
 		for _, in := range insts {
-			if in.Superseded == nil && in.Roots[profile.StateRoot] == c.StateDir {
+			if in.Superseded == nil && !in.StateMissing() && in.Roots[profile.StateRoot] == c.StateDir {
 				d.Enrolled = in.InstanceID
 				d.EnrolledProfileVersion = in.ProfileVersion
 				if loaded := set.ByID[in.ProfileID]; loaded != nil && loaded.Effective != nil {

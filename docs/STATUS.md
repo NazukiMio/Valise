@@ -4,7 +4,16 @@
 
 ## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-23）
 
-- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试（`/Users/nazukimio/Downloads/Valise_Test/report.md`）后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成全部 **WP0–WP6** 实机反馈修复与 **Stage 4 跨模型审计修复**（`revive_plan.go`、`system_fixes.go`、`porter/internal/mcp/tools.go`、`profiles.go`、`protectdesired.go`、`adoptplan.go`），并通过全量 `-race` 测试与 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`），同步打好真机验收测试包 `stage-test-20261123-beta1-fixes`。
+- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试（`/Users/nazukimio/Downloads/Valise_Test/report.md`）后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成 **WP0–WP6**、**Round 2 实机反馈（`stage-test-20261123-beta1-fixes/TESTRESULT.md` #1–#15）** 以及 **Stage 4 跨模型审计（`auditor-b2`，`AUDIT_PASS`）** 修复，并通过全量 `-race` 测试与 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`），同步打好真机验收测试包 `stage-test-20261123-beta1-r2`。
+- **Round 2 实机反馈修复（`TESTRESULT.md` #1–#15 + `auditor-b2` `AUDIT_PASS`）**：
+  1. **失效实例移除与目录缺失检测（#1 / #7 / #14）**：新增 `instance_forget`（`TierOwner`，`instance-forget/1`）、`MissingRoots` 探测与 `AgentReader` 缓存失效联动，并在 GUI/CLI 提供缺失实例告警与一键移除。
+  2. **安装终端本地 PTY 与实时缩放（#2）**：安装终端接入本地 PTY 与 `TIOCSWINSZ` 尺寸同步。
+  3. **Agent 概览服务控制与本地旧资料告警（#3 / #10）**：Agent 概览页提供服务控制（`start`/`restart`/`stop`/`install_argv`）与快捷 `profile.actions`；当旧版 `.yaml` 本地覆盖官方资料包时展示 `LocalStale` 提示并支持恢复官方版。
+  4. **`profiles/hermes.yaml` 升级至 `v14`（#10）**：补充 `cache/{pnpm,uv,partials,scratch}/**`、`source-checks/**`、lockfiles 等规则，通过 `--strict` 校验。
+  5. **保护计划档位切换与说明澄清（#4 / #8）**：支持保护计划档位切换（`full`/`soul-secrets`/`soul`），`tier.full` 明确标注「不含程序本体」，并在 `PRODUCT.md` 记入 `v0.2+` 轻量沙箱心跳演练规划。
+  6. **`identity` 分类与 `soul` 未分类跳过提示（#6）**：`valise_propose_dossier`、`valise-onboard` 与 GUI 新增 `identity` 分类，并针对 `soul` 未分类条目增加跳过提示。
+  7. **迁移文案、结构化目录选择器与内联自定义安装（#8 / #11 / #13 / #15）**：优化迁移安抚文案；新增结构化 `InspectTargetPlacement` 目录选择器（无 `state=`/`--root` CLI 语法）；支持内联自定义安装与用户预设保存（`custom-installs.json`，`0600`）。
+  8. **可复制错误/路径/确认句（#9）**：错误详情、路径与确认框文本接入 `.Selectable()`，确认句附带一键复制按钮。
 - **`feat/beta1-feedback-fixes` 已完成修复（WP0–WP6 + Stage 4 审计）**：
   1. **WP1 · 迁移身体与服务解耦**：支持 `AllowVersionMismatch`、`SkipService`/`--data-only`、`BinaryFound` 探测、同提交 `git` 仓库修复、Dossier 可见性及 `external_refs` 缺口告警。
   2. **WP2 · 安装脚本两级安全检查**：修复 Hermes `install.sh` L332 单字节 `\xHH` 误报，补充行号与代码片段预览；对破坏性、禁用安全机制及二进制脚本保持永久拒绝（无绕过），将二次下载管道 / `eval` / 解码命令降级为 `RiskSentence` 明确确认。
@@ -42,7 +51,7 @@
 
 ### 必须保留的环境与基线事实
 
-- **当前待验收测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261123-beta1-fixes/Valise Test.app`（`0.1.0-beta.2-dev+stage-test-20261123`，Beta 公钥 `RWTZ1EJhJqLr+89l9EhFambSn5K8QWguYmn9x2mGlC5aQfJzcMyWA15L`，资料包 `2026.11.23` 含 `dsh v5` / `hermes v13` / `openclaw v24`，构建自 `feat/beta1-feedback-fixes`，含 `darwin/arm64` 客户端、`valise` CLI 与 `valise-porter_linux_{arm64,amd64}`；具体提交见包内 `BUILD.json`）。打包验收门禁中执行 `profiles install` / `profiles status` / `cloud list` 必须使用 `--config-dir "$TMP"` 隔离配置目录。历史包 `stage-test-20261121-v01r6`、`stage-test-20261120-v01r5`、`v01r4`、`v01r3`、`v01r2`、`b3.2` 等均保留未动。
+- **当前待验收测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261123-beta1-r2/Valise Test.app`（`0.1.0-beta.2-dev+stage-test-20261123-r2`，Beta 公钥 `RWTZ1EJhJqLr+89l9EhFambSn5K8QWguYmn9x2mGlC5aQfJzcMyWA15L`，资料包 `2026.11.23.2` 含 `dsh v5` / `hermes v14` / `openclaw v24`，构建自 `feat/beta1-feedback-fixes`，含 `darwin/arm64` 客户端、`valise` CLI 与 `valise-porter_linux_{arm64,amd64}`；具体提交见包内 `BUILD.json`）。打包验收门禁中执行 `profiles install` / `profiles status` / `cloud list` 必须使用 `--config-dir "$TMP"` 隔离配置目录。历史包 `stage-test-20261123-beta1-fixes`、`stage-test-20261121-v01r6`、`stage-test-20261120-v01r5`、`v01r4`、`v01r3`、`v01r2`、`b3.2` 等均保留未动。
 - **默认资料包与演练公钥**：当前开发资料包位于 `~/.cache/valise-drill/devpack`（`2026.11.21`：`dsh v5`、`hermes v12`、`openclaw v24`，`kit-tools.yaml` 含 `webdav`/`s3`，公钥 `RWQCRlUzO1yCpR4+m1KbYsJO7OIYDC2OpeB3j+JTZ2cPj37DcSZuoCF1`）；演练配置 `~/.cache/valise-drill/drillpack` 独立保留，不得混用或覆盖。
 - **构建与检查环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；构建发布/测试包时 `-ldflags` 必须同时注入 `main.version` 与 `valise/client/porter.ReleasePublicKey`；禁止执行 `rm -f`（清空用 `: > file`，测试用 `t.TempDir()`）；未经用户明确要求不执行 `git push`。
 

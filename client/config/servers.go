@@ -230,6 +230,10 @@ func writeAtomic(dir, name string, data []byte) error {
 		return err
 	}
 	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return err

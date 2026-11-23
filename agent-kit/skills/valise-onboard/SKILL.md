@@ -12,10 +12,10 @@ Always reply in the user's language. Only call the Valise MCP tools `valise_onbo
 ## Steps
 
 1. Call `valise_onboard_context` once. Read `instance`, `protection_plan`, `effective_rules`, `layout_facts`, `pending_proposals`, and `protection_summary`.
-2. Deduplicate against `effective_rules` and `pending_proposals`. Using **only** `layout_facts` and facts you already know about your own setup, select **at most 10** high-value items across these 4 targets (never spam individual small `unclassified` files—default `full` already protects them):
+2. Deduplicate against `effective_rules` and `pending_proposals`. Using **only** `layout_facts` and facts you already know about your own setup, select **at most 10** high-value items across these 4 targets (do not assume `full` handles important `unclassified` persona/rule/core-config/memory files like `persona.md`—lightweight `soul` backups and clones omit `unclassified`, so propose them while still skipping trivial runtime noise):
    - **Runtime junk exclusion (`classify` -> `cache` / `ignore`)**: large (`>= 5 MiB`) or clearly rebuildable plugin caches, deps, or logs from `largest_dirs` / `unclassified_dirs` / `churn_files`. Never demote Profile `secrets`; `reason` must state why it is rebuildable.
    - **Plugin SQLite DBs (`sqlite`)**: databases from `untracked_sqlite` (or known plugin DBs inside `roots`) needing `VACUUM INTO` + integrity check. Never weaken Profile `secret_tables`; only set `secret_tables` if already known.
-   - **New secrets or core blocks (`classify` -> `secrets` / `memory` / `workspace` / `state` / `skills` / `config`)**: newly spotted credential paths (`secrets`) or substantial custom memory/business directories.
+   - **New secrets, identity, or core blocks (`classify` -> `secrets` / `identity` / `memory` / `workspace` / `state` / `skills` / `config`)**: newly spotted credential paths (`secrets`), custom persona/rule/memory files (e.g. `persona.md` -> `identity`), or custom config/memory/business directories so `soul`-tier clones/migrations keep them.
    - **Out-of-root gaps (`external_ref`)**: `external_symlinks` targets or important business/memory directories you know live **outside** `roots` (`external_dir` / `symlink_target`).
 3. If you have items, call `valise_propose_dossier` **once** with all items batched; if everything already matches, skip it. Never retry errors in a loop.
 4. Reply concisely in 3-4 short points:

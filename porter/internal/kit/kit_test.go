@@ -179,3 +179,52 @@ func TestInstallAndUninstallCleanLegacySkills(t *testing.T) {
 		t.Fatalf("uninstall force failed: %+v %v", rmForce, err)
 	}
 }
+
+func TestProposeAndDecideIdentityCategory(t *testing.T) {
+	home := t.TempDir()
+	state := filepath.Join(home, "state")
+	if err := os.MkdirAll(state, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "persona.md"), []byte("# Persona"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := profile.Profile{ID: "demo", ProfileVersion: 1}
+	rec := enroll.Record{
+		InstanceID:     "demo",
+		ProfileID:      "demo",
+		ProfileVersion: 1,
+		Roots:          map[string]string{"state": state},
+	}
+	if _, err := porterenroll.WriteRecord(home, rec, p); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	lines, err := ProposeDossier(home, &rec, &p, []DossierProposalItem{
+		{
+			Kind:     agentkit.ProposalKindClassify,
+			Root:     "state",
+			Path:     "persona.md",
+			Category: profile.CategoryIdentity,
+			Reason:   "Core persona rules for soul-tier clone/migration",
+		},
+	}, now)
+	if err != nil || len(lines) != 1 {
+		t.Fatalf("ProposeDossier identity failed: lines=%v err=%v", lines, err)
+	}
+	ps, err := LoadProposals(home, "demo")
+	if err != nil || len(ps) != 1 || ps[0].Rule.Category != profile.CategoryIdentity || ps[0].Demotion {
+		t.Fatalf("unexpected pending proposals: %+v err=%v", ps, err)
+	}
+	dec, err := Decide(home, agentkit.DecideParams{InstanceID: "demo", Accept: []string{ps[0].ID}})
+	if err != nil || len(dec.Accepted) != 1 || dec.Remaining != 0 {
+		t.Fatalf("Decide identity failed: %+v err=%v", dec, err)
+	}
+	updated, err := porterenroll.ReadRecord(home, "demo")
+	if err != nil || updated == nil || len(updated.LocalOverrides) != 1 {
+		t.Fatalf("ReadRecord after Decide: %+v err=%v", updated, err)
+	}
+	if got := updated.LocalOverrides[0]; got.Root != "state" || got.Glob != "persona.md" || got.Category != profile.CategoryIdentity {
+		t.Fatalf("unexpected LocalOverride: %+v", got)
+	}
+}

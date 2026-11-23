@@ -3,7 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"valise/porter/internal/forced"
@@ -97,6 +101,12 @@ var methods = map[string]handler{
 			b := porteridentity.ListBinding(s.cfg.Home, r.InstanceID)
 			sum.Identity = &b
 			if r.Superseded == nil {
+				for id, p := range r.Roots {
+					if info, err := os.Stat(p); err != nil || !info.IsDir() {
+						sum.MissingRoots = append(sum.MissingRoots, id)
+					}
+				}
+				sort.Strings(sum.MissingRoots)
 				if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
 					sum.Service, sum.Entries = porterenroll.Live(ctx, s.loginEnv(ctx), p)
 				}
@@ -104,6 +114,71 @@ var methods = map[string]handler{
 			res.Instances = append(res.Instances, sum)
 		}
 		return res, err
+	},
+	enroll.MethodInstanceForget: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p enroll.InstanceForgetParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		if err := s.require(rpc.TierOwner, enroll.MethodInstanceForget); err != nil {
+			return nil, err
+		}
+		if err := enroll.ValidInstanceID(p.InstanceID); err != nil {
+			return nil, valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
+		}
+		rec, err := porterenroll.ReadRecord(s.cfg.Home, p.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		if rec == nil {
+			return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+p.InstanceID, "刷新列表后确认该实例是否已移除")
+		}
+		res := enroll.InstanceForgetResult{InstanceID: p.InstanceID}
+		tmrRemoved, tmrWarnings := timer.RemoveInstance(ctx, s.loginEnv(ctx), s.cfg.Home, p.InstanceID)
+		res.Removed = append(res.Removed, tmrRemoved...)
+		res.Warnings = append(res.Warnings, tmrWarnings...)
+		protRemoved, err := s.protectionStore(ctx).ForgetInstance(p.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		res.Removed = append(res.Removed, protRemoved...)
+		for _, extra := range []string{
+			filepath.Join(porterenroll.InstancesDir(s.cfg.Home), p.InstanceID+".proposals.json"),
+			filepath.Join(porterenroll.InstancesDir(s.cfg.Home), p.InstanceID+".declaration.json"),
+			filepath.Join(s.cfg.Home, ".local", "state", "valise", "mcp", p.InstanceID+".json"),
+		} {
+			if err := os.Remove(extra); err == nil {
+				res.Removed = append(res.Removed, extra)
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, err
+			}
+		}
+		err = porteridentity.WithLock(s.cfg.Home, func() error {
+			idPath, err := porteridentity.RemoveAgentLocked(s.cfg.Home, p.InstanceID)
+			if err != nil {
+				return err
+			}
+			if idPath != "" {
+				res.Removed = append(res.Removed, idPath)
+			}
+			if err := porterenroll.RemoveRecord(s.cfg.Home, p.InstanceID); err != nil {
+				return err
+			}
+			res.Removed = append(res.Removed, "dossier:"+p.InstanceID)
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		seal.Paths{Home: s.cfg.Home}.AppendAudit(seal.AuditEntry{
+			Time:      time.Now().UTC(),
+			Op:        enroll.MethodInstanceForget,
+			Instance:  p.InstanceID,
+			Initiator: vaultrpc.InitiatorClient,
+			Result:    "ok",
+			Tier:      string(rpc.TierOwner),
+		})
+		return res, nil
 	},
 	enroll.MethodInstanceWrite: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p enroll.InstanceWriteParams

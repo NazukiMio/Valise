@@ -218,3 +218,23 @@ func ListBinding(home, id string) model.Binding {
 	}
 	return model.Binding{IdentityState: model.Unreadable}
 }
+
+// RemoveAgentLocked deletes an agent's identity binding file. The caller must
+// hold WithLock(home, ...).
+func RemoveAgentLocked(home, id string) (string, error) {
+	if err := enroll.ValidInstanceID(id); err != nil {
+		return "", err
+	}
+	p := agentPath(home, id)
+	if err := os.Remove(p); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	if d, err := os.Open(filepath.Dir(p)); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return p, nil
+}

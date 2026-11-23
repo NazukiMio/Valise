@@ -43,6 +43,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 			if a.iconErr != nil {
 				errorBox(c, a.iconErr, a.fold("icon-err"))
 			}
+			a.agentForgetBanner(c, row)
 			a.entryReport(c, row)
 		}},
 		{"tabs", func(c *ui.Context) {
@@ -61,12 +62,14 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 				if !row.Retired() {
 					a.agentKitCard(c, row)
 				}
+				a.agentForgetManageRow(c, row)
 			default:
 				a.overview(c, row, points)
 			}
 		}},
 	})
 	a.agentRenameDialog(c, row)
+	a.agentForgetModal(c)
 }
 
 type agentRenameState struct {
@@ -198,12 +201,13 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 			if len(row.Roots) > 0 {
 				ui.Collapsible(c, T("error.tech_info"), a.fold("roots-"+row.Server+row.Instance), func() {
 					for _, r := range row.Roots {
-						muted(ui.Text(c, r)).Font(cur.Fonts.Mono)
+						muted(ui.Text(c, r)).Font(cur.Fonts.Mono).Selectable()
 					}
 				})
 			}
 		})
 	})
+	a.agentServiceCard(c, row)
 	muted(ui.Text(c, T("backup.sources_note")))
 	if !row.Retired() { // the advanced entry comes after what the page is about
 		a.nativeCard(c, row)
@@ -217,7 +221,7 @@ func fact(c *ui.Context, label, value string) {
 		if label != "" {
 			muted(ui.Text(c, label)).Width(cur.Sizes.LabelWidth).FontSize(13).Wrap()
 		}
-		ui.Text(c, value).FontSize(13).Grow(1)
+		ui.Text(c, value).FontSize(13).Grow(1).Selectable()
 	})
 }
 

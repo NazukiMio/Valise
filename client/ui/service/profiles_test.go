@@ -360,3 +360,68 @@ func TestLocalProfileLintAndRefused(t *testing.T) {
 	_, err = s.InstallLocalProfile(f)
 	wantCode(t, err, "local_profile_refused")
 }
+
+func TestProfilesStatusLocalStaleFlag(t *testing.T) {
+	signer := minisigntest.New()
+	s := newService(t, "ssh")
+	// Official pack ships demo v2.
+	installTestPack(t, s, signer, localDemoYAML)
+
+	findDemo := func(t *testing.T) ProfileSummary {
+		t.Helper()
+		st, err := s.ProfilesStatus()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range st.Loaded {
+			if p.ID == "demo" {
+				return p
+			}
+		}
+		t.Fatalf("demo not found in Loaded: %+v", st.Loaded)
+		return ProfileSummary{}
+	}
+
+	// Official only: not stale.
+	if got := findDemo(t); got.Local || got.OverridesOfficial || got.LocalStale {
+		t.Fatalf("official only: %+v", got)
+	}
+
+	// Local override at same version (v2 == official v2): flagged LocalStale.
+	fSame, err := s.ReadLocalProfileFile(writeTemp(t, "demo.yaml", localDemoYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InstallLocalProfile(fSame); err != nil {
+		t.Fatal(err)
+	}
+	if got := findDemo(t); !got.OverridesOfficial || got.OfficialVersion != 2 || got.Version != 2 || !got.LocalStale {
+		t.Fatalf("same-version override should be LocalStale: %+v", got)
+	}
+
+	// Local override at older version (v1 < official v2): flagged LocalStale.
+	older := strings.Replace(localDemoYAML, "profile_version: 2", "profile_version: 1", 1)
+	fOld, err := s.ReadLocalProfileFile(writeTemp(t, "demo.yaml", older))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InstallLocalProfile(fOld); err != nil {
+		t.Fatal(err)
+	}
+	if got := findDemo(t); !got.OverridesOfficial || got.OfficialVersion != 2 || got.Version != 1 || !got.LocalStale {
+		t.Fatalf("older-version override should be LocalStale: %+v", got)
+	}
+
+	// Local override at newer version (v3 > official v2): NOT LocalStale.
+	newer := strings.Replace(localDemoYAML, "profile_version: 2", "profile_version: 3", 1)
+	fNew, err := s.ReadLocalProfileFile(writeTemp(t, "demo.yaml", newer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InstallLocalProfile(fNew); err != nil {
+		t.Fatal(err)
+	}
+	if got := findDemo(t); !got.OverridesOfficial || got.OfficialVersion != 2 || got.Version != 3 || got.LocalStale {
+		t.Fatalf("newer-version override should not be LocalStale: %+v", got)
+	}
+}

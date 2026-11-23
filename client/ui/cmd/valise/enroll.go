@@ -285,3 +285,40 @@ func (c *cli) agentName(ctx context.Context, args []string) error {
 	}
 	return nil
 }
+
+// agentForget: valise agent forget <服务器> <实例> [--yes].
+func (c *cli) agentForget(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("agent forget", flag.ContinueOnError)
+	yes := fs.Bool("yes", false, "")
+	pos, err := parseArgs(fs, args, 2)
+	if err != nil {
+		return err
+	}
+	host, instance := pos[0], pos[1]
+	fmt.Fprintf(c.out, "将从服务器 %s 的 Valise 接入记录中移出实例 %s：\n", host, instance)
+	fmt.Fprintln(c.out, "  · 删除该实例的接入档案、定时备份、保护计划、待审提议与身份绑定")
+	fmt.Fprintln(c.out, "  · 服务器上已有的备份库、Agent 目录和交换前留存都不会被删除")
+	if !*yes && !c.confirm("确认移出该实例记录？") {
+		fmt.Fprintln(c.out, "已取消。")
+		return nil
+	}
+	res, err := c.svc.ForgetInstance(ctx, host, instance)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.out, "已从 Valise 移出实例 %s。\n", res.InstanceID)
+	if len(res.Removed) > 0 {
+		fmt.Fprintln(c.out, "已清理记录：")
+		for _, item := range res.Removed {
+			fmt.Fprintf(c.out, "  · %s\n", item)
+		}
+	}
+	if len(res.Warnings) > 0 {
+		fmt.Fprintln(c.out, "提醒：")
+		for _, w := range res.Warnings {
+			fmt.Fprintf(c.out, "  · %s\n", w)
+		}
+	}
+	fmt.Fprintln(c.out, "已有备份未受影响，可随时在恢复或时间线中使用。")
+	return nil
+}

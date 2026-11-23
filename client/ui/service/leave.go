@@ -273,6 +273,7 @@ func (s *Service) removeHere(host string, left *ServerLeftovers, cleaned bool) e
 		}
 	}
 	_ = os.Remove(config.KeyDir(s.Dirs.Data, host)) // only when empty
+	s.invalidateAgents(host)
 	return nil
 }
 

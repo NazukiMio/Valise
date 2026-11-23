@@ -74,6 +74,7 @@ type RevivePlan struct {
 	ProfileFromSnapshot bool     `json:"profile_from_snapshot"`
 	Files               int      `json:"files"`
 	Bytes               int64    `json:"bytes"`
+	SkippedUnclassified int      `json:"skipped_unclassified,omitempty"`
 	Excluded            []string `json:"excluded_exclusive_secrets,omitempty"`
 	RestoreSecret       bool     `json:"restores_secrets"`
 	StopSource          string   `json:"stop_source_unit,omitempty"` // migrate: unit stopped on From
@@ -142,17 +143,17 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	switch o.Mode {
 	case revive.ModeRollback:
 		if o.From != o.Target {
-			return nil, valise.New("mode_mismatch", "回滚只能在快照所在的服务器上进行", "跨服务器请用 --mode migrate 或 clone")
+			return nil, valise.New("mode_mismatch", "回滚只能在快照所在的服务器上进行", "跨服务器请改用「迁移」或「创建分身」")
 		}
 	case revive.ModeMigrate:
 		if o.From == o.Target {
-			return nil, valise.New("mode_mismatch", "迁移要去另一台服务器", "在同一台服务器上：恢复当前实例用 --mode rollback，另建一个副本用 --mode clone")
+			return nil, valise.New("mode_mismatch", "迁移要去另一台服务器", "在同一台服务器上：恢复当前实例请选「原地恢复」，另建分身请选「创建分身」")
 		}
 	case revive.ModeClone:
 		// A copy may stay on the snapshot's server, in directories of its
 		// own that the user names (docs/UI.md 7.11); see sameServerCopy.
 	default:
-		return nil, valise.New("mode_invalid", "未知的复活模式："+o.Mode, "可选 rollback、migrate、clone")
+		return nil, valise.New("mode_invalid", "未知的复活模式："+o.Mode, "请选择原地恢复、迁移或创建分身")
 	}
 	var src *CopySource
 	if o.Source != "" {
@@ -166,14 +167,14 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	case lost && src == nil:
 		return nil, s.unreachableWithCopies(ctx, o.From, o.SnapshotID, err)
 	case lost && o.Mode == revive.ModeRollback:
-		return nil, valise.New("source_lost", "连不上 "+o.From+"，不能在它上面恢复当前实例", "到另一台服务器用 --mode migrate 或 clone，并用 --source 指定副本")
+		return nil, valise.New("source_lost", "连不上 "+o.From+"，不能在它上面恢复当前实例", "请改用「迁移」或「创建分身」到另一台服务器，并从已同步的异地备份位置读取")
 	case err != nil && !lost:
 		return nil, err
 	}
 	leaf := ""
 	if src == nil {
 		if leaf = st.LeafOf(o.SnapshotID); leaf == "" {
-			return nil, valise.New("snapshot_unknown", o.From+" 上没有备份 "+o.SnapshotID, "用 valise vault status "+o.From+" 列出现有的备份")
+			return nil, valise.New("snapshot_unknown", o.From+" 上没有备份 "+o.SnapshotID, "刷新备份列表并确认所选快照仍然存在")
 		}
 	}
 	// The key comes first: which packs to fetch is in the encrypted file
@@ -231,7 +232,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		rp.ProfileFromSnapshot = true
 		if !o.AllowSnapshotProfile {
 			rp.block("profile_from_snapshot", fmt.Sprintf("客户端中没有 harness 资料 %s v%d，只能使用快照里保存的副本（未经当前客户端审核）", d.ID, d.ProfileVersion),
-				"检查计划中的命令后加上 --allow-snapshot-profile；或升级客户端")
+				"核对计划中的命令后允许使用快照内自带资料继续，或升级客户端并更新资料包")
 		}
 	} else {
 		return nil, valise.New("profile_version", fmt.Sprintf("快照使用 harness 资料 %s v%d，客户端中没有同一版本，快照里也没有保存副本", head.Profile.ID, head.Profile.Version),
@@ -243,13 +244,13 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	rp.profileName = head.Name
 	if head.Name != "" && o.Mode != revive.ModeRollback && o.Roots[profile.StateRoot] == "" {
 		return nil, valise.New("named_needs_root", "这是命名实例 "+head.Name+" 的备份，迁移或克隆时 Valise 不猜目标目录（默认目录属于另一个 agent）",
-			"用 --root state=<路径> 指定目标目录")
+			"请在目标目录设置中明确指定状态目录路径")
 	}
 	// Landing is judged by the restore capability alone (docs/PROFILES.md
 	// 1.2), not by the profile's overall draft status.
 	if st := prof.CapabilityStatus("restore"); st != "tested" && !o.AllowDraft {
 		rp.block("profile_draft", "harness 资料 "+prof.ID+" v"+strconv.Itoa(prof.ProfileVersion)+" 的恢复尚未在此版本测试（"+st+"），复活需要显式同意",
-			"确认风险后加上 --allow-draft-profile")
+			"确认风险并同意使用未核实恢复能力的资料后继续")
 	}
 
 	instance := head.InstanceID
@@ -260,7 +261,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		}
 	}
 	if enroll.ValidInstanceID(instance) != nil {
-		return nil, valise.New("instance_id_invalid", "实例 id 无效："+instance, "用 --id 指定")
+		return nil, valise.New("instance_id_invalid", "实例 id 无效："+instance, "请填写由小写字母、数字和连字符组成的实例标识")
 	}
 	// A copy beside the original: Valise places no directory for it and
 	// leaves the service alone, since the original runs under that unit.
@@ -268,10 +269,10 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if beside {
 		switch {
 		case instance == head.InstanceID:
-			return nil, valise.New("copy_same_id", "副本不能和原实例用同一个标识 "+instance, "给副本起另一个标识（--id）")
+			return nil, valise.New("copy_same_id", "副本不能和原实例用同一个标识 "+instance, "请给分身另起一个不重复的实例标识")
 		case o.Roots[profile.StateRoot] == "":
 			return nil, valise.New("copy_needs_root", "副本和原实例在同一台服务器上，Valise 不替你猜它的目录（默认目录属于原实例）",
-				"给副本指定不与原实例重合的目录：--root state=<路径>")
+				"请在目标目录设置中给分身指定不与原实例重合的状态目录")
 		}
 		prof.Service, prof.Entries = nil, nil
 	}
@@ -308,30 +309,30 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 			"先停止这些进程再复活（Valise 不会替你结束它们）；否则交换期间它们可能重新创建目录")
 	}
 	if len(facts.PendingOps) > 0 {
-		rp.block("op_pending", "目标服务器上有未完成的操作："+strings.Join(facts.PendingOps, "、"), "先用 valise revive resume 处理")
+		rp.block("op_pending", "目标服务器上有未完成的操作："+strings.Join(facts.PendingOps, "、"), "先处理目标服务器上未完成的恢复操作（继续完成或退回）后再重试")
 	}
 	if len(facts.Nested) > 0 && !facts.NestedShared {
 		rp.Nested = facts.Nested
 	}
 	if o.Mode == revive.ModeRollback {
 		if facts.Record == nil {
-			rp.block("not_enrolled", "目标服务器上没有接入 Valise 的实例 "+instance, "恢复当前实例针对已接入的实例；跨服务器请用 migrate")
+			rp.block("not_enrolled", "目标服务器上没有接入 Valise 的实例 "+instance, "恢复当前实例针对已接入的实例；跨服务器请改用「迁移」")
 		} else if sup := facts.Record.Superseded; sup != nil {
 			rp.block("superseded", "实例 "+instance+" 的目录已被实例 "+sup.By+" 取代（操作 "+sup.OpID+"）",
-				"回滚 "+sup.By+"；不再需要旧实例时用 valise old cleanup 清理")
+				"请改对取代后的实例 "+sup.By+" 执行恢复；不再需要旧实例时可在旧实例记录中清理")
 		} else {
 			plan.Overrides = facts.Record.LocalOverrides
 		}
 	} else if len(facts.Inside) > 0 {
 		rp.block("root_inside_other", "目标目录位于已接入的实例 "+strings.Join(facts.Inside, "、")+" 的目录之内，不能把一个实例放进另一个实例的目录里",
-			"换一个不在其他实例目录里的目标目录（--root）；如果是这个 harness 的命名实例，放到它声明的命名实例位置")
+			"换一个不在其他实例目录内的目标目录；如果是该 Harness 的命名实例，放到它声明的命名实例位置")
 	}
 	if beside {
 		sameServerCopy(rp, instance, facts, prof)
 	} else if o.Mode != revive.ModeRollback && len(facts.Overlapping) > 0 {
 		plan.Supersedes = facts.Overlapping
 		rp.Warnings = append(rp.Warnings, "目标上已接入的实例 "+strings.Join(facts.Overlapping, "、")+
-			" 使用同一目录：交换成功后它的旧目录保留为 prev，记录标记为\"已被取代\"，不再能封存；用 valise old list 查看，valise old cleanup 清理")
+			" 使用同一目录：交换成功后它的旧目录保留在交换前备份中，记录标记为\"已被取代\"，不再能封存；确认无误后可清理旧实例")
 	}
 	for _, f := range facts.Roots {
 		if f.Symlinked {
@@ -366,6 +367,10 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	rp.links = list.Symlinks
 	for _, sq := range head.SQLite {
 		rp.sqlite[sq.Root+":"+sq.Path] = true
+	}
+	if head.Tier == vault.TierSoul && head.Notes.UnclassifiedCount > 0 {
+		rp.SkippedUnclassified = head.Notes.UnclassifiedCount
+		rp.warn(fmt.Sprintf("这是轻装备份，未包含原实例里 %d 个尚未归类的文件；若需携带人设或自定义文件，请先将其归类再使用完整/标准备份", head.Notes.UnclassifiedCount))
 	}
 
 	rp.DataOnly = o.SkipService
@@ -473,14 +478,14 @@ func sameServerCopy(rp *RevivePlan, instance string, facts revive.InspectResult,
 			"把副本建到另一台服务器；或等这个 harness 的资料声明 relocation")
 	}
 	if facts.Record != nil {
-		rp.block("copy_id_taken", "这台服务器上已经有实例 "+instance, "给副本起另一个标识（--id）")
+		rp.block("copy_id_taken", "这台服务器上已经有实例 "+instance, "请给分身另起一个不重复的实例标识")
 	}
 	if len(facts.Overlapping) > 0 {
 		rp.block("copy_overlaps", "副本的目录和已接入的实例 "+strings.Join(facts.Overlapping, "、")+" 的目录重合",
-			"给副本的每个目录另指定位置（--root <名称>=<路径>），不与原实例共用")
+			"请在目标目录设置中给分身的每个目录另指定独立位置，不与原实例共用")
 	}
 	if len(facts.Nested) > 0 {
-		rp.block("copy_contains_other", "副本的目录里包含已接入实例的目录："+strings.Join(facts.Nested, "、"), "换一个里面没有其他实例的目录（--root）")
+		rp.block("copy_contains_other", "副本的目录里包含已接入实例的目录："+strings.Join(facts.Nested, "、"), "请换一个不包含其他实例目录的目标位置")
 	}
 }
 
@@ -504,7 +509,7 @@ func mapRoots(o ReviveOptions, head *vault.Snapshot, first revive.InspectResult,
 		newState = p
 	}
 	if newState == "" {
-		return nil, valise.New("state_dir_unknown", "无法确定目标服务器上的状态目录", "用 --root state=<路径> 指定")
+		return nil, valise.New("state_dir_unknown", "无法确定目标服务器上的状态目录", "请在目标目录设置中明确指定目标服务器上的状态目录路径")
 	}
 	oldHome := ""
 	if prof.Detect != nil {
@@ -529,7 +534,7 @@ func mapRoots(o ReviveOptions, head *vault.Snapshot, first revive.InspectResult,
 		case oldHome != "" && strings.HasPrefix(old, oldHome+"/"):
 			paths[id] = first.Home + strings.TrimPrefix(old, oldHome)
 		default:
-			return nil, valise.New("root_unmapped", "无法确定 root "+id+"（原路径 "+old+"）在目标服务器上的位置", "用 --root "+id+"=<路径> 指定")
+			return nil, valise.New("root_unmapped", "无法确定 root "+id+"（原路径 "+old+"）在目标服务器上的位置", "请在目标目录设置中为目录 "+id+" 指定目标服务器上的路径")
 		}
 	}
 	for id, p := range paths {
@@ -749,7 +754,7 @@ func planNestedBody(rp *RevivePlan, plan *revive.Plan) {
 		return
 	}
 	rp.block("unsupported_capability", rp.Target+" 上的搬运工还不会把装在状态目录里的身体（"+strings.Join(b.Dirs, "、")+"）搬进新目录，交换后服务会起不来",
-		"先更新 "+rp.Target+" 上的搬运工（valise porter deploy），再重新准备恢复")
+		"先在服务器设置中更新 "+rp.Target+" 上的搬运工（porter），再重新准备恢复")
 }
 
 // warnCredentialsReplaced: a backup without credentials replacing a
@@ -805,7 +810,7 @@ func planService(rp *RevivePlan, plan *revive.Plan, facts revive.InspectResult, 
 	}
 	if !loaded {
 		if len(prof.Service.InstallArgv) == 0 {
-			rp.block("service_missing", "目标服务器上没有服务 "+plan.Unit+"，harness 资料也没有声明安装命令", "手动在目标安装该服务后重试；或勾选「仅迁移数据与档案」（--data-only）先把数据搬过去，不启动服务")
+			rp.block("service_missing", "目标服务器上没有服务 "+plan.Unit+"，harness 资料也没有声明安装命令", "先在目标服务器手动安装该服务后重试，或勾选「仅迁移数据与档案」先把数据搬过去、不启动服务")
 			return
 		}
 		plan.InstallService = true
