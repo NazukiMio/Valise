@@ -207,11 +207,11 @@ func TestAgentServiceControlInstallAndQuickActions(t *testing.T) {
 	hasAll(t, texts, T("agent.service.install_exited", "code", 0), T("service.stopped"))
 	step(func() { click(t, tt, T("common.close")) })
 
-	// Now unit is loaded & stopped: start -> active -> restart.
+	// Now unit is loaded & stopped: all three buttons visible; start -> active -> restart.
 	mu.Lock()
 	texts = tt.Texts()
 	mu.Unlock()
-	hasAll(t, texts, T("agent.service.start"), T("agent.service.restart"))
+	hasAll(t, texts, T("agent.service.start"), T("agent.service.restart"), T("agent.service.stop"))
 	step(func() { click(t, tt, T("agent.service.start")) })
 	waitFor("service start done", func() bool {
 		st := a.agentServices["cloud/alan"]
@@ -226,7 +226,15 @@ func TestAgentServiceControlInstallAndQuickActions(t *testing.T) {
 	mu.Lock()
 	texts = tt.Texts()
 	mu.Unlock()
-	hasAll(t, texts, T("service.running"), T("agent.service.stop"))
+	// While active, start stays visible (disabled) alongside restart and stop.
+	hasAll(t, texts, T("service.running"), T("agent.service.start"), T("agent.service.restart"), T("agent.service.stop"))
+	step(func() { _ = tt.Click(T("agent.service.start")) })
+	svcMu.Lock()
+	gotControls = append([]string(nil), controls...)
+	svcMu.Unlock()
+	if len(gotControls) != 1 {
+		t.Fatalf("disabled start triggered control: %v", gotControls)
+	}
 	step(func() { click(t, tt, T("agent.service.restart")) })
 	waitFor("service restart done", func() bool {
 		st := a.agentServices["cloud/alan"]
@@ -290,4 +298,61 @@ func TestAgentServiceControlInstallAndQuickActions(t *testing.T) {
 		t.Fatal("forgetServer left cached per-server state behind")
 	}
 	_ = strings.Contains
+}
+
+func TestAgentServiceRecoveryNotices(t *testing.T) {
+	a, _ := world(t)
+	a.run = func(f func()) { f() }
+	tt := ui.NewTester(a.View, 1180, 1400)
+
+	// Case 1: !HasUnit && LocalOverrideStale shows warning + restore official + settings link.
+	statusCalls := 0
+	info := &service.InstanceServiceInfo{
+		Instance:           "alan",
+		ProfileID:          "demo",
+		Unit:               "demo.service",
+		HasUnit:            false,
+		LocalOverrideStale: true,
+		EffectiveVersion:   2,
+		OfficialVersion:    3,
+	}
+	a.agentServiceHook = &agentServiceOps{
+		status: func(context.Context, string, string) (*service.InstanceServiceInfo, error) {
+			statusCalls++
+			cp := *info
+			return &cp, nil
+		},
+		actions: func(context.Context, string, string) (*service.ActionList, error) {
+			return &service.ActionList{Instance: "alan", ProfileID: "demo"}, nil
+		},
+	}
+	a.router.Push("/agents/cloud/alan")
+	tt.Advance(time.Second)
+	hasAll(t, tt.Texts(),
+		T("agent.service.local_override_stale", "id", "demo", "local", 2, "official", 3),
+		T("profiles.restore_official"),
+		T("agent.service.go_profiles"),
+	)
+	click(t, tt, T("agent.service.go_profiles"))
+	if a.router.Path() != "/settings" || a.setTab != 3 {
+		t.Fatalf("go_profiles routed to path=%q setTab=%d", a.router.Path(), a.setTab)
+	}
+
+	// Case 2: !HasUnit && len(InstallArgv) == 0 && !LocalOverrideStale shows no_install_cmd + go_manage.
+	info.LocalOverrideStale = false
+	delete(a.agentServices, "cloud/alan")
+	a.agentTab = tabOverview
+	a.router.Push("/agents/cloud/alan")
+	tt.Advance(time.Second)
+	hasAll(t, tt.Texts(),
+		T("agent.service.no_install_cmd", "unit", "demo.service"),
+		T("agent.service.go_manage"),
+	)
+	click(t, tt, T("agent.service.go_manage"))
+	if a.agentTab != tabManage {
+		t.Fatalf("go_manage set agentTab=%d, want %d", a.agentTab, tabManage)
+	}
+	if statusCalls < 2 {
+		t.Fatalf("expected status reloads, got %d", statusCalls)
+	}
 }

@@ -17,16 +17,19 @@ import (
 // InstanceServiceInfo reports the declared and observed systemd service unit
 // state for one enrolled instance.
 type InstanceServiceInfo struct {
-	Instance    string   `json:"instance"`
-	ProfileID   string   `json:"profile_id"`
-	Unit        string   `json:"unit,omitempty"`
-	Scope       string   `json:"scope,omitempty"`
-	LoadState   string   `json:"load_state,omitempty"`
-	Active      string   `json:"active_state,omitempty"`
-	Enabled     string   `json:"unit_file_state,omitempty"`
-	HasUnit     bool     `json:"has_unit"`
-	InstallArgv []string `json:"install_argv,omitempty"`
-	Stale       bool     `json:"stale,omitempty"`
+	Instance           string   `json:"instance"`
+	ProfileID          string   `json:"profile_id"`
+	Unit               string   `json:"unit,omitempty"`
+	Scope              string   `json:"scope,omitempty"`
+	LoadState          string   `json:"load_state,omitempty"`
+	Active             string   `json:"active_state,omitempty"`
+	Enabled            string   `json:"unit_file_state,omitempty"`
+	HasUnit            bool     `json:"has_unit"`
+	InstallArgv        []string `json:"install_argv,omitempty"`
+	Stale              bool     `json:"stale,omitempty"`
+	LocalOverrideStale bool     `json:"local_override_stale,omitempty"`
+	EffectiveVersion   int      `json:"effective_version,omitempty"`
+	OfficialVersion    int      `json:"official_version,omitempty"`
 }
 
 var (
@@ -51,6 +54,13 @@ func (s *Service) serviceTarget(ctx context.Context, host, instance string) (*In
 		Instance:  instance,
 		ProfileID: p.ID,
 		Stale:     target.Record.ProfileVersion != p.ProfileVersion,
+	}
+	if set, perr := s.Profiles(); perr == nil && set != nil {
+		if lp := set.ByID[p.ID]; lp != nil && lp.Local && lp.Official != nil && lp.Effective != nil && lp.Effective.ProfileVersion <= lp.Official.ProfileVersion {
+			info.LocalOverrideStale = true
+			info.EffectiveVersion = lp.Effective.ProfileVersion
+			info.OfficialVersion = lp.Official.ProfileVersion
+		}
 	}
 	if p.Service != nil {
 		if len(p.Service.Candidates) > 0 {

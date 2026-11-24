@@ -171,7 +171,8 @@ func TestSavedInstallsCopySentenceAndInlineMissingBodyInstall(t *testing.T) {
 	// Inline custom install inside restore body_rebuild_unverified also uses saved presets and runs PlanCustomInstall.
 	a.openRestore(testTimelinePoint(), "box")
 	r := a.restore
-	r.step = "plan"
+	r.step = "env"
+	r.envNeeded = true
 	r.plan = &service.PreparedRestore{Revive: &service.RevivePlan{
 		Target: "cloud", From: "box",
 		Plan:     revive.Plan{Mode: revive.ModeMigrate, InstanceID: "demo", Tier: "full", Profile: profile.Profile{ID: "demo"}, Body: revive.BodyPlan{Action: revive.BodyKeep}},

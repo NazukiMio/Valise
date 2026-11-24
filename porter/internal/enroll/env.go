@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,6 +62,12 @@ func LoadEnv(ctx context.Context, home string) *Env {
 	path := e.Get("PATH")
 	if !containsPath(path, local) {
 		e.Set("PATH", local+string(os.PathListSeparator)+path)
+	}
+	if uid := os.Getuid(); uid > 0 && e.Get("XDG_RUNTIME_DIR") == "" {
+		dir := fmt.Sprintf("/run/user/%d", uid)
+		if st, err := os.Stat(dir); err == nil && st.IsDir() {
+			e.Set("XDG_RUNTIME_DIR", dir)
+		}
 	}
 	return e
 }

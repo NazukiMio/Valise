@@ -142,12 +142,18 @@ func (a *App) restorePlacementUI(c *ui.Context, r *restoreFlow) {
 		})
 	}
 	pl := r.placement
-	if r.placeMode == "" {
+	cleanDefault := pl != nil && pl.RecommendedStateDir == pl.DefaultStateDir
+	showReplace := pl != nil && pl.CanReplaceDefault && !cleanDefault
+	if r.placeMode == "" || (r.placeMode == "replace" && !showReplace) {
 		r.placeMode = "recommended"
 	}
+	recLabel := T("restore.place.recommended")
+	if cleanDefault {
+		recLabel = T("restore.place.default_clean")
+	}
 	ui.RadioGroup(c, func() {
-		ui.Radio(c.Key("pl-rec"), &r.placeMode, "recommended", T("restore.place.recommended"))
-		if r.placeMode == "recommended" || pl == nil || !pl.CanReplaceDefault {
+		ui.Radio(c.Key("pl-rec"), &r.placeMode, "recommended", recLabel)
+		if r.placeMode == "recommended" || !showReplace {
 			labeled(c, T("restore.place.state_dir"), func() {
 				ui.TextInput(c, &r.customStateDir).Label(T("restore.place.state_dir")).Placeholder(T("restore.place.state_placeholder"))
 			})
@@ -155,7 +161,7 @@ func (a *App) restorePlacementUI(c *ui.Context, r *restoreFlow) {
 		if pl != nil && pl.SourceRoots[profile.StateRoot] != "" {
 			muted(ui.Text(c, T("restore.place.source_dir", "dir", pl.SourceRoots[profile.StateRoot]))).FontSize(fsCaption).Wrap().Selectable()
 		}
-		if pl != nil && pl.CanReplaceDefault {
+		if showReplace {
 			ui.Radio(c.Key("pl-rep"), &r.placeMode, "replace", T("restore.place.replace_default", "dir", pl.DefaultStateDir))
 			if r.placeMode == "replace" && len(pl.DefaultOccupiedBy) > 0 {
 				notice(c, "warn", T("restore.place.occupied_warn", "instances", strings.Join(pl.DefaultOccupiedBy, T("common.list_sep"))))

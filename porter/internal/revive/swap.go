@@ -362,7 +362,7 @@ func (r *Runner) rollback(ctx context.Context, j *revive.Journal, why string) (*
 	}
 	// After the old directories are back: npm may live in a body inside them.
 	if j.NPMInstalled && j.NPMOldVersion != "" && j.NPMOldVersion != j.Plan.Body.Version {
-		if err := r.npmInstall(ctx, j.Plan.Body.Package, j.NPMOldVersion, j.Plan.Body.Registry); err != nil {
+		if err := r.npmInstall(ctx, r.Env.For(&j.Plan.Profile), j.Plan.Body.Package, j.NPMOldVersion, j.Plan.Body.Registry); err != nil {
 			evidence.Program = "failed"
 			return r.rollbackFailed(j, "rollback_program_failed", "旧目录已恢复，但原程序版本没有恢复", err)
 		}
@@ -522,15 +522,16 @@ func (r *Runner) switchBody(ctx context.Context, j *revive.Journal) error {
 		return nil
 	case revive.BodyNPMInstall:
 		if !j.NPMInstalled {
-			j.NPMOldVersion = installedNPMVersion(ctx, r.Env, b.Package)
+			env := r.Env.For(&j.Plan.Profile)
+			j.NPMOldVersion = installedNPMVersion(ctx, env, b.Package)
 			if err := r.Store.Save(j); err != nil {
 				return err
 			}
-			if err := r.npmInstall(ctx, b.Package, b.Version, b.Registry); err != nil {
+			if err := r.npmInstall(ctx, env, b.Package, b.Version, b.Registry); err != nil {
 				return err
 			}
 			j.NPMInstalled = true
-			if v := installedNPMVersion(ctx, r.Env, b.Package); v != b.Version {
+			if v := installedNPMVersion(ctx, env, b.Package); v != b.Version {
 				return valise.New("body_version_mismatch", fmt.Sprintf("安装后的 %s 版本是 %q，不是记录中的 %s", b.Package, v, b.Version), "检查 npm 配置后重试")
 			}
 			return r.Store.Save(j)
@@ -540,9 +541,9 @@ func (r *Runner) switchBody(ctx context.Context, j *revive.Journal) error {
 	return valise.New("body_action_invalid", "未知的身体处理方式："+b.Action, "重新生成计划")
 }
 
-func (r *Runner) npmInstall(ctx context.Context, pkg, version, registry string) error {
+func (r *Runner) npmInstall(ctx context.Context, e *porterenroll.Env, pkg, version, registry string) error {
 	args := revive.NPMInstallArgv(pkg, version, registry)
-	out, err := r.Env.Run(ctx, npmTimeout, "", args...)
+	out, err := e.Run(ctx, npmTimeout, "", args...)
 	if err != nil || out.Code != 0 {
 		detail := ""
 		if out != nil {
@@ -576,11 +577,12 @@ func (r *Runner) installService(ctx context.Context, j *revive.Journal) error {
 	if j.Plan.Profile.Service == nil || len(j.Plan.Profile.Service.InstallArgv) == 0 {
 		return valise.New("service_install_missing", "profile 没有声明服务安装命令", "手动安装服务后重试")
 	}
-	argv, ok := r.Env.ExpandArgv(j.Plan.Profile.Service.InstallArgv, map[string]string{"STATE_DIR": j.Roots[0].Live})
+	env := r.Env.For(&j.Plan.Profile)
+	argv, ok := env.ExpandArgv(j.Plan.Profile.Service.InstallArgv, map[string]string{"STATE_DIR": j.Roots[0].Live})
 	if !ok {
 		return valise.New("service_install_env", "服务安装命令依赖未设置的环境变量", "检查 profile")
 	}
-	out, err := r.Env.Run(ctx, 5*time.Minute, "", argv...)
+	out, err := env.Run(ctx, 5*time.Minute, "", argv...)
 	if err != nil || out.Code != 0 {
 		detail := ""
 		if out != nil {
@@ -588,6 +590,7 @@ func (r *Runner) installService(ctx context.Context, j *revive.Journal) error {
 		}
 		return valise.New("service_install_failed", "harness 的服务安装命令执行失败："+strings.Join(argv, " "), "按下面的输出处理后重试").WithDetail(detail)
 	}
+	_, _, _ = systemctl(ctx, env, "daemon-reload")
 	j.ServiceInstalled = true
 	return r.Store.Save(j)
 }

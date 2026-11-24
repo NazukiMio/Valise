@@ -34,6 +34,7 @@ type hooks struct {
 	setAgentLabel         func(context.Context, string, string, string) error  // tests only; nil uses svc
 	inspectPlacement      func(context.Context, service.TargetPlacementRequest) (*service.TargetPlacement, error)
 	forgetInstanceFn      func(context.Context, string, string) (*enroll.InstanceForgetResult, error)
+	prepareRestoreFn      func(context.Context, service.RestoreRequest) (*service.PreparedRestore, error)
 }
 
 // agentData is what was read about the agents, shared by every page.

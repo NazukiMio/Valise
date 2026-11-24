@@ -1,11 +1,54 @@
 package gui
 
 import (
-	"github.com/egoist/mygo/ui"
+	"slices"
 	"strings"
+
+	"github.com/egoist/mygo/ui"
+
 	"valise/core/revive"
 	"valise/ui/service"
 )
+
+func (a *App) resolveOriginHost(origin string, src service.RestoreSource) string {
+	hosts := a.hosts()
+	match := func(cand string) string {
+		if cand == "" {
+			return ""
+		}
+		if slices.Contains(hosts, cand) {
+			return cand
+		}
+		for _, host := range hosts {
+			if a.vaultNames[host] == cand {
+				return host
+			}
+		}
+		for host, name := range a.vaultNames {
+			if name == cand {
+				return host
+			}
+		}
+		return ""
+	}
+	if origin != "" {
+		if h := match(origin); h != "" {
+			return h
+		}
+		return origin
+	}
+	server, _, _ := strings.Cut(src.Copy.SourceLocator, "/")
+	if h := match(server); h != "" {
+		return h
+	}
+	if src.Spec == "" {
+		if h := match(src.Copy.LocationRef.ID); h != "" {
+			return h
+		}
+		return src.Copy.LocationRef.ID
+	}
+	return ""
+}
 
 func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 	if r.j.busy {
@@ -17,6 +60,7 @@ func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 		ui.RadioGroup(c, func() {
 			for _, m := range []string{revive.ModeRollback, revive.ModeMigrate, revive.ModeClone} {
 				if ui.Radio(c.Key(m), &r.mode, m, T("restore.mode."+m)).Changed() {
+					r.resetPlanOptIns()
 					// A copy starts on the agent's own server (docs/UI.md
 					// 7.11); only a migration needs another one.
 					switch {
@@ -38,6 +82,7 @@ func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 				key := src.Copy.LocationRef.Kind + "/" + src.Copy.LocationRef.ID
 				if ui.Radio(c.Key(key), &selected, key, journeyLocation(src.Copy.LocationRef)).Changed() {
 					r.source = i
+					r.resetPlanOptIns()
 				}
 			}
 		}).Label(T("restore.read_from"))
@@ -45,23 +90,49 @@ func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 	})
 	card(ui.Column(c)).Gap(10).Children(func() {
 		ui.Text(c, T("restore.where")).Bold()
-		if r.mode != revive.ModeRollback {
-			labeled(c, T("restore.origin"), func() { ui.Select(c, &r.origin, a.hosts()).Label(T("restore.origin")) })
-		}
-		if r.mode == revive.ModeRollback {
-			fact(c, T("restore.target"), r.origin)
-		} else {
+		fact(c, T("restore.origin"), orText(r.origin, T("restore.origin_unknown")))
+		switch r.mode {
+		case revive.ModeRollback:
+			fact(c, T("restore.target"), orText(r.origin, T("restore.origin_unknown")))
+		case revive.ModeMigrate:
 			hosts := restoreTargets(a.hosts(), r.origin, r.mode)
-			labeled(c, T("restore.target"), func() { ui.Select(c, &r.target, hosts).Label(T("restore.target")) })
-		}
-		if r.mode == revive.ModeClone {
+			if r.target == r.origin || (r.target != "" && !slices.Contains(hosts, r.target)) {
+				r.target = ""
+			}
+			if r.target == "" && len(hosts) == 1 {
+				r.target = hosts[0]
+			}
+			if len(hosts) == 0 {
+				notice(c, "warn", T("restore.migrate_no_other_server"))
+			} else {
+				labeled(c, T("restore.target"), func() {
+					if ui.Select(c, &r.target, hosts).Label(T("restore.target")).Changed() {
+						r.resetPlanOptIns()
+					}
+				})
+			}
+		case revive.ModeClone:
+			hosts := restoreTargets(a.hosts(), r.origin, r.mode)
+			if r.target == "" && len(hosts) > 0 {
+				if slices.Contains(hosts, r.origin) {
+					r.target = r.origin
+				} else {
+					r.target = hosts[0]
+				}
+			}
+			labeled(c, T("restore.target"), func() {
+				if ui.Select(c, &r.target, hosts).Label(T("restore.target")).Changed() {
+					r.resetPlanOptIns()
+				}
+			})
 			labeled(c, T("restore.copy_id"), func() { ui.TextInput(c, &r.id).Label(T("restore.copy_id")) })
 		}
 		a.restorePlacementUI(c, r)
 	})
 	muted(ui.Text(c, T("restore.plan_note"))).Wrap()
+	disablePlan := r.mode == revive.ModeMigrate && (r.target == "" || r.target == r.origin)
 	ui.Row(c).Justify(ui.End).Children(func() {
-		ui.PrimaryButton(c, T("restore.view_plan")).OnClick(func() { a.needKey(func() { a.prepareRestore(r) }) })
+		ui.PrimaryButton(c, T("restore.view_plan")).Disabled(disablePlan).OnClick(func() { a.needKey(func() { a.prepareRestore(r) }) })
 	})
 }
 
@@ -78,10 +149,17 @@ func restoreTargets(all []string, origin, mode string) []string {
 }
 
 func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
+	if r.j.busy {
+		a.restoreProgress(c, r)
+		return
+	}
 	if r.plan == nil {
 		return
 	}
 	p := r.plan.Revive
+	if r.envAutoSkipped {
+		notice(c, "ok", T("restore.env.auto_skipped_note"))
+	}
 	for i, w := range p.Warnings { // warnings come first and are never secondary text
 		notice(c.Key(i), "warn", w)
 	}
@@ -98,6 +176,9 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 			fact(c, T("restore.services"), T("restore.no_service"))
 		} else {
 			fact(c, T("restore.services"), T("restore.service_effect", "unit", p.Plan.Unit, "source", orText(p.StopSource, T("restore.none"))))
+			if p.Plan.InstallService {
+				fact(c, T("restore.service_install_label"), T("restore.service_auto_install", "unit", p.Plan.Unit, "cmd", strings.Join(p.InstallArgv, " ")))
+			}
 		}
 		fact(c, T("restore.space"), T("restore.space_value", "need", size(p.NeedBytes), "free", size(int64(p.FreeBytes))))
 		bodyVal := T("restore.body." + p.Plan.Body.Action)
@@ -150,42 +231,47 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 		ui.Checkbox(c, &r.backupCurrent, T("restore.backup_current"))
 		muted(ui.Text(c, T("restore.backup_current_hint"))).Wrap()
 	}
-	hard, allow := false, false
+	allow, hasEnv := false, false
 	for _, block := range p.Blockers {
-		ui.Column(c.Key("blk-" + block.Code)).Gap(6).Children(func() {
-			switch block.Code {
-			case "profile_draft":
+		b := block
+		switch b.Code {
+		case "profile_draft":
+			allow = true
+			subPanel(ui.Column(c.Key("blk-" + b.Code))).Gap(6).Children(func() {
 				ui.Checkbox(c, &r.draft, T("restore.allow_draft"))
-				allow = true
-			case "profile_from_snapshot":
+				if b.Reason != "" {
+					muted(ui.Text(c, b.Reason)).FontSize(fsCaption).Wrap().Selectable()
+				}
+			})
+		case "profile_from_snapshot":
+			allow = true
+			subPanel(ui.Column(c.Key("blk-" + b.Code))).Gap(6).Children(func() {
 				ui.Checkbox(c, &r.snapshotProfile, T("restore.allow_snapshot"))
-				allow = true
-			case "body_version_mismatch":
-				ui.Checkbox(c, &r.allowVersionMismatch, T("restore.allow_version_mismatch"))
-				allow = true
-			case "body_rebuild_unverified":
-				ui.Checkbox(c, &r.allowVersionMismatch, T("restore.allow_body_data_only"))
-				a.restoreMissingBodyBox(c, r, p)
-				allow = true
-			case "service_missing":
-				ui.Checkbox(c, &r.skipService, T("restore.allow_skip_service"))
-				allow = true
-			default:
-				hard = true
-			}
-			errorBox(c, &block, a.fold("restore-block-"+block.Code))
-		})
+				if b.Reason != "" {
+					muted(ui.Text(c, b.Reason)).FontSize(fsCaption).Wrap().Selectable()
+				}
+			})
+		default:
+			hasEnv = true
+			notice(c.Key("blk-"+b.Code), "warn", b.Reason)
+		}
 	}
 	if len(p.Nested) > 0 {
-		hard = true
-		ui.Text(c, T("restore.nested", "names", strings.Join(p.Nested, ", "))).Wrap().TextColor(palette.Warn).Selectable()
+		hasEnv = true
+		notice(c, "warn", T("restore.nested", "names", strings.Join(p.Nested, ", ")))
 	}
 	ui.Row(c).Gap(10).Justify(ui.End).Children(func() {
-		ui.Button(c, T("restore.edit")).OnClick(func() { r.step = "setup" })
+		ui.Button(c, T("restore.edit")).OnClick(func() {
+			r.resetPlanOptIns()
+			r.step = "setup"
+		})
+		if hasEnv {
+			ui.PrimaryButton(c, T("restore.env.open")).OnClick(func() { r.step = "env" })
+		}
 		if allow {
 			ui.Button(c, T("restore.replan")).OnClick(func() { a.prepareRestore(r) })
 		}
-		if !hard && !allow {
+		if len(p.Blockers) == 0 && len(p.Nested) == 0 {
 			ui.PrimaryButton(c, T("restore.prepare")).Disabled((p.RestoreSecret || len(p.Excluded) > 0) && !r.credential || p.UnverifiedSource != nil && r.sourceChoice == "").OnClick(func() { a.runRestore(r) })
 		}
 	})

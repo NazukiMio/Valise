@@ -621,3 +621,120 @@ func TestInspectBinaryFoundAndDataOnlyMigrate(t *testing.T) {
 		t.Fatalf("expected record written on target, got %+v %v", rec, err)
 	}
 }
+
+func TestInstallServiceUsesProfileBinDirsAndDaemonReloadBeforeStart(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+
+	// Replace fake systemctl with one that logs every action in order.
+	const loggingSystemctl = `#!/bin/sh
+f="$HOME/unit-state"
+[ -f "$f" ] || echo inactive > "$f"
+shift # --user
+echo "$1" >> "$HOME/systemctl.log"
+case "$1" in
+is-active) cat "$f" ;;
+show) echo loaded ;;
+daemon-reload) ;;
+reset-failed) ;;
+stop) echo inactive > "$f" ;;
+start) echo active > "$f" ;;
+esac
+`
+	write(t, filepath.Join(w.bin, "systemctl"), loggingSystemctl, 0o755)
+	write(t, filepath.Join(w.home, "unit-state"), "inactive\n", 0o644)
+
+	// Place the installer tool ONLY in a profile-declared bin_dir (NOT in w.bin / base PATH).
+	extraBin := filepath.Join(w.home, "custom-bin")
+	write(t, filepath.Join(extraBin, "demo-installer"), "#!/bin/sh\necho installed > \"$HOME/installed.flag\"\n", 0o755)
+
+	w.p.Detect = &profile.Detect{
+		BinDirs:            []string{"${HOME}/custom-bin"},
+		StateDirCandidates: []string{"${HOME}/.demo"},
+	}
+	w.p.Service = &profile.Service{
+		Candidates:  []profile.ServiceUnit{{Scope: "user", Unit: "demo.service"}},
+		InstallArgv: profile.Argv{"demo-installer", "--state", "${STATE_DIR}"},
+	}
+
+	p := w.plan()
+	p.Mode = revive.ModeMigrate
+	p.Carry = false
+	p.InstallService = true
+	p.Body = revive.BodyPlan{Action: revive.BodyKeep}
+
+	w.stage(t, p, snapshot)
+	res, err := w.r.Swap(ctx, p.OpID)
+	if err != nil {
+		t.Fatalf("Swap with InstallService: %v", err)
+	}
+	if res.State != revive.StateHealthy {
+		t.Fatalf("expected StateHealthy, got %+v", res)
+	}
+	if strings.TrimSpace(read(t, filepath.Join(w.home, "installed.flag"))) != "installed" {
+		t.Fatal("service installer from profile.Detect.BinDirs did not run")
+	}
+	logLines := strings.Split(strings.TrimSpace(read(t, filepath.Join(w.home, "systemctl.log"))), "\n")
+	reloadIdx, startIdx := -1, -1
+	for i, line := range logLines {
+		if line == "daemon-reload" && reloadIdx < 0 {
+			reloadIdx = i
+		}
+		if line == "start" && startIdx < 0 {
+			startIdx = i
+		}
+	}
+	if reloadIdx < 0 || startIdx < 0 || reloadIdx >= startIdx {
+		t.Fatalf("expected systemctl --user daemon-reload before start, log=%v", logLines)
+	}
+}
+
+func TestInspectProvenanceFallbackToDefaultStateDir(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+
+	// Fake git in w.bin that succeeds only for the repo under the default state dir.
+	repoDir := filepath.Join(w.state, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeGit := `#!/bin/sh
+# Invoked as: git -C <dir> ...
+if [ "$1" = "-C" ]; then
+  dir="$2"
+  shift 2
+fi
+if [ "$dir" != "` + repoDir + `" ]; then
+  exit 128
+fi
+case "$1" in
+rev-parse) echo "deadbeef1234567890" ;;
+remote) echo "https://example.invalid/demo.git" ;;
+status) ;;
+esac
+`
+	write(t, filepath.Join(w.bin, "git"), fakeGit, 0o755)
+
+	w.p.Detect = &profile.Detect{
+		StateDirCandidates: []string{"${HOME}/.demo"},
+	}
+	w.p.Provenance = &profile.Provenance{
+		Kind: profile.ProvenanceGit,
+		Git:  &profile.GitProvenance{Root: profile.StateRoot, Path: "repo"},
+	}
+
+	// Target root points to a custom non-existent directory; Inspect should fall back
+	// to probing the default state dir and find the installed git body there.
+	customDir := filepath.Join(w.home, ".demo-custom")
+	facts, err := Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{
+		Profile:    w.p,
+		InstanceID: "demo-custom",
+		Roots:      []revive.RootPlan{{ID: profile.StateRoot, Path: customDir}},
+	})
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if facts.Provenance.Git == nil || facts.Provenance.Git.Commit != "deadbeef1234567890" {
+		t.Fatalf("expected provenance fallback from default state dir %s, got %+v", w.state, facts.Provenance)
+	}
+}

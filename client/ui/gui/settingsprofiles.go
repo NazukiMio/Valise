@@ -106,6 +106,11 @@ func (a *App) profilesStatusCard(c *ui.Context, ps *profilesState) {
 				}
 			}
 			if len(overrides) > 0 {
+				ids := make([]string, 0, len(overrides))
+				for _, sum := range overrides {
+					ids = append(ids, sum.ID)
+				}
+				notice(c, "warn", T("profiles.override_banner", "n", len(overrides)))
 				subPanel(ui.Column(c)).Gap(6).Children(func() {
 					for _, sum := range overrides {
 						id := sum.ID
@@ -118,6 +123,9 @@ func (a *App) profilesStatusCard(c *ui.Context, ps *profilesState) {
 							ui.Button(c, T("profiles.restore_official")).Disabled(busy).OnClick(func() { a.restoreOfficialProfile(id) })
 						})
 					}
+					ui.Row(c).Justify(ui.End).Children(func() {
+						ui.Button(c, T("profiles.restore_all_official")).Disabled(busy).OnClick(func() { a.restoreAllOfficialProfiles(ids) })
+					})
 				})
 			}
 			if len(st.Rejected) > 0 {
@@ -163,6 +171,29 @@ func (a *App) restoreOfficialProfile(id string) {
 			return
 		}
 		ps.doneNote = T("profiles.restore_official_done", "id", id)
+		a.reloadProfiles()
+		a.readProfilesStatus()
+	})
+}
+
+func (a *App) restoreAllOfficialProfiles(ids []string) {
+	ps := a.ensureProfilesState()
+	if len(ids) == 0 || ps.loading || ps.picking || ps.fetchJ.busy || ps.installJ.busy || ps.syncJ.busy {
+		return
+	}
+	ps.doneNote, ps.syncTargets, ps.syncOutcomes = "", nil, nil
+	a.start(&ps.installJ, time.Minute, func(context.Context) error {
+		for _, id := range ids {
+			if err := a.svc.RemoveLocalProfile(id); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, func(err error) {
+		if err != nil {
+			return
+		}
+		ps.doneNote = T("profiles.restore_all_done", "n", len(ids))
 		a.reloadProfiles()
 		a.readProfilesStatus()
 	})

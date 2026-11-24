@@ -159,6 +159,14 @@ func (a *App) reloadProfiles() {
 	a.scans = map[string]*serverScan{}
 	a.natives = map[string]*nativeState{}
 	a.agentKits = map[string]*agentKitState{}
+	for _, st := range a.agentServices {
+		if st != nil {
+			st.started = false
+		}
+	}
+	if a.profiles != nil && !a.profiles.loading {
+		a.profiles.started = false
+	}
 	if a.cloudAdding == nil || a.cloudAdding.login == nil {
 		a.closeAdding()
 	}

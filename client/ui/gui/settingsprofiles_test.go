@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -224,5 +225,99 @@ func TestProfilesSettingsLocalYAMLImport(t *testing.T) {
 	hasAll(t, tt.Texts(), T("profiles.restore_official_done", "id", "demo"))
 	if tt.HasText(T("profiles.override_item", "id", "demo", "local", 3, "official", 2)) {
 		t.Fatalf("override still listed after restoring official: %q", tt.Texts())
+	}
+}
+
+func TestSettingsProfilesRestoreAllOfficial(t *testing.T) {
+	a, tt := settingsWorld(t)
+	signer := minisigntest.New()
+	lines := strings.Split(strings.TrimSpace(signer.PublicKey), "\n")
+	a.svc.Release.PublicKey = lines[len(lines)-1]
+
+	// Build a signed official pack with two profiles ("demo" and "extra").
+	src := filepath.Join(t.TempDir(), "src")
+	if err := os.MkdirAll(src, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "demo.yaml"), []byte(signedProfileYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "extra.yaml"), []byte(unverifiedProfileYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tgz, err := profiles.Build(src, "", "2026.11.24", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	packPath := filepath.Join(t.TempDir(), profiles.PackAsset)
+	if err := os.WriteFile(packPath, tgz, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(packPath+".minisig", signer.Sign(tgz, "file:"+profiles.PackAsset), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pf, err := a.svc.ReadPackFile(packPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.svc.InstallPack(pf); err != nil {
+		t.Fatal(err)
+	}
+
+	// Import local overrides for both profiles.
+	for name, body := range map[string]string{"demo.yaml": signedProfileYAML, "extra.yaml": unverifiedProfileYAML} {
+		lp := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(lp, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		lf, err := a.svc.ReadLocalProfileFile(lp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.svc.InstallLocalProfile(lf); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	a.router.Push("/settings")
+	tt.Frame()
+	click(t, tt, T("settings.tab.profiles"))
+	hasAll(t, tt.Texts(),
+		T("profiles.override_banner", "n", 2),
+		T("profiles.restore_all_official"),
+	)
+
+	click(t, tt, T("profiles.restore_all_official"))
+	hasAll(t, tt.Texts(), T("profiles.restore_all_done", "n", 2))
+	if tt.HasText(T("profiles.restore_all_official")) || tt.HasText(T("profiles.override_banner", "n", 2)) {
+		t.Fatalf("overrides still listed after restore all: %q", tt.Texts())
+	}
+}
+
+func TestReloadProfilesInvalidatesServiceAndProfilesCaches(t *testing.T) {
+	a, _ := world(t)
+	st := &agentServiceState{started: true}
+	a.agentServices["cloud/alan"] = st
+	a.profiles = &profilesState{started: true}
+
+	a.reloadProfiles()
+
+	if st.started {
+		t.Fatal("reloadProfiles did not reset cached agentServiceState.started")
+	}
+	if a.profiles.started {
+		t.Fatal("reloadProfiles did not reset cached profilesState.started")
+	}
+
+	// Direct readAgentService immediately re-marks started=true.
+	a.agentServiceHook = &agentServiceOps{
+		status: func(context.Context, string, string) (*service.InstanceServiceInfo, error) {
+			return &service.InstanceServiceInfo{}, nil
+		},
+		actions: func(context.Context, string, string) (*service.ActionList, error) { return &service.ActionList{}, nil },
+	}
+	a.readAgentService("cloud", "alan")
+	if !st.started {
+		t.Fatal("readAgentService did not set st.started = true")
 	}
 }

@@ -168,6 +168,37 @@ func TestInspectTargetPlacementDailyOnlyAndCollisionAvoidance(t *testing.T) {
 	if p3.RecommendedStateDir != filepath.Join(homeB, ".demo-copy") {
 		t.Fatalf("expected .demo-copy fallback, got %+v", p3)
 	}
+
+	// 4. Clean target server gamma: migrating default instance recommends defaultDir (.demo),
+	// while migrating named instance "work" still recommends .demo-work.
+	homeG := e.AddHost("gamma")
+	e.InstallPorter("gamma")
+	p4, err := s.InspectTargetPlacement(ctx, TargetPlacementRequest{
+		From:               "alpha",
+		Target:             "gamma",
+		Mode:               revive.ModeMigrate,
+		ProfileID:          "demo",
+		RecordedInstanceID: "demo",
+	})
+	if err != nil {
+		t.Fatalf("InspectTargetPlacement clean server default migrate: %v", err)
+	}
+	if !p4.CanReplaceDefault || p4.RecommendedStateDir != filepath.Join(homeG, ".demo") {
+		t.Fatalf("expected default state dir %q on clean server, got %+v", filepath.Join(homeG, ".demo"), p4)
+	}
+	p4Named, err := s.InspectTargetPlacement(ctx, TargetPlacementRequest{
+		From:               "alpha",
+		Target:             "gamma",
+		Mode:               revive.ModeMigrate,
+		ProfileID:          "demo",
+		RecordedInstanceID: "demo-work",
+	})
+	if err != nil {
+		t.Fatalf("InspectTargetPlacement clean server named migrate: %v", err)
+	}
+	if p4Named.RecommendedStateDir != filepath.Join(homeG, ".demo-work") {
+		t.Fatalf("expected named state dir %q on clean server, got %+v", filepath.Join(homeG, ".demo-work"), p4Named)
+	}
 }
 
 func TestPlanReviveSoulSkippedUnclassifiedWarning(t *testing.T) {

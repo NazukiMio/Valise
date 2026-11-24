@@ -10,10 +10,14 @@ import (
 	"valise/ui/service"
 )
 
-// restoreStages is where a restore stands, as five stops the person can
+// restoreStages is where a restore stands, as six stops the person can
 // see ahead of them; the words come from the catalog in order.
-func restoreStages() []string {
-	return []string{T("restore.stage.choose"), T("restore.stage.plan"), T("restore.stage.prepare"),
+func restoreStages(envSkipped bool) []string {
+	envLabel := T("restore.stage.env")
+	if envSkipped {
+		envLabel = T("restore.stage.env_skipped")
+	}
+	return []string{T("restore.stage.choose"), envLabel, T("restore.stage.plan"), T("restore.stage.prepare"),
 		T("restore.stage.confirm"), T("restore.stage.result")}
 }
 
@@ -22,22 +26,24 @@ func restoreStageAt(step string) int {
 	switch step {
 	case "setup":
 		return 0
-	case "plan":
+	case "env":
 		return 1
-	case "prepare":
+	case "plan":
 		return 2
-	case "confirm", "swap":
+	case "prepare":
 		return 3
+	case "confirm", "swap":
+		return 4
 	}
-	return 4
+	return 5
 }
 
 // restoreStepper draws the stops: the ones behind are checked, the one at
 // hand is filled, the ones ahead are outlines. It only shows where the flow
 // is; it is not a way to jump between steps.
-func restoreStepper(c *ui.Context, step string) {
+func restoreStepper(c *ui.Context, step string, envSkipped bool) {
 	at := restoreStageAt(step)
-	names := restoreStages()
+	names := restoreStages(envSkipped)
 	ui.Row(c).Gap(spInside).AlignItems(ui.Center).Padding(spHair, 0).Role(ui.RoleGroup).Label(names[at]).Children(func() {
 		for i, name := range names {
 			ic := c.Key("stage-" + strconv.Itoa(i))
@@ -53,7 +59,7 @@ func restoreStepper(c *ui.Context, step string) {
 					Transition(ui.ElementTransition{Duration: motionBase, Colors: true})
 				ink := palette.TextSub
 				switch {
-				case i < at:
+				case i < at || (i == 1 && envSkipped):
 					mark.Background(palette.Brand.Alpha(0.14)).Children(func() {
 						ui.Icon(ic, icons.check).FontSize(13).TextColor(palette.Brand)
 					})

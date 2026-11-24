@@ -11,6 +11,7 @@ import (
 
 	"filippo.io/age"
 
+	"valise/client/profiles"
 	"valise/core/enroll"
 	"valise/core/identity"
 	"valise/core/profile"
@@ -71,14 +72,17 @@ type RevivePlan struct {
 	ProfileLocal bool   `json:"profile_local"`
 	// ProfileFromSnapshot: the profile came from the snapshot header, not
 	// reviewed by this client.
-	ProfileFromSnapshot bool     `json:"profile_from_snapshot"`
-	Files               int      `json:"files"`
-	Bytes               int64    `json:"bytes"`
-	SkippedUnclassified int      `json:"skipped_unclassified,omitempty"`
-	Excluded            []string `json:"excluded_exclusive_secrets,omitempty"`
-	RestoreSecret       bool     `json:"restores_secrets"`
-	StopSource          string   `json:"stop_source_unit,omitempty"` // migrate: unit stopped on From
-	InstallArgv         []string `json:"service_install_argv,omitempty"`
+	ProfileFromSnapshot     bool     `json:"profile_from_snapshot"`
+	ProfileOverrideStale    bool     `json:"profile_override_stale,omitempty"`
+	EffectiveProfileVersion int      `json:"effective_profile_version,omitempty"`
+	OfficialProfileVersion  int      `json:"official_profile_version,omitempty"`
+	Files                   int      `json:"files"`
+	Bytes                   int64    `json:"bytes"`
+	SkippedUnclassified     int      `json:"skipped_unclassified,omitempty"`
+	Excluded                []string `json:"excluded_exclusive_secrets,omitempty"`
+	RestoreSecret           bool     `json:"restores_secrets"`
+	StopSource              string   `json:"stop_source_unit,omitempty"` // migrate: unit stopped on From
+	InstallArgv             []string `json:"service_install_argv,omitempty"`
 	// Dossier is what the snapshot's record carries over (nil when empty).
 	Dossier *DossierReviveSummary `json:"dossier,omitempty"`
 	// BodySummary compares the snapshot's body with the target's when they
@@ -224,9 +228,15 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		return nil, err
 	}
 	var prof profile.Profile
-	if lp := set.ByID[head.Profile.ID]; lp != nil && lp.Effective.ProfileVersion == head.Profile.Version {
-		prof = *lp.Effective
-		rp.ProfileLocal = lp.Local
+	clientLP := set.ByID[head.Profile.ID]
+	if clientLP != nil && clientLP.Local && clientLP.Official != nil && clientLP.Effective != nil && clientLP.Effective.ProfileVersion <= clientLP.Official.ProfileVersion {
+		rp.ProfileOverrideStale = true
+		rp.EffectiveProfileVersion = clientLP.Effective.ProfileVersion
+		rp.OfficialProfileVersion = clientLP.Official.ProfileVersion
+	}
+	if clientLP != nil && clientLP.Effective != nil && clientLP.Effective.ProfileVersion == head.Profile.Version {
+		prof = *clientLP.Effective
+		rp.ProfileLocal = clientLP.Local
 	} else if d := head.ProfileDoc; d != nil && d.ID == head.Profile.ID && d.ProfileVersion == head.Profile.Version {
 		prof = *d
 		rp.ProfileFromSnapshot = true
@@ -384,7 +394,7 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 			}
 			rp.Warnings = append(rp.Warnings, "副本和原实例在同一台服务器上：Valise 只把文件放进你指定的目录，不启动、不停止任何服务；副本要用的服务、端口与登录由你另行配置"+how)
 		} else {
-			planService(rp, &plan, facts, prof)
+			planService(rp, &plan, facts, prof, clientLP)
 		}
 		if rp.DataOnly && plan.Unit != "" {
 			plan.Unit, plan.InstallService, rp.InstallArgv = "", false, nil
@@ -792,7 +802,7 @@ func freshDoc(p profile.Profile) string {
 }
 
 // planService picks the unit and whether it must be installed.
-func planService(rp *RevivePlan, plan *revive.Plan, facts revive.InspectResult, prof profile.Profile) {
+func planService(rp *RevivePlan, plan *revive.Plan, facts revive.InspectResult, prof profile.Profile, clientLP *profiles.Loaded) {
 	if rp.DataOnly {
 		rp.warn("本次仅迁移数据与档案（不启动服务）；在目标安装配置服务后即可启动运行")
 		return
@@ -809,11 +819,45 @@ func planService(rp *RevivePlan, plan *revive.Plan, facts revive.InspectResult, 
 		}
 	}
 	if !loaded {
-		if len(prof.Service.InstallArgv) == 0 {
-			rp.block("service_missing", "目标服务器上没有服务 "+plan.Unit+"，harness 资料也没有声明安装命令", "先在目标服务器手动安装该服务后重试，或勾选「仅迁移数据与档案」先把数据搬过去、不启动服务")
+		installArgv := prof.Service.InstallArgv
+		if len(installArgv) == 0 && clientLP != nil && clientLP.Effective != nil {
+			cp := clientLP.Effective.ForAgent(rp.profileName)
+			if cp.Service != nil && len(cp.Service.InstallArgv) > 0 && len(cp.Service.Candidates) > 0 && cp.Service.Candidates[0].Unit == plan.Unit {
+				var svcCopy profile.Service
+				if plan.Profile.Service != nil {
+					svcCopy = *plan.Profile.Service
+				} else {
+					svcCopy = *prof.Service
+				}
+				svcCopy.Candidates = append([]profile.ServiceUnit(nil), svcCopy.Candidates...)
+				svcCopy.InstallArgv = append(profile.Argv(nil), cp.Service.InstallArgv...)
+				plan.Profile.Service = &svcCopy
+				if cp.Detect != nil && len(cp.Detect.BinDirs) > 0 {
+					var detCopy profile.Detect
+					if plan.Profile.Detect != nil {
+						detCopy = *plan.Profile.Detect
+					}
+					detCopy.BinDirs = append([]string(nil), detCopy.BinDirs...)
+					for _, d := range cp.Detect.BinDirs {
+						if !slices.Contains(detCopy.BinDirs, d) {
+							detCopy.BinDirs = append(detCopy.BinDirs, d)
+						}
+					}
+					plan.Profile.Detect = &detCopy
+				}
+				installArgv = plan.Profile.Service.InstallArgv
+			}
+		}
+		if len(installArgv) == 0 {
+			suggestion := "先在目标服务器手动安装该服务后重试，或勾选「仅迁移数据与档案」先把数据搬过去、不启动服务"
+			if rp.ProfileOverrideStale {
+				suggestion = fmt.Sprintf("本机自定义的旧版资料（v%d）覆盖了官方资料包（v%d），在设置中恢复官方资料后可能包含该服务的安装命令；也可先在目标服务器手动安装服务，或勾选「仅迁移数据与档案」", rp.EffectiveProfileVersion, rp.OfficialProfileVersion)
+			}
+			rp.block("service_missing", "目标服务器上没有服务 "+plan.Unit+"，harness 资料也没有声明安装命令", suggestion)
 			return
 		}
 		plan.InstallService = true
-		rp.InstallArgv = prof.Service.InstallArgv
+		rp.InstallArgv = append([]string(nil), installArgv...)
+		rp.warn("目标服务器上尚未安装服务单元 " + plan.Unit + "；交换目录后将自动执行 " + strings.Join(installArgv, " ") + " 安装并启动服务")
 	}
 }

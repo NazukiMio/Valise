@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"valise/client/minisign/minisigntest"
 	"valise/testbed/fakesshenv"
 )
 
@@ -276,4 +277,24 @@ func TestServiceControlNotDeclared(t *testing.T) {
 	s, _ := serviceWorld(t, false, "not-found", "inactive")
 	_, err := s.ControlInstanceService(context.Background(), "box", "demo", "start")
 	wantCode(t, err, "service_not_declared")
+}
+
+func TestServiceStatusReportsStaleLocalOverride(t *testing.T) {
+	s, _ := serviceWorld(t, true, "not-found", "inactive")
+	// serviceWorld installed local demo.yaml at profile_version: 1.
+	// Install an official signed pack containing demo at profile_version: 2 so
+	// the local override is stale (effective v1 <= official v2).
+	officialV2 := strings.Replace(demoProfile, "profile_version: 1", "profile_version: 2", 1) + `service:
+  candidates: [ { scope: user, unit: demo.service } ]
+  install_argv: [demo, install-svc]
+`
+	installTestPack(t, s, minisigntest.New(), officialV2)
+
+	info, err := s.ServiceStatus(context.Background(), "box", "demo")
+	if err != nil {
+		t.Fatalf("ServiceStatus: %v", err)
+	}
+	if !info.LocalOverrideStale || info.EffectiveVersion != 1 || info.OfficialVersion != 2 {
+		t.Fatalf("expected LocalOverrideStale=true EffectiveVersion=1 OfficialVersion=2, got %+v", info)
+	}
 }

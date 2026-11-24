@@ -31,6 +31,7 @@ type restoreFlow struct {
 	progress                                 service.Progress
 	credential, draft, snapshotProfile, swap bool
 	allowVersionMismatch, skipService        bool
+	envNeeded, envAutoSkipped                bool
 	sourceChoice                             string
 	backupCurrent                            bool
 	verify                                   *revive.StageVerifyResult
@@ -60,18 +61,7 @@ func (a *App) openRestore(p journey.TimelinePoint, origin string) {
 	if len(sources) == 0 {
 		return
 	}
-	if origin == "" {
-		server, _, _ := strings.Cut(sources[0].Copy.SourceLocator, "/")
-		for host, name := range a.vaultNames {
-			if name == server {
-				origin = host
-				break
-			}
-		}
-		if sources[0].Spec == "" {
-			origin = sources[0].Copy.LocationRef.ID
-		}
-	}
+	origin = a.resolveOriginHost(origin, sources[0])
 	r := &restoreFlow{point: p, sources: sources, origin: origin, target: origin, mode: revive.ModeRollback, id: p.RecordedInstanceID + "-copy", step: "setup"}
 	a.restore = r
 	a.navigate("/restore")
@@ -85,7 +75,8 @@ func (a *App) restorePage(c *ui.Context) {
 	}
 	backLink(c, T("nav.agents"), "/agents")
 	pageHead(c, T("restore.title"), T("restore.step."+r.step))
-	restoreStepper(c, r.step)
+	envSkipped := r.step != "setup" && r.step != "env" && !r.envNeeded
+	restoreStepper(c, r.step, envSkipped)
 	if !r.point.CreatedAt.IsZero() {
 		subPanel(ui.Row(c)).Gap(spSection).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.clock).FontSize(fsTitle3).TextColor(palette.Brand)
@@ -99,6 +90,8 @@ func (a *App) restorePage(c *ui.Context) {
 	switch r.step {
 	case "setup":
 		a.restoreSetup(c, r)
+	case "env":
+		a.restoreEnv(c, r)
 	case "plan":
 		a.restorePlan(c, r)
 	case "prepare", "swap":
@@ -149,14 +142,27 @@ func (a *App) prepareRestore(r *restoreFlow) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	r.j.cancel = cancel
 	ctx = a.restoreContext(ctx, r)
+	fn := a.prepareRestoreFn
+	if fn == nil {
+		fn = a.svc.PrepareRestore
+	}
 	a.run(func() {
 		defer cancel()
-		p, err := a.svc.PrepareRestore(ctx, req)
+		p, err := fn(ctx, req)
 		a.update(func() {
 			r.j.busy, r.j.err, r.j.cancel = false, err, nil
 			if err == nil {
 				r.plan = p
-				r.step = "plan"
+				needEnv := hasEnvBlocker(p.Revive)
+				wasInEnv := r.step == "env"
+				r.envNeeded = needEnv
+				if needEnv {
+					r.step = "env"
+					r.envAutoSkipped = false
+				} else {
+					r.step = "plan"
+					r.envAutoSkipped = wasInEnv
+				}
 			}
 			a.restoreSafeExit(r)
 		})

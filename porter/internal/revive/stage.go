@@ -82,6 +82,11 @@ func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.Inspect
 		provRoots = []enroll.Root{{ID: profile.StateRoot, Path: res.StateDir}}
 	}
 	res.Provenance = porterenroll.Provenance(ctx, e, &p.Profile, provRoots)
+	if !hasProvenance(res.Provenance) && res.StateDir != "" && !hasRootPath(provRoots, res.StateDir) {
+		if fb := porterenroll.Provenance(ctx, e, &p.Profile, []enroll.Root{{ID: profile.StateRoot, Path: res.StateDir}}); hasProvenance(fb) {
+			res.Provenance = fb
+		}
+	}
 	if p.Provenance.NPM != nil && p.Provenance.NPM.Registry != "" && res.Tools["npm"] {
 		out, err := e.Run(ctx, 60*time.Second, "", "npm", "view", p.Provenance.NPM.Package+"@"+p.Provenance.NPM.Version,
 			"dist.integrity", "--registry", p.Provenance.NPM.Registry)
@@ -140,6 +145,23 @@ func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.Inspect
 	}
 	res.Busy = busyProcesses(paths, unit)
 	return res, nil
+}
+
+func hasProvenance(p enroll.Provenance) bool {
+	return (p.Git != nil && p.Git.Commit != "") ||
+		(p.NPM != nil && p.NPM.Version != "") ||
+		(p.Tool != nil && p.Tool.Version != "") ||
+		(p.Binary != nil && p.Binary.Path != "")
+}
+
+func hasRootPath(roots []enroll.Root, path string) bool {
+	clean := filepath.Clean(path)
+	for _, r := range roots {
+		if filepath.Clean(r.Path) == clean {
+			return true
+		}
+	}
+	return false
 }
 
 func nearestExisting(p string) string {

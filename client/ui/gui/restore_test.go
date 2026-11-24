@@ -180,7 +180,6 @@ func TestCloneOnTheOnlyServer(t *testing.T) {
 
 func TestRestorePlanDossierAndDecoupledBlockers(t *testing.T) {
 	a, tt, r := restoreWorld(t)
-	r.step = "plan"
 	r.mode = revive.ModeMigrate
 	r.origin, r.target = "home", "cloud"
 	r.plan = &service.PreparedRestore{Revive: &service.RevivePlan{
@@ -191,35 +190,59 @@ func TestRestorePlanDossierAndDecoupledBlockers(t *testing.T) {
 			LocalSQLite:    []string{"state:db.sqlite"},
 			ExternalRefs:   []enroll.ExternalRef{{Path: "/opt/ext", Kind: "dir"}},
 		},
-		Plan: revive.Plan{Mode: revive.ModeMigrate, InstanceID: "xiaoman", Tier: "full", Body: revive.BodyPlan{Action: revive.BodyKeep}},
-		Blockers: []valise.UserError{
-			{Code: "body_version_mismatch", Reason: "版本差异"},
-			{Code: "service_missing", Reason: "缺少服务"},
-		},
+		InstallArgv: []string{"demo", "gateway", "install"},
+		Plan:        revive.Plan{Mode: revive.ModeMigrate, InstanceID: "xiaoman", Tier: "full", Unit: "demo.service", InstallService: true, Body: revive.BodyPlan{Action: revive.BodyKeep}},
 	}}
+
+	// On final plan step, dossier and auto-install service summary are shown cleanly.
+	r.step = "plan"
 	tt.Frame()
 	tt.Advance(time.Second)
 	hasAll(t, tt.Texts(),
 		T("restore.dossier"),
 		T("restore.dossier_value", "overrides", 2, "sqlite", 1, "external", 1),
-		T("restore.allow_version_mismatch"),
-		T("restore.allow_skip_service"),
-		T("restore.replan"),
+		T("restore.service_auto_install", "unit", "demo.service", "cmd", "demo gateway install"),
+		T("restore.prepare"),
 	)
-	if tt.HasText(T("restore.prepare")) {
-		t.Fatalf("offered execute before resolving opt-in blockers: %q", tt.Texts())
+
+	// On env step, blockers are handled one focused card at a time (body mismatch before service missing).
+	r.step = "env"
+	r.envNeeded = true
+	r.plan.Revive.Plan.InstallService = false
+	r.plan.Revive.Blockers = []valise.UserError{
+		{Code: "body_version_mismatch", Reason: "版本差异"},
+		{Code: "service_missing", Reason: "缺少服务"},
+	}
+	tt.Frame()
+	tt.Advance(time.Second)
+	hasAll(t, tt.Texts(),
+		T("restore.env.body_mismatch_title"),
+		T("restore.allow_version_mismatch"),
+		T("restore.env.next"),
+	)
+	if tt.HasText(T("restore.env.service_missing_title")) || tt.HasText(T("restore.prepare")) {
+		t.Fatalf("env step showed multiple blocker cards or execute button: %q", tt.Texts())
 	}
 	click(t, tt, T("restore.allow_version_mismatch"))
+	if !r.allowVersionMismatch {
+		t.Fatal("mismatch checkbox did not update flow flag")
+	}
+
+	// Once body mismatch is cleared, service_missing becomes the single active card.
+	r.plan.Revive.Blockers = []valise.UserError{{Code: "service_missing", Reason: "缺少服务"}}
+	tt.Frame()
+	tt.Advance(time.Second)
+	hasAll(t, tt.Texts(), T("restore.env.service_missing_title"), T("restore.allow_skip_service"), T("restore.env.continue_skip_service"))
 	click(t, tt, T("restore.allow_skip_service"))
-	if !r.allowVersionMismatch || !r.skipService {
-		t.Fatalf("checkboxes did not update flow flags: mismatch=%v skipSvc=%v", r.allowVersionMismatch, r.skipService)
+	if !r.skipService {
+		t.Fatal("skip service checkbox did not update flow flag")
 	}
 
 	// body_rebuild_unverified offers data-only opt-in and target install shortcut.
 	r.plan.Revive.Blockers = []valise.UserError{{Code: "body_rebuild_unverified", Reason: "无法重建"}}
 	tt.Frame()
 	tt.Advance(time.Second)
-	hasAll(t, tt.Texts(), T("restore.allow_body_data_only"), T("restore.go_install_target"), T("restore.replan"))
+	hasAll(t, tt.Texts(), T("restore.allow_body_data_only"), T("restore.go_install_target"), T("restore.env.continue_data_only"))
 	click(t, tt, T("restore.go_install_target"))
 	if a.router.Path() != "/servers/cloud/agents" {
 		t.Fatalf("install shortcut went to %s", a.router.Path())

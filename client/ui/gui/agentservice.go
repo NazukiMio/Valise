@@ -115,6 +115,7 @@ func (a *App) readAgentService(server, instance string) {
 	if st == nil || st.read.busy {
 		return
 	}
+	st.started = true
 	ops := a.svcOps()
 	var info *service.InstanceServiceInfo
 	var acts *service.ActionList
@@ -195,31 +196,67 @@ func (a *App) serviceStatusSection(c *ui.Context, row *agentRow, st *agentServic
 	}
 	switch {
 	case info.HasUnit:
+		running := info.Active == "active" || info.Active == "activating"
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
 			needTag(c, T("need.valise"))
-			if info.Active != "active" {
+			if !running {
 				ui.PrimaryButton(c, T("agent.service.start")).Disabled(st.ctrlJ.busy).OnClick(func() {
 					a.runServiceControl(row, st, "start")
 				})
+			} else {
+				ui.Button(c, T("agent.service.start")).Disabled(true)
 			}
 			ui.Button(c, T("agent.service.restart")).Disabled(st.ctrlJ.busy).OnClick(func() {
 				a.runServiceControl(row, st, "restart")
 			})
-			if info.Active == "active" || info.Active == "activating" {
-				ui.Button(c, T("agent.service.stop")).Disabled(st.ctrlJ.busy).OnClick(func() {
-					a.runServiceControl(row, st, "stop")
-				})
-			}
-		})
-	case info.Unit != "" && len(info.InstallArgv) > 0 && !info.Stale:
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
-			needTag(c, T("need.admin"))
-			ui.PrimaryButton(c, T("agent.service.install")).OnClick(func() {
-				st.installAsk = true
-				st.installRun = nil
+			ui.Button(c, T("agent.service.stop")).Disabled(st.ctrlJ.busy || !running).OnClick(func() {
+				a.runServiceControl(row, st, "stop")
 			})
 		})
+	case info.Unit != "":
+		if info.LocalOverrideStale {
+			notice(c, "warn", T("agent.service.local_override_stale", "id", info.ProfileID, "local", info.EffectiveVersion, "official", info.OfficialVersion))
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+				ui.PrimaryButton(c, T("profiles.restore_official")).Disabled(st.ctrlJ.busy || st.read.busy).OnClick(func() {
+					a.restoreOfficialFromService(row, st, info.ProfileID)
+				})
+				ui.Button(c, T("agent.service.go_profiles")).OnClick(func() {
+					a.setTab = 3
+					a.navigate("/settings")
+				})
+			})
+		}
+		switch {
+		case len(info.InstallArgv) > 0 && !info.Stale:
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+				needTag(c, T("need.admin"))
+				ui.PrimaryButton(c, T("agent.service.install")).OnClick(func() {
+					st.installAsk = true
+					st.installRun = nil
+				})
+			})
+		case info.Stale, info.LocalOverrideStale:
+		default:
+			notice(c, "warn", T("agent.service.no_install_cmd", "unit", info.Unit))
+			ui.Row(c).Children(func() {
+				ui.Button(c, T("agent.service.go_manage")).OnClick(func() { a.agentTab = tabManage })
+			})
+		}
 	}
+}
+
+func (a *App) restoreOfficialFromService(row *agentRow, st *agentServiceState, profileID string) {
+	if st.ctrlJ.busy || profileID == "" {
+		return
+	}
+	a.start(&st.ctrlJ, time.Minute, func(context.Context) error {
+		return a.svc.RemoveLocalProfile(profileID)
+	}, func(err error) {
+		if err == nil {
+			a.reloadProfiles()
+			a.readAgentService(row.Server, row.Instance)
+		}
+	})
 }
 
 func serviceInfoStatus(info *service.InstanceServiceInfo) (string, string) {

@@ -180,6 +180,9 @@ func computeRecommendedStateDir(
 	occupied map[string]string,
 	canReplaceDefault bool,
 ) string {
+	if _, occupiedDefault := occupied[defaultDir]; req.Mode == revive.ModeMigrate && canReplaceDefault && sourceName == "" && !occupiedDefault {
+		return defaultDir
+	}
 	suffix := placementSuffix(req, sourceName)
 	pattern := namedPlacementPattern(prof, targetHome)
 	expand := func(s string) string {

@@ -1,9 +1,11 @@
 package service
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
+	"valise/client/profiles"
 	"valise/core/enroll"
 	"valise/core/profile"
 	"valise/core/revive"
@@ -170,14 +172,100 @@ func TestPlanServiceDataOnlyAndMissing(t *testing.T) {
 	prof := profile.Profile{ID: "x", Service: &profile.Service{Candidates: []profile.ServiceUnit{{Unit: "x.service"}}}}
 	rp := &RevivePlan{DataOnly: true}
 	plan := revive.Plan{}
-	planService(rp, &plan, revive.InspectResult{}, prof)
+	planService(rp, &plan, revive.InspectResult{}, prof, nil)
 	if plan.Unit != "" || plan.InstallService || len(rp.Blockers) != 0 || len(rp.Warnings) != 1 {
 		t.Fatalf("data only: %+v %+v", rp, plan)
 	}
 	rp, plan = &RevivePlan{}, revive.Plan{}
-	planService(rp, &plan, revive.InspectResult{}, prof)
+	planService(rp, &plan, revive.InspectResult{}, prof, nil)
 	if len(rp.Blockers) != 1 || rp.Blockers[0].Code != "service_missing" || !strings.Contains(rp.Blockers[0].Suggestion, "仅迁移数据与档案") || strings.Contains(rp.Blockers[0].Suggestion, "--data-only") {
 		t.Fatalf("missing: %+v", rp.Blockers)
+	}
+}
+
+func TestPlanReviveServicePlanning(t *testing.T) {
+	// (a) Stopped loaded unit (LoadState=loaded, Active=inactive): no service_missing,
+	// sets plan.Unit and plan.InstallService == false.
+	profLoaded := profile.Profile{
+		ID:      "x",
+		Service: &profile.Service{Candidates: []profile.ServiceUnit{{Scope: "user", Unit: "x.service"}}},
+	}
+	rp := &RevivePlan{}
+	plan := revive.Plan{Profile: profLoaded}
+	factsLoaded := revive.InspectResult{
+		Service: []enroll.ServiceState{{Scope: "user", Unit: "x.service", LoadState: "loaded", Active: "inactive"}},
+	}
+	planService(rp, &plan, factsLoaded, profLoaded, nil)
+	if len(rp.Blockers) != 0 || plan.Unit != "x.service" || plan.InstallService {
+		t.Fatalf("stopped loaded unit: blockers=%+v unit=%q install=%v", rp.Blockers, plan.Unit, plan.InstallService)
+	}
+
+	// (b) Unloaded unit with older snapshot profile lacking install_argv while client
+	// has newer effective profile declaring install_argv & bin_dirs for the same unit:
+	// inherits InstallArgv + BinDirs, sets plan.InstallService=true, no service_missing,
+	// does NOT force DataOnly, and does not mutate clientLP or original prof pointers.
+	oldSvc := &profile.Service{Candidates: []profile.ServiceUnit{{Scope: "user", Unit: "x.service"}}}
+	oldDetect := &profile.Detect{BinDirs: []string{"${HOME}/.old-bin"}}
+	oldProf := profile.Profile{ID: "x", ProfileVersion: 1, Detect: oldDetect, Service: oldSvc}
+	clientEffective := &profile.Profile{
+		ID:             "x",
+		ProfileVersion: 2,
+		Detect:         &profile.Detect{BinDirs: []string{"${HOME}/.local/bin", "${HOME}/.old-bin"}},
+		Service: &profile.Service{
+			Candidates:  []profile.ServiceUnit{{Scope: "user", Unit: "x.service"}},
+			InstallArgv: profile.Argv{"x-cli", "gateway", "install"},
+		},
+	}
+	clientLP := &profiles.Loaded{Effective: clientEffective}
+	rp = &RevivePlan{}
+	plan = revive.Plan{Profile: oldProf}
+	factsUnloaded := revive.InspectResult{
+		Service: []enroll.ServiceState{{Scope: "user", Unit: "x.service", LoadState: "not-found", Active: "inactive"}},
+	}
+	planService(rp, &plan, factsUnloaded, oldProf, clientLP)
+	if len(rp.Blockers) != 0 || !plan.InstallService || rp.DataOnly {
+		t.Fatalf("inherited install_argv: blockers=%+v install=%v dataOnly=%v", rp.Blockers, plan.InstallService, rp.DataOnly)
+	}
+	if !slices.Equal(rp.InstallArgv, []string{"x-cli", "gateway", "install"}) {
+		t.Fatalf("unexpected rp.InstallArgv: %v", rp.InstallArgv)
+	}
+	if plan.Profile.Service == nil || !slices.Equal([]string(plan.Profile.Service.InstallArgv), []string{"x-cli", "gateway", "install"}) {
+		t.Fatalf("unexpected plan.Profile.Service: %+v", plan.Profile.Service)
+	}
+	if plan.Profile.Detect == nil || !slices.Contains(plan.Profile.Detect.BinDirs, "${HOME}/.local/bin") {
+		t.Fatalf("expected merged bin_dirs on plan.Profile.Detect, got %+v", plan.Profile.Detect)
+	}
+	if !strings.Contains(strings.Join(rp.Warnings, "\n"), "x-cli gateway install") {
+		t.Fatalf("expected calm warning mentioning install command, got %v", rp.Warnings)
+	}
+	// Verify shared pointers were NOT mutated.
+	if len(oldSvc.InstallArgv) != 0 || len(oldDetect.BinDirs) != 1 {
+		t.Fatalf("original snapshot profile pointers mutated: svc=%+v detect=%+v", oldSvc, oldDetect)
+	}
+	plan.Profile.Service.InstallArgv[0] = "mutated"
+	if clientEffective.Service.InstallArgv[0] != "x-cli" {
+		t.Fatalf("clientLP.Effective mutated via shared slice: %+v", clientEffective.Service.InstallArgv)
+	}
+
+	// (c) Unloaded unit with NO install_argv anywhere and stale local override shadowing newer official pack.
+	rp = &RevivePlan{
+		ProfileOverrideStale:    true,
+		EffectiveProfileVersion: 1,
+		OfficialProfileVersion:  2,
+	}
+	plan = revive.Plan{Profile: oldProf}
+	staleLP := &profiles.Loaded{
+		Local:             true,
+		OverridesOfficial: true,
+		Effective:         &profile.Profile{ID: "x", ProfileVersion: 1, Service: oldSvc},
+		Official:          &profile.Profile{ID: "x", ProfileVersion: 2, Service: clientEffective.Service},
+	}
+	planService(rp, &plan, revive.InspectResult{}, oldProf, staleLP)
+	if len(rp.Blockers) != 1 || rp.Blockers[0].Code != "service_missing" {
+		t.Fatalf("expected service_missing blocker, got %+v", rp.Blockers)
+	}
+	if !strings.Contains(rp.Blockers[0].Suggestion, "官方资料") {
+		t.Fatalf("expected stale override hint in suggestion, got %q", rp.Blockers[0].Suggestion)
 	}
 }
 
