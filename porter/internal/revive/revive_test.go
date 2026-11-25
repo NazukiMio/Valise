@@ -738,3 +738,51 @@ esac
 		t.Fatalf("expected provenance fallback from default state dir %s, got %+v", w.state, facts.Provenance)
 	}
 }
+
+func TestInspectExtraToolsAndLocalRootClassifier(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	localBin := filepath.Join(w.home, ".local", "bin")
+	write(t, filepath.Join(localBin, "companion-cli"), "#!/bin/sh\nexit 0\n", 0o755)
+	write(t, filepath.Join(w.bin, "path-cli"), "#!/bin/sh\nexit 0\n", 0o755)
+
+	facts, err := Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{
+		Profile:    w.p,
+		InstanceID: "demo",
+		ExtraTools: []string{"companion-cli", "path-cli", "missing-companion-xyz", "../bad"},
+	})
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if !facts.Tools["companion-cli"] || !facts.Tools["path-cli"] {
+		t.Fatalf("expected companion-cli and path-cli to be found: %+v", facts.Tools)
+	}
+	if found, ok := facts.Tools["missing-companion-xyz"]; !ok || found {
+		t.Fatalf("expected missing-companion-xyz=false in Tools: %+v", facts.Tools)
+	}
+	if _, ok := facts.Tools["../bad"]; ok {
+		t.Fatalf("invalid tool name should have been ignored: %+v", facts.Tools)
+	}
+
+	// Verify classifierFor honors Plan.LocalRoots and falls back to Plan.Record.LocalRoots.
+	p1 := revive.Plan{
+		Profile: w.p,
+		LocalRoots: []enroll.LocalRoot{
+			{ID: "ext-kb", Path: "/home/u/kb", Category: profile.CategoryMemory},
+		},
+	}
+	if got := classifierFor(p1).Classify("ext-kb", "a.md").Category; got != profile.CategoryMemory {
+		t.Fatalf("classifierFor(Plan.LocalRoots) = %q, want memory", got)
+	}
+	p2 := revive.Plan{
+		Profile: w.p,
+		Record: &enroll.Record{
+			LocalRoots: []enroll.LocalRoot{
+				{ID: "ext-kb", Path: "/home/u/kb", Category: profile.CategoryWorkspace},
+			},
+		},
+	}
+	if got := classifierFor(p2).Classify("ext-kb", "a.md").Category; got != profile.CategoryWorkspace {
+		t.Fatalf("classifierFor(Plan.Record.LocalRoots fallback) = %q, want workspace", got)
+	}
+}

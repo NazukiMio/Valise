@@ -77,6 +77,19 @@ func Inspect(ctx context.Context, e *porterenroll.Env, s Store, p revive.Inspect
 		_, err := e.LookPath(t)
 		res.Tools[t] = err == nil
 	}
+	for _, extra := range p.ExtraTools {
+		name := strings.TrimSpace(extra)
+		if name == "" || enroll.ValidToolName(name) != nil {
+			continue
+		}
+		_, err := e.LookPath(name)
+		if err != nil && e.Home != "" {
+			if st, serr := os.Stat(filepath.Join(e.Home, ".local", "bin", name)); serr == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
+				err = nil
+			}
+		}
+		res.Tools[name] = err == nil
+	}
 	provRoots := roots
 	if len(provRoots) == 0 && res.StateDir != "" {
 		provRoots = []enroll.Root{{ID: profile.StateRoot, Path: res.StateDir}}
@@ -497,7 +510,7 @@ func integrity(path string) error {
 
 // classifierFor builds the classifier of a plan.
 func classifierFor(p revive.Plan) *profile.Classifier {
-	return profile.NewClassifier(&p.Profile, p.Overrides)
+	return profile.NewClassifier(&p.Profile, p.Overrides).WithDefaultRoots(defaultRootsFor(p))
 }
 
 // overlapping sorts the other enrolled, not yet superseded instances whose

@@ -35,6 +35,7 @@ type hooks struct {
 	inspectPlacement      func(context.Context, service.TargetPlacementRequest) (*service.TargetPlacement, error)
 	forgetInstanceFn      func(context.Context, string, string) (*enroll.InstanceForgetResult, error)
 	prepareRestoreFn      func(context.Context, service.RestoreRequest) (*service.PreparedRestore, error)
+	rewireMigratedMCP     func(context.Context, string, string) (*service.KitPlan, error)
 }
 
 // agentData is what was read about the agents, shared by every page.
@@ -83,7 +84,10 @@ type agentView struct {
 	agentKitHook     *agentKitOps
 	agentServices    map[string]*agentServiceState
 	agentServiceHook *agentServiceOps
+	agentDossiers    map[string]*agentDossierState
+	agentDossierHook *agentDossierOps
 	agentForget      *agentForgetState
+	lastAgentRoute   string
 }
 
 // journeyView is the timeline and the point open in it.
@@ -182,6 +186,7 @@ func (a *App) forgetServer(name string) {
 	deleteByPrefix(a.health, prefix)
 	deleteByPrefix(a.proposals, prefix)
 	deleteByPrefix(a.agentServices, prefix)
+	deleteByPrefix(a.agentDossiers, prefix)
 	for k := range a.entries {
 		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
 			a.closeEntry(k)
@@ -198,6 +203,7 @@ func (a *App) forgetInstance(host, instance string) {
 	delete(a.health, key)
 	delete(a.proposals, key)
 	delete(a.agentServices, key)
+	delete(a.agentDossiers, key)
 	a.closeEntry(key)
 	delete(a.scans, host)
 }

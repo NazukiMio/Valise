@@ -2,32 +2,30 @@ package gui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 
-	"valise/client/profiles"
-	"valise/core/kittools"
 	"valise/ui/service"
 )
 
 type profilesState struct {
-	started       bool
-	loading       bool
-	picking       bool
-	status        *service.ProfilesStatus
-	statusErr     error
-	fetchJ        job
-	installJ      job
-	pending       *service.PackFile
-	pendingLocal  *service.LocalProfileFile
-	doneNote      string
-	syncProfileID string
-	syncTargets   []service.ProfileSyncTarget
-	syncJ         job
-	syncOutcomes  []service.ProfileSyncOutcome
+	started             bool
+	loading             bool
+	picking             bool
+	status              *service.ProfilesStatus
+	statusErr           error
+	fetchJ              job
+	installJ            job
+	pending             *service.PackFile
+	clearStaleOnInstall bool
+	pendingLocal        *service.LocalProfileFile
+	doneNote            string
+	syncProfileID       string
+	syncTargets         []service.ProfileSyncTarget
+	syncJ               job
+	syncOutcomes        []service.ProfileSyncOutcome
 }
 
 func (a *App) ensureProfilesState() *profilesState {
@@ -218,6 +216,9 @@ func (a *App) profilesPreviewCard(c *ui.Context, ps *profilesState, pf *service.
 		}
 		if pf.SignatureErr == nil {
 			ui.Text(c, T("profiles.sig_ok")).TextColor(palette.Ok).Wrap()
+			if staleIDs := staleOverrideIDs(ps.status, pf); len(staleIDs) > 0 {
+				ui.Checkbox(c, &ps.clearStaleOnInstall, T("profiles.preview_clear_stale", "list", strings.Join(staleIDs, T("common.list_sep"))))
+			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				ui.Button(c, T("common.cancel")).Disabled(busy).OnClick(func() { ps.pending = nil })
 				ui.PrimaryButton(c, T("profiles.install_go")).Disabled(busy).OnClick(func() { a.installPendingPack(false) })
@@ -257,6 +258,7 @@ func (a *App) fetchPackOnline() {
 	}, func(err error) {
 		if err == nil {
 			ps.pending = pf
+			ps.clearStaleOnInstall = true
 		}
 	})
 }
@@ -281,6 +283,7 @@ func (a *App) pickPackLocal() {
 			}
 			if path != "" {
 				ps.pending = pf
+				ps.clearStaleOnInstall = true
 			}
 		})
 	})
@@ -293,6 +296,10 @@ func (a *App) installPendingPack(local bool) {
 		return
 	}
 	ps.doneNote = ""
+	var clearIDs []string
+	if !local && ps.clearStaleOnInstall {
+		clearIDs = staleOverrideIDs(ps.status, pf)
+	}
 	var note string
 	a.start(&ps.installJ, time.Minute, func(context.Context) error {
 		a.says(&ps.installJ)(T("profiles.installing"))
@@ -307,7 +314,23 @@ func (a *App) installPendingPack(local bool) {
 		if err := a.svc.InstallPack(pf); err != nil {
 			return err
 		}
-		note = T("profiles.install_done", "version", pf.Pack.Manifest.Version)
+		var cleared int
+		var failed []string
+		for _, id := range clearIDs {
+			if err := a.svc.RemoveLocalProfile(id); err != nil {
+				failed = append(failed, id)
+			} else {
+				cleared++
+			}
+		}
+		switch {
+		case len(failed) > 0:
+			note = T("profiles.install_done_clear_partial", "version", pf.Pack.Manifest.Version, "cleared", cleared, "failed", strings.Join(failed, T("common.list_sep")))
+		case cleared > 0:
+			note = T("profiles.install_done_cleared", "version", pf.Pack.Manifest.Version, "n", cleared)
+		default:
+			note = T("profiles.install_done", "version", pf.Pack.Manifest.Version)
+		}
 		return nil
 	}, func(err error) {
 		if err != nil {
@@ -317,38 +340,4 @@ func (a *App) installPendingPack(local bool) {
 		a.reloadProfiles()
 		a.readProfilesStatus()
 	})
-}
-
-func formatPackEntries(entries []profiles.ManifestEntry) string {
-	var parts []string
-	for _, p := range entries {
-		parts = append(parts, fmt.Sprintf("%s v%d", p.ID, p.ProfileVersion))
-	}
-	return strings.Join(parts, T("common.dot_sep"))
-}
-
-func formatPackClouds(kit *kittools.List) string {
-	if kit == nil {
-		return ""
-	}
-	var names []string
-	for _, t := range kit.Tools {
-		for _, cl := range t.Clouds {
-			names = append(names, cl.Name)
-		}
-	}
-	return strings.Join(names, T("common.dot_sep"))
-}
-
-func packCommands(p *profiles.Pack) []string {
-	if p == nil {
-		return nil
-	}
-	var out []string
-	for _, d := range p.Docs {
-		for _, cmd := range profiles.Commands(d.Profile) {
-			out = append(out, fmt.Sprintf("[%s] %s", d.Profile.ID, cmd))
-		}
-	}
-	return out
 }

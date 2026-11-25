@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 
 	"valise/core/enroll"
 	"valise/core/install"
+	"valise/core/profile"
 	"valise/core/rpc"
 	"valise/core/valise"
 	"valise/core/vault"
@@ -21,6 +23,7 @@ import (
 	porterenroll "valise/porter/internal/enroll"
 	porteridentity "valise/porter/internal/identity"
 	porterinstall "valise/porter/internal/install"
+	"valise/porter/internal/kit"
 	"valise/porter/internal/seal"
 	"valise/porter/internal/timer"
 )
@@ -202,6 +205,135 @@ var methods = map[string]handler{
 		}
 		ports, err := porterenroll.SetEntryPort(s.cfg.Home, p.InstanceID, p.Entry, p.Port)
 		return enroll.EntryPortSetResult{EntryPorts: ports}, err
+	},
+	enroll.MethodDossierUpdate: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p enroll.DossierUpdateParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		if err := enroll.ValidInstanceID(p.InstanceID); err != nil {
+			return nil, valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
+		}
+		rec, err := porterenroll.ReadRecord(s.cfg.Home, p.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		if rec == nil {
+			return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+p.InstanceID, "先运行 valise enroll <服务器> --accept")
+		}
+		prof, err := porterenroll.ReadProfile(s.cfg.Home, p.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		protectedRoots := map[string]bool{profile.StateRoot: true}
+		for _, rt := range prof.Roots {
+			protectedRoots[rt.ID] = true
+		}
+		if rec.Roots == nil {
+			rec.Roots = map[string]string{}
+		}
+		// Copy roots map so mutations stay isolated.
+		rootsCopy := make(map[string]string, len(rec.Roots))
+		for k, v := range rec.Roots {
+			rootsCopy[k] = v
+		}
+		rec.Roots = rootsCopy
+		for _, rawID := range p.RemoveRootIDs {
+			id := strings.TrimSpace(rawID)
+			if protectedRoots[id] {
+				return nil, valise.New("root_protected", "不能移除基础或 profile 声明的目录 "+id, "只能移除用户附加的目录")
+			}
+			idx := slices.IndexFunc(rec.LocalRoots, func(lr enroll.LocalRoot) bool { return lr.ID == id })
+			if idx < 0 {
+				return nil, valise.New("root_not_found", "实例档案中没有附加目录 "+id, "刷新档案后重试")
+			}
+			rec.LocalRoots = append(rec.LocalRoots[:idx], rec.LocalRoots[idx+1:]...)
+			delete(rec.Roots, id)
+		}
+		if len(p.RemoveRootIDs) > 0 && rec.LocalRoots == nil {
+			rec.LocalRoots = []enroll.LocalRoot{}
+		}
+		for _, lr := range p.AddRoots {
+			id := strings.TrimSpace(lr.ID)
+			cat := strings.TrimSpace(lr.Category)
+			reason := strings.TrimSpace(lr.Reason)
+			if err := enroll.ValidRootID(id); err != nil {
+				return nil, valise.New("root_invalid", err.Error(), "使用小写字母、数字和连字符组成的目录 id")
+			}
+			if protectedRoots[id] {
+				return nil, valise.New("root_exists", "目录 id 与 profile 声明冲突："+id, "更换其他附加目录 id")
+			}
+			if _, exists := rec.Roots[id]; exists {
+				return nil, valise.New("root_exists", "附加目录 id 已存在："+id, "更换其他附加目录 id")
+			}
+			if !kit.AllowedLocalRootCategory(cat) {
+				return nil, valise.New("category_invalid", "附加目录类别不支持："+cat, "请选择 identity、memory、workspace、state、skills、config 或 secrets")
+			}
+			cleanPath, err := kit.ValidateLocalRootDir(s.cfg.Home, lr.Path, rec.Roots)
+			if err != nil {
+				return nil, valise.New("root_path_invalid", err.Error(), "请选择真实存在的独立目录（不能是系统目录、家目录或与已有目录重叠）")
+			}
+			rec.LocalRoots = append(rec.LocalRoots, enroll.LocalRoot{
+				ID: id, Path: cleanPath, Category: cat, Reason: reason,
+			})
+			rec.Roots[id] = cleanPath
+			rec.ExternalRefs = slices.DeleteFunc(rec.ExternalRefs, func(e enroll.ExternalRef) bool {
+				return filepath.Clean(e.Path) == cleanPath
+			})
+			if rec.ExternalRefs == nil {
+				rec.ExternalRefs = []enroll.ExternalRef{}
+			}
+		}
+		for _, rawName := range p.RemoveToolNames {
+			name := strings.TrimSpace(rawName)
+			rec.ToolDeps = slices.DeleteFunc(rec.ToolDeps, func(td enroll.ToolDep) bool {
+				return td.Name == name
+			})
+		}
+		if len(p.RemoveToolNames) > 0 && rec.ToolDeps == nil {
+			rec.ToolDeps = []enroll.ToolDep{}
+		}
+		for _, td := range p.AddToolDeps {
+			name := strings.TrimSpace(td.Name)
+			if err := enroll.ValidToolName(name); err != nil {
+				return nil, valise.New("tool_name_invalid", err.Error(), "只填写可执行文件名（不含路径或空格）")
+			}
+			rec.ToolDeps = slices.DeleteFunc(rec.ToolDeps, func(x enroll.ToolDep) bool {
+				return x.Name == name
+			})
+			rec.ToolDeps = append(rec.ToolDeps, enroll.ToolDep{
+				Name:    name,
+				Purpose: strings.TrimSpace(td.Purpose),
+				Reason:  strings.TrimSpace(td.Reason),
+			})
+		}
+		if rec.LocalOverrides == nil {
+			rec.LocalOverrides = []profile.Override{}
+		}
+		writeRec := func() error {
+			_, err := porterenroll.WriteRecord(s.cfg.Home, *rec, *prof)
+			return err
+		}
+		if len(p.RemoveRootIDs) > 0 || len(p.AddRoots) > 0 {
+			if err := porteridentity.SyncBoundRoots(s.cfg.Home, p.InstanceID, rec.Roots, writeRec); err != nil {
+				return nil, err
+			}
+		} else if err := writeRec(); err != nil {
+			return nil, err
+		}
+		updated, err := porterenroll.ReadRecord(s.cfg.Home, p.InstanceID)
+		if err != nil || updated == nil {
+			return enroll.DossierUpdateResult{Record: *rec}, err
+		}
+		seal.Paths{Home: s.cfg.Home}.AppendAudit(seal.AuditEntry{
+			Time:      time.Now().UTC(),
+			Op:        enroll.MethodDossierUpdate,
+			Instance:  p.InstanceID,
+			Initiator: vaultrpc.InitiatorClient,
+			Result:    "ok",
+			Tier:      string(rpc.TierOwner),
+		})
+		return enroll.DossierUpdateResult{Record: *updated}, nil
 	},
 }
 

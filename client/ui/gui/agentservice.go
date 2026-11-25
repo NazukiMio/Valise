@@ -26,15 +26,16 @@ type agentServiceOps struct {
 }
 
 type agentServiceState struct {
-	started    bool
-	read       job
-	info       *service.InstanceServiceInfo
-	actions    *service.ActionList
-	err        error
-	ctrlJ      job
-	installAsk bool
-	installRun *serviceTermRun
-	actionAsk  *actionModalState
+	started        bool
+	profileVersion int
+	read           job
+	info           *service.InstanceServiceInfo
+	actions        *service.ActionList
+	err            error
+	ctrlJ          job
+	installAsk     bool
+	installRun     *serviceTermRun
+	actionAsk      *actionModalState
 }
 
 type serviceTermRun struct {
@@ -132,6 +133,7 @@ func (a *App) readAgentService(server, instance string) {
 		st.err = err
 		if info != nil {
 			st.info = info
+			a.syncServiceInfoToAgents(server, instance, info)
 		}
 		if actErr == nil && acts != nil {
 			st.actions = acts
@@ -288,6 +290,7 @@ func (a *App) runServiceControl(row *agentRow, st *agentServiceState, action str
 	}, func(err error) {
 		if err == nil && updated != nil {
 			st.info = updated
+			a.syncServiceInfoToAgents(host, inst, updated)
 			if a.agentServiceHook == nil {
 				a.refreshAgents()
 			}
@@ -362,6 +365,7 @@ func (a *App) startServiceInstall(row *agentRow, st *agentServiceState) {
 			tr.running, tr.code, tr.hasCode, tr.err = false, code, true, err
 			if updated != nil {
 				st.info = updated
+				a.syncServiceInfoToAgents(host, inst, updated)
 			}
 			if a.agentServiceHook == nil {
 				a.refreshAgents()

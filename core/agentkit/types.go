@@ -99,6 +99,7 @@ const (
 	ProposalKindClassify    = "classify"
 	ProposalKindSQLite      = "sqlite"
 	ProposalKindExternalRef = "external_ref"
+	ProposalKindToolDep     = "tool_dep"
 
 	ExternalRefDir     = "external_dir"
 	ExternalRefSymlink = "symlink_target"
@@ -106,17 +107,28 @@ const (
 
 // ExternalRefSpec identifies an out-of-root directory or symlink target.
 type ExternalRefSpec struct {
-	Path    string `json:"path"`
-	RefKind string `json:"ref_kind"` // external_dir | symlink_target
+	Path              string `json:"path"`
+	RefKind           string `json:"ref_kind"` // external_dir | symlink_target
+	SuggestedCategory string `json:"suggested_category,omitempty"`
+	EstimatedFiles    int    `json:"estimated_files,omitempty"`
+	EstimatedBytes    int64  `json:"estimated_bytes,omitempty"`
+}
+
+// ToolDepSpec identifies a companion CLI executable checked read-only during
+// migration.
+type ToolDepSpec struct {
+	Name    string `json:"name"`
+	Purpose string `json:"purpose,omitempty"`
 }
 
 // Proposal is an agent's dossier proposal awaiting user confirmation.
 type Proposal struct {
 	ID          string             `json:"id"`
-	Kind        string             `json:"kind,omitempty"` // "" or "classify" | "sqlite" | "external_ref"
+	Kind        string             `json:"kind,omitempty"` // "" or "classify" | "sqlite" | "external_ref" | "tool_dep"
 	Rule        profile.Override   `json:"rule,omitempty"`
 	SQLite      *profile.SQLiteRef `json:"sqlite,omitempty"`
 	ExternalRef *ExternalRefSpec   `json:"external_ref,omitempty"`
+	ToolDep     *ToolDepSpec       `json:"tool_dep,omitempty"`
 	Reason      string             `json:"reason"`
 	Demotion    bool               `json:"demotion"` // moves files out of the soul tier
 	// Unclassified counts files now unclassified (sealed with the secrets
@@ -143,13 +155,22 @@ type ProposalsResult struct {
 	Proposals []Proposal `json:"proposals"`
 }
 
+// ExternalRootPromotion promotes an external_ref proposal into a backed-up
+// local_root on the instance dossier.
+type ExternalRootPromotion struct {
+	ProposalID string `json:"proposal_id"`
+	RootID     string `json:"root_id,omitempty"`
+	Category   string `json:"category"`
+}
+
 // DecideParams accepts or rejects proposals. Demotions are accepted only
 // when listed in AcceptDemotions (confirmed separately by the user).
 type DecideParams struct {
-	InstanceID      string   `json:"instance_id"`
-	Accept          []string `json:"accept,omitempty"`
-	AcceptDemotions []string `json:"accept_demotions,omitempty"`
-	Reject          []string `json:"reject,omitempty"`
+	InstanceID           string                  `json:"instance_id"`
+	Accept               []string                `json:"accept,omitempty"`
+	AcceptDemotions      []string                `json:"accept_demotions,omitempty"`
+	Reject               []string                `json:"reject,omitempty"`
+	PromoteExternalRoots []ExternalRootPromotion `json:"promote_external_roots,omitempty"`
 }
 
 // DecideResult reports what changed.

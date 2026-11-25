@@ -477,3 +477,66 @@ func TestLegacyVaultReadable(t *testing.T) {
 		t.Fatal("new seals must go to the tree")
 	}
 }
+
+func TestSealCarriesLocalRootsToolDepsAndDisplayName(t *testing.T) {
+	w := newWorld(t)
+	extraDir := filepath.Join(w.p.Home, "kb")
+	write(t, filepath.Join(extraDir, "doc.md"), "knowledge doc")
+	write(t, filepath.Join(extraDir, "token.env"), "SECRET=1")
+
+	rec, err := porterenroll.ReadRecord(w.p.Home, "demo")
+	if err != nil || rec == nil {
+		t.Fatalf("ReadRecord: %+v %v", rec, err)
+	}
+	prof, err := porterenroll.ReadProfile(w.p.Home, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.DisplayName = "Traveler One"
+	rec.Roots["ext-kb"] = extraDir
+	rec.LocalRoots = []enroll.LocalRoot{
+		{ID: "ext-kb", Path: extraDir, Category: profile.CategoryMemory, Reason: "personal knowledge"},
+	}
+	rec.LocalOverrides = append(rec.LocalOverrides, profile.Override{
+		Root: "ext-kb", Glob: "token.env", Category: profile.CategorySecrets,
+	})
+	rec.ToolDeps = []enroll.ToolDep{
+		{Name: "ffmpeg", Purpose: "audio transcoding", Reason: "voice skill"},
+	}
+	if _, err := porterenroll.WriteRecord(w.p.Home, *rec, *prof); err != nil {
+		t.Fatal(err)
+	}
+
+	// Soul tier should include ext-kb:doc.md (memory) and exclude ext-kb:token.env (secrets override wins).
+	soul := w.seal(t, vault.TierSoul)
+	got := w.restore(t, soul.SnapshotID)
+	if string(got["ext-kb:doc.md"]) != "knowledge doc" {
+		t.Fatalf("soul seal missing local_root file: %+v", got)
+	}
+	if _, hasSecret := got["ext-kb:token.env"]; hasSecret {
+		t.Fatal("secrets override inside local_root leaked into soul tier")
+	}
+
+	// Verify Snapshot header persists DisplayName, LocalRoots, ToolDeps.
+	st, err := Status(w.p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := w.p.LeafDir(st.LeafOf(soul.SnapshotID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := vault.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, _, err := v.Snapshot(soul.SnapshotID, w.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.DisplayName != "Traveler One" ||
+		len(snap.LocalRoots) != 1 || snap.LocalRoots[0].ID != "ext-kb" ||
+		len(snap.ToolDeps) != 1 || snap.ToolDeps[0].Name != "ffmpeg" {
+		t.Fatalf("snapshot missing dossier closure metadata: %+v", snap)
+	}
+}

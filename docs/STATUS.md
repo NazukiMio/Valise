@@ -1,10 +1,16 @@
 # 当前状态与交接
 
-> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-24。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
+> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-25。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-24）
+## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-25）
 
-- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试（`/Users/nazukimio/Downloads/Valise_Test/report.md`）后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成 **WP0–WP6**、**Round 2 实机反馈（`stage-test-20261123-beta1-fixes/TESTRESULT.md` #1–#15）** 以及 **Round 3 实机反馈修复 + `auditor-b3`（`AUDIT_PASS`）**，并通过全量 `-race` 测试与 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`），同步打好真机验收测试包 `stage-test-20261124-beta1-r3`。
+- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试（`/Users/nazukimio/Downloads/Valise_Test/report.md`）后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成 **WP0–WP6**、**Round 2 实机反馈（`stage-test-20261123-beta1-fixes/TESTRESULT.md` #1–#15）**、**Round 3 实机反馈修复 + `auditor-b3`（`AUDIT_PASS`）** 以及 **Round 4 实机反馈修复（`stage-test-20261124-beta1-r3/REPORT.md` #1–#5 + `auditor-b4` `AUDIT_PASS`）**，并通过全量 `-race` 测试与 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`），同步打好真机验收测试包 `stage-test-20261125-beta1-r4`。
+- **Round 4 实机反馈修复（`stage-test-20261124-beta1-r3/REPORT.md` #1–#5 + `auditor-b4` `AUDIT_PASS`）**：
+  1. **恢复/迁移表单清理（#1）**：`restore.origin` 移至页面顶部上下文条并从「放到哪里」表单卡片移除，单备份源改只读展示。
+  2. **资料包预览自动清旧覆盖 & 迁移接入继承（#2）**：正式资料包预览支持默认勾选自动清理本地旧版覆盖；未装底座空壳页增加无需手动接入/启网关安抚提示；`planRecord` 与 `RunRestore` 自动继承 `DisplayName` 与完整 Dossier（`LocalOverrides`、`LocalSQLite`、`ExternalRefs`、`LocalRoots`、`ToolDeps`），迁移计划默认勾选「沿用原机保护计划」（仅按目标存在复制目标最佳实践写入），迁移结果页探测新机 `$HOME`/MCP 并提供一键重接。
+  3. **Agent 服务状态双向实时同步（#3）**：每次进入 `/agents/<server>/<instance>` 单次刷新实时服务状态，并在 `agentServices` 与 `agents.value.Items` 之间双向同步。
+  4. **迁移结果页收敛与明确导流（#4）**：终态（`succeeded`/`failed`/`cancelled`）隐藏误导性「查看原操作结果」按钮（仅 `reconciling`/`needs_recovery`/未知保留），查询时清空旧进度并展示「前往新机 Agent」与「迁移后收尾检查」卡片。
+  5. **Dossier 闭环扩展（#5）**：`valise-dossier/1` 扩展支持用户确认「附加备份目录（`local_roots`）」与「伴生工具清单（`tool_deps`）」，新增 `dossier_update`（`TierOwner`，`dossier-roots/1`）并联动 `identity.SyncBoundRoots`；`seal` 与 `revive` 打包及 `${HOME}` 跨机重映射 `local_roots`，只读探测目标机缺失 CLI 工具输出环境差距清单，升级 `valise-onboard`（25 行）。
 - **Round 3 实机反馈修复（`feat/beta1-feedback-fixes` + `auditor-b3` `AUDIT_PASS`）**：
   1. **服务控制与旧资料包恢复**：`agentservice.go` 有服务单元时常驻渲染「启动网关 / 重启网关 / 停止网关」三按钮并按状态启用/禁用；未安装服务单元时不再空白，区分「一键安装」「先更新实例资料」「本地旧覆盖告警与直达/一键恢复」「无安装命令跳转管理页」；「设置 › 资料包」新增横幅与一键「全部恢复为官方版」；`porter` 补齐 non-login SSH `XDG_RUNTIME_DIR` 回退、`installService` 使用 `profile.Detect.BinDirs` + `systemctl --user daemon-reload`。
   2. **迁移/分身来源与目标表单**：`restoresetup.go` 移除可编辑「源服务器」下拉菜单改为只读展示，`restore.go` 规范化 `origin` 解析；迁移严格排除当前源服务器，单目标自动选中、无其他服务器明确提示并禁用下一步；干净目标机不重复显示覆盖默认目录单选框。
@@ -56,7 +62,7 @@
 
 ### 必须保留的环境与基线事实
 
-- **当前待验收测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261124-beta1-r3/Valise Test.app`（`0.1.0-beta.2-dev+stage-test-20261124-r3`，Beta 公钥 `RWTZ1EJhJqLr+89l9EhFambSn5K8QWguYmn9x2mGlC5aQfJzcMyWA15L`，资料包 `2026.11.24.1` 含 `dsh v5` / `hermes v14` / `openclaw v24`，构建自 `feat/beta1-feedback-fixes`，含 `darwin/arm64` 客户端、`valise` CLI 与 `valise-porter_linux_{arm64,amd64}`；具体提交见包内 `BUILD.json`）。打包验收门禁中执行 `profiles install` / `profiles status` / `cloud list` 必须使用 `--config-dir "$TMP"` 隔离配置目录。历史包 `stage-test-20261123-beta1-r2`、`stage-test-20261123-beta1-fixes`、`stage-test-20261121-v01r6`、`stage-test-20261120-v01r5`、`v01r4`、`v01r3`、`v01r2`、`b3.2` 等均保留未动。
+- **当前待验收测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261125-beta1-r4/Valise Test.app`（`0.1.0-beta.2-dev+stage-test-20261125-r4`，Beta 公钥 `RWTZ1EJhJqLr+89l9EhFambSn5K8QWguYmn9x2mGlC5aQfJzcMyWA15L`，资料包 `2026.11.25.1` 含 `dsh v5` / `hermes v14` / `openclaw v24`，构建自 `feat/beta1-feedback-fixes`，含 `darwin/arm64` 客户端、`valise` CLI 与 `valise-porter_linux_{arm64,amd64}`；具体提交见包内 `BUILD.json`）。打包验收门禁中执行 `profiles install` / `profiles status` / `cloud list` 必须使用 `--config-dir "$TMP"` 隔离配置目录。历史包 `stage-test-20261124-beta1-r3`、`stage-test-20261123-beta1-r2`、`stage-test-20261123-beta1-fixes`、`stage-test-20261121-v01r6`、`stage-test-20261120-v01r5`、`v01r4`、`v01r3`、`v01r2`、`b3.2` 等均保留未动。
 - **默认资料包与演练公钥**：当前开发资料包位于 `~/.cache/valise-drill/devpack`（`2026.11.21`：`dsh v5`、`hermes v12`、`openclaw v24`，`kit-tools.yaml` 含 `webdav`/`s3`，公钥 `RWQCRlUzO1yCpR4+m1KbYsJO7OIYDC2OpeB3j+JTZ2cPj37DcSZuoCF1`）；演练配置 `~/.cache/valise-drill/drillpack` 独立保留，不得混用或覆盖。
 - **构建与检查环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；构建发布/测试包时 `-ldflags` 必须同时注入 `main.version` 与 `valise/client/porter.ReleasePublicKey`；禁止执行 `rm -f`（清空用 `: > file`，测试用 `t.TempDir()`）；未经用户明确要求不执行 `git push`。
 

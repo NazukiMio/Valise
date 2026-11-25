@@ -70,8 +70,9 @@ func TestHealthProposalsCardAndDemotionModal(t *testing.T) {
 			var rej []string
 			var keep []agentkit.Proposal
 			for _, p := range items {
+				promoted := slices.ContainsFunc(d.PromoteExternalRoots, func(pr agentkit.ExternalRootPromotion) bool { return pr.ProposalID == p.ID })
 				switch {
-				case slices.Contains(d.Accept, p.ID) || slices.Contains(d.AcceptDemotions, p.ID):
+				case promoted || slices.Contains(d.Accept, p.ID) || slices.Contains(d.AcceptDemotions, p.ID):
 					acc = append(acc, p)
 				case slices.Contains(d.Reject, p.ID):
 					rej = append(rej, p.ID)
@@ -131,19 +132,43 @@ func TestHealthProposalsCardAndDemotionModal(t *testing.T) {
 		t.Fatalf("reject external_ref decide = %+v", decided)
 	}
 
-	// Bulk accept sends only non-demotion IDs when multiple normal items remain.
+	// Bulk accept sends only non-demotion, non-external_ref IDs (including tool_dep).
 	items = []agentkit.Proposal{
 		{ID: "n1", Kind: agentkit.ProposalKindClassify, Rule: profile.Override{Root: "state", Glob: "a/*", Category: "memory"}, Created: now},
-		{ID: "n2", Kind: agentkit.ProposalKindExternalRef, ExternalRef: &agentkit.ExternalRefSpec{Path: "/opt/ext", RefKind: agentkit.ExternalRefDir}, Created: now},
+		{ID: "t1", Kind: agentkit.ProposalKindToolDep, ToolDep: &agentkit.ToolDepSpec{Name: "jq", Purpose: "parse json"}, Reason: "used by scripts", Created: now},
+		{ID: "e1", Kind: agentkit.ProposalKindExternalRef, ExternalRef: &agentkit.ExternalRefSpec{Path: "/opt/ext", RefKind: agentkit.ExternalRefDir, SuggestedCategory: "memory", EstimatedFiles: 12, EstimatedBytes: 4096}, Created: now},
 		{ID: "d1", Kind: agentkit.ProposalKindClassify, Rule: profile.Override{Root: "state", Glob: "c/*", Category: "ignore"}, Demotion: true, Created: now},
 	}
 	click(t, tt, T("health.recheck"))
+	hasAll(t, tt.Texts(),
+		T("prop.tool_tag"), "jq", "parse json", T("prop.tool_accept"),
+		T("prop.ext_estimate", "files", 12, "size", size(4096)),
+		T("prop.ext_promote"), T("prop.ext_accept"),
+	)
 	click(t, tt, T("prop.accept_all_normal"))
 	last := decided[len(decided)-1]
-	if !slices.Equal(last.Accept, []string{"n1", "n2"}) || len(last.AcceptDemotions) != 0 || len(last.Reject) != 0 {
+	if !slices.Equal(last.Accept, []string{"n1", "t1"}) || len(last.AcceptDemotions) != 0 || len(last.Reject) != 0 || len(last.PromoteExternalRoots) != 0 {
 		t.Fatalf("bulk accept normal = %+v", last)
 	}
-	if !tt.HasText("state:c/* -> ignore") {
-		t.Fatalf("demotion should stay pending after bulk normal accept: %q", tt.Texts())
+	if !tt.HasText("/opt/ext") || !tt.HasText("state:c/* -> ignore") {
+		t.Fatalf("external_ref and demotion should stay pending after bulk accept: %q", tt.Texts())
+	}
+
+	// Promoting external_ref sends PromoteExternalRoots with suggested category ("memory").
+	click(t, tt, T("prop.ext_promote"))
+	last = decided[len(decided)-1]
+	if len(last.PromoteExternalRoots) != 1 || last.PromoteExternalRoots[0].ProposalID != "e1" || last.PromoteExternalRoots[0].Category != "memory" || len(last.Accept) != 0 {
+		t.Fatalf("promote external_ref = %+v", last)
+	}
+
+	// Warn-only accept on external_ref still sends Accept (not PromoteExternalRoots).
+	items = []agentkit.Proposal{
+		{ID: "e2", Kind: agentkit.ProposalKindExternalRef, ExternalRef: &agentkit.ExternalRefSpec{Path: "/opt/warn-only", RefKind: agentkit.ExternalRefDir}, Created: now},
+	}
+	click(t, tt, T("health.recheck"))
+	click(t, tt, T("prop.ext_accept"))
+	last = decided[len(decided)-1]
+	if !slices.Equal(last.Accept, []string{"e2"}) || len(last.PromoteExternalRoots) != 0 {
+		t.Fatalf("warn-only external_ref accept = %+v", last)
 	}
 }

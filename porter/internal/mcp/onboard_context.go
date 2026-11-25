@@ -37,7 +37,9 @@ type onboardEffectiveRules struct {
 	ProfileSQLite    []profile.SQLiteRef  `json:"profile_sqlite,omitempty"`
 	LocalOverrides   []profile.Override   `json:"local_overrides"`
 	LocalSQLite      []profile.SQLiteRef  `json:"local_sqlite,omitempty"`
+	LocalRoots       []enroll.LocalRoot   `json:"local_roots,omitempty"`
 	ExternalRefs     []enroll.ExternalRef `json:"external_refs,omitempty"`
+	ToolDeps         []enroll.ToolDep     `json:"tool_deps,omitempty"`
 }
 
 type dirStat struct {
@@ -130,7 +132,9 @@ func (t *Tools) onboardContext(ctx context.Context) (any, error) {
 			ProfileSQLite:    profSQLite,
 			LocalOverrides:   ov,
 			LocalSQLite:      slices.Clone(rec.LocalSQLite),
+			LocalRoots:       slices.Clone(rec.LocalRoots),
 			ExternalRefs:     slices.Clone(rec.ExternalRefs),
+			ToolDeps:         slices.Clone(rec.ToolDeps),
 		},
 		LayoutFacts:      facts,
 		PendingProposals: ps,
@@ -149,7 +153,13 @@ func (t *Tools) collectLayoutFacts(ctx context.Context, rec *enroll.Record, prof
 	}
 	sortRoots(roots)
 
-	cls := profile.NewClassifier(prof, rec.LocalOverrides).WithSQLite(rec.LocalSQLite)
+	defaultRoots := make(map[string]string, len(rec.LocalRoots))
+	for _, lr := range rec.LocalRoots {
+		if lr.ID != "" && lr.Category != "" {
+			defaultRoots[lr.ID] = lr.Category
+		}
+	}
+	cls := profile.NewClassifier(prof, rec.LocalOverrides).WithSQLite(rec.LocalSQLite).WithDefaultRoots(defaultRoots)
 	var skip []string
 	if t.Env != nil {
 		if env := t.Env(ctx); env != nil {

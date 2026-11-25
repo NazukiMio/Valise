@@ -39,28 +39,28 @@ agent-kit 是可选的档案报备与操作前备份辅助，**不是灾难恢�
 | :--- | :--- | :--- | :--- |
 | `valise_status` | 无（`{}`） | 纯只读快查，**不做全盘扫描，不触发备份**：返回 `instance`、`protection_plan`（含是否已采用 `adopted`、定时、档位、周期、保留与复制目标）、精简 `last_seal`（`snapshot_id`、`created_at`、`tier`、`kind`）、由代码写成的一句话 `protection_summary`（agent 原样转述）、`pending_proposals`（计数）及必要 `notes`（`< 150 tokens`） | 毫秒级纯只读；写入不含路径与正文的轻量 `agent-mcp` 审计时间戳 |
 | `valise_seal` | `{ "reason"?: string }` | 写入一条滚动周期备份（`kind: auto` 存入当前日期周期，参与周期保留策略，用户可在客户端按需晋升为永久存档点）。**已确认保护计划的实例按计划档位（默认 `full`）封存**；未采用保护计划的旧实例保守沿用 `soul` 档并在结果中附带 `plan_warning`。`reason` 可选（缺省记 `"agent mcp backup"`）写入审计记录 | 最短间隔 10 分钟；命中 `rate_limited` 时报错同时返回 `last_seal_id` 与 `last_seal_at` 供同一修改复用，不循环重试 |
-| `valise_onboard_context` | 无（`{}`） | 纯只读收集档案上下文：**不触发任何备份**。返回 5 块信息 + `protection_summary` 与精简 `last_seal`：<br>1. `instance`（`instance_id`、`profile_id`、`profile_version`、`roots`）；<br>2. `protection_plan`；<br>3. `effective_rules`（Profile `paths` / `profile_body_paths` / `profile_sqlite` + Dossier `local_overrides` / `local_sqlite` / `external_refs`）；<br>4. `layout_facts`（5 项：`unclassified_dirs`、`largest_dirs`〔仅统计会进入 `full` 常规备份的大目录，跳过 `body`/`cache`/`ignore`〕、`external_symlinks`、`churn_files`、**`untracked_sqlite`**）；<br>5. `pending_proposals`（当前待审批队列，便于去重） | 只返回路径聚合、字节计数与前 16 字节 SQLite 魔数识别线索（`untracked_sqlite`），**绝不读取任何表数据或文件内容**；写入轻量 `agent-mcp` 审计时间戳 |
-| `valise_propose_dossier` | `{ "items": [ ... ] }` | 统一校验并入队三类结构化提案：<br>• `classify`：`{ kind, root, glob (或 path), category, reason }`（`category` 仅限 `identity \| memory \| workspace \| state \| skills \| config \| secrets \| cache \| ignore`；硬拒绝用非 `secrets` 覆盖 Profile `secrets`；改入 `cache`/`ignore` 标为降级并要求写明可重建理由）；<br>• `sqlite`：`{ kind, root, glob, secret_tables?, reason }`（硬拒绝削弱 Profile `secret_tables`）；<br>• `external_ref`：`{ kind, path, ref_kind: "external_dir" \| "symlink_target", reason }`（校验绝对路径且位于所有 `roots` 之外） | 单批调用上限 ≤ 50 条（技能约束最多挑选 10 条高价值项）；禁止直写 Dossier，全部需人类在桌面「健康 › 归档建议」或 CLI `valise proposals` 确认后才生效 |
+| `valise_onboard_context` | 无（`{}`） | 纯只读收集档案上下文：**不触发任何备份**。返回 5 块信息 + `protection_summary` 与精简 `last_seal`：<br>1. `instance`（`instance_id`、`profile_id`、`profile_version`、`roots`）；<br>2. `protection_plan`；<br>3. `effective_rules`（Profile `paths` / `profile_body_paths` / `profile_sqlite` + Dossier `local_overrides` / `local_sqlite` / `local_roots` / `external_refs` / `tool_deps`）；<br>4. `layout_facts`（5 项：`unclassified_dirs`、`largest_dirs`〔仅统计会进入 `full` 常规备份的大目录，跳过 `body`/`cache`/`ignore`〕、`external_symlinks`、`churn_files`、**`untracked_sqlite`**）；<br>5. `pending_proposals`（当前待审批队列，便于去重） | 只返回路径聚合、字节计数与前 16 字节 SQLite 魔数识别线索（`untracked_sqlite`），**绝不读取任何表数据或文件内容**；写入轻量 `agent-mcp` 审计时间戳 |
+| `valise_propose_dossier` | `{ "items": [ ... ] }` | 统一校验并入队四类结构化提案：<br>• `classify`：`{ kind, root, glob (或 path), category, reason }`（`category` 仅限 `identity \| memory \| workspace \| state \| skills \| config \| secrets \| cache \| ignore`；硬拒绝用非 `secrets` 覆盖 Profile `secrets`；改入 `cache`/`ignore` 标为降级并要求写明可重建理由）；<br>• `sqlite`：`{ kind, root, glob, secret_tables?, reason }`（硬拒绝削弱 Profile `secret_tables`）；<br>• `external_ref`：`{ kind, path, ref_kind: "external_dir" \| "symlink_target", suggested_category?, reason }`（校验绝对路径、非系统/根/家目录且不与任何既有 `roots` 重叠；入队时附带受限目录体积估算 `estimated_files` / `estimated_bytes`）；<br>• `tool_dep`：`{ kind, name, purpose?, reason }`（校验合法命令名；供迁移前只读检查目标机环境缺口，Valise 不自动安装也不背书任意第三方 CLI 工具） | 单批调用上限 ≤ 50 条（技能约束最多挑选 12 条高价值项）；禁止直写 Dossier，全部需人类在桌面「健康 › 归档建议」或 CLI `valise proposals` 确认后才生效 |
 
 ### 3.1 由 agent 补充档案边界（Dossier Proposals）
 
 1. **代码提供线索**：`valise_onboard_context` 在不触碰文件内容的前提下提供 `unclassified_dirs`、`largest_dirs`（跳过已排除的 `body`/`cache`/`ignore`，仅统计会进入 `full` 常规备份的 `state` / `workspace` 大目录与插件垃圾）、`external_symlinks`、`churn_files` 与 `untracked_sqlite`（只检查前 16 字节 `"SQLite format 3\x00"`，排除已纳管库及 `body`/`cache`/`ignore`）。
-2. **agent 筛选高价值提案**：`valise-onboard` 对照 `effective_rules` 和 `pending_proposals` 去重，单次只提最多 10 条高价值项：对关键的未分类人格/规则/核心配置/记忆小文件（如 `persona.md`）应主动提议归入 `identity`/`memory`/`config`（虽在 `full` 档会被兜底，但轻量 `soul` 备份与创建分身会丢弃 `unclassified`），同时不对零散运行期噪声刷屏。
-3. **用户拍板**：所有提案经由桌面「健康 › 归档建议」或 `valise proposals` 审批后，才分别写入实例档案的 `local_overrides`、`local_sqlite` 或 `external_refs`（`external_ref` 在 v0.1 只登记为已知覆盖缺口或忽略，不自动扩封）。
+2. **agent 筛选高价值提案**：`valise-onboard` 对照 `effective_rules` 和 `pending_proposals` 去重，单次只提最多 12 条高价值项：对关键的未分类人格/规则/核心配置/记忆小文件（如 `persona.md`）应主动提议归入 `identity`/`memory`/`config`（虽在 `full` 档会被兜底，但轻量 `soul` 备份与创建分身会丢弃 `unclassified`），并对 `roots` 外的个人资产/配置目录提交 `external_ref`（可带 `suggested_category`）、对依赖的伴生命令行工具提交 `tool_dep`，同时不对零散运行期噪声刷屏。
+3. **用户拍板**：所有提案经由桌面「健康 › 归档建议」或 `valise proposals` 审批后，才分别写入实例档案的 `local_overrides`、`local_sqlite`、`external_refs`、`local_roots` 或 `tool_deps`；对于 `external_ref`，用户可二选一决定“仅登记提醒”或“纳入备份（附加目录）”（详见 8.2 节）。
 4. **兜底与回流**：`raw` 档不受分类或降级规则影响。对同类 Harness 普遍成立的新模式仍通过 PR 进入官方 profile，不收集遥测。
 
 ## 4. 两个极简技能
 
 每个技能只保留一个紧凑的 `SKILL.md`（正文英文、用用户语言回复；触发词兼容中英文）。两者均支持延迟工具发现（如 `tool_search` 先查带前缀的真实工具 ID），且明确要求找不到当前 v0.1 工具时立即停止并提示用户升级服务器 `valise-porter` 与重启网关、禁止回退调用旧工具。旧四件套（`valise-enroll`、`valise-upkeep`、`valise-handoff`、`valise-checkup`）已从发版套件移除。
 
-### 4.1 `valise-onboard`（低频档案报备，≤ 28 行）
+### 4.1 `valise-onboard`（低频档案报备，≤ 34 行）
 
 触发：刚安装完技能、新装插件或新增自定义记忆/数据目录、或用户要求检查备份覆盖与体积膨胀。**严格只报备，绝不触发备份**，且绝不执行 shell、读写磁盘文件或改写 `AGENTS.md` 等常驻指令，不在 `reason` 与回复中泄漏任何凭据或正文片段，失败不循环重试：
 
 1. 调用 `valise_onboard_context`（仅此 1 次）。
-2. 与 `effective_rules` / `pending_proposals` 去重，仅依据 `layout_facts` 和已知布局挑选至多 **10 条**高价值提案（大体积 ≥5 MiB 或明显可重建的插件缓存/依赖/日志降级 `cache`/`ignore`；未纳管 SQLite 提交 `sqlite`；新凭据、未分类的关键人格/规则/核心配置/记忆小文件〔如 `persona.md` 归入 `identity`，确保 `soul` 档备份与分身不丢失〕或成块核心业务/记忆目录提交 `classify`；`roots` 外重要目录或外部软链提交 `external_ref`）。
+2. 与 `effective_rules` / `pending_proposals` 去重，仅依据 `layout_facts` 和已知布局挑选至多 **12 条**高价值提案（大体积 ≥5 MiB 或明显可重建的插件缓存/依赖/日志降级 `cache`/`ignore`；未纳管 SQLite 提交 `sqlite`；新凭据、未分类的关键人格/规则/核心配置/记忆小文件〔如 `persona.md` 归入 `identity`，确保 `soul` 档备份与分身不丢失〕或成块核心业务/记忆目录提交 `classify`；`roots` 外个人资产/配置目录或外部软链提交 `external_ref`〔可带 `suggested_category`〕；依赖的伴生 CLI 工具提交 `tool_dep`〔带 `name` 与 `purpose`〕）。
 3. 有高价值项则合并调 **1 次** `valise_propose_dossier`（无项则 0 次）。
-4. 简洁汇报 3 点：保护计划/定时状态 + 原样转述 `protection_summary`；已提交的提案并引导去桌面「健康 › 归档建议」确认（或说明无需补充）；列出 `roots` 外覆盖缺口。
+4. 简洁汇报 3–4 点：保护计划/定时状态 + 原样转述 `protection_summary`；已提交的提案并引导去桌面「健康 › 归档建议」确认（含可选择仅登记提醒或纳入备份的 `external_ref` 与伴生工具 `tool_dep`，或说明无需补充）；列出 `roots` 外覆盖缺口与关键工具依赖。
 
 ### 4.2 `valise-backup`（日常查状态与高风险前留底，≤ 23 行）
 
@@ -112,11 +112,15 @@ Valise 团队可以在独立的仓库中提供长期记忆、短期记忆、冷�
 
 ### 8.2 归类与档案扩展提议
 
-- `valise_propose_dossier` 的三类提案保存在 `~/.config/valise/instances/<实例>.proposals.json`（0600），每条含 id、kind（`classify` / `sqlite` / `external_ref`）、规则或库/外联定义、理由与时间：
-  - `classify`（含旧 `valise_propose_enrollment` 静默转发）：`category` 只允许 `identity | memory | workspace | state | skills | config | secrets | cache | ignore`。路径经代码校验存在、相对 `root`、不含 `..` 且不经符号链接逃逸；命中既有 `secrets` 规则的非 `secrets` 提议直接拒绝；将文件改为 `cache` 或 `ignore`（离开 `soul` 档）标为"降级"并强制要求原因；命中当前 `unclassified` 移入 `soul` 档时标注未分类计数提醒用户不含凭据。
-  - `sqlite`：校验 `root` 与 `glob` 在实例 roots 内，并校验不削弱同匹配 Profile `consistency.sqlite[].secret_tables`。
-  - `external_ref`：校验 `ref_kind` 为 `external_dir` 或 `symlink_target`，且绝对路径严格位于所有 `roots` 之外。
-- 客户端（桌面「健康 › 归档建议」与 CLI `valise proposals <服务器> <实例>`）：列出全部待确认提议，降级提议单独成组且仅可通过 `--accept-demotion` / 桌面逐条确认弹窗接受。确认后分别合入 Dossier 的 `local_overrides`、`local_sqlite` 与 `external_refs`，从下一次封存起生效。
+- `valise_propose_dossier` 的四类提案保存在 `~/.config/valise/instances/<实例>.proposals.json`（0600），每条含 id、kind（`classify` / `sqlite` / `external_ref` / `tool_dep`）、规则或库/外联/工具定义、理由与时间：
+  - `classify`（含旧 `valise_propose_enrollment` 静默转发）：`category` 只允许 `identity | memory | workspace | state | skills | config | secrets | cache | ignore`，`root` 允许基础 `state`、profile 声明的 root 以及已纳入档案的 `local_roots`。路径经代码校验存在、相对 `root`、不含 `..` 且不经符号链接逃逸；命中既有 `secrets` 规则的非 `secrets` 提议直接拒绝；将文件改为 `cache` 或 `ignore`（离开 `soul` 档）标为"降级"并强制要求原因；命中当前 `unclassified` 移入 `soul` 档时标注未分类计数提醒用户不含凭据。
+  - `sqlite`：校验 `root` 与 `glob` 在实例 `roots` 内，并校验不削弱同匹配 Profile `consistency.sqlite[].secret_tables`。
+  - `external_ref`：校验 `ref_kind` 为 `external_dir` 或 `symlink_target`，可选附带 `suggested_category`（仅限 `identity | memory | workspace | state | skills | config | secrets`），并在入队时以受限遍历（最多 5,000 个普通文件或 2 秒截止，跳过符号链接与非普通文件）估算 `estimated_files` 与 `estimated_bytes`。路径必须为规范化绝对路径，禁止 `/`、`$HOME`、系统目录（`/etc`、`/usr`、`/var`、`/bin`、`/sbin`、`/lib`、`/lib64`、`/boot`、`/proc`、`/sys`、`/dev`、`/root`、`/tmp`、`/run` 及其软链解析目标），且不得与任何既有 `roots` 重叠（含相等、祖先或子目录关系，词法与 `EvalSymlinks` 双重校验）。
+  - `tool_dep`：携带 `name`（合法命令名 `^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`，不含 `/` 或空格）、可选 `purpose` 与 `reason`。审批后写入实例档案的 `tool_deps`，迁移计划阶段经 `revive_inspect.extra_tools` 在目标机登录 `PATH` 与 `~/.local/bin` 上执行纯只读存在性检查并展示环境缺口清单；Valise **绝不自动安装**，也不背书任意第三方 CLI 工具。
+- 客户端审批（桌面「健康 › 归档建议」与 CLI `valise proposals <服务器> <实例>`）：列出全部待确认提议，降级提议单独成组且仅可通过 `--accept-demotion` / 桌面逐条确认弹窗接受。对于 `external_ref`，人类可二选一处置：
+  1. **仅登记提醒**（普通 `accept`）：写入 `external_refs`，作为覆盖缺口保留提示，不扩封；
+  2. **纳入备份（附加目录）**（`promote_external_roots`）：校验该路径当前在磁盘上作为真实目录（或解析至合法非禁用目录的软链）存在、不与任何既有 `roots` 重叠，且类别仅限 `identity | memory | workspace | state | skills | config | secrets`（严禁 `cache`、`ignore`、`body`）；验证或自动派生唯一 `root_id`（`ext-<slug>`，满足 `^[a-z0-9]+(-[a-z0-9]+)*$`、长度 ≤ 48 且非 `state`/`body_patch`），写入 `local_roots` 与 `roots[id]`，并移除同路径的 `external_refs` 提醒。附加目录的默认类别在分类优先级中位于 profile `paths` 之后（`secrets` > `local_overrides` > `body.paths` > `paths` > `local_roots[root]`），从下一次封存起按类别随对应档位封存。
+- **直接档案管理（`dossier_update`）**：porter 经能力 `dossier-roots/1` 暴露 `dossier_update`（`TierOwner`）RPC，允许人类在客户端直接增删 `local_roots`（仅允许移除 `local_roots` 登记的附加目录，严禁移除 `state` 或 profile 声明的 root；新增适用与上文完全相同的安全路径与类别校验）与 `tool_deps`。
 
 ### 8.3 旧交接工具兼容（v0.1 静默保留，功能归 ValiseMemo）
 

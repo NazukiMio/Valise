@@ -118,7 +118,7 @@
 
 `profile_doc` 是封存时使用的完整 profile（已合并子 profile，JSON 形式，与实例的 `<id>.profile.json` 相同），可选。客户端没有同一 id 与版本的 profile 时，复活可以改用它（见 ARCHITECTURE.md 8.2.1）。
 
-`local_overrides` 是封存时这个实例生效的补充归类规则（与实例记录中的同名字段相同），可选；没有这个字段的快照按空列表处理。`local_sqlite` 与 `external_refs` 同为可选字段，记录封存时来自实例档案的本地 SQLite 一致性备份规则与 `roots` 外已知参考路径。
+`local_overrides` 是封存时这个实例生效的补充归类规则（与实例记录中的同名字段相同），可选；没有这个字段的快照按空列表处理。`display_name`、`local_sqlite`、`local_roots`、`external_refs` 与 `tool_deps` 同为向后兼容的可选字段，分别记录封存时实例在 Valise 中的显示名、本地 SQLite 一致性备份规则、经用户确认纳入备份的附加目录（其文件在 `files` 中使用对应 `root` ID 正常存储）、`roots` 外仅登记提醒的参考路径以及伴生 CLI 工具依赖清单。上述可选字段完全兼容 `valise-snapshot/1` 与 `valise-snapshot/2`，不提升格式版本号，`tools/standalone-restore/restore.py` 无需修改即可继续完整恢复（附加目录文件与其他 root 一样恢复至 `<out>/<root>/<path>`）。
 
 `name` 与 `env`（可选，2026-11-02 起）：命名实例的名字，以及让 harness 的命令针对这个实例的环境变量（PROFILES.md 第 2 节"多实例"）。没有这两个字段的快照是默认实例。
 

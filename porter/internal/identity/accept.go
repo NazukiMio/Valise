@@ -3,6 +3,7 @@ package identity
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"path/filepath"
 	"reflect"
 	"time"
@@ -149,4 +150,48 @@ func AcceptLocked(home string, in AcceptInput, persist func() error) (*model.Age
 		return nil, err
 	}
 	return &c.Agent, nil
+}
+
+// SyncBoundRoots atomically updates a bound agent's recorded Roots alongside
+// persist while preserving its exact AgentRef (InstallID & Generation). For
+// legacy unbound instances (no agent identity file yet), it runs persist
+// without creating an identity binding. Unreadable or pending-reconciliation
+// identity state fails closed without clobbering.
+func SyncBoundRoots(home, instanceID string, newRoots map[string]string, persist func() error) error {
+	if err := enroll.ValidInstanceID(instanceID); err != nil {
+		return err
+	}
+	if persist == nil {
+		return errors.New("persist callback is required")
+	}
+	return WithLock(home, func() error {
+		if err := checkCommit(home); err != nil {
+			return err
+		}
+		var a model.Agent
+		found, err := readJSON(agentPath(home, instanceID), &a)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return persist()
+		}
+		s, err := server(home)
+		if err != nil {
+			return err
+		}
+		if s == nil || a.Schema != model.Schema || a.Ref.ServerUID != s.ServerUID ||
+			a.Ref.InstanceID != instanceID || a.Ref.InstallID == "" || a.Ref.Generation == "" ||
+			a.CreatedAt.IsZero() {
+			return errors.New("invalid agent identity")
+		}
+		_, err = AcceptLocked(home, AcceptInput{
+			InstallID:     a.Ref.InstallID,
+			InstanceID:    instanceID,
+			Roots:         maps.Clone(newRoots),
+			ProfileDigest: a.ProfileDigest,
+			Existing:      true,
+		}, persist)
+		return err
+	})
 }

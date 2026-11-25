@@ -2,6 +2,7 @@ package profile
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -26,13 +27,19 @@ func ParseOverride(s string) (Override, error) {
 
 // Validate checks an override against the profile's roots.
 func (o Override) Validate(p *Profile) error {
+	return o.ValidateWithRoots(p, nil)
+}
+
+// ValidateWithRoots checks an override against the profile's roots as well as
+// any additional user-attached root IDs (e.g. dossier local_roots).
+func (o Override) ValidateWithRoots(p *Profile, extraRootIDs []string) error {
 	if !IsCategory(o.Category) {
 		return fmt.Errorf("未知类别 %q", o.Category)
 	}
 	if err := ValidateGlob(o.Glob); err != nil {
 		return err
 	}
-	if o.Root != StateRoot && !slicesContainsRoot(p.Roots, o.Root) {
+	if o.Root != StateRoot && !slicesContainsRoot(p.Roots, o.Root) && !slices.Contains(extraRootIDs, o.Root) {
 		return fmt.Errorf("profile 中没有 root %q", o.Root)
 	}
 	return nil
@@ -57,11 +64,13 @@ type Match struct {
 
 // Classifier assigns categories with the precedence from
 // docs/ARCHITECTURE.md section 4: secrets rules (profile and overrides),
-// then local_overrides, then body.paths, then the first matching path rule.
+// then local_overrides, then body.paths, then the first matching path rule,
+// then per-root defaults for user-attached local_roots.
 type Classifier struct {
-	p           *Profile
-	overrides   []Override
-	extraSQLite []SQLiteRef
+	p            *Profile
+	overrides    []Override
+	extraSQLite  []SQLiteRef
+	defaultRoots map[string]string
 }
 
 // NewClassifier returns a classifier for an effective profile.
@@ -76,6 +85,19 @@ func (c *Classifier) WithSQLite(extra []SQLiteRef) *Classifier {
 	}
 	out := *c
 	out.extraSQLite = slices.Clone(extra)
+	return &out
+}
+
+// WithDefaultRoots returns an immutable clone of c that assigns default
+// categories to user-attached local_roots after profile path rules.
+func (c *Classifier) WithDefaultRoots(m map[string]string) *Classifier {
+	if c == nil || len(m) == 0 {
+		return c
+	}
+	out := *c
+	out.overrides = slices.Clone(c.overrides)
+	out.extraSQLite = slices.Clone(c.extraSQLite)
+	out.defaultRoots = maps.Clone(m)
 	return &out
 }
 
@@ -108,6 +130,9 @@ func (c *Classifier) Classify(root, rel string) Match {
 		if r.Root == root && MatchGlob(r.Glob, rel) {
 			return Match{r.Category, fmt.Sprintf("paths[%d]", i)}
 		}
+	}
+	if cat := c.defaultRoots[root]; cat != "" {
+		return Match{cat, "local_roots[" + root + "]"}
 	}
 	return Match{}
 }

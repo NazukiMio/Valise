@@ -81,4 +81,48 @@ func TestParseOverride(t *testing.T) {
 	if (Override{"workspace", "x/**", "workspace"}).Validate(p) != nil {
 		t.Error("valid override rejected")
 	}
+	if (Override{"ext-notes", "a/**", "memory"}).ValidateWithRoots(p, []string{"ext-notes"}) != nil {
+		t.Error("override for extra local root rejected")
+	}
+	if (Override{"ext-other", "a/**", "memory"}).ValidateWithRoots(p, []string{"ext-notes"}) == nil {
+		t.Error("override for unknown extra root accepted")
+	}
+}
+
+func TestClassifierWithDefaultRootsPrecedenceAndImmutability(t *testing.T) {
+	p := &Profile{
+		Roots: []Root{{ID: "workspace"}},
+		Paths: []PathRule{
+			{Root: "ext-notes", Glob: "secret.key", Category: CategorySecrets},
+			{Root: "ext-notes", Glob: "cfg.json", Category: CategoryConfig},
+		},
+		Body: &Body{Paths: []PathRef{{Root: "ext-notes", Glob: "bin/**"}}},
+	}
+	base := NewClassifier(p, []Override{
+		{Root: "ext-notes", Glob: "ignored/**", Category: CategoryIgnore},
+	}).WithSQLite([]SQLiteRef{{Root: "ext-notes", Glob: "notes.db"}})
+
+	defaults := map[string]string{"ext-notes": CategoryMemory}
+	withDefaults := base.WithDefaultRoots(defaults)
+	// Mutating caller's map must not affect cloned classifier, and base must stay untouched.
+	defaults["ext-notes"] = CategoryWorkspace
+	if got := base.Classify("ext-notes", "daily/today.md").Category; got != "" {
+		t.Fatalf("base classifier mutated: got %q", got)
+	}
+	cases := map[string]struct{ cat, rule string }{
+		"secret.key":     {CategorySecrets, "paths[0]"},
+		"ignored/a.tmp":  {CategoryIgnore, "local_overrides[0]"},
+		"bin/tool":       {CategoryBody, "body.paths[0]"},
+		"cfg.json":       {CategoryConfig, "paths[1]"},
+		"daily/today.md": {CategoryMemory, "local_roots[ext-notes]"},
+	}
+	for rel, want := range cases {
+		got := withDefaults.Classify("ext-notes", rel)
+		if got.Category != want.cat || got.Rule != want.rule {
+			t.Errorf("%s: got %+v, want %+v", rel, got, want)
+		}
+	}
+	if _, ok := withDefaults.SQLite("ext-notes", "notes.db"); !ok {
+		t.Fatal("WithDefaultRoots did not preserve extraSQLite")
+	}
 }

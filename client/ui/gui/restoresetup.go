@@ -75,22 +75,25 @@ func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 		}).Label(T("restore.how"))
 	})
 	card(ui.Column(c)).Gap(8).Children(func() {
-		ui.Text(c, T("restore.read_from")).Bold()
-		ui.RadioGroup(c, func() {
-			selected := r.sources[r.source].Copy.LocationRef.Kind + "/" + r.sources[r.source].Copy.LocationRef.ID
-			for i, src := range r.sources {
-				key := src.Copy.LocationRef.Kind + "/" + src.Copy.LocationRef.ID
-				if ui.Radio(c.Key(key), &selected, key, journeyLocation(src.Copy.LocationRef)).Changed() {
-					r.source = i
-					r.resetPlanOptIns()
+		if len(r.sources) == 1 {
+			fact(c, T("restore.read_from"), journeyLocation(r.sources[0].Copy.LocationRef))
+		} else {
+			ui.Text(c, T("restore.read_from")).Bold()
+			ui.RadioGroup(c, func() {
+				selected := r.sources[r.source].Copy.LocationRef.Kind + "/" + r.sources[r.source].Copy.LocationRef.ID
+				for i, src := range r.sources {
+					key := src.Copy.LocationRef.Kind + "/" + src.Copy.LocationRef.ID
+					if ui.Radio(c.Key(key), &selected, key, journeyLocation(src.Copy.LocationRef)).Changed() {
+						r.source = i
+						r.resetPlanOptIns()
+					}
 				}
-			}
-		}).Label(T("restore.read_from"))
+			}).Label(T("restore.read_from"))
+		}
 		muted(ui.Text(c, T("restore.source_note"))).Wrap()
 	})
 	card(ui.Column(c)).Gap(10).Children(func() {
 		ui.Text(c, T("restore.where")).Bold()
-		fact(c, T("restore.origin"), orText(r.origin, T("restore.origin_unknown")))
 		switch r.mode {
 		case revive.ModeRollback:
 			fact(c, T("restore.target"), orText(r.origin, T("restore.origin_unknown")))
@@ -188,6 +191,24 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 		fact(c, T("restore.body"), bodyVal)
 		if p.Dossier != nil {
 			fact(c, T("restore.dossier"), T("restore.dossier_value", "overrides", p.Dossier.LocalOverrides, "sqlite", len(p.Dossier.LocalSQLite), "external", len(p.Dossier.ExternalRefs)))
+			if len(p.Dossier.LocalRoots) > 0 {
+				var roots []string
+				for _, lr := range p.Dossier.LocalRoots {
+					roots = append(roots, lr.Path)
+				}
+				fact(c, T("restore.dossier_local_roots"), T("restore.dossier_local_roots_val", "n", len(p.Dossier.LocalRoots), "list", strings.Join(roots, T("common.list_sep"))))
+			}
+		}
+		if tc := p.ToolCheck; tc != nil && (len(tc.Present) > 0 || len(tc.Missing) > 0) {
+			if len(tc.Missing) > 0 {
+				var names []string
+				for _, td := range tc.Missing {
+					names = append(names, td.Name)
+				}
+				fact(c, T("restore.tool_check_label"), T("restore.tool_check_summary_missing", "present", len(tc.Present), "missing", len(tc.Missing), "tools", strings.Join(names, T("common.list_sep"))))
+			} else {
+				fact(c, T("restore.tool_check_label"), T("restore.tool_check_summary_ok", "present", len(tc.Present), "tools", strings.Join(tc.Present, T("common.list_sep"))))
+			}
 		}
 		fact(c, T("restore.access"), T("restore.access_hint"))
 	})
@@ -230,6 +251,9 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 	if r.mode == revive.ModeRollback {
 		ui.Checkbox(c, &r.backupCurrent, T("restore.backup_current"))
 		muted(ui.Text(c, T("restore.backup_current_hint"))).Wrap()
+	}
+	if r.mode == revive.ModeMigrate && p.SourceProtection != nil {
+		ui.Checkbox(c, &r.carryProtection, T("restore.carry_protection", "summary", p.SourceProtection.Summary))
 	}
 	allow, hasEnv := false, false
 	for _, block := range p.Blockers {

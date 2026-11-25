@@ -37,6 +37,7 @@ type RestoreTask struct {
 	SwapState         string                   `json:"swap_state,omitempty"`
 	Relation          bool                     `json:"relation_recorded,omitempty"`
 	Prev              []string                 `json:"prev,omitempty"`
+	PostMigrate       *PostMigrateReport       `json:"post_migrate,omitempty"`
 }
 
 func (s *Service) restoreTaskPath(op string) string {
@@ -207,6 +208,11 @@ func (s *Service) RunRestore(ctx context.Context, p *PreparedRestore, human Revi
 	}
 	if recordErr != nil {
 		return t, recordErr
+	}
+	if t.State == "succeeded" && rp.Plan.Mode == revive.ModeMigrate {
+		pmCtx, pmCancel := context.WithTimeout(context.Background(), 45*time.Second)
+		t.PostMigrate = s.buildPostMigrateReport(pmCtx, t, rp, human.CarryProtection)
+		pmCancel()
 	}
 	if err = s.saveRestore(t); err != nil {
 		return t, err

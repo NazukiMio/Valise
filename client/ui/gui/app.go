@@ -76,7 +76,7 @@ func New(svc *service.Service) *App {
 	a.agentData = agentData{harness: map[string]string{}, hasSessionCLI: map[string]bool{}, display: map[string]*profile.Display{}, vaultNames: map[string]string{},
 		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{}}
 	a.prefs = prefs{View: "cards", Dismissed: map[string]string{}}
-	a.entries, a.natives, a.agentKits, a.agentServices = map[string]*entryState{}, map[string]*nativeState{}, map[string]*agentKitState{}, map[string]*agentServiceState{}
+	a.entries, a.natives, a.agentKits, a.agentServices, a.agentDossiers = map[string]*entryState{}, map[string]*nativeState{}, map[string]*agentKitState{}, map[string]*agentServiceState{}, map[string]*agentDossierState{}
 	a.timelineScope = service.TimelineScanRequest{LocalOnly: true}
 	a.health, a.proposals = map[string]*healthState{}, map[string]*proposalsState{}
 	a.prots = map[string]*protState{}
@@ -190,6 +190,9 @@ func (a *App) refreshAgents() {
 				if vr.name != "" {
 					a.vaultNames[conn] = vr.name
 				}
+			}
+			if err == nil {
+				a.syncAgentsToServiceStates(res.Items)
 			}
 		})
 	})

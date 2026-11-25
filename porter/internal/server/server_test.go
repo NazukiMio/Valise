@@ -319,3 +319,147 @@ func TestServiceControlRestart(t *testing.T) {
 		t.Fatalf("unexpected systemctl invocations:\n%s", string(logged))
 	}
 }
+
+func TestDossierUpdateRPC(t *testing.T) {
+	home := t.TempDir()
+	stateDir := filepath.Join(home, ".demo")
+	wsDir := filepath.Join(home, "workspace")
+	extraDir := filepath.Join(home, "notes")
+	for _, d := range []string{stateDir, wsDir, extraDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := profile.Profile{
+		ID: "demo", ProfileVersion: 1, Status: "draft",
+		Roots: []profile.Root{{ID: "workspace", Default: wsDir}},
+	}
+	rec := enroll.Record{
+		InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1,
+		Roots:        map[string]string{"state": stateDir, "workspace": wsDir},
+		ExternalRefs: []enroll.ExternalRef{{Path: extraDir, Kind: "external_dir", Reason: "notes"}},
+	}
+	_, boundAgent, err := porterenroll.AcceptRecord(home, rec, p)
+	if err != nil || boundAgent == nil {
+		t.Fatalf("AcceptRecord: agent=%+v err=%v", boundAgent, err)
+	}
+
+	// 1. Hello advertises dossier-roots/1.
+	resps := serve(t, home, helloReq)
+	var h rpc.HelloResult
+	if err := json.Unmarshal(resps[0].Result, &h); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(h.Capabilities, enroll.DossierCapability) {
+		t.Fatalf("hello missing %q: %v", enroll.DossierCapability, h.Capabilities)
+	}
+
+	// 2. Daily tier without owner proof is refused.
+	var dailyOut bytes.Buffer
+	dailyCfg := Config{
+		Version: "test", Home: home, Tier: rpc.TierDaily,
+		DetectTools: func(context.Context) []rpc.Tool { return nil },
+	}
+	if err := Serve(context.Background(), strings.NewReader(helloReq+"\n"+`{"jsonrpc":"2.0","id":2,"method":"dossier_update","params":{"instance_id":"demo"}}`+"\n"), &dailyOut, dailyCfg); err != nil {
+		t.Fatal(err)
+	}
+	dec := json.NewDecoder(&dailyOut)
+	var r1, r2 rpc.Response
+	_ = dec.Decode(&r1)
+	_ = dec.Decode(&r2)
+	if r2.Error == nil || r2.Error.Data == nil || r2.Error.Data.Code != rpc.OwnerRequiredCode {
+		t.Fatalf("expected owner_required on unproved daily tier, got %+v", r2)
+	}
+
+	call := func(params enroll.DossierUpdateParams) rpc.Response {
+		b, _ := json.Marshal(params)
+		req := `{"jsonrpc":"2.0","id":2,"method":"dossier_update","params":` + string(b) + `}`
+		rs := serve(t, home, helloReq, req)
+		return rs[1]
+	}
+
+	// 3. Reject banned paths, forbidden categories, and removing protected roots.
+	for _, bad := range []enroll.DossierUpdateParams{
+		{InstanceID: "demo", RemoveRootIDs: []string{"state"}},
+		{InstanceID: "demo", RemoveRootIDs: []string{"workspace"}},
+		{InstanceID: "demo", AddRoots: []enroll.LocalRoot{{ID: "ext-home", Path: home, Category: "memory"}}},
+		{InstanceID: "demo", AddRoots: []enroll.LocalRoot{{ID: "ext-etc", Path: "/etc", Category: "config"}}},
+		{InstanceID: "demo", AddRoots: []enroll.LocalRoot{{ID: "ext-badcat", Path: extraDir, Category: "cache"}}},
+		{InstanceID: "demo", AddRoots: []enroll.LocalRoot{{ID: "ext-overlap", Path: stateDir, Category: "memory"}}},
+		{InstanceID: "demo", AddToolDeps: []enroll.ToolDep{{Name: "/bin/sh"}}},
+	} {
+		if resp := call(bad); resp.Error == nil {
+			t.Errorf("dossier_update unexpectedly succeeded for %+v", bad)
+		}
+	}
+
+	// 4. Add a valid local_root and tool_dep.
+	resp := call(enroll.DossierUpdateParams{
+		InstanceID:  "demo",
+		AddRoots:    []enroll.LocalRoot{{ID: "ext-notes", Path: extraDir, Category: "memory", Reason: "personal notes"}},
+		AddToolDeps: []enroll.ToolDep{{Name: "ffmpeg", Purpose: "audio", Reason: "voice"}},
+	})
+	if resp.Error != nil {
+		t.Fatalf("dossier_update add failed: %+v", resp.Error)
+	}
+	var addRes enroll.DossierUpdateResult
+	if err := json.Unmarshal(resp.Result, &addRes); err != nil {
+		t.Fatal(err)
+	}
+	if len(addRes.Record.LocalRoots) != 1 || addRes.Record.Roots["ext-notes"] != extraDir ||
+		len(addRes.Record.ToolDeps) != 1 || addRes.Record.ToolDeps[0].Name != "ffmpeg" ||
+		len(addRes.Record.ExternalRefs) != 0 {
+		t.Fatalf("unexpected add result: %+v", addRes.Record)
+	}
+	// Identity binding must stay valid with the same AgentRef & Generation after adding a local_root.
+	if err := porterenroll.ValidateIdentity(context.Background(), home, boundAgent.Ref); err != nil {
+		t.Fatalf("ValidateIdentity failed after dossier_update add: %v", err)
+	}
+
+	// 5. Remove the local_root and tool_dep.
+	resp = call(enroll.DossierUpdateParams{
+		InstanceID:      "demo",
+		RemoveRootIDs:   []string{"ext-notes"},
+		RemoveToolNames: []string{"ffmpeg"},
+	})
+	if resp.Error != nil {
+		t.Fatalf("dossier_update remove failed: %+v", resp.Error)
+	}
+	var rmRes enroll.DossierUpdateResult
+	if err := json.Unmarshal(resp.Result, &rmRes); err != nil {
+		t.Fatal(err)
+	}
+	if len(rmRes.Record.LocalRoots) != 0 || rmRes.Record.Roots["ext-notes"] != "" || len(rmRes.Record.ToolDeps) != 0 {
+		t.Fatalf("unexpected remove result: %+v", rmRes.Record)
+	}
+	if err := porterenroll.ValidateIdentity(context.Background(), home, boundAgent.Ref); err != nil {
+		t.Fatalf("ValidateIdentity failed after dossier_update remove: %v", err)
+	}
+	auditBytes, err := os.ReadFile(seal.Paths{Home: home}.Audit())
+	if err != nil || !strings.Contains(string(auditBytes), `"op":"dossier_update"`) {
+		t.Fatalf("expected dossier_update in audit log, got %q (err=%v)", string(auditBytes), err)
+	}
+
+	// 6. Legacy unbound instance: dossier_update succeeds without creating an identity binding.
+	unboundHome := t.TempDir()
+	uState := filepath.Join(unboundHome, ".legacy")
+	uExtra := filepath.Join(unboundHome, "extra")
+	os.MkdirAll(uState, 0o755)
+	os.MkdirAll(uExtra, 0o755)
+	up := profile.Profile{ID: "legacy", ProfileVersion: 1, Status: "draft"}
+	urec := enroll.Record{InstanceID: "legacy", ProfileID: "legacy", ProfileVersion: 1, Roots: map[string]string{"state": uState}}
+	if _, err := porterenroll.WriteRecord(unboundHome, urec, up); err != nil {
+		t.Fatal(err)
+	}
+	ub, _ := json.Marshal(enroll.DossierUpdateParams{
+		InstanceID: "legacy",
+		AddRoots:   []enroll.LocalRoot{{ID: "ext-extra", Path: uExtra, Category: "workspace"}},
+	})
+	uResps := serve(t, unboundHome, helloReq, `{"jsonrpc":"2.0","id":2,"method":"dossier_update","params":`+string(ub)+`}`)
+	if uResps[1].Error != nil {
+		t.Fatalf("dossier_update on legacy unbound instance failed: %+v", uResps[1].Error)
+	}
+	if b := porteridentity.ListBinding(unboundHome, "legacy"); b.IdentityState != identity.LegacyUnbound {
+		t.Fatalf("legacy unbound instance should remain unbound, got %+v", b)
+	}
+}

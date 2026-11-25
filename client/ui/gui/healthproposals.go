@@ -27,6 +27,7 @@ type proposalsState struct {
 	actJ     job
 	note     string
 	demotion *agentkit.Proposal
+	extCats  map[string]string
 }
 
 func (a *App) propOps() proposalsOps {
@@ -115,23 +116,25 @@ func (a *App) proposalsCard(c *ui.Context, row *agentRow) {
 			notice(c, "ok", st.note)
 		}
 		var normal, demotions []agentkit.Proposal
-		var normalIDs []string
+		var bulkNormalIDs []string
 		for _, p := range st.items {
 			if p.Demotion {
 				demotions = append(demotions, p)
 			} else {
 				normal = append(normal, p)
-				normalIDs = append(normalIDs, p.ID)
+				if p.EffectiveKind() != agentkit.ProposalKindExternalRef {
+					bulkNormalIDs = append(bulkNormalIDs, p.ID)
+				}
 			}
 		}
-		if len(normal) > 1 && !st.actJ.busy {
+		if len(bulkNormalIDs) > 1 && !st.actJ.busy {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				needTag(c, T("need.valise"))
 				ui.Button(c, T("prop.accept_all_normal")).OnClick(func() {
-					a.runProposalsDecide(row.Server, row.Instance, st, agentkit.DecideParams{InstanceID: row.Instance, Accept: normalIDs})
+					a.runProposalsDecide(row.Server, row.Instance, st, agentkit.DecideParams{InstanceID: row.Instance, Accept: bulkNormalIDs})
 				})
 				quietButton(c, T("prop.reject_all_normal")).OnClick(func() {
-					a.runProposalsDecide(row.Server, row.Instance, st, agentkit.DecideParams{InstanceID: row.Instance, Reject: normalIDs})
+					a.runProposalsDecide(row.Server, row.Instance, st, agentkit.DecideParams{InstanceID: row.Instance, Reject: bulkNormalIDs})
 				})
 			})
 		}
@@ -148,25 +151,20 @@ func (a *App) proposalsCard(c *ui.Context, row *agentRow) {
 						muted(ui.Text(c, T("prop.sqlite_tables", "tables", strings.Join(prop.SQLite.SecretTables, ", ")))).FontSize(fsSub).Wrap().Selectable()
 					}
 				case agentkit.ProposalKindExternalRef:
-					if prop.ExternalRef != nil {
-						kindLabel := T("prop.ext_dir")
-						if prop.ExternalRef.RefKind == agentkit.ExternalRefSymlink {
-							kindLabel = T("prop.ext_symlink")
-						}
-						muted(ui.Text(c, kindLabel)).FontSize(fsSub)
-						notice(c, "warn", T("prop.ext_note"))
-					}
+					a.externalRefProposalBody(c, row, st, prop)
+				case agentkit.ProposalKindToolDep:
 				default:
 					if prop.Unclassified > 0 {
 						notice(c, "warn", T("prop.unclassified_warn", "n", prop.Unclassified))
 					}
 				}
-				if !st.actJ.busy {
+				if !st.actJ.busy && prop.EffectiveKind() != agentkit.ProposalKindExternalRef {
 					acceptBtn := T("prop.accept")
-					if prop.EffectiveKind() == agentkit.ProposalKindSQLite {
+					switch prop.EffectiveKind() {
+					case agentkit.ProposalKindSQLite:
 						acceptBtn = T("prop.sqlite_accept")
-					} else if prop.EffectiveKind() == agentkit.ProposalKindExternalRef {
-						acceptBtn = T("prop.ext_accept")
+					case agentkit.ProposalKindToolDep:
+						acceptBtn = T("prop.tool_accept")
 					}
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 						needTag(c, T("need.valise"))
@@ -229,6 +227,19 @@ func proposalHead(c *ui.Context, prop agentkit.Proposal) {
 		if prop.ExternalRef != nil {
 			mono(ui.Text(c, prop.ExternalRef.Path)).FontSize(fsSub).Wrap().Selectable()
 		}
+	case agentkit.ProposalKindToolDep:
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			plainTag(c, T("prop.tool_tag"))
+			muted(ui.Text(c, when(prop.Created, c.Now()))).FontSize(fsSub)
+		})
+		if prop.ToolDep != nil {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+				mono(ui.Text(c, prop.ToolDep.Name)).FontSize(fsSub).Bold().Selectable()
+				if prop.ToolDep.Purpose != "" {
+					muted(ui.Text(c, prop.ToolDep.Purpose)).FontSize(fsSub).Grow(1).Wrap().Selectable()
+				}
+			})
+		}
 	default:
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
 			mono(ui.Text(c, prop.Rule.Root+":"+prop.Rule.Glob+" -> "+prop.Rule.Category)).FontSize(fsSub).Grow(1).Wrap().Selectable()
@@ -240,13 +251,59 @@ func proposalHead(c *ui.Context, prop agentkit.Proposal) {
 	}
 }
 
-func proposalCategoryLabel(cat string) string {
-	for _, ch := range categoryChoices {
-		if ch.id == cat && ch.id != "" {
-			return T(ch.label)
-		}
+func (a *App) externalRefProposalBody(c *ui.Context, row *agentRow, st *proposalsState, prop agentkit.Proposal) {
+	if prop.ExternalRef == nil {
+		return
 	}
-	return ""
+	kindLabel := T("prop.ext_dir")
+	if prop.ExternalRef.RefKind == agentkit.ExternalRefSymlink {
+		kindLabel = T("prop.ext_symlink")
+	}
+	muted(ui.Text(c, kindLabel)).FontSize(fsSub)
+	if prop.ExternalRef.EstimatedFiles > 0 || prop.ExternalRef.EstimatedBytes > 0 {
+		muted(ui.Text(c, T("prop.ext_estimate", "files", prop.ExternalRef.EstimatedFiles, "size", size(prop.ExternalRef.EstimatedBytes)))).FontSize(fsSub).Selectable()
+	}
+	notice(c, "warn", T("prop.ext_note"))
+	if st.extCats == nil {
+		st.extCats = map[string]string{}
+	}
+	chosenCat := st.extCats[prop.ID]
+	if !isLocalRootCategory(chosenCat) {
+		if isLocalRootCategory(prop.ExternalRef.SuggestedCategory) {
+			chosenCat = prop.ExternalRef.SuggestedCategory
+		} else {
+			chosenCat = "workspace"
+		}
+		st.extCats[prop.ID] = chosenCat
+	}
+	if !st.actJ.busy {
+		chosenLabel := localRootCategoryLabel(chosenCat)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+			muted(ui.Text(c, T("prop.ext_category"))).FontSize(fsSub)
+			if ui.Select(c.Key("extcat-"+prop.ID), &chosenLabel, localRootCategoryLabels()).Label(T("prop.ext_category")).Width(150).Changed() {
+				st.extCats[prop.ID] = localRootCategoryID(chosenLabel)
+				chosenCat = st.extCats[prop.ID]
+			}
+		})
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+			needTag(c, T("need.valise"))
+			ui.PrimaryButton(c, T("prop.ext_promote")).OnClick(func() {
+				a.runProposalsDecide(row.Server, row.Instance, st, agentkit.DecideParams{
+					InstanceID: row.Instance,
+					PromoteExternalRoots: []agentkit.ExternalRootPromotion{{
+						ProposalID: prop.ID,
+						Category:   st.extCats[prop.ID],
+					}},
+				})
+			})
+			ui.Button(c, T("prop.ext_accept")).OnClick(func() {
+				a.runProposalsDecide(row.Server, row.Instance, st, agentkit.DecideParams{InstanceID: row.Instance, Accept: []string{prop.ID}})
+			})
+			quietButton(c, T("prop.reject")).OnClick(func() {
+				a.runProposalsDecide(row.Server, row.Instance, st, agentkit.DecideParams{InstanceID: row.Instance, Reject: []string{prop.ID}})
+			})
+		})
+	}
 }
 
 func (a *App) demotionConfirmModal(c *ui.Context, row *agentRow, st *proposalsState) {
@@ -305,6 +362,16 @@ func (a *App) runProposalsDecide(server, instance string, st *proposalsState, pa
 		st.demotion = nil
 		if res != nil {
 			st.note = T("prop.decided_note", "accepted", len(res.Accepted), "rejected", len(res.Rejected), "remaining", res.Remaining)
+		}
+		key := server + "/" + instance
+		if ds := a.agentDossiers[key]; ds != nil {
+			ds.started = false
+		}
+		if sv := a.agentServices[key]; sv != nil {
+			sv.started = false
+		}
+		if a.proposalsHook == nil {
+			a.refreshAgents()
 		}
 		a.readProposals(server, instance)
 	})

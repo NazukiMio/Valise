@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/egoist/mygo/ui"
 	"time"
-	"valise/core/revive"
 	"valise/ui/service"
 )
 
@@ -20,9 +19,13 @@ func restoreStageText(stage string) string {
 func (a *App) restoreProgress(c *ui.Context, r *restoreFlow) {
 	c.After(time.Second)
 	card(ui.Column(c)).Gap(12).Children(func() {
+		stageText := restoreStageText(r.progress.Stage)
+		if r.progress.Stage == "" && r.j.doing != "" {
+			stageText = r.j.doing
+		}
 		ui.Row(c).Gap(10).Children(func() {
 			ui.Spinner(c)
-			ui.Text(c, restoreStageText(r.progress.Stage)).Bold()
+			ui.Text(c, stageText).Bold()
 		})
 		muted(ui.Text(c, T("restore.elapsed", "duration", backupDuration(c.Now().Sub(r.j.doingAt))))).Wrap()
 		if p := r.progress; p.Total > 0 {
@@ -107,7 +110,8 @@ func (a *App) queryRestore(r *restoreFlow) {
 	if r.j.busy {
 		return
 	}
-	r.j = job{busy: true, doingAt: time.Now()}
+	r.progress = service.Progress{}
+	r.j = job{busy: true, doing: T("restore.querying"), doingAt: time.Now()}
 	task := r.task
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -159,58 +163,6 @@ func (a *App) restoreRecoveryDialog(c *ui.Context, r *restoreFlow) {
 	}).Dismissed() {
 		r.recoverAction = ""
 	}
-}
-
-func (a *App) restoreResult(c *ui.Context, r *restoreFlow) {
-	t := r.task
-	if r.j.busy {
-		a.restoreProgress(c, r)
-		return
-	}
-	card(ui.Column(c)).Gap(spItem).Children(func() {
-		ui.Row(c).Gap(spInside + 2).AlignItems(ui.Center).Children(func() {
-			tone := restoreResultTone(t)
-			toneDot(c, tone)
-			title := dialogTitle(ui.Text(c, T("restore.state."+orText(t.State, "failed")))).Wrap()
-			if tone == "warn" || tone == "danger" {
-				title.TextColor(toneInk(tone))
-			}
-		})
-		fact(c, T("restore.target"), t.Target+" / "+t.Instance)
-		ui.Divider(c)
-		ui.Column(c).Gap(spInside).Children(func() {
-			for _, o := range restoreOutcomes(t) {
-				statusRow(c, o.tone, o.label, o.value)
-			}
-		})
-		if t.Rollback != nil && t.Rollback.Problem != "" {
-			notice(c, "warn", T("restore.rollback.problem."+t.Rollback.Problem))
-		}
-		ui.Collapsible(c, T("restore.kept"), a.fold("restore-kept"), func() {
-			for _, path := range t.Prev {
-				mono(muted(ui.Text(c, path))).Wrap().Selectable()
-			}
-		})
-		if t.SwapState == revive.StateRolledBack {
-			notice(c, "warn", T("restore.rollback_hint"))
-		}
-		if t.State == "needs_recovery" || t.State == "reconciling" {
-			notice(c, "warn", T("restore.reconcile_hint"))
-		}
-		ui.Row(c).Gap(8).Children(func() {
-			if t.OpID != "" {
-				ui.Button(c, T("restore.query")).OnClick(func() { a.queryRestore(r) })
-				if t.State == "reconciling" || t.State == "needs_recovery" {
-					ui.Button(c, T("restore.new_intent")).OnClick(func() { r.newIntent = true })
-				}
-			}
-			if r.review != nil {
-				for _, action := range r.review.Actions {
-					ui.Button(c.Key(action), T("restore.recover."+action)).OnClick(func() { r.recoverAction = action })
-				}
-			}
-		})
-	})
 }
 
 // restoreBanner is outside the theme's layout slots: active work and unknown

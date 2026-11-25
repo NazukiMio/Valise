@@ -42,6 +42,11 @@ func world(t *testing.T) (*App, *ui.Tester) {
 			return nil, nil
 		},
 	}
+	a.agentDossierHook = &agentDossierOps{
+		get: func(_ context.Context, _, instance string) (*enroll.Record, error) {
+			return &enroll.Record{InstanceID: instance}, nil
+		},
+	}
 	a.harness["openclaw"] = "OpenClaw"
 	// Today at 09:00, so that “今天” and “昨天” hold whenever tests run.
 	y, m, d := time.Now().Date()

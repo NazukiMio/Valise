@@ -13,6 +13,7 @@ import (
 func (r *restoreFlow) resetPlanOptIns() {
 	r.draft, r.snapshotProfile, r.allowVersionMismatch, r.skipService = false, false, false, false
 	r.envNeeded, r.envAutoSkipped = false, false
+	r.carryProtection = true
 	r.inlineInstall = nil
 }
 
@@ -158,6 +159,7 @@ func (a *App) restoreEnvBodyMissingCard(c *ui.Context, r *restoreFlow, p *servic
 				}
 			})
 		}
+		notice(c, "info", T("restore.env.empty_shell_note"))
 		a.restoreMissingBodyBox(c, r, p)
 		subPanel(ui.Column(c)).Gap(8).Children(func() {
 			ui.Checkbox(c, &r.allowVersionMismatch, T("restore.allow_body_data_only"))

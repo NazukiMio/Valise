@@ -80,6 +80,7 @@ type InspectParams struct {
 	Roots      []RootPlan        `json:"roots"`
 	Provenance enroll.Provenance `json:"provenance"`
 	PlainBytes int64             `json:"plain_bytes"`
+	ExtraTools []string          `json:"extra_tools,omitempty"`
 }
 
 // RootFacts describes one target root.
@@ -162,6 +163,7 @@ type Plan struct {
 	Tier       string             `json:"tier"`
 	Profile    profile.Profile    `json:"profile"`
 	Overrides  []profile.Override `json:"overrides,omitempty"`
+	LocalRoots []enroll.LocalRoot `json:"local_roots,omitempty"`
 	Roots      []RootPlan         `json:"roots"`
 	// Carry copies live content outside the tier into the stage (rollback).
 	Carry bool     `json:"carry"`

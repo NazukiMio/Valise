@@ -56,4 +56,10 @@ func TestTierOfInstanceForget(t *testing.T) {
 	if !Classified("instance_forget") {
 		t.Fatal("instance_forget must be classified")
 	}
+	if got := TierOf("dossier_update"); got != TierOwner {
+		t.Fatalf("TierOf(dossier_update) = %q, want %q", got, TierOwner)
+	}
+	if !Classified("dossier_update") {
+		t.Fatal("dossier_update must be classified")
+	}
 }

@@ -34,6 +34,7 @@ type restoreFlow struct {
 	envNeeded, envAutoSkipped                bool
 	sourceChoice                             string
 	backupCurrent                            bool
+	carryProtection                          bool
 	verify                                   *revive.StageVerifyResult
 	deadline                                 time.Time
 	reply                                    chan restoreSwapReply
@@ -50,6 +51,9 @@ type restoreFlow struct {
 	customStateDir string
 	extraRoots     map[string]string
 	inlineInstall  *restoreInstallState
+	rewireJ        job
+	rewirePlan     *service.KitPlan
+	postCopyNote   string
 }
 
 func (a *App) openRestore(p journey.TimelinePoint, origin string) {
@@ -62,7 +66,7 @@ func (a *App) openRestore(p journey.TimelinePoint, origin string) {
 		return
 	}
 	origin = a.resolveOriginHost(origin, sources[0])
-	r := &restoreFlow{point: p, sources: sources, origin: origin, target: origin, mode: revive.ModeRollback, id: p.RecordedInstanceID + "-copy", step: "setup"}
+	r := &restoreFlow{point: p, sources: sources, origin: origin, target: origin, mode: revive.ModeRollback, id: p.RecordedInstanceID + "-copy", step: "setup", carryProtection: true}
 	a.restore = r
 	a.navigate("/restore")
 }
@@ -77,11 +81,14 @@ func (a *App) restorePage(c *ui.Context) {
 	pageHead(c, T("restore.title"), T("restore.step."+r.step))
 	envSkipped := r.step != "setup" && r.step != "env" && !r.envNeeded
 	restoreStepper(c, r.step, envSkipped)
-	if !r.point.CreatedAt.IsZero() {
-		subPanel(ui.Row(c)).Gap(spSection).AlignItems(ui.Center).Children(func() {
+	if !r.point.CreatedAt.IsZero() || r.origin != "" {
+		subPanel(ui.Row(c)).Gap(spSection).AlignItems(ui.Center).Wrap().Children(func() {
 			ui.Icon(c, icons.clock).FontSize(fsTitle3).TextColor(palette.Brand)
-			pointFact(c, T("restore.snapshot_time"), r.point.CreatedAt.Local().Format("2006-01-02 15:04"))
-			pointFact(c, T("point.scope"), tierText(r.point.Scope.Tier))
+			if !r.point.CreatedAt.IsZero() {
+				pointFact(c, T("restore.snapshot_time"), r.point.CreatedAt.Local().Format("2006-01-02 15:04"))
+				pointFact(c, T("point.scope"), tierText(r.point.Scope.Tier))
+			}
+			pointFact(c, T("restore.origin"), orText(r.origin, T("restore.origin_unknown")))
 		})
 	}
 	if r.j.err != nil {
@@ -189,6 +196,8 @@ func (a *App) runRestore(r *restoreFlow) {
 	if r.j.busy || r.plan == nil {
 		return
 	}
+	r.progress = service.Progress{}
+	r.rewireJ, r.rewirePlan, r.postCopyNote = job{}, nil, ""
 	r.j = job{busy: true, doingAt: time.Now()}
 	r.step = "prepare"
 	ctx, cancel := context.WithCancel(context.Background())
@@ -196,11 +205,13 @@ func (a *App) runRestore(r *restoreFlow) {
 	ctx = a.restoreContext(ctx, r)
 	decision := service.SourceDecision(r.sourceChoice)
 	backupCurrent := r.mode == revive.ModeRollback && r.backupCurrent
+	carryProtection := r.mode == revive.ModeMigrate && r.carryProtection
 	p := r.plan
 	a.run(func() {
 		defer cancel()
 		t, err := a.svc.RunRestore(ctx, p, service.ReviveConfirm{
 			BackupCurrent:    backupCurrent,
+			CarryProtection:  carryProtection,
 			UnverifiedSource: func(service.UnverifiedSource) service.SourceDecision { return decision },
 			Swap: func(ver *revive.StageVerifyResult) bool {
 				reply := make(chan restoreSwapReply, 1)

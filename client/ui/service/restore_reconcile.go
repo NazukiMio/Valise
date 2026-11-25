@@ -62,12 +62,16 @@ func (s *Service) InspectRestore(ctx context.Context, t RestoreTask) (RestoreTas
 		}
 	}
 	t.Prev = r.Kept
-	if j.RecoveryTarget != nil {
+	if j.RecoveryTarget != nil || (r.Complete && j.State == revive.StateHealthy) {
 		var binding identity.Binding
 		if s.call(ctx, t.Target, identity.MethodGet, identity.GetParams{InstanceID: t.Instance}, &binding) == nil {
 			for _, rel := range binding.Relations {
 				if rel.OperationRef == t.OpID {
 					t.Relation = true
+					if t.TargetAgent == nil && binding.IdentityState == identity.Bound && binding.Agent != nil {
+						ref := binding.Agent.Ref
+						t.TargetAgent = &ref
+					}
 				}
 			}
 		}

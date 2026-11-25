@@ -118,11 +118,14 @@ type Snapshot struct {
 	// ProfileDoc is the effective profile the snapshot was sealed with; a
 	// client without that profile version may revive with it explicitly.
 	ProfileDoc *profile.Profile `json:"profile_doc,omitempty"`
-	// LocalOverrides, LocalSQLite and ExternalRefs record the instance's
-	// dossier extensions at seal time.
+	// LocalOverrides, LocalSQLite, LocalRoots, ExternalRefs and ToolDeps record
+	// the instance's dossier extensions at seal time.
+	DisplayName    string               `json:"display_name,omitempty"`
 	LocalOverrides []profile.Override   `json:"local_overrides,omitempty"`
 	LocalSQLite    []profile.SQLiteRef  `json:"local_sqlite,omitempty"`
+	LocalRoots     []enroll.LocalRoot   `json:"local_roots,omitempty"`
 	ExternalRefs   []enroll.ExternalRef `json:"external_refs,omitempty"`
+	ToolDeps       []enroll.ToolDep     `json:"tool_deps,omitempty"`
 	// Name and Env: a named instance (docs/PROFILES.md 2, 多实例).
 	Name        string            `json:"name,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`

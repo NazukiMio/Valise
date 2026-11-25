@@ -32,7 +32,9 @@ type DossierAgent struct {
 	Roots          map[string]string   `json:"roots"`
 	LocalOverrides []profile.Override  `json:"local_overrides"`
 	LocalSQLite    []profile.SQLiteRef `json:"local_sqlite,omitempty"`
+	LocalRoots     []LocalRoot         `json:"local_roots,omitempty"`
 	ExternalRefs   []ExternalRef       `json:"external_refs,omitempty"`
+	ToolDeps       []ToolDep           `json:"tool_deps,omitempty"`
 	EntryPorts     map[string]int      `json:"entry_ports,omitempty"`
 	EnrolledAt     time.Time           `json:"enrolled_at"`
 	Superseded     *Supersession       `json:"superseded,omitempty"`
@@ -68,8 +70,14 @@ func (d *Dossier) Record(id string) *Record {
 	if len(a.LocalSQLite) > 0 {
 		r.LocalSQLite = append([]profile.SQLiteRef(nil), a.LocalSQLite...)
 	}
+	if len(a.LocalRoots) > 0 {
+		r.LocalRoots = append([]LocalRoot(nil), a.LocalRoots...)
+	}
 	if len(a.ExternalRefs) > 0 {
 		r.ExternalRefs = append([]ExternalRef(nil), a.ExternalRefs...)
+	}
+	if len(a.ToolDeps) > 0 {
+		r.ToolDeps = append([]ToolDep(nil), a.ToolDeps...)
 	}
 	if a.Name != "" {
 		r.Provenance, r.Service, r.Entries = Provenance{}, a.Service, []EntryState{}
@@ -93,8 +101,14 @@ func (d *Dossier) Put(r Record, now time.Time) {
 	if len(r.LocalSQLite) > 0 {
 		a.LocalSQLite = append([]profile.SQLiteRef(nil), r.LocalSQLite...)
 	}
+	if len(r.LocalRoots) > 0 {
+		a.LocalRoots = append([]LocalRoot(nil), r.LocalRoots...)
+	}
 	if len(r.ExternalRefs) > 0 {
 		a.ExternalRefs = append([]ExternalRef(nil), r.ExternalRefs...)
+	}
+	if len(r.ToolDeps) > 0 {
+		a.ToolDeps = append([]ToolDep(nil), r.ToolDeps...)
 	}
 	if r.Name == "" {
 		d.Provenance, d.Service, d.Entries = r.Provenance, r.Service, r.Entries
@@ -108,8 +122,24 @@ func (d *Dossier) Put(r Record, now time.Time) {
 		if r.LocalSQLite == nil && len(old.LocalSQLite) > 0 {
 			a.LocalSQLite = append([]profile.SQLiteRef(nil), old.LocalSQLite...)
 		}
+		if r.LocalRoots == nil && len(old.LocalRoots) > 0 {
+			a.LocalRoots = append([]LocalRoot(nil), old.LocalRoots...)
+			if a.Roots == nil {
+				a.Roots = map[string]string{}
+			}
+			for _, lr := range a.LocalRoots {
+				if lr.ID != "" && lr.Path != "" {
+					if _, exists := a.Roots[lr.ID]; !exists {
+						a.Roots[lr.ID] = lr.Path
+					}
+				}
+			}
+		}
 		if r.ExternalRefs == nil && len(old.ExternalRefs) > 0 {
 			a.ExternalRefs = append([]ExternalRef(nil), old.ExternalRefs...)
+		}
+		if r.ToolDeps == nil && len(old.ToolDeps) > 0 {
+			a.ToolDeps = append([]ToolDep(nil), old.ToolDeps...)
 		}
 		*old = a
 		return

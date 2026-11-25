@@ -60,6 +60,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 			case tabManage:
 				a.manageTab(c, row)
 				if !row.Retired() {
+					a.agentDossierCard(c, row)
 					a.agentKitCard(c, row)
 				}
 				a.agentForgetManageRow(c, row)

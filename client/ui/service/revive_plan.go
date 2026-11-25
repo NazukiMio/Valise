@@ -15,6 +15,7 @@ import (
 	"valise/core/enroll"
 	"valise/core/identity"
 	"valise/core/profile"
+	"valise/core/protection"
 	"valise/core/revive"
 	"valise/core/valise"
 	"valise/core/vault"
@@ -48,11 +49,32 @@ type ReviveOptions struct {
 	Fault  string `json:"-"` // drills only
 }
 
+// ToolCheckResult compares snapshot companion CLI dependencies against what the
+// target server has on PATH or ~/.local/bin.
+type ToolCheckResult struct {
+	Present []string         `json:"present,omitempty"`
+	Missing []enroll.ToolDep `json:"missing,omitempty"`
+}
+
+// SourceProtectionSummary summarizes the source instance's accepted protection
+// plan so the user can choose to carry it over during migration.
+type SourceProtectionSummary struct {
+	Enabled         bool     `json:"enabled"`
+	Schedule        string   `json:"schedule,omitempty"`
+	PeriodUnit      string   `json:"period_unit,omitempty"`
+	Tier            string   `json:"tier,omitempty"`
+	Targets         []string `json:"targets,omitempty"`
+	KeepAutoPeriods int      `json:"keep_auto_periods,omitempty"`
+	Summary         string   `json:"summary"`
+}
+
 // DossierReviveSummary is the snapshot's dossier as it lands on the target.
 type DossierReviveSummary struct {
 	LocalOverrides int                  `json:"local_overrides"`
 	LocalSQLite    []string             `json:"local_sqlite,omitempty"` // root:path
+	LocalRoots     []enroll.LocalRoot   `json:"local_roots,omitempty"`
 	ExternalRefs   []enroll.ExternalRef `json:"external_refs,omitempty"`
+	ToolDeps       []enroll.ToolDep     `json:"tool_deps,omitempty"`
 }
 
 // RevivePlan is shown to the user before anything changes.
@@ -63,6 +85,9 @@ type RevivePlan struct {
 	Snapshot vault.Meta    `json:"snapshot"`
 	Target   string        `json:"target"`
 	From     string        `json:"from"`
+	// DisplayName is the user-given agent name carried from the snapshot or
+	// source dossier.
+	DisplayName string `json:"display_name,omitempty"`
 	// Source is the copy the snapshot was read from, nil for From's vault.
 	Source *CopySource `json:"source,omitempty"`
 	// SourceLost: From could not be reached. A migration then neither stops
@@ -85,6 +110,10 @@ type RevivePlan struct {
 	InstallArgv             []string `json:"service_install_argv,omitempty"`
 	// Dossier is what the snapshot's record carries over (nil when empty).
 	Dossier *DossierReviveSummary `json:"dossier,omitempty"`
+	// ToolCheck lists which snapshot companion CLI tools are present vs missing on target.
+	ToolCheck *ToolCheckResult `json:"tool_check,omitempty"`
+	// SourceProtection summarizes the source server's protection plan (migrate only).
+	SourceProtection *SourceProtectionSummary `json:"source_protection,omitempty"`
 	// BodySummary compares the snapshot's body with the target's when they
 	// differ or the body is not carried.
 	BodySummary string `json:"body_summary,omitempty"`
@@ -120,6 +149,11 @@ type RevivePlan struct {
 	profileName  string
 	// sourceAgent is the source generation from a bound snapshot binding.
 	sourceAgent *identity.AgentRef
+	// sourceProtectionDesired holds the source protection plan's Desired for
+	// post-swap carry-over when the user confirms CarryProtection.
+	sourceProtectionDesired *protection.Desired
+	// sourceHome is the source account's $HOME (used for post-migrate MCP rewire detection).
+	sourceHome string
 }
 
 func (p *RevivePlan) warn(w string) { p.Warnings = append(p.Warnings, w) }
@@ -301,15 +335,23 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if err != nil {
 		return nil, err
 	}
+	var extraTools []string
+	for _, dep := range head.ToolDeps {
+		if name := strings.TrimSpace(dep.Name); name != "" && !slices.Contains(extraTools, name) {
+			extraTools = append(extraTools, name)
+		}
+	}
 	var facts revive.InspectResult
 	if err := s.callOwner(ctx, rp.target, nil, revive.MethodInspect,
-		revive.InspectParams{Profile: prof, InstanceID: instance, Roots: roots, Provenance: head.Provenance, PlainBytes: rp.Snapshot.PlainBytes}, &facts); err != nil {
+		revive.InspectParams{Profile: prof, InstanceID: instance, Roots: roots, Provenance: head.Provenance, PlainBytes: rp.Snapshot.PlainBytes, ExtraTools: extraTools}, &facts); err != nil {
 		return nil, err
 	}
 	rp.TargetArch = facts.OS + "/" + facts.Arch
 	rp.targetFacts = facts
+	rp.ToolCheck = computeToolCheck(head.ToolDeps, facts.Tools)
+	remappedLocalRoots := remapLocalRoots(head.LocalRoots, roots)
 	plan := revive.Plan{OpID: revive.NewOpID(time.Now()), Mode: o.Mode, InstanceID: instance, SnapshotID: o.SnapshotID,
-		Tier: head.Tier, Profile: prof, Roots: roots, Carry: o.Mode == revive.ModeRollback}
+		Tier: head.Tier, Profile: prof, LocalRoots: remappedLocalRoots, Roots: roots, Carry: o.Mode == revive.ModeRollback}
 	if len(facts.Busy) > 0 && !o.testOnly {
 		var desc []string
 		for _, b := range facts.Busy {
@@ -385,6 +427,14 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 
 	rp.DataOnly = o.SkipService
 	rp.summarizeDossier(head)
+	if rp.Dossier != nil && len(plan.LocalRoots) > 0 {
+		rp.Dossier.LocalRoots = append([]enroll.LocalRoot(nil), plan.LocalRoots...)
+	}
+	rp.DisplayName = head.DisplayName
+	rp.sourceHome = inferOldHome(head.Roots[profile.StateRoot], prof)
+	if !lost {
+		s.enrichSourceDetails(ctx, rp, o.From, head.InstanceID, prof)
+	}
 	if !o.testOnly {
 		planBodyOpts(rp, &plan, head, facts, prof, o)
 		if beside {
@@ -434,6 +484,9 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	if !o.testOnly {
 		if err := s.prepareRecoveryIdentity(ctx, rp, &plan); err != nil {
 			return nil, err
+		}
+		if o.Mode == revive.ModeMigrate && !lost {
+			s.readSourceProtection(ctx, rp, o.From, head.InstanceID)
 		}
 		planNestedBody(rp, &plan)
 		warnCredentialsReplaced(rp, &plan, facts, prof)
@@ -508,6 +561,92 @@ func matchAny(refs []profile.PathRef, root, path string) bool {
 	return false
 }
 
+// inferOldHome derives the source account's $HOME from the snapshot's state
+// directory, matching profile detect candidates first and falling back to the
+// parent directory of common hidden "$HOME/.<harness>" directories.
+func inferOldHome(oldState string, prof profile.Profile) string {
+	if oldState == "" {
+		return ""
+	}
+	clean := filepath.Clean(oldState)
+	if prof.Detect != nil {
+		for _, c := range prof.Detect.StateDirCandidates {
+			if rest, ok := strings.CutPrefix(c, "${HOME}"); ok && strings.HasSuffix(clean, rest) {
+				if h := strings.TrimSuffix(clean, rest); h != "" {
+					return filepath.Clean(h)
+				}
+			}
+		}
+	}
+	if strings.HasPrefix(filepath.Base(clean), ".") {
+		dir := filepath.Dir(clean)
+		if dir != "" && dir != "." && dir != "/" {
+			return dir
+		}
+	}
+	return ""
+}
+
+// computeToolCheck compares snapshot ToolDeps against target facts.Tools.
+func computeToolCheck(deps []enroll.ToolDep, tools map[string]bool) *ToolCheckResult {
+	if len(deps) == 0 {
+		return nil
+	}
+	tc := &ToolCheckResult{}
+	for _, dep := range deps {
+		if tools[dep.Name] {
+			tc.Present = append(tc.Present, dep.Name)
+		} else {
+			tc.Missing = append(tc.Missing, dep)
+		}
+	}
+	return tc
+}
+
+// remapLocalRoots returns a copy of localRoots with each Path replaced by the
+// mapped target path from roots when present.
+func remapLocalRoots(localRoots []enroll.LocalRoot, roots []revive.RootPlan) []enroll.LocalRoot {
+	if len(localRoots) == 0 {
+		return nil
+	}
+	rootsMap := make(map[string]string, len(roots))
+	for _, r := range roots {
+		rootsMap[r.ID] = r.Path
+	}
+	out := make([]enroll.LocalRoot, len(localRoots))
+	for i, lr := range localRoots {
+		if mapped, ok := rootsMap[lr.ID]; ok && mapped != "" {
+			lr.Path = mapped
+		}
+		out[i] = lr
+	}
+	return out
+}
+
+// enrichSourceDetails best-effort reads the source session's $HOME and, when
+// the snapshot header did not carry DisplayName, the source dossier's DisplayName.
+func (s *Service) enrichSourceDetails(ctx context.Context, rp *RevivePlan, fromHost, instanceID string, prof profile.Profile) {
+	c, err := s.session(ctx, fromHost)
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	if c.hello != nil && c.hello.Home != "" {
+		rp.sourceHome = c.hello.Home
+	}
+	if rp.DisplayName == "" && instanceID != "" {
+		var res enroll.InstanceGetResult
+		if c.Call(ctx, enroll.MethodInstanceGet, enroll.InstanceGetParams{InstanceID: instanceID}, &res) == nil && res.Record != nil {
+			if res.Record.DisplayName != "" {
+				rp.DisplayName = res.Record.DisplayName
+			}
+			if rp.sourceHome == "" {
+				rp.sourceHome = inferOldHome(res.Record.Roots[profile.StateRoot], prof)
+			}
+		}
+	}
+}
+
 // mapRoots places the snapshot's roots on the target.
 func mapRoots(o ReviveOptions, head *vault.Snapshot, first revive.InspectResult, prof profile.Profile) ([]revive.RootPlan, error) {
 	oldState := head.Roots[profile.StateRoot]
@@ -521,28 +660,38 @@ func mapRoots(o ReviveOptions, head *vault.Snapshot, first revive.InspectResult,
 	if newState == "" {
 		return nil, valise.New("state_dir_unknown", "无法确定目标服务器上的状态目录", "请在目标目录设置中明确指定目标服务器上的状态目录路径")
 	}
-	oldHome := ""
-	if prof.Detect != nil {
-		for _, c := range prof.Detect.StateDirCandidates {
-			if rest, ok := strings.CutPrefix(c, "${HOME}"); ok && strings.HasSuffix(oldState, rest) {
-				oldHome = strings.TrimSuffix(oldState, rest)
+	oldHome := inferOldHome(oldState, prof)
+	oldStateClean := ""
+	if oldState != "" {
+		oldStateClean = filepath.Clean(oldState)
+	}
+	targetHome := strings.TrimRight(first.Home, "/")
+	sourceRoots := make(map[string]string, len(head.Roots)+len(head.LocalRoots))
+	for id, old := range head.Roots {
+		sourceRoots[id] = old
+	}
+	for _, lr := range head.LocalRoots {
+		if lr.ID != "" && lr.Path != "" {
+			if _, ok := sourceRoots[lr.ID]; !ok {
+				sourceRoots[lr.ID] = lr.Path
 			}
 		}
 	}
 	paths := map[string]string{profile.StateRoot: newState}
-	for id, old := range head.Roots {
+	for id, old := range sourceRoots {
 		if id == profile.StateRoot {
 			continue
 		}
+		oldClean := filepath.Clean(old)
 		switch {
 		case o.Roots[id] != "":
 			paths[id] = o.Roots[id]
 		case o.Mode == revive.ModeRollback:
 			paths[id] = old
-		case strings.HasPrefix(old, oldState+"/"):
-			paths[id] = newState + strings.TrimPrefix(old, oldState)
-		case oldHome != "" && strings.HasPrefix(old, oldHome+"/"):
-			paths[id] = first.Home + strings.TrimPrefix(old, oldHome)
+		case oldStateClean != "" && strings.HasPrefix(oldClean, oldStateClean+"/"):
+			paths[id] = strings.TrimRight(newState, "/") + strings.TrimPrefix(oldClean, oldStateClean)
+		case oldHome != "" && targetHome != "" && strings.HasPrefix(oldClean, oldHome+"/"):
+			paths[id] = targetHome + strings.TrimPrefix(oldClean, oldHome)
 		default:
 			return nil, valise.New("root_unmapped", "无法确定 root "+id+"（原路径 "+old+"）在目标服务器上的位置", "请在目标目录设置中为目录 "+id+" 指定目标服务器上的路径")
 		}
@@ -567,11 +716,17 @@ func planRecord(instance string, prof profile.Profile, roots []revive.RootPlan, 
 	for _, r := range roots {
 		rootsMap[r.ID] = r.Path
 	}
+	displayName := head.DisplayName
+	if rp != nil && rp.DisplayName != "" {
+		displayName = rp.DisplayName
+	}
 	rec := enroll.Record{InstanceID: instance, ProfileID: prof.ID, ProfileVersion: prof.ProfileVersion, Roots: rootsMap,
 		Provenance: head.Provenance, LocalOverrides: append([]profile.Override{}, head.LocalOverrides...),
 		LocalSQLite:  append([]profile.SQLiteRef(nil), head.LocalSQLite...),
+		LocalRoots:   remapLocalRoots(head.LocalRoots, roots),
 		ExternalRefs: append([]enroll.ExternalRef(nil), head.ExternalRefs...),
-		EnrolledAt:   time.Now().UTC(), Name: head.Name}
+		ToolDeps:     append([]enroll.ToolDep(nil), head.ToolDeps...),
+		EnrolledAt:   time.Now().UTC(), Name: head.Name, DisplayName: displayName}
 	if len(head.Env) > 0 {
 		rec.Env = map[string]string{}
 		for k, v := range head.Env { // a path-based selection follows the new state dir
@@ -620,10 +775,15 @@ func shortCommit(c string) string {
 
 // summarizeDossier lists what the snapshot's record carries to the target.
 func (p *RevivePlan) summarizeDossier(head *vault.Snapshot) {
-	if len(head.LocalOverrides) == 0 && len(head.LocalSQLite) == 0 && len(head.ExternalRefs) == 0 {
+	if len(head.LocalOverrides) == 0 && len(head.LocalSQLite) == 0 && len(head.LocalRoots) == 0 && len(head.ExternalRefs) == 0 && len(head.ToolDeps) == 0 {
 		return
 	}
-	d := &DossierReviveSummary{LocalOverrides: len(head.LocalOverrides), ExternalRefs: append([]enroll.ExternalRef(nil), head.ExternalRefs...)}
+	d := &DossierReviveSummary{
+		LocalOverrides: len(head.LocalOverrides),
+		LocalRoots:     append([]enroll.LocalRoot(nil), head.LocalRoots...),
+		ExternalRefs:   append([]enroll.ExternalRef(nil), head.ExternalRefs...),
+		ToolDeps:       append([]enroll.ToolDep(nil), head.ToolDeps...),
+	}
 	for _, q := range head.LocalSQLite {
 		d.LocalSQLite = append(d.LocalSQLite, q.Root+":"+q.Glob)
 	}

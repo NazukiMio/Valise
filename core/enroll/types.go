@@ -24,16 +24,37 @@ const (
 	MethodInstanceForget = "instance_forget"
 	MethodEntryPortSet   = "entry_port_set"
 	MethodLabelSet       = "agent_label_set"
+	MethodDossierUpdate  = "dossier_update"
 
-	ForgetCapability = "instance-forget/1"
+	ForgetCapability  = "instance-forget/1"
+	DossierCapability = "dossier-roots/1"
 )
 
-var idRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+var (
+	idRe       = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	toolNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
+)
 
 // ValidInstanceID reports whether id follows the profile id naming rule.
 func ValidInstanceID(id string) error {
 	if !idRe.MatchString(id) || len(id) > 64 {
 		return fmt.Errorf("实例 id 只能包含小写字母、数字和连字符（最长 64 个字符）：%q", id)
+	}
+	return nil
+}
+
+// ValidRootID reports whether id is a valid user-attached local root ID.
+func ValidRootID(id string) error {
+	if !idRe.MatchString(id) || len(id) > 48 || id == profile.StateRoot || id == profile.CategoryBodyPatch {
+		return fmt.Errorf("附加目录 id 无效（仅限小写字母、数字和连字符，最长 48 个字符，且不能为 state 或 body_patch）：%q", id)
+	}
+	return nil
+}
+
+// ValidToolName reports whether name is a valid companion CLI executable name.
+func ValidToolName(name string) error {
+	if !toolNameRe.MatchString(name) {
+		return fmt.Errorf("工具名称无效（仅限字母、数字及 . _ + -，最长 64 个字符，不含路径或空格）：%q", name)
 	}
 	return nil
 }
@@ -244,6 +265,37 @@ type ExternalRef struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// LocalRoot records a user-attached extra directory included in backups with a
+// default classification category.
+type LocalRoot struct {
+	ID       string `json:"id"`
+	Path     string `json:"path"`
+	Category string `json:"category"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// ToolDep records a companion CLI executable checked read-only during migration
+// to surface environment gaps (Valise never auto-installs arbitrary CLI tools).
+type ToolDep struct {
+	Name    string `json:"name"`
+	Purpose string `json:"purpose,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// DossierUpdateParams directly manages an instance's local_roots and tool_deps.
+type DossierUpdateParams struct {
+	InstanceID      string      `json:"instance_id"`
+	AddRoots        []LocalRoot `json:"add_roots,omitempty"`
+	RemoveRootIDs   []string    `json:"remove_root_ids,omitempty"`
+	AddToolDeps     []ToolDep   `json:"add_tool_deps,omitempty"`
+	RemoveToolNames []string    `json:"remove_tool_names,omitempty"`
+}
+
+// DossierUpdateResult returns the updated instance record.
+type DossierUpdateResult struct {
+	Record Record `json:"record"`
+}
+
 // Record is the instance record at ~/.config/valise/instances/<id>.json.
 type Record struct {
 	InstanceID     string             `json:"instance_id"`
@@ -256,8 +308,12 @@ type Record struct {
 	LocalOverrides []profile.Override `json:"local_overrides"`
 	// LocalSQLite holds user-confirmed SQLite VACUUM INTO rules supplementing the profile.
 	LocalSQLite []profile.SQLiteRef `json:"local_sqlite,omitempty"`
+	// LocalRoots holds user-confirmed extra directories backed up alongside profile roots.
+	LocalRoots []LocalRoot `json:"local_roots,omitempty"`
 	// ExternalRefs holds user-confirmed out-of-root paths noted by onboard.
 	ExternalRefs []ExternalRef `json:"external_refs,omitempty"`
+	// ToolDeps holds user-confirmed companion CLI tools checked read-only on migration.
+	ToolDeps []ToolDep `json:"tool_deps,omitempty"`
 	// EntryPorts override the profile's entry ports for this instance after
 	// a port change (docs/LOGIN_RELAY.md 4.2).
 	EntryPorts map[string]int `json:"entry_ports,omitempty"`
@@ -302,7 +358,9 @@ func RecordFrom(r *Report, now time.Time) Record {
 		ov = []profile.Override{}
 	}
 	var localSQLite []profile.SQLiteRef
+	var localRoots []LocalRoot
 	var externalRefs []ExternalRef
+	var toolDeps []ToolDep
 	var displayName string
 	if r.Previous != nil {
 		if r.Overrides == nil && len(r.Previous.LocalOverrides) > 0 {
@@ -311,15 +369,29 @@ func RecordFrom(r *Report, now time.Time) Record {
 		if len(r.Previous.LocalSQLite) > 0 {
 			localSQLite = append([]profile.SQLiteRef(nil), r.Previous.LocalSQLite...)
 		}
+		if len(r.Previous.LocalRoots) > 0 {
+			localRoots = append([]LocalRoot(nil), r.Previous.LocalRoots...)
+			for _, lr := range localRoots {
+				if lr.ID != "" && lr.Path != "" {
+					if _, exists := roots[lr.ID]; !exists {
+						roots[lr.ID] = lr.Path
+					}
+				}
+			}
+		}
 		if len(r.Previous.ExternalRefs) > 0 {
 			externalRefs = append([]ExternalRef(nil), r.Previous.ExternalRefs...)
+		}
+		if len(r.Previous.ToolDeps) > 0 {
+			toolDeps = append([]ToolDep(nil), r.Previous.ToolDeps...)
 		}
 		displayName = r.Previous.DisplayName
 	}
 	return Record{
 		InstanceID: r.InstanceID, ProfileID: r.ProfileID, ProfileVersion: r.ProfileVersion,
 		Roots: roots, Provenance: r.Provenance, Service: r.Service, Entries: r.Entries,
-		LocalOverrides: ov, LocalSQLite: localSQLite, ExternalRefs: externalRefs,
+		LocalOverrides: ov, LocalSQLite: localSQLite, LocalRoots: localRoots,
+		ExternalRefs: externalRefs, ToolDeps: toolDeps,
 		EntryPorts: r.EntryPorts, EnrolledAt: now.UTC(),
 		Name: r.Name, Env: r.Env, DisplayName: displayName,
 		HarnessName: r.HarnessName, HarnessAgents: r.HarnessAgents,

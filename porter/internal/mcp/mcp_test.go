@@ -173,8 +173,10 @@ func TestProtocolAndTools(t *testing.T) {
 		}
 		if name == "valise_propose_dossier" {
 			rawSchema, _ := json.Marshal(m["inputSchema"])
-			if !strings.Contains(string(rawSchema), `"identity"`) {
-				t.Fatalf("valise_propose_dossier schema missing identity category: %s", rawSchema)
+			for _, want := range []string{`"identity"`, `"tool_dep"`, `"suggested_category"`, `"purpose"`} {
+				if !strings.Contains(string(rawSchema), want) {
+					t.Fatalf("valise_propose_dossier schema missing %s: %s", want, rawSchema)
+				}
 			}
 		}
 	}
@@ -323,10 +325,47 @@ func TestProtocolAndTools(t *testing.T) {
 		t.Fatalf("dossier updates missing: ov=%+v sql=%+v ext=%+v", rec.LocalOverrides, rec.LocalSQLite, rec.ExternalRefs)
 	}
 
-	// After accepting plugins/mem.db, onboard context excludes it from untracked_sqlite and includes it in effective_rules.
+	// Propose tool_dep + external_ref with suggested_category, promote external_ref into local_roots,
+	// and verify onboard_context exposes local_roots & tool_deps and classifies files in local_roots.
+	promotedDir := filepath.Join(home, "personal-kb")
+	write(t, filepath.Join(promotedDir, "guide.md"), "personal guide")
+	sc, text, isErr = c.tool("valise_propose_dossier", map[string]any{"items": []map[string]any{
+		{"kind": "external_ref", "path": promotedDir, "ref_kind": "external_dir", "suggested_category": "memory", "reason": "personal knowledge base"},
+		{"kind": "tool_dep", "name": "ffmpeg", "purpose": "audio conversion", "reason": "voice skill"},
+	}})
+	if isErr {
+		t.Fatalf("propose_dossier tool_dep/external_ref failed: %s", text)
+	}
+	ps2, _ := kit.LoadProposals(home, "demo")
+	if len(ps2) != 2 {
+		t.Fatalf("expected 2 proposals, got %+v", ps2)
+	}
+	if _, err := kit.Decide(home, agentkit.DecideParams{
+		InstanceID:           "demo",
+		Accept:               []string{ps2[1].ID},
+		PromoteExternalRoots: []agentkit.ExternalRootPromotion{{ProposalID: ps2[0].ID}},
+	}); err != nil {
+		t.Fatalf("Decide promote + tool_dep failed: %v", err)
+	}
+
+	// After accepting plugins/mem.db, promoting personal-kb, and accepting tool_dep:
+	// onboard context excludes plugins/mem.db from untracked_sqlite, classifies personal-kb via local_roots,
+	// and lists local_roots & tool_deps in effective_rules.
 	sc, text, isErr = c.tool("valise_onboard_context", map[string]any{})
 	if isErr {
 		t.Fatalf("%s", text)
+	}
+	eff2 := sc["effective_rules"].(map[string]any)
+	if lr, ok := eff2["local_roots"].([]any); !ok || len(lr) != 1 {
+		t.Fatalf("expected 1 local_root in effective_rules, got %+v", eff2["local_roots"])
+	}
+	if td, ok := eff2["tool_deps"].([]any); !ok || len(td) != 1 {
+		t.Fatalf("expected 1 tool_dep in effective_rules, got %+v", eff2["tool_deps"])
+	}
+	for _, entry := range sc["layout_facts"].(map[string]any)["unclassified_dirs"].([]any) {
+		if entry.(map[string]any)["root"] == "ext-personal-kb" {
+			t.Fatalf("promoted local_root files should not be unclassified: %+v", entry)
+		}
 	}
 	if got := sc["layout_facts"].(map[string]any)["untracked_sqlite"].([]any); len(got) != 0 {
 		t.Fatalf("accepted local_sqlite still shown in untracked_sqlite: %+v", got)

@@ -50,12 +50,20 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 	if st, err := os.Stat(params.StateDir); err != nil || !st.IsDir() || !filepath.IsAbs(params.StateDir) {
 		return nil, valise.New("state_dir_missing", "状态目录不存在："+params.StateDir, "重新接入，让 Valise 重新探测")
 	}
+	var extraRootIDs []string
+	if previous != nil {
+		for _, lr := range previous.LocalRoots {
+			if lr.ID != "" {
+				extraRootIDs = append(extraRootIDs, lr.ID)
+			}
+		}
+	}
 	for _, o := range params.Overrides {
-		if err := o.Validate(p); err != nil {
+		if err := o.ValidateWithRoots(p, extraRootIDs); err != nil {
 			return nil, valise.New("override_invalid", "归类指令无效："+err.Error(), "格式为 --assign <root>:<glob>=<类别>")
 		}
 	}
-	mergedOverrides := mergeOverrides(p, previous, params.Overrides)
+	mergedOverrides := mergeOverrides(p, previous, extraRootIDs, params.Overrides)
 	r := &enroll.Report{
 		InstanceID: params.InstanceID, Name: params.Name, Env: params.Env, ProfileID: p.ID, ProfileVersion: p.ProfileVersion, ProfileStatus: p.Status,
 		Categories: map[string]enroll.Tally{}, Secrets: []enroll.FileRef{}, SQLite: []enroll.SQLiteFile{},
@@ -90,7 +98,7 @@ func Scan(ctx context.Context, e *Env, params enroll.ScanParams, previous *enrol
 // before applying newly supplied overrides (which replace matching Root+Glob
 // entries). Any stale previous override that no longer validates against p is
 // dropped.
-func mergeOverrides(p *profile.Profile, previous *enroll.Record, current []profile.Override) []profile.Override {
+func mergeOverrides(p *profile.Profile, previous *enroll.Record, extraRootIDs []string, current []profile.Override) []profile.Override {
 	if previous == nil || len(previous.LocalOverrides) == 0 {
 		return current
 	}
@@ -101,7 +109,7 @@ func mergeOverrides(p *profile.Profile, previous *enroll.Record, current []profi
 	out := make([]profile.Override, 0, len(previous.LocalOverrides)+len(current))
 	seen := make(map[[2]string]bool, len(previous.LocalOverrides)+len(current))
 	for _, o := range previous.LocalOverrides {
-		if o.Validate(p) != nil {
+		if o.ValidateWithRoots(p, extraRootIDs) != nil {
 			continue
 		}
 		k := [2]string{o.Root, o.Glob}

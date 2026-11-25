@@ -57,6 +57,9 @@ const (
 type ReviveConfirm struct {
 	// BackupCurrent is an explicit human choice for current-instance restore.
 	BackupCurrent bool
+	// CarryProtection is an explicit human choice for migration to carry over
+	// the source instance's protection plan onto the migrated target.
+	CarryProtection bool
 	// UnverifiedSource is asked before anything is staged, only when the
 	// plan's source is unverified. Nil refuses such a plan.
 	UnverifiedSource func(UnverifiedSource) SourceDecision

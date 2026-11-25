@@ -2,10 +2,14 @@ package gui
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 
+	"valise/client/profiles"
+	"valise/core/kittools"
 	"valise/ui/service"
 )
 
@@ -186,4 +190,58 @@ func (a *App) runProfileSync(ps *profilesState) {
 		a.reloadProfiles()
 		a.refreshAgents()
 	})
+}
+
+func staleOverrideIDs(st *service.ProfilesStatus, pf *service.PackFile) []string {
+	if st == nil || pf == nil || pf.SignatureErr != nil || pf.Pack == nil {
+		return nil
+	}
+	packVers := map[string]int{}
+	for _, e := range pf.Pack.Manifest.Profiles {
+		packVers[e.ID] = e.ProfileVersion
+	}
+	var out []string
+	for _, sum := range st.Loaded {
+		if !sum.OverridesOfficial {
+			continue
+		}
+		if pv, ok := packVers[sum.ID]; ok && sum.Version <= pv {
+			out = append(out, sum.ID)
+		}
+	}
+	return out
+}
+
+func formatPackEntries(entries []profiles.ManifestEntry) string {
+	var parts []string
+	for _, p := range entries {
+		parts = append(parts, fmt.Sprintf("%s v%d", p.ID, p.ProfileVersion))
+	}
+	return strings.Join(parts, T("common.dot_sep"))
+}
+
+func formatPackClouds(kit *kittools.List) string {
+	if kit == nil {
+		return ""
+	}
+	var names []string
+	for _, t := range kit.Tools {
+		for _, cl := range t.Clouds {
+			names = append(names, cl.Name)
+		}
+	}
+	return strings.Join(names, T("common.dot_sep"))
+}
+
+func packCommands(p *profiles.Pack) []string {
+	if p == nil {
+		return nil
+	}
+	var out []string
+	for _, d := range p.Docs {
+		for _, cmd := range profiles.Commands(d.Profile) {
+			out = append(out, fmt.Sprintf("[%s] %s", d.Profile.ID, cmd))
+		}
+	}
+	return out
 }

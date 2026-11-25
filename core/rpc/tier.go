@@ -113,6 +113,7 @@ var ownerMethods = map[string]bool{
 	"snapshot_promote":      true,
 	"instance_write":        true,
 	"instance_forget":       true,
+	"dossier_update":        true,
 	"server_rename":         true,
 	"agent_label_set":       true,
 	"target_set":            true,

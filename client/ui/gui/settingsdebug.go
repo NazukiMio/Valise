@@ -36,6 +36,7 @@ func (a *App) trackRoute() {
 	}
 	prev := a.lastRoute
 	a.lastRoute = cur
+	a.onAgentRouteChanged(cur)
 	if prev == cloudAddRoute && cur != cloudAddRoute {
 		// Leaving the cloud login page ends the session of the user's own
 		// app key; a login still running keeps its own copy.

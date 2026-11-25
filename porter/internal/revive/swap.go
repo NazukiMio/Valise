@@ -595,6 +595,25 @@ func (r *Runner) installService(ctx context.Context, j *revive.Journal) error {
 	return r.Store.Save(j)
 }
 
+// defaultRootsFor extracts the per-root default categories from Plan.LocalRoots,
+// falling back to Plan.Record.LocalRoots when Plan.LocalRoots is empty.
+func defaultRootsFor(p revive.Plan) map[string]string {
+	lrs := p.LocalRoots
+	if len(lrs) == 0 && p.Record != nil {
+		lrs = p.Record.LocalRoots
+	}
+	if len(lrs) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(lrs))
+	for _, lr := range lrs {
+		if lr.ID != "" && lr.Category != "" {
+			out[lr.ID] = lr.Category
+		}
+	}
+	return out
+}
+
 // carry copies live content outside the snapshot's tier into the stage
 // (rollback). SQLite sidecars of declared databases are never carried: they
 // belong to the replaced database. Body directories are moved later.
