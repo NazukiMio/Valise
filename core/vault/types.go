@@ -163,6 +163,16 @@ type Files struct {
 	Format   string    `json:"format"`
 	Files    []File    `json:"files"`
 	Symlinks []Symlink `json:"symlinks"`
+	// Dirs are empty classified directories (stage-dirs/1); readers that
+	// predate it ignore the field.
+	Dirs []Dir `json:"dirs,omitempty"`
+}
+
+// Dir is one empty directory in a snapshot.
+type Dir struct {
+	Root string `json:"root"`
+	Path string `json:"path"`
+	Mode uint32 `json:"mode"`
 }
 
 // File is one regular file in a snapshot.

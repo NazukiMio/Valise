@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"valise/core/agentkit"
 )
 
 const demoKit = `checkup:
@@ -257,9 +259,45 @@ agent_kit:
 		t.Fatalf("expected remove in mcp-log: %q", string(mcpLog))
 	}
 
+	// RewireMCP runs MCP command without touching skills and respects restartService=false.
+	_ = os.MkdirAll(filepath.Join(home, ".demo/skills/valise-onboard"), 0o755)
+	if err := os.WriteFile(filepath.Join(home, ".demo/skills/valise-onboard/SKILL.md"), []byte("keep-me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rw, err := s.RewireMCP(ctx, "box", "demo", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rw.Result != nil || rw.ServiceRestart != nil || rw.MCPWire == nil || !rw.MCPWire.OK {
+		t.Fatalf("unexpected RewireMCP(false): %+v", rw)
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, ".demo/skills/valise-onboard/SKILL.md")); string(b) != "keep-me" {
+		t.Fatalf("RewireMCP touched skills: %q", b)
+	}
+
 	// Refused command is never executed.
 	refused := s.kitRunStep(ctx, "box", nil, []string{"rm", "-rf", "/"}, "demo", false, "kit-test-")
 	if refused.Attempted || refused.OK || refused.Err == "" {
 		t.Fatalf("expected refused command to be rejected without running: %+v", refused)
+	}
+}
+
+func TestFillKitSkillChange(t *testing.T) {
+	res := &agentkit.KitStatusResult{Skills: []agentkit.SkillState{
+		{Skill: "a", State: agentkit.SkillModified},
+		{Skill: "b", State: agentkit.SkillMissing},
+		{Skill: "c", State: agentkit.SkillCurrent},
+		{Skill: "d", State: agentkit.SkillModified, ChangeKind: agentkit.SkillChangeBothChanged},
+	}}
+	fillKitSkillChange(res, []agentkit.SkillFile{{Skill: "a", Name: "SKILL.md", Content: []byte("new")}, {Skill: "d", Content: []byte("x")}})
+	got := []string{res.Skills[0].ChangeKind, res.Skills[1].ChangeKind, res.Skills[2].ChangeKind, res.Skills[3].ChangeKind}
+	want := []string{"local_modified", "missing", "current", "both_changed"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%d: %s", i, got[i])
+		}
+	}
+	if res.Skills[0].ShippedContent != "new" || res.Skills[2].ShippedContent != "" || res.Skills[3].ShippedContent != "x" {
+		t.Errorf("%+v", res.Skills)
 	}
 }

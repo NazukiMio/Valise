@@ -35,6 +35,9 @@ type restoreFlow struct {
 	sourceChoice                             string
 	backupCurrent                            bool
 	carryProtection                          bool
+	remapHomeSymlinks                        bool
+	carryMCP                                 bool
+	rewriteConfigHomePaths                   bool
 	verify                                   *revive.StageVerifyResult
 	deadline                                 time.Time
 	reply                                    chan restoreSwapReply
@@ -160,6 +163,10 @@ func (a *App) prepareRestore(r *restoreFlow) {
 			r.j.busy, r.j.err, r.j.cancel = false, err, nil
 			if err == nil {
 				r.plan = p
+				r.remapHomeSymlinks = r.mode == revive.ModeMigrate && p.Revive.HomeChanged
+				hasMCP := p.Revive.Plan.Profile.AgentKit != nil && len(p.Revive.Plan.Profile.AgentKit.MCPAddArgv) > 0
+				r.carryMCP = r.mode == revive.ModeMigrate && hasMCP
+				r.rewriteConfigHomePaths = false
 				needEnv := hasEnvBlocker(p.Revive)
 				wasInEnv := r.step == "env"
 				r.envNeeded = needEnv
@@ -206,13 +213,19 @@ func (a *App) runRestore(r *restoreFlow) {
 	decision := service.SourceDecision(r.sourceChoice)
 	backupCurrent := r.mode == revive.ModeRollback && r.backupCurrent
 	carryProtection := r.mode == revive.ModeMigrate && r.carryProtection
+	remapHomeSymlinks := r.mode == revive.ModeMigrate && r.remapHomeSymlinks
+	carryMCP := r.mode == revive.ModeMigrate && r.carryMCP
+	rewriteConfigHomePaths := r.mode == revive.ModeMigrate && r.rewriteConfigHomePaths
 	p := r.plan
 	a.run(func() {
 		defer cancel()
 		t, err := a.svc.RunRestore(ctx, p, service.ReviveConfirm{
-			BackupCurrent:    backupCurrent,
-			CarryProtection:  carryProtection,
-			UnverifiedSource: func(service.UnverifiedSource) service.SourceDecision { return decision },
+			BackupCurrent:          backupCurrent,
+			CarryProtection:        carryProtection,
+			RemapHomeSymlinks:      remapHomeSymlinks,
+			CarryMCP:               carryMCP,
+			RewriteConfigHomePaths: rewriteConfigHomePaths,
+			UnverifiedSource:       func(service.UnverifiedSource) service.SourceDecision { return decision },
 			Swap: func(ver *revive.StageVerifyResult) bool {
 				reply := make(chan restoreSwapReply, 1)
 				a.update(func() {

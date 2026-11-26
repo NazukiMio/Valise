@@ -16,10 +16,14 @@ import (
 
 // serverScan is one look at a server's agents, and each adoption.
 type serverScan struct {
-	busy   bool
-	found  []service.DetectedInstance
-	err    error
-	adopts map[string]*adoption // by candidate id
+	busy            bool
+	found           []service.DetectedInstance
+	err             error
+	adopts          map[string]*adoption // by candidate id
+	selected        map[string]bool      // selected candidate ids for batch enroll
+	batchEnablePlan bool
+	batchJ          job
+	batchRes        *service.EnrollBatchResult
 }
 
 // adoption is one agent being adopted: the report first, then accepting.
@@ -44,7 +48,7 @@ const guideURL = "https://github.com/NazukiMio/Valise/blob/main/docs/PROFILE_AUT
 func (a *App) scanServer(host string) {
 	sc := a.scans[host]
 	if sc == nil {
-		sc = &serverScan{adopts: map[string]*adoption{}}
+		sc = &serverScan{adopts: map[string]*adoption{}, selected: map[string]bool{}, batchEnablePlan: true}
 		a.scans[host] = sc
 	}
 	sc.busy, sc.err = true, nil
@@ -52,7 +56,12 @@ func (a *App) scanServer(host string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		found, err := a.svc.DetectInstances(ctx, host)
-		a.update(func() { sc.busy, sc.found, sc.err = false, found, err })
+		a.update(func() {
+			sc.busy, sc.found, sc.err = false, found, err
+			if err == nil {
+				pruneSelected(sc, found)
+			}
+		})
 	})
 }
 
@@ -86,9 +95,16 @@ func (a *App) onServerPage(c *ui.Context, host string) {
 	}
 	if len(sc.found) > 0 {
 		section(c, T("onserver.found"))
-		for _, d := range sc.found {
-			a.foundCard(c.Key(d.ID+d.StateDir), host, sc, d)
+		actionable := a.actionableDetected(host, sc)
+		batchMode := len(actionable) >= 2
+		if batchMode || sc.batchJ.busy || sc.batchJ.err != nil || sc.batchRes != nil {
+			a.onServerBatchBar(c, host, sc, actionable)
 		}
+		for _, d := range sc.found {
+			a.foundCard(c.Key(d.ID+d.StateDir), host, sc, d, batchMode)
+		}
+	} else if sc.batchJ.busy || sc.batchJ.err != nil || sc.batchRes != nil {
+		a.onServerBatchBar(c, host, sc, nil)
 	}
 	section(c, T("onserver.unknown_title"))
 	card(ui.Row(c)).Gap(14).AlignItems(ui.Center).Children(func() {
@@ -110,10 +126,23 @@ func section(c *ui.Context, title string) {
 
 // foundCard is one recognized agent: already adopted, or the report and
 // accepting it.
-func (a *App) foundCard(c *ui.Context, host string, sc *serverScan, d service.DetectedInstance) {
+func (a *App) foundCard(c *ui.Context, host string, sc *serverScan, d service.DetectedInstance, batchMode bool) {
 	ad := sc.adopts[d.ID]
 	card(ui.Column(c)).Gap(10).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+			if batchMode && a.isActionableDetected(host, d) {
+				checked := sc.selected[d.ID]
+				if ui.Checkbox(c.Key("sel-"+d.ID), &checked, "").Changed() {
+					if sc.selected == nil {
+						sc.selected = map[string]bool{}
+					}
+					if checked {
+						sc.selected[d.ID] = true
+					} else {
+						delete(sc.selected, d.ID)
+					}
+				}
+			}
 			a.avatar(c, agentRow{Server: host, Instance: orText(d.Enrolled, d.ID), Profile: d.ProfileID, Name: a.harness[d.ProfileID]}, 36)
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				name := orText(a.harness[d.ProfileID], d.ProfileID)
@@ -130,10 +159,12 @@ func (a *App) foundCard(c *ui.Context, host string, sc *serverScan, d service.De
 			switch {
 			case d.Enrolled != "" && a.unbound(host, d.Enrolled) && (ad == nil || ad.res == nil && !ad.busy):
 				ui.Text(c, T("adopt.no_identity")).FontSize(12).TextColor(palette.Warn)
-				ui.PrimaryButton(c, T("adopt.again")).OnClick(func() { a.adopt(host, sc, d, false) })
+				actionButton(c, T("adopt.again"), !batchMode, func() { a.quickReenrollOnServer(host, sc, d) })
+				quietButton(c, T("adopt.review_first")).OnClick(func() { a.adopt(host, sc, d, false) })
 			case d.Enrolled != "" && d.ProfileVersion > 0 && d.EnrolledProfileVersion > 0 && d.ProfileVersion > d.EnrolledProfileVersion && (ad == nil || !ad.busy && ad.res == nil && !ad.written):
 				ui.Text(c, T("adopt.profile_outdated")).FontSize(12).TextColor(palette.Warn)
-				ui.PrimaryButton(c, T("adopt.update_profile")).OnClick(func() { a.adopt(host, sc, d, false) })
+				actionButton(c, T("adopt.update_profile"), !batchMode, func() { a.quickReenrollOnServer(host, sc, d) })
+				quietButton(c, T("adopt.review_first")).OnClick(func() { a.adopt(host, sc, d, false) })
 				ui.Button(c, T("common.view")).OnClick(func() { a.router.Push("/agents/" + host + "/" + orText(d.Enrolled, d.ID)) })
 				quietButton(c, T("agent.forget.stale_record")).OnClick(func() { a.openAgentForget(host, d.Enrolled, nameFor(a, d)) })
 			case d.Enrolled != "" && (ad == nil || !ad.busy && ad.res == nil) || ad != nil && ad.written:
@@ -143,7 +174,7 @@ func (a *App) foundCard(c *ui.Context, host string, sc *serverScan, d service.De
 			case ad != nil && ad.busy:
 				ui.Spinner(c)
 			case ad == nil || ad.res == nil:
-				ui.PrimaryButton(c, T("adopt.go")).OnClick(func() { a.adopt(host, sc, d, false) })
+				actionButton(c, T("adopt.go"), !batchMode, func() { a.adopt(host, sc, d, false) })
 			}
 		})
 		if ad == nil {
@@ -153,10 +184,10 @@ func (a *App) foundCard(c *ui.Context, host string, sc *serverScan, d service.De
 			errorBox(c, ad.err, a.fold("adopt-err-"+host+d.ID))
 		}
 		if ad.res != nil && ad.res.Report != nil && !ad.written {
-			a.adoptReport(c, host, sc, d, ad)
+			a.adoptReport(c, host, sc, d, ad, !batchMode)
 		}
 		if ad.written {
-			a.adoptPlanCard(c, host, d, ad)
+			a.adoptPlanCard(c, host, d, ad, !batchMode)
 		}
 	})
 }
@@ -219,7 +250,7 @@ var categoryChoices = []struct{ id, label string }{
 	{"workspace", "category.workspace"}, {"cache", "category.cache"}, {"ignore", "category.ignore"},
 }
 
-func (a *App) adoptReport(c *ui.Context, host string, sc *serverScan, d service.DetectedInstance, ad *adoption) {
+func (a *App) adoptReport(c *ui.Context, host string, sc *serverScan, d service.DetectedInstance, ad *adoption, primary bool) {
 	r := ad.res.Report
 	ui.Column(c).Gap(8).Padding(12, 14).Radius(10).Background(palette.Board).Children(func() {
 		var found int
@@ -266,7 +297,7 @@ func (a *App) adoptReport(c *ui.Context, host string, sc *serverScan, d service.
 		muted(ui.Text(c, T("adopt.readonly"))).Wrap()
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			ui.Button(c, T("common.cancel")).OnClick(func() { delete(sc.adopts, d.ID) })
-			ui.PrimaryButton(c, T("adopt.confirm")).OnClick(func() { a.adopt(host, sc, d, true) })
+			actionButton(c, T("adopt.confirm"), primary, func() { a.adopt(host, sc, d, true) })
 		})
 	})
 }

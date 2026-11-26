@@ -60,6 +60,13 @@ type ReviveConfirm struct {
 	// CarryProtection is an explicit human choice for migration to carry over
 	// the source instance's protection plan onto the migrated target.
 	CarryProtection bool
+	// RemapHomeSymlinks rewrites symlink targets under the source $HOME to
+	// the target $HOME when the home differs; RewriteConfigHomePaths does so
+	// for allowlisted config files (originals kept as .valise-home-bak);
+	// CarryMCP re-runs the harness's MCP add command after a migration.
+	RemapHomeSymlinks      bool
+	RewriteConfigHomePaths bool
+	CarryMCP               bool
 	// UnverifiedSource is asked before anything is staged, only when the
 	// plan's source is unverified. Nil refuses such a plan.
 	UnverifiedSource func(UnverifiedSource) SourceDecision

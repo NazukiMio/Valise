@@ -143,6 +143,10 @@ const (
 // skipping those the target does not have (docs/ARCHITECTURE.md 8.2.1).
 const BodyDirsCapability = "revive-body-dirs/1"
 
+// StageDirsCapability: stage-write accepts tar directory entries, so empty
+// directories recorded in a snapshot are recreated in the stage.
+const StageDirsCapability = "stage-dirs/1"
+
 // BodyPlan says what happens to the body.
 type BodyPlan struct {
 	Action    string   `json:"action"`

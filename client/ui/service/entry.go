@@ -139,7 +139,7 @@ func (s *Service) OpenEntry(ctx context.Context, host, instance string, o OpenOp
 		suffix, err := entryAuth(ctx, c, login.EntryAuthParams{InstanceID: instance, Entry: *entry})
 		if err == nil {
 			local = "http://127.0.0.1:" + strconv.Itoa(ln.Port) + suffix
-			d := "已用 harness 自己的命令取得令牌，直接放进浏览器地址（没有显示，也没有保存）"
+			d := "已自动附带访问令牌打开浏览器"
 			status(EntryStatus{Step: EntryAuth, OK: true, Detail: d})
 		} else {
 			reason := err.Error()

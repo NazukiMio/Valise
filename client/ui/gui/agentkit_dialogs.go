@@ -24,17 +24,26 @@ func (a *App) kitInstallModal(c *ui.Context, row *agentRow, st *agentKitState) {
 			ui.Scroll(c).MaxHeight(200).Children(func() {
 				subPanel(ui.Column(c)).Gap(6).Children(func() {
 					for _, s := range st.status.Skills {
+						sk := s
 						tag := T("kit.preview.write")
-						switch s.State {
-						case agentkit.SkillModified:
+						switch skillChangeKind(sk) {
+						case agentkit.SkillChangeOfficialUpdate:
+							tag = T("kit.preview.upgrade")
+						case agentkit.SkillChangeLocalModified, agentkit.SkillChangeBothChanged:
 							tag = T("kit.preview.overwrite_backup")
 							hasMod = true
-						case agentkit.SkillCurrent:
+						case agentkit.SkillChangeCurrent:
 							tag = T("kit.preview.same")
 						}
-						ui.Row(c.Key("pki-" + s.Skill)).Gap(8).Children(func() {
-							mono(muted(ui.Text(c, s.Path))).FontSize(fsSub).Grow(1).Wrap()
+						ui.Row(c.Key("pki-" + sk.Skill)).Gap(8).AlignItems(ui.Center).Children(func() {
+							mono(muted(ui.Text(c, sk.Path))).FontSize(fsSub).Grow(1).Wrap()
 							muted(ui.Text(c, tag)).FontSize(fsSub)
+							if skillHasDiff(sk) {
+								quietButton(c, T("kit.diff.open")).OnClick(func() {
+									st.installOpen = false
+									st.diffSkill = sk.Skill
+								})
+							}
 						})
 					}
 				})
@@ -93,7 +102,7 @@ func (a *App) kitUninstallModal(c *ui.Context, row *agentRow, st *agentKitState)
 							continue
 						}
 						line := T("kit.uninstall_remove", "path", s.Path)
-						if s.State == agentkit.SkillModified && !st.uninstallForce {
+						if s.State == agentkit.SkillModified && skillChangeKind(s) != agentkit.SkillChangeOfficialUpdate && !st.uninstallForce {
 							line = T("kit.uninstall_keep", "path", s.Path)
 						}
 						mono(muted(ui.Text(c.Key("pku-"+s.Skill), line))).FontSize(fsSub).Wrap()
@@ -289,12 +298,48 @@ func truncateLines(s string, maxLines int) string {
 	return strings.TrimSpace(out)
 }
 
-func skillStateMeta(s agentkit.SkillState) (tone, text string) {
+func skillChangeKind(s agentkit.SkillState) string {
+	if s.ChangeKind != "" {
+		return s.ChangeKind
+	}
 	switch s.State {
 	case agentkit.SkillCurrent:
-		tone, text = "ok", T("kit.skill.current")
+		return agentkit.SkillChangeCurrent
 	case agentkit.SkillModified:
-		tone, text = "warn", T("kit.skill.modified")
+		return agentkit.SkillChangeLocalModified
+	default:
+		return agentkit.SkillChangeMissing
+	}
+}
+
+func skillHasDiff(s agentkit.SkillState) bool {
+	kind := skillChangeKind(s)
+	return kind != agentkit.SkillChangeCurrent && kind != agentkit.SkillChangeMissing
+}
+
+func skillStateMeta(s agentkit.SkillState, now time.Time) (tone, text string) {
+	switch skillChangeKind(s) {
+	case agentkit.SkillChangeCurrent:
+		tone, text = "ok", T("kit.skill.current")
+	case agentkit.SkillChangeOfficialUpdate:
+		tone, text = "warn", T("kit.skill.official_update")
+	case agentkit.SkillChangeLocalModified:
+		tone = "warn"
+		if s.DiskMTime != nil {
+			text = T("kit.skill.local_modified_at", "when", when(*s.DiskMTime, now))
+		} else {
+			text = T("kit.skill.local_modified")
+		}
+	case agentkit.SkillChangeBothChanged:
+		tone = "warn"
+		switch {
+		case s.InstalledAt != nil && s.DiskMTime != nil:
+			text = T("kit.skill.both_changed_at", "installed", when(*s.InstalledAt, now), "modified", when(*s.DiskMTime, now))
+		case s.DiskMTime != nil:
+			text = T("kit.skill.both_changed_mod", "modified", when(*s.DiskMTime, now))
+		default:
+			text = T("kit.skill.both_changed")
+		}
 	default:
 		tone, text = "neutral", T("kit.skill.missing")
 	}
@@ -303,3 +348,5 @@ func skillStateMeta(s agentkit.SkillState) (tone, text string) {
 	}
 	return tone, text
 }
+
+// Legacy locale keys "kit.skill.modified" and "kit.update_open" remain for imported catalogs.

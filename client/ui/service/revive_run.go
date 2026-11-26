@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -86,14 +87,13 @@ func (s *Service) ExecuteReviveConfirmed(ctx context.Context, rp *RevivePlan, fa
 		}
 		return &res, why
 	}
+	if err := s.applyStageChoices(rp, confirm); err != nil {
+		return back(err)
+	}
 	if err := s.streamStage(ctx, rp, begun.Grant); err != nil {
 		return back(err)
 	}
-	var man []revive.ManifestEntry
-	for _, f := range rp.files {
-		man = append(man, revive.ManifestEntry{Path: tarName(plan, f.Root, f.Path), Size: f.Size, SHA256: f.SHA256,
-			Category: f.Category, SQLite: rp.sqlite[f.Root+":"+f.Path]})
-	}
+	man := stageManifest(rp)
 	report(ctx, StageVerify, 0, 0)
 	var ver revive.StageVerifyResult
 	if err := s.callOwner(ctx, rp.target, nil, revive.MethodStageVerify, revive.StageVerifyParams{OpID: plan.OpID, Manifest: man}, &ver); err != nil {
@@ -199,6 +199,22 @@ func (s *Service) streamStage(ctx context.Context, rp *RevivePlan, grant string)
 	werr := func() error {
 		for _, f := range rp.files {
 			h := &tar.Header{Name: tarName(rp.Plan, f.Root, f.Path), Mode: int64(f.Mode & 0o7777), Size: f.Size, ModTime: f.MTime, Typeflag: tar.TypeReg, Format: tar.FormatPAX}
+			if rw := rp.rewritten[f.Root+":"+f.Path]; rw != nil {
+				bak := &tar.Header{Name: h.Name + homeBakSuffix, Mode: 0o600, Size: int64(len(rw.orig)), ModTime: f.MTime, Typeflag: tar.TypeReg, Format: tar.FormatPAX}
+				h.Size = int64(len(rw.data))
+				for _, w := range []struct {
+					h *tar.Header
+					b []byte
+				}{{bak, rw.orig}, {h, rw.data}} {
+					if err := tw.WriteHeader(w.h); err != nil {
+						return err
+					}
+					if _, err := tw.Write(w.b); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			if err := tw.WriteHeader(h); err != nil {
 				return err
 			}
@@ -206,9 +222,20 @@ func (s *Service) streamStage(ctx context.Context, rp *RevivePlan, grant string)
 				return err
 			}
 		}
-		for _, l := range rp.links {
+		links := rp.stageLinks
+		if links == nil {
+			links = rp.links
+		}
+		for _, l := range links {
 			if err := tw.WriteHeader(&tar.Header{Name: tarName(rp.Plan, l.Root, l.Path), Typeflag: tar.TypeSymlink, Linkname: l.Target, Format: tar.FormatPAX}); err != nil {
 				return err
+			}
+		}
+		if slices.Contains(rp.targetCaps, revive.StageDirsCapability) {
+			for _, d := range rp.stageDirList() {
+				if err := tw.WriteHeader(&tar.Header{Name: tarName(rp.Plan, d.Root, d.Path), Mode: int64(d.Mode & 0o7777), Typeflag: tar.TypeDir, Format: tar.FormatPAX}); err != nil {
+					return err
+				}
 			}
 		}
 		return tw.Close()

@@ -37,6 +37,7 @@ type agentKitState struct {
 	installOpen    bool
 	uninstallOpen  bool
 	uninstallForce bool
+	diffSkill      string
 	wireMCP        bool
 	restartSvc     bool
 	lastInstall    *service.KitPlan
@@ -193,6 +194,7 @@ func (a *App) agentKitCard(c *ui.Context, row *agentRow) {
 	})
 	a.kitInstallModal(c, row, st)
 	a.kitUninstallModal(c, row, st)
+	a.kitDiffModal(c, row, st)
 }
 
 func (a *App) kitStatusSection(c *ui.Context, st *agentKitState) {
@@ -206,22 +208,33 @@ func (a *App) kitStatusSection(c *ui.Context, st *agentKitState) {
 		return
 	}
 	mono(muted(ui.Text(c, T("kit.skills_dir", "dir", st.status.Dir)))).FontSize(fsSub).Wrap()
-	var hasMissing, hasModified, hasInstalled bool
+	var hasMissing, hasOfficial, hasLocalMod, hasBoth, hasInstalled bool
 	for _, s := range st.status.Skills {
-		switch s.State {
-		case agentkit.SkillMissing:
+		sk := s
+		kind := skillChangeKind(sk)
+		switch kind {
+		case agentkit.SkillChangeMissing:
 			hasMissing = true
-		case agentkit.SkillModified:
-			hasModified = true
+		case agentkit.SkillChangeOfficialUpdate:
+			hasOfficial = true
+			hasInstalled = true
+		case agentkit.SkillChangeLocalModified:
+			hasLocalMod = true
+			hasInstalled = true
+		case agentkit.SkillChangeBothChanged:
+			hasBoth = true
 			hasInstalled = true
 		default:
 			hasInstalled = true
 		}
-		tone, label := skillStateMeta(s)
-		ui.Row(c.Key("ks-" + s.Skill)).Gap(8).AlignItems(ui.Center).Children(func() {
+		tone, label := skillStateMeta(sk, c.Now())
+		ui.Row(c.Key("ks-" + sk.Skill)).Gap(8).AlignItems(ui.Center).Children(func() {
 			toneDot(c, tone)
-			mono(ui.Text(c, s.Skill)).FontSize(fsSub).Width(cur.Sizes.LabelWidth)
+			mono(ui.Text(c, sk.Skill)).FontSize(fsSub).Width(cur.Sizes.LabelWidth)
 			muted(ui.Text(c, label)).FontSize(fsSub).Grow(1).Wrap()
+			if skillHasDiff(sk) {
+				quietButton(c, T("kit.diff.open")).OnClick(func() { st.diffSkill = sk.Skill })
+			}
 		})
 	}
 	if st.actJ.busy {
@@ -233,11 +246,16 @@ func (a *App) kitStatusSection(c *ui.Context, st *agentKitState) {
 		st.installOpen = true
 	}
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		if hasMissing {
+		switch {
+		case hasMissing:
 			ui.PrimaryButton(c, T("kit.install_open")).OnClick(openInstall)
-		} else if hasModified {
-			ui.Button(c, T("kit.update_open")).OnClick(openInstall)
-		} else {
+		case hasBoth:
+			ui.Button(c, T("kit.compare_update_open")).OnClick(openInstall)
+		case hasLocalMod:
+			ui.Button(c, T("kit.reinstall_official_open")).OnClick(openInstall)
+		case hasOfficial:
+			ui.Button(c, T("kit.upgrade_open")).OnClick(openInstall)
+		default:
 			ui.Button(c, T("kit.reinstall_open")).OnClick(openInstall)
 		}
 		if hasInstalled {

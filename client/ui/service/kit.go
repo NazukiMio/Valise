@@ -142,6 +142,34 @@ type KitPlan struct {
 	ServiceRestart *KitServiceRestartOutcome `json:"service_restart,omitempty"`
 }
 
+// RewireMCP runs only the harness's MCP add command (and, when restartService
+// is true and the instance has a managed unit, restarts the service) without
+// writing or modifying skill files.
+func (s *Service) RewireMCP(ctx context.Context, host, instance string, restartService bool) (*KitPlan, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
+	target, err := s.LoginMethods(ctx, host, instance)
+	if err != nil {
+		return nil, err
+	}
+	porterPath, err := s.porterAbsPath(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	guide := buildKitGuide(target, porterPath, instance)
+	plan := &KitPlan{
+		AgentLine:  guide.AgentLine,
+		MCPDoc:     guide.MCPDoc,
+		MCPSnippet: guide.MCPSnippet,
+		MCPCommand: guide.MCPCommand,
+		MCPWire:    s.kitRunStep(ctx, host, target, guide.MCPCommand, instance, false, "kit-mcp-wire-"),
+	}
+	if restartService && kitServiceUnit(target) != "" {
+		plan.ServiceRestart = s.kitRestartService(ctx, host, instance, target, false)
+	}
+	return plan, nil
+}
+
 // KitInstall installs the skills into an instance's skills_dir (dryRun only
 // reports) and prepares the MCP instructions.
 func (s *Service) KitInstall(ctx context.Context, host, instance string, dryRun bool) (*KitPlan, error) {
@@ -206,7 +234,36 @@ func (s *Service) KitStatus(ctx context.Context, host, instance string) (*agentk
 	err = s.withSession(ctx, host, func(c caller) error {
 		return c.Call(ctx, agentkit.MethodKitStatus, agentkit.KitStatusParams{InstanceID: instance, Files: files}, &res)
 	})
+	if err == nil {
+		fillKitSkillChange(&res, files)
+	}
 	return &res, err
+}
+
+// fillKitSkillChange adds the shipped text for modified skills and infers
+// ChangeKind when an older porter did not report it.
+func fillKitSkillChange(res *agentkit.KitStatusResult, files []agentkit.SkillFile) {
+	shipped := map[string][]byte{}
+	for _, f := range files {
+		shipped[f.Skill] = f.Content
+	}
+	for i := range res.Skills {
+		sk := &res.Skills[i]
+		if sk.State == agentkit.SkillModified {
+			sk.ShippedContent = string(shipped[sk.Skill])
+		}
+		if sk.ChangeKind != "" {
+			continue
+		}
+		switch sk.State {
+		case agentkit.SkillMissing:
+			sk.ChangeKind = agentkit.SkillChangeMissing
+		case agentkit.SkillCurrent:
+			sk.ChangeKind = agentkit.SkillChangeCurrent
+		default:
+			sk.ChangeKind = agentkit.SkillChangeLocalModified
+		}
+	}
 }
 
 // KitRemovalPlan is what uninstalling does and how to unwire MCP.

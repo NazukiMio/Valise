@@ -28,15 +28,21 @@ type PostMigrateReport struct {
 	MCPCanWire          bool                 `json:"mcp_can_wire,omitempty"`
 	MCPNeedsRewire      bool                 `json:"mcp_needs_rewire,omitempty"`
 	MCPNote             string               `json:"mcp_note,omitempty"`
+	// Home-path follow-ups (docs: migration across accounts).
+	RemappedSymlinks        int                       `json:"remapped_symlinks,omitempty"`
+	RewrittenConfigPaths    int                       `json:"rewritten_config_paths,omitempty"`
+	RemainingConfigHomeHits int                       `json:"remaining_config_home_hits,omitempty"`
+	MCPAutoRan              bool                      `json:"mcp_auto_ran,omitempty"`
+	MCPWireOutcome          string                    `json:"mcp_wire_outcome,omitempty"` // "wired" or "failed"
+	MCPWireResult           *KitStepOutcome           `json:"mcp_wire_result,omitempty"`
+	MCPServiceRestart       *KitServiceRestartOutcome `json:"mcp_service_restart,omitempty"`
 }
 
 // RewireMigratedMCP re-runs the harness's MCP add command (pointing at the
-// target server's valise-porter path) and restarts the service unit.
+// target server's valise-porter path) and restarts its managed service unit
+// when one is configured, without overwriting skill files.
 func (s *Service) RewireMigratedMCP(ctx context.Context, host, instance string) (*KitPlan, error) {
-	return s.KitInstallWithOptions(ctx, host, instance, KitInstallOptions{
-		WireMCP:        true,
-		RestartService: true,
-	}, false)
+	return s.RewireMCP(ctx, host, instance, true)
 }
 
 // readSourceProtection best-effort fetches the source instance's accepted
@@ -184,7 +190,32 @@ func (s *Service) buildPostMigrateReport(ctx context.Context, t RestoreTask, rp 
 		}
 	}
 
+	report.RemappedSymlinks, report.RewrittenConfigPaths = rp.RemappedSymlinks, rp.RewrittenConfigPaths
+	report.RemainingConfigHomeHits = rp.remainingConfigHomeHits()
+	if rp.carryMCP && rp.Plan.Profile.AgentKit != nil && len(rp.Plan.Profile.AgentKit.MCPAddArgv) > 0 {
+		report.MCPAutoRan = true
+		restartSvc := !rp.DataOnly && rp.Plan.Unit != ""
+		kp, err := s.RewireMCP(ctx, t.Target, t.Instance, restartSvc)
+		if kp != nil {
+			report.MCPWireResult = kp.MCPWire
+			report.MCPServiceRestart = kp.ServiceRestart
+		} else if err != nil {
+			report.MCPWireResult = &KitStepOutcome{Attempted: true, ExitCode: -1, Err: errText1(err)}
+		}
+		if err == nil && kp != nil && kp.MCPWire != nil && kp.MCPWire.OK {
+			report.MCPWireOutcome = "wired"
+		} else {
+			report.MCPWireOutcome = "failed"
+		}
+	}
 	s.probeMigratedMCP(ctx, t, rp, report)
+	if report.MCPWireOutcome == "wired" {
+		report.MCPNeedsRewire = false
+		report.MCPNote = "已执行 Valise MCP 配置命令"
+	} else if report.MCPWireOutcome == "failed" {
+		report.MCPNeedsRewire = true
+		report.MCPNote = "自动重新接入 MCP 没有成功，可在管理页重试"
+	}
 	return report
 }
 

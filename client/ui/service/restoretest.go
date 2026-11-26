@@ -253,11 +253,7 @@ func (s *Service) unpackServer(ctx context.Context, rp *RevivePlan, result *Rest
 	}
 	err := s.streamStage(ctx, rp, begun.Grant)
 	if err == nil {
-		var man []revive.ManifestEntry
-		for _, f := range rp.files {
-			man = append(man, revive.ManifestEntry{Path: tarName(rp.Plan, f.Root, f.Path), Size: f.Size, SHA256: f.SHA256,
-				Category: f.Category, SQLite: rp.sqlite[f.Root+":"+f.Path]})
-		}
+		man := stageManifest(rp)
 		report(ctx, StageVerify, 0, 0)
 		s.LogStage("restore_test", StageVerify, rp.Target, "running", "")
 		var ver revive.StageVerifyResult

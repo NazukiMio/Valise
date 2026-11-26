@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -266,4 +267,45 @@ func parseHexAddr(s string) (string, int, bool) {
 		ip[i], ip[i+1], ip[i+2], ip[i+3] = raw[i+3], raw[i+2], raw[i+1], raw[i]
 	}
 	return ip.String(), int(port), true
+}
+
+// loopbackUID gives the user whose listeners are reported; tests replace it.
+var loopbackUID = os.Getuid
+
+// LoopbackListeners lists the TCP ports listening on 127.0.0.1 or ::1 that
+// belong to the porter's own user, read from /proc/net/tcp and tcp6. Only
+// port numbers are returned.
+func LoopbackListeners() (*login.LoopbackListenersResult, error) {
+	res := &login.LoopbackListenersResult{Ports: []int{}}
+	seen := map[int]bool{}
+	uid := loopbackUID()
+	for _, name := range []string{"tcp", "tcp6"} {
+		f, err := os.Open(filepath.Join(ProcNet, name))
+		if err != nil {
+			continue
+		}
+		sc := bufio.NewScanner(f)
+		sc.Scan() // header
+		for sc.Scan() {
+			fields := strings.Fields(sc.Text())
+			if len(fields) < 4 || fields[3] != "0A" {
+				continue
+			}
+			if len(fields) < 8 {
+				continue
+			}
+			n, err := strconv.Atoi(fields[7])
+			if err != nil || n != uid {
+				continue
+			}
+			ip, p, ok := parseHexAddr(fields[1])
+			if ok && (ip == "127.0.0.1" || ip == "::1") && !seen[p] {
+				seen[p] = true
+				res.Ports = append(res.Ports, p)
+			}
+		}
+		f.Close()
+	}
+	sort.Ints(res.Ports)
+	return res, nil
 }

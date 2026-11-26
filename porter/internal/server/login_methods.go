@@ -73,6 +73,9 @@ func init() {
 		}
 		return struct{}{}, err
 	}
+	methods[login.MethodLoopbackListeners] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		return porterlogin.LoopbackListeners()
+	}
 	methods[login.MethodListen] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		p, err := decode[login.ListenParams](raw)
 		if err != nil {

@@ -47,6 +47,13 @@ func (s *Service) saveRestore(t RestoreTask) error {
 	if err := os.MkdirAll(filepath.Dir(s.restoreTaskPath(t.OpID)), 0700); err != nil {
 		return err
 	}
+	if t.PostMigrate != nil && t.PostMigrate.MCPWireResult != nil && t.PostMigrate.MCPWireResult.Output != "" {
+		pm := *t.PostMigrate
+		wire := *pm.MCPWireResult
+		wire.Output = ""
+		pm.MCPWireResult = &wire
+		t.PostMigrate = &pm
+	}
 	t.Updated = time.Now().UTC()
 	return protectionAtomic(s.restoreTaskPath(t.OpID), t)
 }
@@ -145,8 +152,11 @@ func (s *Service) RunRestore(ctx context.Context, p *PreparedRestore, human Revi
 	})
 	var checkErr error
 	res, runErr := s.ExecuteReviveConfirmed(ctx, rp, "", ReviveConfirm{
-		BackupCurrent:    human.BackupCurrent,
-		UnverifiedSource: human.UnverifiedSource,
+		BackupCurrent:          human.BackupCurrent,
+		UnverifiedSource:       human.UnverifiedSource,
+		RemapHomeSymlinks:      human.RemapHomeSymlinks,
+		RewriteConfigHomePaths: human.RewriteConfigHomePaths,
+		CarryMCP:               human.CarryMCP,
 		Swap: func(ver *revive.StageVerifyResult) bool {
 			t.Verified = true
 			t.State = "waiting"

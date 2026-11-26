@@ -71,6 +71,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 	})
 	a.agentRenameDialog(c, row)
 	a.agentForgetModal(c)
+	a.forwardModal(c, row)
 }
 
 type agentRenameState struct {
@@ -143,7 +144,7 @@ func (a *App) agentHeader(c *ui.Context, row *agentRow) {
 			a.avatar(c, *row, 76)
 			a.iconChoice(c, row)
 		})
-		ui.Column(c).Grow(1).Gap(6).Children(func() {
+		ui.Column(c).Grow(1).Basis(0).Gap(6).Children(func() {
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
 				ui.Text(c, row.Name).FontSize(32).Bold().Font(cur.Fonts.Display)
 				if !row.Retired() {
@@ -163,8 +164,12 @@ func (a *App) agentHeader(c *ui.Context, row *agentRow) {
 				v.TextColor(palette.Warn)
 			}
 		})
-		if row.Entry != "" && !row.Retired() {
-			a.entryButton(c, row)
+		if !row.Retired() {
+			if row.Entry != "" {
+				a.entryButton(c, row)
+			} else {
+				quietButton(c, T("forward.open")).OnClick(func() { a.openForwardModal(row) })
+			}
 		}
 	})
 }

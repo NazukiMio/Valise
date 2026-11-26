@@ -36,6 +36,10 @@ type hooks struct {
 	forgetInstanceFn      func(context.Context, string, string) (*enroll.InstanceForgetResult, error)
 	prepareRestoreFn      func(context.Context, service.RestoreRequest) (*service.PreparedRestore, error)
 	rewireMigratedMCP     func(context.Context, string, string) (*service.KitPlan, error)
+	enrollBatchFn         func(context.Context, string, []service.EnrollBatchItem) (*service.EnrollBatchResult, error)
+	quickReenrollFn       func(context.Context, string, string) (*service.EnrollBatchResult, error)
+	forwardPageFn         func(context.Context, string, *service.ForwardTarget, service.OpenOptions) error
+	loopbackListenersFn   func(context.Context, string) ([]int, error)
 }
 
 // agentData is what was read about the agents, shared by every page.
@@ -74,9 +78,12 @@ type homeView struct {
 
 // agentView is one agent's page, apart from its journey and health.
 type agentView struct {
-	agentTab         int                    // tabOverview, tabJourney, tabHealth, tabManage
-	iconErr          error                  // choosing an agent's picture failed
-	entries          map[string]*entryState // admin page tunnels by server/instance
+	agentTab         int                      // tabOverview, tabJourney, tabHealth, tabManage
+	iconErr          error                    // choosing an agent's picture failed
+	entries          map[string]*entryState   // admin page tunnels by server/instance
+	entryChoice      map[string]string        // selected entry id by server/instance
+	forwards         map[string]*forwardState // loopback page forwards by server/instance
+	reenrollJobs     map[string]*job          // in-place 1-click re-enroll jobs by server/instance
 	natives          map[string]*nativeState
 	native           *nativeRun
 	agentRename      *agentRenameState
@@ -192,6 +199,13 @@ func (a *App) forgetServer(name string) {
 			a.closeEntry(k)
 		}
 	}
+	for k := range a.forwards {
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			a.closeForward(k)
+		}
+	}
+	deleteByPrefix(a.entryChoice, prefix)
+	deleteByPrefix(a.reenrollJobs, prefix)
 }
 
 // forgetInstance clears per-instance cached state after an instance is forgotten.
@@ -204,7 +218,10 @@ func (a *App) forgetInstance(host, instance string) {
 	delete(a.proposals, key)
 	delete(a.agentServices, key)
 	delete(a.agentDossiers, key)
+	delete(a.entryChoice, key)
+	delete(a.reenrollJobs, key)
 	a.closeEntry(key)
+	a.closeForward(key)
 	delete(a.scans, host)
 }
 

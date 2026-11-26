@@ -414,6 +414,13 @@ func StageWrite(s Store, op string, r io.Reader) (files int, err error) {
 			if err := os.Symlink(h.Linkname, dest); err != nil {
 				return files, err
 			}
+		case tar.TypeDir:
+			if err := mkdirNoFollow(base, dest); err != nil {
+				return files, err
+			}
+			if err := os.Chmod(dest, fs.FileMode(h.Mode).Perm()|0o700); err != nil {
+				return files, err
+			}
 		default:
 			return files, fmt.Errorf("unsupported tar entry type %c", h.Typeflag)
 		}

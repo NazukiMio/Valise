@@ -50,44 +50,6 @@ func (a *App) customInstallTile(c *ui.Context, host string) {
 	})
 }
 
-func (a *App) renderScriptFindings(c *ui.Context, fs []install.Finding) {
-	if len(fs) == 0 {
-		ui.Text(c, T("install.check_none")).FontSize(12).TextColor(palette.Ok).Wrap()
-		return
-	}
-	ui.Text(c, T("install.check_hits")).FontSize(12).Bold().TextColor(palette.Warn).Wrap()
-	for i, f := range fs {
-		key := "install.finding_hit"
-		if f.Refuse {
-			key = "install.finding_refuse"
-		}
-		ui.Column(c.Key(i)).Gap(2).Children(func() {
-			ui.Text(c, "· "+T(key, "reason", f.Reason)).FontSize(12).TextColor(palette.Warn).Wrap().Selectable()
-			switch {
-			case f.Line > 0 && f.Snippet != "":
-				mono(muted(ui.Text(c, T("install.finding_where", "line", f.Line, "snippet", f.Snippet)))).FontSize(fsCaption).Wrap().Selectable()
-			case f.Line > 0:
-				mono(muted(ui.Text(c, T("install.finding_line", "line", f.Line)))).FontSize(fsCaption).Wrap().Selectable()
-			case f.Snippet != "":
-				mono(muted(ui.Text(c, f.Snippet))).FontSize(fsCaption).Wrap().Selectable()
-			}
-		})
-	}
-}
-
-func (a *App) scriptPreview(c *ui.Context, foldKey string, script []byte, openDefault bool) {
-	lines := strings.Count(string(script), "\n") + 1
-	var fold *bool
-	if openDefault {
-		fold = a.foldDefault(foldKey, true)
-	} else {
-		fold = a.fold(foldKey)
-	}
-	ui.Collapsible(c, T("install.script", "n", lines), fold, func() {
-		codeBox(mono(ui.Text(c, string(script))).FontSize(fsCaption).Wrap().Selectable())
-	})
-}
-
 func (a *App) openInstallTerminal(conn *installConn, text *tailText) *terminal.Terminal {
 	if a.newTerminal != nil {
 		if t, err := a.newTerminal(conn); err == nil {

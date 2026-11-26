@@ -97,7 +97,12 @@ def safe_join(out, root, rel):
     parts = [root] + rel.split("/")
     if any(p in ("", ".", "..") for p in parts) or rel.startswith("/"):
         die("refusing unsafe path %s:%s" % (root, rel))
-    return os.path.join(out, *parts)
+    cur = out
+    for p in parts:
+        cur = os.path.join(cur, p)
+        if os.path.islink(cur):
+            die("refusing symlink along path %s:%s" % (root, rel))
+    return cur
 
 
 def parse_time_ns(s):
@@ -147,6 +152,12 @@ def main():
         die("this is a raw (full instance) snapshot and is treated as secrets as a whole; "
             "add --include-secrets to restore it")
     restored = skipped = 0
+    for d in files.get("dirs", []):
+        dest = safe_join(a.out, d["root"], d["path"])
+        os.makedirs(dest, exist_ok=True)
+        if os.path.islink(dest) or not os.path.isdir(dest):
+            die("%s:%s is not a real directory" % (d["root"], d["path"]))
+        os.chmod(dest, (d.get("mode", 0o700) & 0o7777) | 0o700)
     for f in files["files"]:
         if f["category"] in ("secrets", "unclassified") and not a.include_secrets:
             skipped += 1

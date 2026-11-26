@@ -154,6 +154,23 @@ type RevivePlan struct {
 	sourceProtectionDesired *protection.Desired
 	// sourceHome is the source account's $HOME (used for post-migrate MCP rewire detection).
 	sourceHome string
+
+	// ExternalSymlinks point outside every snapshot root. ConfigHomeHits are
+	// path references to the source $HOME in allowlisted config files (never
+	// file lines). HomeChanged: the target account's $HOME differs.
+	ExternalSymlinks []ExternalSymlinkNote `json:"external_symlinks,omitempty"`
+	ConfigHomeHits   []ConfigHomeHit       `json:"config_home_hits,omitempty"`
+	HomeChanged      bool                  `json:"home_changed,omitempty"`
+	SourceHome       string                `json:"source_home,omitempty"`
+	TargetHome       string                `json:"target_home,omitempty"`
+	// RemappedSymlinks and RewrittenConfigPaths are set during execution.
+	RemappedSymlinks     int `json:"remapped_symlinks,omitempty"`
+	RewrittenConfigPaths int `json:"rewritten_config_paths,omitempty"`
+
+	dirs       []vault.Dir
+	stageLinks []vault.Symlink
+	rewritten  map[string]*rewrittenFile
+	carryMCP   bool
 }
 
 func (p *RevivePlan) warn(w string) { p.Warnings = append(p.Warnings, w) }
@@ -417,6 +434,12 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 		rp.Bytes += f.Size
 	}
 	rp.links = list.Symlinks
+	for _, d := range list.Dirs {
+		if d.Root == vault.BodyPatchRoot || matchAny(excl, d.Root, d.Path) {
+			continue
+		}
+		rp.dirs = append(rp.dirs, d)
+	}
 	for _, sq := range head.SQLite {
 		rp.sqlite[sq.Root+":"+sq.Path] = true
 	}
@@ -434,6 +457,9 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	rp.sourceHome = inferOldHome(head.Roots[profile.StateRoot], prof)
 	if !lost {
 		s.enrichSourceDetails(ctx, rp, o.From, head.InstanceID, prof)
+	}
+	if !o.testOnly {
+		s.planHomePaths(rp, head, &prof)
 	}
 	if !o.testOnly {
 		planBodyOpts(rp, &plan, head, facts, prof, o)

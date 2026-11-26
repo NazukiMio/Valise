@@ -223,6 +223,11 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		pack(it.Info.Size(), false)
 	}
 	pack(0, true)
+	for _, d := range porterenroll.EmptyDirs(roots, nested, c) {
+		if vault.InTier(params.Tier, d.Category) {
+			files.Dirs = append(files.Dirs, vault.Dir{Root: d.Root, Path: d.Rel, Mode: uint32(d.Mode.Perm())})
+		}
+	}
 
 	if rec.Provenance.Git != nil && rec.Provenance.Git.Path != "" {
 		patch, perr := gitPatch(ctx, e, rec.Provenance.Git.Path)

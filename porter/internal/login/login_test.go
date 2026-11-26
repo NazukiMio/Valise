@@ -122,3 +122,33 @@ esac
 		t.Fatalf("command output leaked into the error: %v", err)
 	}
 }
+
+func TestLoopbackListeners(t *testing.T) {
+	dir := t.TempDir()
+	ProcNet = dir
+	loopbackUID = func() int { return 1000 }
+	t.Cleanup(func() { ProcNet = "/proc/net"; loopbackUID = os.Getuid })
+	tcp := `  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0100007F:23A0 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 1 1 0 100 0 0 10 0
+   1: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 2 1 0 100 0 0 10 0
+   2: 00000000:0050 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 3 1 0 100 0 0 10 0
+   3: 0100007F:0051 0100007F:D431 01 00000000:00000000 00:00000000 00000000  1000        0 4 1 0 100 0 0 10 0
+   4: 0100007F:23A0 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 5 1 0 100 0 0 10 0
+   5: 0100007F:270F 00000000:0000 0A 00000000:00000000 00:00000000 00000000   bad        0 8 1 0 100 0 0 10 0
+   6: 0100007F:2710 00000000:0000 0A 00000000:00000000
+`
+	tcp6 := `  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 00000000000000000000000001000000:0BB8 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 6 1 0 100 0 0 10 0
+   1: 00000000000000000000000000000000:1F91 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 7 1 0 100 0 0 10 0
+`
+	os.WriteFile(filepath.Join(dir, "tcp"), []byte(tcp), 0o644)
+	os.WriteFile(filepath.Join(dir, "tcp6"), []byte(tcp6), 0o644)
+	res, err := LoopbackListeners()
+	if err != nil || len(res.Ports) != 2 || res.Ports[0] != 3000 || res.Ports[1] != 9120 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	ProcNet = t.TempDir()
+	if res, _ := LoopbackListeners(); res.Ports == nil || len(res.Ports) != 0 {
+		t.Fatalf("%+v", res)
+	}
+}

@@ -230,7 +230,24 @@ type SkillState struct {
 	Path    string `json:"path"`
 	State   string `json:"state"`
 	Backups int    `json:"backups"`
+
+	ChangeKind      string     `json:"change_kind,omitempty"`
+	InstalledSHA256 string     `json:"installed_sha256,omitempty"`
+	DiskSHA256      string     `json:"disk_sha256,omitempty"`
+	InstalledAt     *time.Time `json:"installed_at,omitempty"`
+	DiskMTime       *time.Time `json:"disk_mtime,omitempty"`
+	DiskContent     string     `json:"disk_content,omitempty"`    // <= 64 KiB UTF-8, only when modified
+	ShippedContent  string     `json:"shipped_content,omitempty"` // filled by the client
 }
+
+// Four-way skill change kinds (SkillState.ChangeKind).
+const (
+	SkillChangeCurrent        = "current"
+	SkillChangeOfficialUpdate = "official_update"
+	SkillChangeLocalModified  = "local_modified"
+	SkillChangeBothChanged    = "both_changed"
+	SkillChangeMissing        = "missing"
+)
 
 // KitStatusResult describes what agent-kit left on the instance.
 type KitStatusResult struct {

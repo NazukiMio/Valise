@@ -292,7 +292,7 @@ func TestCustomInstallRiskSentenceAndRefusedGUI(t *testing.T) {
 	w.mu.Lock()
 	warnTexts := w.tt.Texts()
 	w.mu.Unlock()
-	hasAll(t, warnTexts, "基础检查发现以下情况", "会访问 https://cdn.example.invalid/a.tgz", install.RiskSentence)
+	hasAll(t, warnTexts, "发现 1 处需关注项", "会访问 https://cdn.example.invalid/a.tgz", install.RiskSentence)
 
 	// Clicking run without typing RiskSentence shows mismatch error and does not run.
 	w.do(func() {

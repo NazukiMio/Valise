@@ -138,3 +138,22 @@ func (s *Service) ForwardPage(ctx context.Context, host string, ft *ForwardTarge
 		}
 	}
 }
+
+// LoopbackListeners lists the loopback TCP ports the server's user listens
+// on, for choosing a page to open. It returns nil, nil when the porter does
+// not advertise login.LoopbackListenersCapability.
+func (s *Service) LoopbackListeners(ctx context.Context, host string) ([]int, error) {
+	c, err := s.session(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	if c.hello == nil || !slices.Contains(c.hello.Capabilities, login.LoopbackListenersCapability) {
+		return nil, nil
+	}
+	var res login.LoopbackListenersResult
+	if err := c.Call(ctx, login.MethodLoopbackListeners, struct{}{}, &res); err != nil {
+		return nil, err
+	}
+	return res.Ports, nil
+}

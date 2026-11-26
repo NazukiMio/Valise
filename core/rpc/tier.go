@@ -47,6 +47,7 @@ var dailyMethods = map[string]bool{
 	"vault_verify":            true,
 	"vault_files":             true,
 	"seal":                    true,
+	"loopback_listeners":      true,
 	"sync":                    true,
 	"journey_list":            true,
 	"target_list":             true,

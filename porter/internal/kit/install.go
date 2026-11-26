@@ -46,6 +46,8 @@ func Install(home string, p agentkit.KitInstallParams, now time.Time) (*agentkit
 		res.Porter = self
 	}
 	skipLegacy := map[string]bool{}
+	man := loadManifest(home, p.InstanceID)
+	manDirty := false
 	for _, f := range p.Files {
 		skipLegacy[f.Skill] = true
 		if !skillNameRe.MatchString(f.Skill) || f.Name != "SKILL.md" {
@@ -56,6 +58,10 @@ func Install(home string, p agentkit.KitInstallParams, now time.Time) (*agentkit
 		switch {
 		case err == nil && bytes.Equal(old, f.Content):
 			res.Same = append(res.Same, path)
+			if _, ok := man.Skills[f.Skill]; !ok && !p.DryRun {
+				man.Skills[f.Skill] = skillInstall{SHA256: sha256Hex(f.Content), InstalledAt: now.UTC()}
+				manDirty = true
+			}
 			continue
 		case err == nil:
 			bak := path + ".valise-bak-" + now.UTC().Format("20060102T150405Z")
@@ -78,7 +84,16 @@ func Install(home string, p agentkit.KitInstallParams, now time.Time) (*agentkit
 				return nil, err
 			}
 		}
+		if !p.DryRun {
+			man.Skills[f.Skill] = skillInstall{SHA256: sha256Hex(f.Content), InstalledAt: now.UTC()}
+			manDirty = true
+		}
 		res.Written = append(res.Written, path)
+	}
+	if manDirty {
+		if err := saveManifest(home, p.InstanceID, man); err != nil {
+			return nil, err
+		}
 	}
 	rem, kept, err := cleanLegacySkills(dir, skipLegacy, false, p.DryRun)
 	if err != nil {
@@ -123,16 +138,33 @@ func Status(home string, p agentkit.KitStatusParams) (*agentkit.KitStatusResult,
 	}
 	res := &agentkit.KitStatusResult{Dir: dir, Skills: []agentkit.SkillState{}}
 	if dir != "" {
+		man := loadManifest(home, p.InstanceID)
 		for _, f := range p.Files {
 			if !skillNameRe.MatchString(f.Skill) || f.Name != "SKILL.md" {
 				return nil, valise.New("kit_bad_file", "技能文件名无效："+f.Skill+"/"+f.Name, "使用客户端自带的技能")
 			}
 			path := filepath.Join(dir, f.Skill, f.Name)
 			st := agentkit.SkillState{Skill: f.Skill, Path: path, State: agentkit.SkillMissing, Backups: len(backups(filepath.Dir(path)))}
+			base := man.Skills[f.Skill]
+			if base.SHA256 != "" {
+				st.InstalledSHA256 = base.SHA256
+				t := base.InstalledAt
+				st.InstalledAt = &t
+			}
+			st.ChangeKind = agentkit.SkillChangeMissing
 			if b, err := os.ReadFile(path); err == nil {
-				st.State = agentkit.SkillModified
+				st.DiskSHA256 = sha256Hex(b)
+				if fi, err := os.Stat(path); err == nil {
+					mt := fi.ModTime().UTC()
+					st.DiskMTime = &mt
+				}
 				if bytes.Equal(b, f.Content) {
 					st.State = agentkit.SkillCurrent
+					st.ChangeKind = agentkit.SkillChangeCurrent
+				} else {
+					st.State = agentkit.SkillModified
+					st.DiskContent = boundedUTF8(b)
+					st.ChangeKind = classifySkill(f.Skill, st.DiskSHA256, sha256Hex(f.Content), base)
 				}
 			}
 			res.Skills = append(res.Skills, st)
@@ -177,6 +209,13 @@ func Uninstall(home string, p agentkit.KitUninstallParams) (*agentkit.KitUninsta
 		return nil
 	}
 	skipLegacy := map[string]bool{}
+	man := loadManifest(home, p.InstanceID)
+	manDirty := false
+	defer func() {
+		if manDirty && !p.DryRun {
+			_ = saveManifest(home, p.InstanceID, man)
+		}
+	}()
 	for _, f := range p.Files {
 		skipLegacy[f.Skill] = true
 		if !skillNameRe.MatchString(f.Skill) || f.Name != "SKILL.md" {
@@ -184,12 +223,24 @@ func Uninstall(home string, p agentkit.KitUninstallParams) (*agentkit.KitUninsta
 		}
 		sdir := filepath.Join(dir, f.Skill)
 		path := filepath.Join(sdir, f.Name)
-		if b, err := os.ReadFile(path); err == nil {
-			if !bytes.Equal(b, f.Content) && !p.Force {
+		b, err := os.ReadFile(path)
+		switch {
+		case err == nil:
+			if !isOfficialShippedSkill(f.Skill, sha256Hex(b), f.Content, man.Skills[f.Skill].SHA256) && !p.Force {
 				res.Kept = append(res.Kept, path)
 			} else if err := remove(path); err != nil {
 				return res, err
+			} else if _, ok := man.Skills[f.Skill]; ok {
+				delete(man.Skills, f.Skill)
+				manDirty = true
 			}
+		case os.IsNotExist(err):
+			if _, ok := man.Skills[f.Skill]; ok {
+				delete(man.Skills, f.Skill)
+				manDirty = true
+			}
+		default:
+			return res, err
 		}
 		for _, bak := range backups(sdir) {
 			if err := remove(bak); err != nil {

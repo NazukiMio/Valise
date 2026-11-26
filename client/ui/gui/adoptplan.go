@@ -12,14 +12,14 @@ import (
 	"valise/ui/service"
 )
 
-func (a *App) adoptPlanCard(c *ui.Context, host string, d service.DetectedInstance, ad *adoption) {
+func (a *App) adoptPlanCard(c *ui.Context, host string, d service.DetectedInstance, ad *adoption, primary bool) {
 	instID := orText(d.Enrolled, d.ID)
 	subPanel(ui.Column(c)).Gap(8).Children(func() {
 		ui.Text(c, T("adopt.plan_title")).Bold()
 		if ad.planDone {
 			notice(c, "ok", T("adopt.plan_done"))
 			ui.Row(c).Justify(ui.End).Children(func() {
-				ui.PrimaryButton(c, T("adopt.view_agent")).OnClick(func() {
+				actionButton(c, T("adopt.view_agent"), primary, func() {
 					a.router.Push("/agents/" + host + "/" + instID)
 				})
 			})
@@ -41,7 +41,7 @@ func (a *App) adoptPlanCard(c *ui.Context, host string, d service.DetectedInstan
 			ui.Button(c, T("adopt.view_agent")).OnClick(func() {
 				a.router.Push("/agents/" + host + "/" + instID)
 			})
-			ui.PrimaryButton(c, T("adopt.plan_enable")).OnClick(func() {
+			actionButton(c, T("adopt.plan_enable"), primary, func() {
 				a.applyAdoptDefaultPlan(host, instID, ad)
 			})
 		})

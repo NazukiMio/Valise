@@ -106,6 +106,16 @@ func (a *App) postMigrateCard(c *ui.Context, r *restoreFlow, t service.RestoreTa
 			})
 		}
 
+		if pm.RemappedSymlinks > 0 {
+			statusRow(c, "ok", T("restore.post.remapped_symlinks"), T("restore.post.remapped_symlinks_val", "n", pm.RemappedSymlinks))
+		}
+		if pm.RewrittenConfigPaths > 0 {
+			statusRow(c, "ok", T("restore.post.rewritten_paths"), T("restore.post.rewritten_paths_val", "n", pm.RewrittenConfigPaths))
+		}
+		if pm.RemainingConfigHomeHits > 0 {
+			notice(c, "warn", T("restore.post.remaining_home_hits", "n", pm.RemainingConfigHomeHits))
+		}
+
 		a.postMigrateMCPSection(c, r, t, pm)
 		a.postMigrateGapsSection(c, r, pm)
 	})
@@ -113,6 +123,33 @@ func (a *App) postMigrateCard(c *ui.Context, r *restoreFlow, t service.RestoreTa
 
 func (a *App) postMigrateMCPSection(c *ui.Context, r *restoreFlow, t service.RestoreTask, pm *service.PostMigrateReport) {
 	switch {
+	case pm.MCPAutoRan && pm.MCPWireResult != nil:
+		subPanel(ui.Column(c)).Gap(6).Children(func() {
+			a.kitMCPStepRow(c, pm.MCPWireResult)
+			if pm.MCPServiceRestart != nil {
+				a.kitRestartRows(c, pm.MCPServiceRestart)
+			}
+		})
+		if pm.MCPWireOutcome == "failed" && pm.MCPCanWire {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+				needTag(c, T("need.admin"))
+				ui.Button(c, T("restore.post.rewire_mcp")).Disabled(r.rewireJ.busy).OnClick(func() {
+					a.runPostMigrateMCPRewire(r, t.Target, t.Instance)
+				})
+			})
+		}
+	case pm.MCPAutoRan && pm.MCPWireOutcome == "wired":
+		statusRow(c, "ok", T("restore.post.mcp"), orText(pm.MCPNote, T("restore.post.mcp_auto_wired")))
+	case pm.MCPAutoRan && pm.MCPWireOutcome == "failed":
+		statusRow(c, "warn", T("restore.post.mcp"), orText(pm.MCPNote, T("restore.post.mcp_auto_failed")))
+		if pm.MCPCanWire {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+				needTag(c, T("need.admin"))
+				ui.Button(c, T("restore.post.rewire_mcp")).Disabled(r.rewireJ.busy).OnClick(func() {
+					a.runPostMigrateMCPRewire(r, t.Target, t.Instance)
+				})
+			})
+		}
 	case pm.MCPChecked && pm.MCPWired && !pm.MCPNeedsRewire:
 		statusRow(c, "ok", T("restore.post.mcp"), orText(pm.MCPNote, T("restore.post.mcp_ok")))
 	case pm.MCPCanWire && (pm.MCPNeedsRewire || !pm.MCPWired):

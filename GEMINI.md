@@ -3,7 +3,7 @@
 ## 1. 适用范围与优先级
 
 - 项目开发规范、架构铁律、安全与文案红线、自检清单与 Git 约定仍以根目录 [`AGENTS.md`](AGENTS.md) 为唯一正文；本文件不重复、不覆盖 `AGENTS.md`，也不改动给 Claude 使用的 [`CLAUDE.md`](CLAUDE.md)。
-- 本文件仅约定 Antigravity（Orchestrator / Swarm / Subagent）在本仓库中的任务编排、子对话生命周期、三配额池模型路由与工程门禁。
+- 本文件仅约定 Antigravity（Orchestrator / Swarm / Subagent）在本仓库中的任务编排、子对话生命周期、双配额池模型路由与工程门禁。
 
 ## 2. 分档编排原则（Tier 0–3）
 
@@ -26,23 +26,22 @@
 | **构建/打包/测试手（`builder-verifier`）** | 验收周期内短期持久化 | 保留 `GOTOOLCHAIN`、`-ldflags` 与两级测试上下文；黑盒回归或独立恢复对抗测试另起临时对话 |
 | **专项调研（`researcher`）** | 严格临时性（用完即弃） | 只读检索规范或切分大日志，提炼结论带回后立即结束 |
 
-## 4. 三配额池模型路由与思考强度
+## 4. 双配额池模型路由与思考强度
 
 ### 配额池协同原则
 
-1. **Claude 池**（`Claude Opus 5.5` / `Claude Sonnet 5.5`）：`Opus` 消耗快，严格只用于高风险核心代码与高危异构审计；常规编码优先使用 `Sonnet`。
-2. **Gemini 4 Neon/Hydrogen 池**（`Orchestrator (Neon)` / `Gemini 4 Neon` / `Gemini 4 Hydrogen`）：主控、常规交叉审计、构建测试与轻量调研主力，零消耗 Claude 池。
-3. **Gemini 4 Argon 独立池**（`Gemini 4 Argon (Medium/High)`）：允许在合适场景**轮换切入使用**以利用其独立额度、降低整体消耗（不让独立池闲置浪费）；优先分配给**短轮次、高杠杆任务**（如独立高危安全/架构交叉审计、复杂死锁或跨模块设计研判、或在 Neon/Claude 池吃紧时分担高难单次任务），避免用于长轮次闲聊或重复构建循环。
-4. **明确禁用**：**禁用 `Gemini 3.8 Flash`**（与 Neon/Hydrogen 同池且能力明显较弱）。
+1. **Claude 5.5 池**（`Claude Opus 5.5` / `Claude Sonnet 5.5`）：`Opus` 消耗快，严格只用于高风险核心代码与高危异构审计；常规编码、GUI 与交叉审计优先使用 `Sonnet`。
+2. **Gemini 4 统一池**（`Orchestrator` / `Gemini 4 Neon` / `Gemini 4 Carbon` / `Gemini 4 Hydrogen`）：主控、跨模型交叉审计、高难度回退、构建测试与轻量调研主力，零消耗 Claude 池。高难度审计或代码任务用 `Neon (High/XHigh)` / `Carbon (High)`；构建测试与只读巡检用 `Hydrogen (Low/Medium)`。
+3. **明确禁用**：**禁用 `Gemini 3.8 Flash`** 与 **已退役的 `Gemini 4 Argon`**（`gemini-4-argon-*` / `Orchestrator (Argon)` 已退出编排池，不再独立分配或调用）。
 
 ### 角色路由与回退表
 
 | 角色 | 首选模型与思考强度 | 轮换 / 配额回退策略 |
 | :--- | :--- | :--- |
-| **编排者（主会话）** | `Orchestrator (Neon)` | 保持当前 |
-| **高风险核心开发**（认证 / PIN / askpass / 恢复交换日志 / 复杂 `-race`） | `Claude Opus 5.5 (Medium)`（极难升 `High`） | Claude 池告急/耗尽时，原地切至 `Gemini 4 Neon (Medium/High)`（极端疑难可 `XHigh`）或轮换 `Gemini 4 Argon (High)` |
-| **日常开发 / GUI / TUI / 常规 Bug** | `Claude Sonnet 5.5 (Medium)`（复杂 mygo 渲染/虚拟化升 `High`） | Claude 池告急/耗尽时，原地切至 `Gemini 4 Hydrogen (High)` 或 `Gemini 4 Neon (Medium)`（简单单文件用 `Gemini 4 Hydrogen (Medium)`） |
-| **独立审计（临时）** | 异构交叉：<br>• Claude 写 → `Gemini 4 Neon (High)`（高危升 `XHigh`）或轮换 `Gemini 4 Argon (High)`<br>• Gemini 写 → 常规 `Claude Sonnet 5.5 (High)`，高危 `Claude Opus 5.5 (High)` | Claude 耗尽时，使用全新无状态 `Gemini 4 Neon (High)` 或轮换 `Gemini 4 Argon (High)` |
+| **编排者（主会话）** | `Orchestrator (Neon)`（或 `Carbon`） | 保持当前 |
+| **高风险核心开发**（认证 / PIN / askpass / 恢复交换日志 / 复杂 `-race`） | `Claude Opus 5.5 (Medium)`（极难升 `High`） | Claude 池告急/耗尽时，原地切至 `Gemini 4 Neon (Medium/High)`（极端疑难可 `XHigh`）或 `Gemini 4 Carbon (High)` |
+| **日常开发 / GUI / TUI / 常规 Bug** | `Claude Sonnet 5.5 (Medium)`（复杂 mygo 渲染/虚拟化升 `High`） | Claude 池告急/耗尽时，原地切至 `Gemini 4 Hydrogen (High)`、`Gemini 4 Carbon (Medium)` 或 `Gemini 4 Neon (Medium)`（简单单文件用 `Gemini 4 Hydrogen (Medium)`） |
+| **独立审计（临时）** | 异构交叉：<br>• Claude 写 → `Gemini 4 Neon (High)`（高危升 `XHigh`）或 `Gemini 4 Carbon (High)`<br>• Gemini 写 → 常规 `Claude Sonnet 5.5 (High)`，高危 `Claude Opus 5.5 (High)` | Claude 耗尽时，使用全新无状态 `Gemini 4 Neon (High)` 或 `Gemini 4 Carbon (High)` |
 | **构建 / 打包 / 测试执行** | `Gemini 4 Hydrogen (Low)`（分析失败栈升 `Medium`） | 全程走 Gemini 4，不消耗 Claude 池 |
 | **只读调研 / 批量巡检** | `Gemini 4 Hydrogen (Low/Medium)` | 全程走 Gemini 4，不消耗 Claude 池 |
 

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"valise/client/config"
 	"valise/core/enroll"
 	"valise/core/identity"
 	"valise/core/journey"
@@ -481,10 +482,13 @@ func TestRunRestorePostMigrateReportAndCarryOver(t *testing.T) {
 			t.Fatalf("target dossier mismatch: %+v", targetDossier)
 		}
 
-		// RewireMigratedMCP wires MCP on target pointing at box2's porter path.
+		// RewireMigratedMCP wires MCP on target pointing at box2's porter path without installing skills.
 		kitPlan, err := s.RewireMigratedMCP(ctx, "box2", "demo")
 		if err != nil {
 			t.Fatalf("RewireMigratedMCP: %v", err)
+		}
+		if kitPlan.Result != nil {
+			t.Fatalf("RewireMigratedMCP must not install skills: %+v", kitPlan.Result)
 		}
 		if kitPlan.MCPWire == nil || !kitPlan.MCPWire.Attempted || !kitPlan.MCPWire.OK {
 			t.Fatalf("unexpected RewireMigratedMCP outcome: %+v", kitPlan.MCPWire)
@@ -542,4 +546,33 @@ func TestRunRestorePostMigrateReportAndCarryOver(t *testing.T) {
 			t.Fatalf("expected honest protection carry-over failure note: %+v", tsk.PostMigrate)
 		}
 	})
+}
+
+func TestSaveRestoreStripsCommandOutput(t *testing.T) {
+	s := &Service{Dirs: config.Dirs{Data: t.TempDir()}}
+	in := RestoreTask{
+		OpID:  "op_01HZXW5Z9F8W9A2B3C4D5E6F7G",
+		State: "succeeded",
+		PostMigrate: &PostMigrateReport{
+			MCPAutoRan:     true,
+			MCPWireOutcome: "wired",
+			MCPWireResult:  &KitStepOutcome{Attempted: true, OK: true, ExitCode: 0, Output: "secret stdout/stderr"},
+		},
+	}
+	if err := s.saveRestore(in); err != nil {
+		t.Fatal(err)
+	}
+	if in.PostMigrate.MCPWireResult.Output != "secret stdout/stderr" {
+		t.Fatal("saveRestore mutated caller PostMigrate in memory")
+	}
+	if raw := readFile(t, s.restoreTaskPath(in.OpID)); strings.Contains(raw, "secret stdout/stderr") {
+		t.Fatalf("persisted restore task file leaked raw output: %s", raw)
+	}
+	disk, err := s.ListRestoreTasks()
+	if err != nil || len(disk) != 1 || disk[0].PostMigrate == nil || disk[0].PostMigrate.MCPWireResult == nil {
+		t.Fatalf("unexpected loaded tasks: %+v %v", disk, err)
+	}
+	if disk[0].PostMigrate.MCPWireResult.Output != "" {
+		t.Fatalf("persisted restore task leaked command output: %q", disk[0].PostMigrate.MCPWireResult.Output)
+	}
 }

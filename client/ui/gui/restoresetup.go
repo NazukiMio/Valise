@@ -255,6 +255,7 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 	if r.mode == revive.ModeMigrate && p.SourceProtection != nil {
 		ui.Checkbox(c, &r.carryProtection, T("restore.carry_protection", "summary", p.SourceProtection.Summary))
 	}
+	a.restoreHomePathsSection(c, r, p)
 	allow, hasEnv := false, false
 	for _, block := range p.Blockers {
 		b := block

@@ -106,9 +106,9 @@ func (a *App) readProt(host string, ps *protState) {
 func (a *App) manageTab(c *ui.Context, row *agentRow) {
 	ps := a.protOf(row)
 	if ps.ref == nil {
-		card(ui.Row(c)).Gap(14).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, T("protect.no_ref")).Grow(1).Wrap()
-			ui.PrimaryButton(c, T("protect.reenroll")).OnClick(func() { a.router.Push("/servers/" + row.Server + "/agents") })
+		card(ui.Column(c)).Gap(10).Children(func() {
+			ui.Text(c, T("protect.no_ref")).Wrap()
+			a.renderInlineReenroll(c, row, T("protect.reenroll"), T("protect.go_server_agents"))
 		})
 		return
 	}

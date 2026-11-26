@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: hermes
 display_name: Hermes Agent
-profile_version: 14
+profile_version: 15
 status: draft
 harness_versions_tested: ["0.22.5"]
 docs: https://hermes-agent.nousresearch.com
@@ -226,6 +226,13 @@ actions:
     risk: config
     undo: "诊断修改前会先建立备份；可从备份原地恢复"
     argv: [hermes, doctor]                                           # verify: pending
+    output: none
+    terminal: true
+  - id: dashboard
+    name: 启动独立管理面板 (Dashboard)
+    explain: "在交互终端中启动 Hermes 官方独立管理面板；启动后可用“打开本地页面”从监听端口中选择它"
+    risk: manage
+    argv: [hermes, dashboard]                                        # verify: pending
     output: none
     terminal: true
 

@@ -14,6 +14,9 @@ const (
 	MethodURLs    = "login_urls"
 	MethodEnd     = "login_end"
 	MethodListen  = "listen_addrs"
+	// MethodLoopbackListeners lists the loopback TCP ports the porter's own
+	// user listens on (capability LoopbackListenersCapability).
+	MethodLoopbackListeners = "loopback_listeners"
 )
 
 // SessionEnv names the login session for porter browser-shim.
@@ -90,4 +93,13 @@ type EntryAuthParams struct {
 // port are the tunnel's): path, query and fragment, holding the token.
 type EntryAuthResult struct {
 	Suffix string `json:"suffix"`
+}
+
+// LoopbackListenersCapability is advertised in hello when porter answers
+// MethodLoopbackListeners.
+const LoopbackListenersCapability = "loopback-listeners/1"
+
+// LoopbackListenersResult lists listening loopback ports, ascending.
+type LoopbackListenersResult struct {
+	Ports []int `json:"ports"`
 }

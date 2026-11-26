@@ -186,9 +186,7 @@ func (a *App) serviceStatusSection(c *ui.Context, row *agentRow, st *agentServic
 	}
 	if info.Stale {
 		notice(c, "warn", T("agent.service.stale"))
-		ui.Row(c).Children(func() {
-			ui.Button(c, T("native.go_update_profile")).OnClick(func() { a.router.Push("/servers/" + row.Server + "/agents") })
-		})
+		a.renderInlineReenroll(c, row, T("adopt.update_profile"), T("native.go_update_profile"))
 	}
 	if st.ctrlJ.busy {
 		a.jobLine(c, &st.ctrlJ)

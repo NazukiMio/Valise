@@ -1,10 +1,14 @@
 # 当前状态与交接
 
-> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-25。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
+> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-26。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-25）
+## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-26）
 
-- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试（`/Users/nazukimio/Downloads/Valise_Test/report.md`）后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成 **WP0–WP6**、**Round 2 实机反馈（`stage-test-20261123-beta1-fixes/TESTRESULT.md` #1–#15）**、**Round 3 实机反馈修复 + `auditor-b3`（`AUDIT_PASS`）** 以及 **Round 4 实机反馈修复（`stage-test-20261124-beta1-r3/REPORT.md` #1–#5 + `auditor-b4` `AUDIT_PASS`）**，并通过全量 `-race` 测试与 `./testbed/selfcheck.sh`（`SELFCHECK_PASS`），同步打好真机验收测试包 `stage-test-20261125-beta1-r4`。
+- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成 **WP0–WP6**、**Round 2–4 实机反馈修复**，以及基于 `stage-test-20261125-beta1-r4` 真机测试与 Agent 迁移体检报告开展的 **Round 5 第一批**：
+  - **Round 5 第一批（已完成代码提交，待用户决定先打测试包还是直接续做第二批 · WP1 / WP3 / WP5 / WP7 + 规范与 `GEMINI.md` 同步）**：
+    - `GEMINI.md` 已退役 `Gemini 4 Argon` 并切至「Claude 5.5 + Gemini 4 统一池」双池路由；
+    - 本批交付：一键重接与多选全选批量接入（单次 PIN 租约）+ 全仓去 AI 防御腔文案清理（WP1）；保护技能四态升级识别 + 安装基线与可视化 Diff 对比窗（WP3）；安装检查与脚本全文带滚动条子窗口（WP5）；跨机 `$HOME` 软链重映射、默认自动重接 Valise MCP（不覆盖技能且按服务状态拆行汇报）、脱敏配置旧 `$HOME` 路径扫描与暂存安全替换、空目录保留与外部软链前置告警、桌面「打开本地页面」(`ForwardPage` + 回环监听探测) 与 `hermes v15`（WP7）；经 `auditor-b5a-r3`（`AUDIT_PASS`）及全仓 `./testbed/selfcheck.sh` + `-race` 复测通过。
+  - **Round 5 第二批（已定稿规划，待第一批完成后按用户确认继续）**：单选/多选删除单个快照及孤立块回收（WP2）、手动存档与自动备份拆分 +「大周期完整 + 日常轻量」智能双层自动备份（WP4）、同 Harness 子 Agent 平铺/收纳双视图 +「一起备份」联动存档 + 多 Harness 顺序「一键搬家」（WP6）。
 - **Round 4 实机反馈修复（`stage-test-20261124-beta1-r3/REPORT.md` #1–#5 + `auditor-b4` `AUDIT_PASS`）**：
   1. **恢复/迁移表单清理（#1）**：`restore.origin` 移至页面顶部上下文条并从「放到哪里」表单卡片移除，单备份源改只读展示。
   2. **资料包预览自动清旧覆盖 & 迁移接入继承（#2）**：正式资料包预览支持默认勾选自动清理本地旧版覆盖；未装底座空壳页增加无需手动接入/启网关安抚提示；`planRecord` 与 `RunRestore` 自动继承 `DisplayName` 与完整 Dossier（`LocalOverrides`、`LocalSQLite`、`ExternalRefs`、`LocalRoots`、`ToolDeps`），迁移计划默认勾选「沿用原机保护计划」（仅按目标存在复制目标最佳实践写入），迁移结果页探测新机 `$HOME`/MCP 并提供一键重接。

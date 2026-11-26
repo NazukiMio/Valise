@@ -90,3 +90,16 @@ func TestForwardPage(t *testing.T) {
 		t.Fatalf("%v", ue)
 	}
 }
+
+func TestLoopbackListeners(t *testing.T) {
+	s, _ := loginWorld(t)
+	ports, err := s.LoopbackListeners(context.Background(), "box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ports {
+		if p < 1 || p > 65535 {
+			t.Fatalf("%v", ports)
+		}
+	}
+}

@@ -7,11 +7,7 @@ import (
 )
 
 func restoreManifest(rp *RevivePlan) []revive.ManifestEntry {
-	var man []revive.ManifestEntry
-	for _, f := range rp.files {
-		man = append(man, revive.ManifestEntry{Path: tarName(rp.Plan, f.Root, f.Path), Size: f.Size, SHA256: f.SHA256, Category: f.Category, SQLite: rp.sqlite[f.Root+":"+f.Path]})
-	}
-	return man
+	return stageManifest(rp)
 }
 
 // RecheckRestoreStage renews only a still-matching staged plan. It is not a
