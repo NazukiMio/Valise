@@ -77,6 +77,10 @@ func proposalSummaryText(p agentkit.Proposal) string {
 		if p.ExternalRef != nil {
 			return "external:" + p.ExternalRef.Path + "（" + p.ExternalRef.RefKind + "）"
 		}
+	case agentkit.ProposalKindWebEntry:
+		if p.WebEntry != nil {
+			return fmt.Sprintf("web_entry:%s %s (127.0.0.1:%d%s)", p.WebEntry.ID, p.WebEntry.DisplayName, p.WebEntry.Port, p.WebEntry.Path)
+		}
 	}
 	return p.Rule.Root + ":" + p.Rule.Glob + " → " + p.Rule.Category
 }

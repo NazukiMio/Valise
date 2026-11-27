@@ -82,6 +82,7 @@ func (s *Service) LoginMethods(ctx context.Context, host, instance string) (*Log
 	}
 	prof := *lp.Effective
 	res.Record.ApplyEntryPorts(&prof)
+	res.Record.ApplyLocalEntries(&prof)
 	return &LoginTarget{Record: res.Record, Profile: prof, Local: lp.Local}, nil
 }
 

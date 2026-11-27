@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"valise/client/config"
+	"valise/client/profiles"
 	"valise/core/enroll"
 	"valise/core/journey"
 	"valise/core/login"
@@ -29,6 +30,8 @@ type hooks struct {
 	entryPreparer           func(context.Context, string, string, string) (*login.EntryPrepareResult, error)
 	entryStarter            func(context.Context, string, string, string) (*login.EntryStartResult, error)
 	entryStopper            func(context.Context, string, string, string) (*login.EntryStopResult, error)
+	removeLocalEntryFn      func(context.Context, string, string, string) error
+	enrollGenericFn         func(context.Context, string, profiles.GenericProfileInput, bool) (*service.EnrollResult, error)
 	reactivateFn            func(context.Context, service.ReactivateAgentRequest) (*service.ReactivateAgentResult, error)
 	openURL                 func(string) error
 	pickImage               func() (string, error)                               // the system's open dialog; "" when cancelled
@@ -194,9 +197,10 @@ type serversView struct {
 	forgetErr           error
 	serverShell         *serverShellRun // the server command line, nil when none
 	serverShellBack     string          // return route when opened from an agent page
-	moveAll             *moveAllState   // harness-by-harness one-click migration
-	kitHook             *kitOps         // tests only
-	cleanupHook         *cleanupOps     // tests only
+	genericEnroll       *genericEnrollState
+	moveAll             *moveAllState // harness-by-harness one-click migration
+	kitHook             *kitOps       // tests only
+	cleanupHook         *cleanupOps   // tests only
 }
 
 // closeInstall lets go of one install screen's plan, output and result.

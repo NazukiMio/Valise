@@ -36,6 +36,7 @@ type DossierAgent struct {
 	ExternalRefs   []ExternalRef       `json:"external_refs,omitempty"`
 	ToolDeps       []ToolDep           `json:"tool_deps,omitempty"`
 	EntryPorts     map[string]int      `json:"entry_ports,omitempty"`
+	LocalEntries   []LocalEntry        `json:"local_entries,omitempty"`
 	EnrolledAt     time.Time           `json:"enrolled_at"`
 	Superseded     *Supersession       `json:"superseded,omitempty"`
 	// Service and Entries are a named agent's own (empty unless its
@@ -79,6 +80,9 @@ func (d *Dossier) Record(id string) *Record {
 	if len(a.ToolDeps) > 0 {
 		r.ToolDeps = append([]ToolDep(nil), a.ToolDeps...)
 	}
+	if len(a.LocalEntries) > 0 {
+		r.LocalEntries = append([]LocalEntry(nil), a.LocalEntries...)
+	}
 	if a.Name != "" {
 		r.Provenance, r.Service, r.Entries = Provenance{}, a.Service, []EntryState{}
 	}
@@ -110,6 +114,9 @@ func (d *Dossier) Put(r Record, now time.Time) {
 	if len(r.ToolDeps) > 0 {
 		a.ToolDeps = append([]ToolDep(nil), r.ToolDeps...)
 	}
+	if len(r.LocalEntries) > 0 {
+		a.LocalEntries = append([]LocalEntry(nil), r.LocalEntries...)
+	}
 	if r.Name == "" {
 		d.Provenance, d.Service, d.Entries = r.Provenance, r.Service, r.Entries
 	} else {
@@ -140,6 +147,9 @@ func (d *Dossier) Put(r Record, now time.Time) {
 		}
 		if r.ToolDeps == nil && len(old.ToolDeps) > 0 {
 			a.ToolDeps = append([]ToolDep(nil), old.ToolDeps...)
+		}
+		if r.LocalEntries == nil && len(old.LocalEntries) > 0 {
+			a.LocalEntries = append([]LocalEntry(nil), old.LocalEntries...)
 		}
 		*old = a
 		return

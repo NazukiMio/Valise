@@ -504,6 +504,9 @@ func TestSealCarriesLocalRootsToolDepsAndDisplayName(t *testing.T) {
 	rec.ToolDeps = []enroll.ToolDep{
 		{Name: "ffmpeg", Purpose: "audio transcoding", Reason: "voice skill"},
 	}
+	rec.LocalEntries = []enroll.LocalEntry{
+		{ID: "webapp", DisplayName: "WebApp", Port: 7860, Path: "/ui", Hint: "run demo webapp"},
+	}
 	if _, err := porterenroll.WriteRecord(w.p.Home, *rec, *prof); err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +540,8 @@ func TestSealCarriesLocalRootsToolDepsAndDisplayName(t *testing.T) {
 	}
 	if snap.DisplayName != "Traveler One" ||
 		len(snap.LocalRoots) != 1 || snap.LocalRoots[0].ID != "ext-kb" ||
-		len(snap.ToolDeps) != 1 || snap.ToolDeps[0].Name != "ffmpeg" {
+		len(snap.ToolDeps) != 1 || snap.ToolDeps[0].Name != "ffmpeg" ||
+		len(snap.LocalEntries) != 1 || snap.LocalEntries[0].ID != "webapp" {
 		t.Fatalf("snapshot missing dossier closure metadata: %+v", snap)
 	}
 }

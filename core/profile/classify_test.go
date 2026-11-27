@@ -126,3 +126,24 @@ func TestClassifierWithDefaultRootsPrecedenceAndImmutability(t *testing.T) {
 		t.Fatal("WithDefaultRoots did not preserve extraSQLite")
 	}
 }
+
+func TestHasSecretRules(t *testing.T) {
+	if HasSecretRules(nil, nil, nil) {
+		t.Fatal("nil profile should have no secret rules")
+	}
+	if HasSecretRules(&Profile{Paths: []PathRule{{Root: StateRoot, Glob: "**", Category: CategoryConfig}}}, nil, nil) {
+		t.Fatal("config-only profile should return false")
+	}
+	if !HasSecretRules(&Profile{Paths: []PathRule{{Root: StateRoot, Glob: "auth.json", Category: CategorySecrets}}}, nil, nil) {
+		t.Fatal("profile secrets path should return true")
+	}
+	if !HasSecretRules(&Profile{Consistency: &Consistency{SQLite: []SQLiteRef{{Root: StateRoot, Glob: "s.db", SecretTables: []string{"tokens"}}}}}, nil, nil) {
+		t.Fatal("profile sqlite secret_tables should return true")
+	}
+	if !HasSecretRules(&Profile{}, []Override{{Root: StateRoot, Glob: "k.env", Category: CategorySecrets}}, nil) {
+		t.Fatal("override secrets should return true")
+	}
+	if !HasSecretRules(&Profile{}, nil, []SQLiteRef{{Root: StateRoot, Glob: "local.db", SecretTables: []string{"creds"}}}) {
+		t.Fatal("local_sqlite secret_tables should return true")
+	}
+}

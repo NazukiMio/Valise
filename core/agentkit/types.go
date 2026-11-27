@@ -100,10 +100,20 @@ const (
 	ProposalKindSQLite      = "sqlite"
 	ProposalKindExternalRef = "external_ref"
 	ProposalKindToolDep     = "tool_dep"
+	ProposalKindWebEntry    = "web_entry"
 
 	ExternalRefDir     = "external_dir"
 	ExternalRefSymlink = "symlink_target"
 )
+
+// WebEntrySpec declares a read-only loopback HTTP entry reported by an agent.
+type WebEntrySpec struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Port        int    `json:"port"`
+	Path        string `json:"path"`
+	Hint        string `json:"hint,omitempty"`
+}
 
 // ExternalRefSpec identifies an out-of-root directory or symlink target.
 type ExternalRefSpec struct {
@@ -124,11 +134,12 @@ type ToolDepSpec struct {
 // Proposal is an agent's dossier proposal awaiting user confirmation.
 type Proposal struct {
 	ID          string             `json:"id"`
-	Kind        string             `json:"kind,omitempty"` // "" or "classify" | "sqlite" | "external_ref" | "tool_dep"
+	Kind        string             `json:"kind,omitempty"` // "" or "classify" | "sqlite" | "external_ref" | "tool_dep" | "web_entry"
 	Rule        profile.Override   `json:"rule,omitempty"`
 	SQLite      *profile.SQLiteRef `json:"sqlite,omitempty"`
 	ExternalRef *ExternalRefSpec   `json:"external_ref,omitempty"`
 	ToolDep     *ToolDepSpec       `json:"tool_dep,omitempty"`
+	WebEntry    *WebEntrySpec      `json:"web_entry,omitempty"`
 	Reason      string             `json:"reason"`
 	Demotion    bool               `json:"demotion"` // moves files out of the soul tier
 	// Unclassified counts files now unclassified (sealed with the secrets

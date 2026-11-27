@@ -378,7 +378,7 @@ func services(ctx context.Context, e *Env, p *profile.Profile, warns *[]string) 
 func entries(p *profile.Profile) []enroll.EntryState {
 	out := []enroll.EntryState{}
 	for _, en := range p.Entries {
-		s := enroll.EntryState{ID: en.ID, Host: en.Host, Port: en.Port}
+		s := enroll.EntryState{ID: en.ID, DisplayName: en.DisplayName, Host: en.Host, Port: en.Port}
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(en.Host, strconv.Itoa(en.Port)), dialTimeout)
 		if err == nil {
 			s.Listening = true

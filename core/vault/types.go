@@ -129,6 +129,7 @@ type Snapshot struct {
 	LocalRoots     []enroll.LocalRoot   `json:"local_roots,omitempty"`
 	ExternalRefs   []enroll.ExternalRef `json:"external_refs,omitempty"`
 	ToolDeps       []enroll.ToolDep     `json:"tool_deps,omitempty"`
+	LocalEntries   []enroll.LocalEntry  `json:"local_entries,omitempty"`
 	// Name and Env: a named instance (docs/PROFILES.md 2, 多实例).
 	Name        string            `json:"name,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`

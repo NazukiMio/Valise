@@ -296,6 +296,9 @@ type Entry struct {
 	// Start declares how to start an entry detached in the background on the
 	// server and optionally stop it (docs/PROFILES.md, docs/LOGIN_RELAY.md 4.3).
 	Start *EntryStart `yaml:"start" json:"start,omitempty"`
+	// Runtime-only metadata for agent-reported local entries (never in YAML).
+	AgentHint   string `yaml:"-" json:"agent_hint,omitempty"`
+	LocalSource string `yaml:"-" json:"local_source,omitempty"`
 }
 
 // EntryPrepare declares how to check whether an entry is ready/enabled and

@@ -129,6 +129,17 @@ func (s *Service) CreateManualSavepoint(ctx context.Context, req ManualSavepoint
 			return nil, valise.New("bundle_invalid", "组合备份成员无效："+m, "选择同一 Harness 的已接入实例")
 		}
 	}
+	if tier == vault.TierSoul {
+		checkIDs := []string{req.InstanceID}
+		if len(members) > 0 {
+			checkIDs = members
+		}
+		for _, id := range checkIDs {
+			if s.instanceLacksSecretRules(ctx, req.Host, id) {
+				return nil, noSecretRulesError()
+			}
+		}
+	}
 	if err := s.EnsureKeyRegistered(ctx, req.Host); err != nil {
 		return nil, err
 	}

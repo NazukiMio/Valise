@@ -179,12 +179,36 @@ func (a *App) entryLifecycleModal(c *ui.Context, row *agentRow) {
 				})
 			default:
 				ui.Text(c, T("entry.lifecycle.manual_hint", "port", p.Port)).FontSize(fsSub).Wrap()
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Justify(ui.End).Children(func() {
-					ui.Button(c, T("common.cancel")).OnClick(func() { a.entryLifecycle = nil })
-					ui.Button(c, T("forward.open")).OnClick(func() {
-						a.entryLifecycle = nil
-						a.openForwardModal(row)
+				if p.AgentHint != "" {
+					subPanel(ui.Column(c)).Gap(4).Children(func() {
+						ui.Text(c, T("entry.lifecycle.agent_hint_title")).FontSize(fsSub).Bold().Wrap()
+						mono(ui.Text(c, p.AgentHint)).FontSize(fsSub).Wrap().Selectable()
 					})
+				} else if p.LocalSource == "agent_dossier" {
+					muted(ui.Text(c, T("entry.lifecycle.agent_dossier_note"))).FontSize(fsSub).Wrap()
+				}
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Justify(ui.End).Children(func() {
+					if p.LocalSource == "agent_dossier" {
+						needTag(c, T("need.valise"))
+					}
+					ui.Button(c, T("common.cancel")).OnClick(func() { a.entryLifecycle = nil })
+					if p.AgentHint != "" || p.LocalSource == "agent_dossier" {
+						ui.Button(c, T("agent.server_shell")).OnClick(func() {
+							srv, inst := m.server, m.instance
+							a.entryLifecycle = nil
+							a.openServerShellFromAgent(srv, inst)
+						})
+					} else {
+						ui.Button(c, T("forward.open")).OnClick(func() {
+							a.entryLifecycle = nil
+							a.openForwardModal(row)
+						})
+					}
+					if p.LocalSource == "agent_dossier" {
+						quietButton(c, T("entry.lifecycle.remove_local")).OnClick(func() {
+							a.runRemoveLocalEntry(m)
+						})
+					}
 					ui.PrimaryButton(c, T("entry.lifecycle.try_forward")).OnClick(func() {
 						host, inst, eid := m.server, m.instance, m.entryID
 						a.entryLifecycle = nil
@@ -286,6 +310,41 @@ func (a *App) stopRemoteEntry(row *agentRow, entryID string) {
 			if st := a.entries[key]; st != nil {
 				st.initialSuffix = ""
 			}
+		}
+	})
+}
+
+func (a *App) runRemoveLocalEntry(m *entryLifecycleState) {
+	if m == nil {
+		return
+	}
+	host, inst, eid := m.server, m.instance, m.entryID
+	fn := a.removeLocalEntryFn
+	if fn == nil {
+		fn = a.svc.RemoveLocalEntry
+	}
+	m.phase = T("entry.lifecycle.phase_remove")
+	a.start(&m.j, time.Minute, func(ctx context.Context) error {
+		return fn(ctx, host, inst, eid)
+	}, func(err error) {
+		if err != nil {
+			return
+		}
+		for i := range a.agents.value.Items {
+			it := &a.agents.value.Items[i]
+			if it.ConnectionID == host && it.Instance.InstanceID == inst {
+				kept := it.Instance.Entries[:0]
+				for _, en := range it.Instance.Entries {
+					if en.ID != eid {
+						kept = append(kept, en)
+					}
+				}
+				it.Instance.Entries = kept
+			}
+		}
+		a.entryLifecycle = nil
+		if a.removeLocalEntryFn == nil {
+			a.refreshAgents()
 		}
 	})
 }

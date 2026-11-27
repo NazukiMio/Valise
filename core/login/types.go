@@ -133,6 +133,8 @@ type EntryProbeResult struct {
 	Prepared     bool     `json:"prepared"`
 	PrepareNote  string   `json:"prepare_note,omitempty"`
 	HasStart     bool     `json:"has_start"`
+	AgentHint    string   `json:"agent_hint,omitempty"`
+	LocalSource  string   `json:"local_source,omitempty"`
 	ManagedByUs  bool     `json:"managed_by_us"`
 	ManagedUnit  string   `json:"managed_unit,omitempty"`
 	ManagedPID   int      `json:"managed_pid,omitempty"`

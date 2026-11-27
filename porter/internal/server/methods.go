@@ -91,9 +91,12 @@ var methods = map[string]handler{
 				Name: r.Name, InstallID: porterenroll.InstallOf(s.cfg.Home, r.InstanceID),
 				Label: r.Label(), HarnessAgents: r.HarnessAgents,
 				Service: []enroll.ServiceState{}, Entries: []enroll.EntryState{}}
-			if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
-				sum.ProfileStatus = p.Status
-				if len(p.NativeCLI) > 0 || len(p.NativeSessionCLI) > 0 {
+			effProf, profErr := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID)
+			if profErr == nil && effProf != nil {
+				sum.ProfileStatus = effProf.Status
+				hs := profile.HasSecretRules(effProf, r.LocalOverrides, r.LocalSQLite)
+				sum.HasSecretRules = &hs
+				if len(effProf.NativeCLI) > 0 || len(effProf.NativeSessionCLI) > 0 {
 					// The dedicated native executor consumes committed metadata only.
 					// Reading an old pair must not advertise or implicitly accept it.
 					d, _, err := porterenroll.ReadInstallation(s.cfg.Home, r.InstanceID)
@@ -110,8 +113,8 @@ var methods = map[string]handler{
 					}
 				}
 				sort.Strings(sum.MissingRoots)
-				if p, err := porterenroll.ReadProfile(s.cfg.Home, r.InstanceID); err == nil {
-					sum.Service, sum.Entries = porterenroll.Live(ctx, s.loginEnv(ctx), p)
+				if profErr == nil && effProf != nil {
+					sum.Service, sum.Entries = porterenroll.Live(ctx, s.loginEnv(ctx), effProf)
 				}
 			}
 			res.Instances = append(res.Instances, sum)
@@ -340,11 +343,30 @@ var methods = map[string]handler{
 				Reason:  strings.TrimSpace(td.Reason),
 			})
 		}
+		for _, rawID := range p.RemoveEntryIDs {
+			id := strings.TrimSpace(rawID)
+			rec.LocalEntries = slices.DeleteFunc(rec.LocalEntries, func(le enroll.LocalEntry) bool {
+				return le.ID == id
+			})
+		}
+		if len(p.RemoveEntryIDs) > 0 && rec.LocalEntries == nil {
+			rec.LocalEntries = []enroll.LocalEntry{}
+		}
+		for _, le := range p.AddEntries {
+			entry := le
+			if err := enroll.ValidLocalEntry(&entry); err != nil {
+				return nil, valise.New("entry_invalid", err.Error(), "检查入口名称、端口、路径和说明后重试")
+			}
+			rec.LocalEntries = slices.DeleteFunc(rec.LocalEntries, func(x enroll.LocalEntry) bool {
+				return x.ID == entry.ID
+			})
+			rec.LocalEntries = append(rec.LocalEntries, entry)
+		}
 		if rec.LocalOverrides == nil {
 			rec.LocalOverrides = []profile.Override{}
 		}
 		writeRec := func() error {
-			_, err := porterenroll.WriteRecord(s.cfg.Home, *rec, *prof)
+			_, err := porterenroll.UpdateRecord(s.cfg.Home, *rec)
 			return err
 		}
 		if len(p.RemoveRootIDs) > 0 || len(p.AddRoots) > 0 {

@@ -107,6 +107,7 @@ func ReadProfile(home, id string) (*profile.Profile, error) {
 	rec := d.Record(id)
 	p := g.ForAgent(rec.Name)
 	rec.ApplyEntryPorts(&p)
+	rec.ApplyLocalEntries(&p)
 	return &p, nil
 }
 
@@ -253,6 +254,29 @@ func WriteRecord(home string, r enroll.Record, p profile.Profile) (string, error
 	}
 	// Also finish an interrupted conversion whose dossier was committed before
 	// its old files were archived. Queries still leave those duplicates alone.
+	return DossierPath(home, d.InstallID), archiveLegacy(home, r.InstanceID)
+}
+
+// UpdateRecord updates an already-enrolled agent's dossier metadata without
+// altering the installation's base profile digest on disk.
+func UpdateRecord(home string, r enroll.Record) (string, error) {
+	if err := enroll.ValidInstanceID(r.InstanceID); err != nil {
+		return "", valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
+	}
+	if err := materializeLegacy(home, r.InstanceID); err != nil {
+		return "", err
+	}
+	d, err := dossierOf(home, r.InstanceID)
+	if err != nil {
+		return "", err
+	}
+	if d == nil {
+		return "", valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+r.InstanceID, "先运行 valise enroll <服务器> --accept")
+	}
+	d.Put(r, time.Now())
+	if err := writeDossier(home, d); err != nil {
+		return "", err
+	}
 	return DossierPath(home, d.InstallID), archiveLegacy(home, r.InstanceID)
 }
 

@@ -14,6 +14,7 @@ import (
 	"valise/core/profile"
 	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/kit"
+	porterlogin "valise/porter/internal/login"
 	porterprotection "valise/porter/internal/protection"
 	"valise/porter/internal/seal"
 )
@@ -28,6 +29,7 @@ type onboardInstance struct {
 	ProfileID      string            `json:"profile_id"`
 	ProfileVersion int               `json:"profile_version"`
 	ProfileStatus  string            `json:"profile_status"`
+	HasSecretRules bool              `json:"has_secret_rules"`
 	Roots          map[string]string `json:"roots"`
 }
 
@@ -40,6 +42,15 @@ type onboardEffectiveRules struct {
 	LocalRoots       []enroll.LocalRoot   `json:"local_roots,omitempty"`
 	ExternalRefs     []enroll.ExternalRef `json:"external_refs,omitempty"`
 	ToolDeps         []enroll.ToolDep     `json:"tool_deps,omitempty"`
+	LocalEntries     []enroll.LocalEntry  `json:"local_entries,omitempty"`
+}
+
+type entryFact struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name,omitempty"`
+	Port        int    `json:"port"`
+	Path        string `json:"path"`
+	Source      string `json:"source"`
 }
 
 type dirStat struct {
@@ -72,6 +83,8 @@ type onboardLayoutFacts struct {
 	ExternalSymlinks []symlinkFact `json:"external_symlinks"`
 	ChurnFiles       []churnFact   `json:"churn_files"`
 	UntrackedSQLite  []sqliteFact  `json:"untracked_sqlite"`
+	KnownEntries     []entryFact   `json:"known_entries"`
+	LoopbackPorts    []int         `json:"loopback_ports"`
 }
 
 type onboardContextResult struct {
@@ -121,6 +134,7 @@ func (t *Tools) onboardContext(ctx context.Context) (any, error) {
 			ProfileID:      prof.ID,
 			ProfileVersion: prof.ProfileVersion,
 			ProfileStatus:  prof.Status,
+			HasSecretRules: profile.HasSecretRules(prof, rec.LocalOverrides, rec.LocalSQLite),
 			Roots:          rec.Roots,
 		},
 		ProtectionPlan: planSummary,
@@ -135,6 +149,7 @@ func (t *Tools) onboardContext(ctx context.Context) (any, error) {
 			LocalRoots:       slices.Clone(rec.LocalRoots),
 			ExternalRefs:     slices.Clone(rec.ExternalRefs),
 			ToolDeps:         slices.Clone(rec.ToolDeps),
+			LocalEntries:     slices.Clone(rec.LocalEntries),
 		},
 		LayoutFacts:      facts,
 		PendingProposals: ps,
@@ -256,12 +271,36 @@ func (t *Tools) collectLayoutFacts(ctx context.Context, rec *enroll.Record, prof
 		untrackedDBs = untrackedDBs[:onboardFactLimit]
 	}
 
+	knownEntries := make([]entryFact, 0, len(prof.Entries))
+	for _, e := range prof.Entries {
+		src := e.LocalSource
+		if src == "" {
+			src = "profile"
+		}
+		knownEntries = append(knownEntries, entryFact{
+			ID:          e.ID,
+			DisplayName: e.DisplayName,
+			Port:        e.Port,
+			Path:        e.Path,
+			Source:      src,
+		})
+	}
+	var loopbackPorts []int
+	if lr, err := porterlogin.LoopbackListeners(); err == nil && lr != nil {
+		loopbackPorts = lr.Ports
+	}
+	if loopbackPorts == nil {
+		loopbackPorts = []int{}
+	}
+
 	return onboardLayoutFacts{
 		UnclassifiedDirs: topDirStats(unclassMap, onboardFactLimit),
 		LargestDirs:      topDirStats(largestMap, onboardFactLimit),
 		ExternalSymlinks: extLinks,
 		ChurnFiles:       churn,
 		UntrackedSQLite:  untrackedDBs,
+		KnownEntries:     knownEntries,
+		LoopbackPorts:    loopbackPorts,
 	}
 }
 

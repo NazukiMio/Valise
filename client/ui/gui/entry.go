@@ -70,7 +70,10 @@ func (a *App) entryDisplayName(profileID, entryID string) string {
 }
 
 func (a *App) entryOptionLabel(profileID string, e enroll.EntryState) string {
-	name := a.entryDisplayName(profileID, e.ID)
+	name := e.DisplayName
+	if name == "" {
+		name = a.entryDisplayName(profileID, e.ID)
+	}
 	if name == "" {
 		name = e.ID
 	}

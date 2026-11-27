@@ -122,7 +122,7 @@ func (a *App) proposalsCard(c *ui.Context, row *agentRow) {
 				demotions = append(demotions, p)
 			} else {
 				normal = append(normal, p)
-				if p.EffectiveKind() != agentkit.ProposalKindExternalRef {
+				if p.EffectiveKind() != agentkit.ProposalKindExternalRef && p.EffectiveKind() != agentkit.ProposalKindWebEntry {
 					bulkNormalIDs = append(bulkNormalIDs, p.ID)
 				}
 			}
@@ -152,6 +152,8 @@ func (a *App) proposalsCard(c *ui.Context, row *agentRow) {
 					}
 				case agentkit.ProposalKindExternalRef:
 					a.externalRefProposalBody(c, row, st, prop)
+				case agentkit.ProposalKindWebEntry:
+					a.webEntryProposalBody(c, prop)
 				case agentkit.ProposalKindToolDep:
 				default:
 					if prop.Unclassified > 0 {
@@ -165,6 +167,8 @@ func (a *App) proposalsCard(c *ui.Context, row *agentRow) {
 						acceptBtn = T("prop.sqlite_accept")
 					case agentkit.ProposalKindToolDep:
 						acceptBtn = T("prop.tool_accept")
+					case agentkit.ProposalKindWebEntry:
+						acceptBtn = T("prop.web_entry_accept")
 					}
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 						needTag(c, T("need.valise"))
@@ -240,6 +244,8 @@ func proposalHead(c *ui.Context, prop agentkit.Proposal) {
 				}
 			})
 		}
+	case agentkit.ProposalKindWebEntry:
+		webEntryProposalHead(c, prop)
 	default:
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
 			mono(ui.Text(c, prop.Rule.Root+":"+prop.Rule.Glob+" -> "+prop.Rule.Category)).FontSize(fsSub).Grow(1).Wrap().Selectable()

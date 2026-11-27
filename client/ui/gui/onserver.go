@@ -112,12 +112,14 @@ func (a *App) onServerPage(c *ui.Context, host string) {
 			ui.Text(c, T("onserver.not_listed")).Bold()
 			muted(ui.Text(c, T("onserver.not_listed_why"))).FontSize(13).Wrap()
 		})
+		ui.Button(c, T("onserver.generic.open")).OnClick(func() { a.openGenericEnroll(host) })
 		ui.Link(c, T("onserver.guide"), guideURL)
 	})
 	// Installing stays offered beside agents already found: another
 	// harness can be installed, or the first one (docs/UI.md 7.5).
 	a.installTiles(c, host, len(sc.found) == 0)
 	a.agentForgetModal(c)
+	a.genericEnrollModal(c, host)
 }
 
 func section(c *ui.Context, title string) {

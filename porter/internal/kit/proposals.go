@@ -7,7 +7,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,10 +31,14 @@ type ProposalItem struct {
 
 // DossierProposalItem is one entry of valise_propose_dossier.
 type DossierProposalItem struct {
-	Kind              string   `json:"kind"` // classify | sqlite | external_ref | tool_dep
+	Kind              string   `json:"kind"` // classify | sqlite | external_ref | tool_dep | web_entry
+	ID                string   `json:"id,omitempty"`
+	DisplayName       string   `json:"display_name,omitempty"`
+	Port              int      `json:"port,omitempty"`
+	Hint              string   `json:"hint,omitempty"`
 	Root              string   `json:"root,omitempty"`
 	Glob              string   `json:"glob,omitempty"`
-	Path              string   `json:"path,omitempty"` // classify relative path alias or external_ref abs path
+	Path              string   `json:"path,omitempty"` // classify relative path alias, external_ref abs path, or web_entry URL path
 	Category          string   `json:"category,omitempty"`
 	SuggestedCategory string   `json:"suggested_category,omitempty"`
 	SecretTables      []string `json:"secret_tables,omitempty"`
@@ -119,6 +125,8 @@ func ProposeDossier(home string, rec *enroll.Record, p *profile.Profile, items [
 			np, why = buildExternalRefProposal(home, rec, it, now)
 		case agentkit.ProposalKindToolDep:
 			np, why = buildToolDepProposal(it, now)
+		case agentkit.ProposalKindWebEntry:
+			np, why = buildWebEntryProposal(p, it, now)
 		default:
 			why = "未知提议类型 " + it.Kind
 		}
@@ -172,6 +180,8 @@ func itemLabel(it DossierProposalItem) string {
 		return "external:" + it.Path
 	case agentkit.ProposalKindToolDep:
 		return "tool:" + strings.TrimSpace(it.Name)
+	case agentkit.ProposalKindWebEntry:
+		return "web_entry:" + strings.TrimSpace(it.ID)
 	case agentkit.ProposalKindSQLite:
 		pat := it.Glob
 		if pat == "" {
@@ -196,6 +206,8 @@ func formatProposalLine(np agentkit.Proposal) string {
 		return "external:" + np.ExternalRef.Path + " (" + np.ExternalRef.RefKind + ") — " + note + "（" + np.ID + "）"
 	case agentkit.ProposalKindToolDep:
 		return "tool:" + np.ToolDep.Name + " — " + note + "（" + np.ID + "）"
+	case agentkit.ProposalKindWebEntry:
+		return "web_entry:" + np.WebEntry.ID + " (:" + strconv.Itoa(np.WebEntry.Port) + np.WebEntry.Path + ") — " + note + "（" + np.ID + "）"
 	default:
 		line := np.Rule.Root + ":" + np.Rule.Glob + " → " + np.Rule.Category + " — " + note
 		if np.Demotion {
@@ -217,6 +229,8 @@ func upsertProposal(ps *[]agentkit.Proposal, np agentkit.Proposal) {
 			return x.ExternalRef != nil && np.ExternalRef != nil && x.ExternalRef.Path == np.ExternalRef.Path
 		case agentkit.ProposalKindToolDep:
 			return x.ToolDep != nil && np.ToolDep != nil && x.ToolDep.Name == np.ToolDep.Name
+		case agentkit.ProposalKindWebEntry:
+			return x.WebEntry != nil && np.WebEntry != nil && x.WebEntry.ID == np.WebEntry.ID
 		default:
 			return x.Rule.Root == np.Rule.Root && x.Rule.Glob == np.Rule.Glob
 		}
@@ -480,6 +494,63 @@ func buildToolDepProposal(it DossierProposalItem, now time.Time) (*agentkit.Prop
 	}, ""
 }
 
+var proposalSecretFragRe = regexp.MustCompile(`(?i)(?:[?#](?:token|key|secret|auth|code)=|\bbearer\s+[A-Za-z0-9._-]{8,}|\bsk-[A-Za-z0-9]{10,}|\bghp_[A-Za-z0-9]{10,}|\bglpat-[A-Za-z0-9_-]{8,}|\bAIza[A-Za-z0-9_-]{10,})`)
+
+func hasSuspiciousSecretFragment(s string) bool {
+	return s != "" && proposalSecretFragRe.MatchString(s)
+}
+
+func checkEntryProfileConflict(p *profile.Profile, id string, port int) string {
+	if p == nil {
+		return ""
+	}
+	for _, e := range p.Entries {
+		if e.LocalSource != "" {
+			continue
+		}
+		if e.ID == id {
+			return "入口 id 与 profile 原生声明冲突：" + id
+		}
+		if e.Port == port {
+			return "端口 " + strconv.Itoa(port) + " 已被 profile 原生入口 " + e.ID + " 占用"
+		}
+	}
+	return ""
+}
+
+func buildWebEntryProposal(p *profile.Profile, it DossierProposalItem, now time.Time) (*agentkit.Proposal, string) {
+	le := enroll.LocalEntry{
+		ID:          it.ID,
+		DisplayName: it.DisplayName,
+		Port:        it.Port,
+		Path:        it.Path,
+		Hint:        it.Hint,
+		Reason:      it.Reason,
+	}
+	if err := enroll.ValidLocalEntry(&le); err != nil {
+		return nil, err.Error()
+	}
+	if hasSuspiciousSecretFragment(le.DisplayName) || hasSuspiciousSecretFragment(le.Hint) || hasSuspiciousSecretFragment(le.Reason) {
+		return nil, "入口名称、说明或原因不能包含令牌、密钥或 URL 凭据参数"
+	}
+	if why := checkEntryProfileConflict(p, le.ID, le.Port); why != "" {
+		return nil, why
+	}
+	return &agentkit.Proposal{
+		ID:   newID("p_"),
+		Kind: agentkit.ProposalKindWebEntry,
+		WebEntry: &agentkit.WebEntrySpec{
+			ID:          le.ID,
+			DisplayName: le.DisplayName,
+			Port:        le.Port,
+			Path:        le.Path,
+			Hint:        le.Hint,
+		},
+		Reason:  le.Reason,
+		Created: now.UTC(),
+	}, ""
+}
+
 // Decide applies the user's decisions: accepted proposals are persisted into
 // local_overrides, local_sqlite, external_refs, local_roots, or tool_deps.
 // Demotions require AcceptDemotions. External refs may be promoted to backed-up
@@ -522,7 +593,8 @@ func Decide(home string, d agentkit.DecideParams) (*agentkit.DecideResult, error
 			continue
 		}
 		switch {
-		case pr.Demotion && slices.Contains(d.AcceptDemotions, pr.ID), !pr.Demotion && (all(d.Accept) || slices.Contains(d.Accept, pr.ID)):
+		case pr.Demotion && slices.Contains(d.AcceptDemotions, pr.ID),
+			!pr.Demotion && (slices.Contains(d.Accept, pr.ID) || (pr.EffectiveKind() != agentkit.ProposalKindWebEntry && all(d.Accept))):
 			if err := applyAcceptedProposal(home, rec, prof, pr); err != nil {
 				return nil, valise.New("proposal_invalid", "提议 "+pr.ID+" 已不再有效："+err.Error(), "拒绝它")
 			}
@@ -543,7 +615,7 @@ func Decide(home string, d agentkit.DecideParams) (*agentkit.DecideResult, error
 			rec.LocalOverrides = []profile.Override{}
 		}
 		writeRec := func() error {
-			_, err := porterenroll.WriteRecord(home, *rec, *prof)
+			_, err := porterenroll.UpdateRecord(home, *rec)
 			return err
 		}
 		if rootsChanged {
@@ -663,6 +735,31 @@ func applyAcceptedProposal(home string, rec *enroll.Record, prof *profile.Profil
 			Purpose: strings.TrimSpace(pr.ToolDep.Purpose),
 			Reason:  pr.Reason,
 		})
+	case agentkit.ProposalKindWebEntry:
+		if pr.WebEntry == nil {
+			return errors.New("缺少 web_entry 定义")
+		}
+		le := enroll.LocalEntry{
+			ID:          pr.WebEntry.ID,
+			DisplayName: pr.WebEntry.DisplayName,
+			Port:        pr.WebEntry.Port,
+			Path:        pr.WebEntry.Path,
+			Hint:        pr.WebEntry.Hint,
+			Reason:      pr.Reason,
+		}
+		if err := enroll.ValidLocalEntry(&le); err != nil {
+			return err
+		}
+		if hasSuspiciousSecretFragment(le.DisplayName) || hasSuspiciousSecretFragment(le.Hint) || hasSuspiciousSecretFragment(le.Reason) {
+			return errors.New("入口名称、说明或原因包含疑似凭据片段")
+		}
+		if why := checkEntryProfileConflict(prof, le.ID, le.Port); why != "" {
+			return errors.New(why)
+		}
+		rec.LocalEntries = slices.DeleteFunc(rec.LocalEntries, func(x enroll.LocalEntry) bool {
+			return x.ID == le.ID
+		})
+		rec.LocalEntries = append(rec.LocalEntries, le)
 	default:
 		if err := pr.Rule.ValidateWithRoots(prof, localRootIDs(rec.LocalRoots)); err != nil {
 			return err
@@ -670,10 +767,52 @@ func applyAcceptedProposal(home string, rec *enroll.Record, prof *profile.Profil
 		if !allowedClassifyCategories[pr.Rule.Category] {
 			return errors.New("不支持提议类别 " + pr.Rule.Category)
 		}
+		if pr.Rule.Category != profile.CategorySecrets {
+			if err := ensureNoSecretDowngrade(rec, prof, pr.Rule); err != nil {
+				return err
+			}
+		}
 		rec.LocalOverrides = slices.DeleteFunc(rec.LocalOverrides, func(o profile.Override) bool {
 			return o.Root == pr.Rule.Root && o.Glob == pr.Rule.Glob
 		})
 		rec.LocalOverrides = append(rec.LocalOverrides, pr.Rule)
+	}
+	return nil
+}
+
+func ensureNoSecretDowngrade(rec *enroll.Record, prof *profile.Profile, rule profile.Override) error {
+	cls := profile.NewClassifier(prof, rec.LocalOverrides).
+		WithSQLite(rec.LocalSQLite).
+		WithDefaultRoots(localRootDefaults(rec.LocalRoots))
+	if prof != nil {
+		for _, r := range prof.Paths {
+			if r.Category == profile.CategorySecrets && r.Root == rule.Root {
+				if r.Glob == rule.Glob || rule.Glob == "**" || (profile.IsLiteral(r.Glob) && profile.MatchGlob(rule.Glob, r.Glob)) {
+					return errors.New(r.Glob + " 已按凭据规则保护，不能改为其他类别")
+				}
+			}
+		}
+	}
+	for _, o := range rec.LocalOverrides {
+		if o.Category == profile.CategorySecrets && o.Root == rule.Root {
+			if o.Glob == rule.Glob || rule.Glob == "**" || (profile.IsLiteral(o.Glob) && profile.MatchGlob(rule.Glob, o.Glob)) {
+				return errors.New(o.Glob + " 已按凭据规则保护，不能改为其他类别")
+			}
+		}
+	}
+	if !strings.ContainsAny(rule.Glob, "*?[") {
+		if cls.Classify(rule.Root, rule.Glob).Category == profile.CategorySecrets {
+			return errors.New(rule.Glob + " 已按凭据规则保护，不能改为其他类别")
+		}
+	}
+	_, files, why := resolveGlobInRoot(rec, rule.Root, rule.Glob, true)
+	if why != "" && why != "路径不存在" {
+		return errors.New(why)
+	}
+	for _, r := range files {
+		if cls.Classify(rule.Root, r).Category == profile.CategorySecrets {
+			return errors.New(r + " 已按凭据规则保护，不能改为其他类别")
+		}
 	}
 	return nil
 }

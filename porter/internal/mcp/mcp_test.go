@@ -173,7 +173,7 @@ func TestProtocolAndTools(t *testing.T) {
 		}
 		if name == "valise_propose_dossier" {
 			rawSchema, _ := json.Marshal(m["inputSchema"])
-			for _, want := range []string{`"identity"`, `"tool_dep"`, `"suggested_category"`, `"purpose"`} {
+			for _, want := range []string{`"identity"`, `"tool_dep"`, `"web_entry"`, `"display_name"`, `"hint"`, `"suggested_category"`, `"purpose"`} {
 				if !strings.Contains(string(rawSchema), want) {
 					t.Fatalf("valise_propose_dossier schema missing %s: %s", want, rawSchema)
 				}
@@ -241,6 +241,16 @@ func TestProtocolAndTools(t *testing.T) {
 	extList := facts["external_symlinks"].([]any)
 	if len(extList) != 1 || extList[0].(map[string]any)["link_path"] != "state:ext_link" {
 		t.Fatalf("unexpected external_symlinks: %+v", extList)
+	}
+	instObj := sc["instance"].(map[string]any)
+	if instObj["has_secret_rules"] != true {
+		t.Fatalf("expected has_secret_rules=true, got %v", instObj["has_secret_rules"])
+	}
+	if _, hasKnown := facts["known_entries"].([]any); !hasKnown {
+		t.Fatalf("expected known_entries array in layout_facts: %+v", facts)
+	}
+	if _, hasPorts := facts["loopback_ports"].([]any); !hasPorts {
+		t.Fatalf("expected loopback_ports array in layout_facts: %+v", facts)
 	}
 	vs, _ = seal.Status(seal.Paths{Home: home})
 	if len(vs.Snapshots) != 0 {

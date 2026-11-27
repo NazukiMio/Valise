@@ -30,13 +30,22 @@ func (a *App) tierDialog(c *ui.Context, row *agentRow, ps *protState) {
 	if e == nil {
 		return
 	}
+	if row.NoSecretRules && e.tier == vault.TierSoul {
+		e.tier = vault.TierFull
+	}
 	open := true
 	if ui.Modal(c, &open, func() {
 		dialog(ui.Column(c), 500).Children(func() {
 			dialogTitle(ui.Text(c, T("protect.tier.title")))
 			muted(ui.Text(c, T("protect.tier.note"))).Wrap()
+			if row.NoSecretRules {
+				notice(c, "info", T("protect.tier.no_secrets_guard"))
+			}
 			ui.RadioGroup(c, func() {
 				for _, ch := range protectTierChoices {
+					if row.NoSecretRules && ch.id == vault.TierSoul {
+						continue
+					}
 					ui.Radio(c.Key("tier-"+ch.id), &e.tier, ch.id, T(ch.label))
 					muted(ui.Text(c, T(ch.desc))).FontSize(fsSub).Wrap()
 				}

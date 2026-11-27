@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"slices"
+	"strings"
 
+	"valise/core/enroll"
 	"valise/core/login"
 	"valise/core/profile"
 	"valise/core/valise"
@@ -51,6 +53,8 @@ func (s *Service) ProbeEntry(ctx context.Context, host, instance, entryID string
 			HasPrepare:  entry.Prepare != nil,
 			Prepared:    entry.Prepare == nil,
 			HasStart:    entry.Start != nil && len(entry.Start.Argv) > 0,
+			AgentHint:   entry.AgentHint,
+			LocalSource: entry.LocalSource,
 		}, nil
 	}
 	var res login.EntryProbeResult
@@ -140,4 +144,18 @@ func (s *Service) StopEntry(ctx context.Context, host, instance, entryID string)
 		return nil, err
 	}
 	return &res, nil
+}
+
+// RemoveLocalEntry removes an agent-reported or locally added web entry from
+// instance on host (TierOwner) and invalidates cached agent observations.
+func (s *Service) RemoveLocalEntry(ctx context.Context, host, instance, entryID string) error {
+	entryID = strings.TrimSpace(entryID)
+	if entryID == "" {
+		return valise.New("request_invalid", "缺少入口标识", "选择要移除的本地入口")
+	}
+	_, err := s.UpdateDossier(ctx, host, enroll.DossierUpdateParams{
+		InstanceID:     instance,
+		RemoveEntryIDs: []string{entryID},
+	})
+	return err
 }

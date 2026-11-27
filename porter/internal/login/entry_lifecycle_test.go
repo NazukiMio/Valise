@@ -791,3 +791,65 @@ sleep 30
 		t.Fatalf("normal line lost in %q", clean)
 	}
 }
+
+func TestPrepareAndStartRejectDossierLocalEntry(t *testing.T) {
+	home := t.TempDir()
+	procDir := filepath.Join(home, "procnet")
+	oldProc := ProcNet
+	ProcNet = procDir
+	t.Cleanup(func() { ProcNet = oldProc })
+	writeFakeProcNet(t, procDir, 0)
+
+	prof := profile.Profile{
+		Schema:         profile.Schema,
+		ID:             "demo",
+		DisplayName:    "Demo",
+		ProfileVersion: 1,
+		Status:         profile.StatusDraft,
+	}
+	env := setupEntryTestEnv(t, home, prof)
+
+	rec, err := porterenroll.ReadRecord(home, "demo")
+	if err != nil || rec == nil {
+		t.Fatalf("ReadRecord: %+v %v", rec, err)
+	}
+	rec.LocalEntries = []enroll.LocalEntry{{
+		ID:          "agent-ui",
+		DisplayName: "Agent UI",
+		Port:        7860,
+		Path:        "/ui",
+		Hint:        "Start UI manually",
+	}}
+	if _, err := porterenroll.UpdateRecord(home, *rec); err != nil {
+		t.Fatal(err)
+	}
+
+	effProf, err := porterenroll.ReadProfile(home, "demo")
+	if err != nil || len(effProf.Entries) != 1 || effProf.Entries[0].ID != "agent-ui" {
+		t.Fatalf("ReadProfile entries = %+v err=%v", effProf, err)
+	}
+
+	ctx := context.Background()
+	probe, err := ProbeEntry(ctx, env, home, login.EntryProbeParams{InstanceID: "demo", Entry: effProf.Entries[0]})
+	if err != nil {
+		t.Fatalf("ProbeEntry local entry: %v", err)
+	}
+	if probe.LocalSource != "agent_dossier" || probe.AgentHint != "Start UI manually" || probe.HasPrepare || probe.HasStart {
+		t.Fatalf("unexpected probe: %+v", probe)
+	}
+
+	forged := effProf.Entries[0]
+	forged.Prepare = &profile.EntryPrepare{Steps: []profile.Argv{{"sh", "-c", "evil"}}}
+	forged.Start = &profile.EntryStart{Argv: profile.Argv{"demo", "serve"}}
+
+	if _, err := PrepareEntry(ctx, env, home, login.EntryPrepareParams{InstanceID: "demo", Entry: forged}); err == nil {
+		t.Fatal("PrepareEntry must reject dossier LocalEntry even with caller Prepare argv")
+	} else if ue, ok := valise.As(err); !ok || ue.Code != "entry_not_declared" {
+		t.Fatalf("unexpected PrepareEntry error: %v", err)
+	}
+	if _, err := StartEntry(ctx, env, home, login.EntryStartParams{InstanceID: "demo", Entry: forged}); err == nil {
+		t.Fatal("StartEntry must reject dossier LocalEntry even with caller Start argv")
+	} else if ue, ok := valise.As(err); !ok || ue.Code != "entry_not_declared" {
+		t.Fatalf("unexpected StartEntry error: %v", err)
+	}
+}

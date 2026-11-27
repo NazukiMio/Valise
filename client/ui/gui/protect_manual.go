@@ -112,8 +112,17 @@ func (a *App) manualSavepointCard(c *ui.Context, row *agentRow, ps *protState) {
 			})
 		})
 		muted(ui.Text(c, T("manual.hint"))).FontSize(fsSub).Wrap()
+		if row.NoSecretRules && ms.tier == "soul-only" {
+			ms.tier = vault.TierFull
+		}
+		if row.NoSecretRules {
+			notice(c, "info", T("protect.tier.no_secrets_guard"))
+		}
 		ui.RadioGroup(c, func() {
 			for _, tier := range []string{"soul-only", vault.TierSoulSecrets, vault.TierFull, vault.TierRaw} {
+				if row.NoSecretRules && tier == "soul-only" {
+					continue
+				}
 				label := tierText(tier)
 				if tier == "soul-only" {
 					label = tierText(vault.TierSoul)

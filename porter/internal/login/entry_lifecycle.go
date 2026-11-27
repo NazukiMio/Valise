@@ -121,19 +121,25 @@ func loadEnrolledEntryEnv(e *porterenroll.Env, home, inst string, entry profile.
 }
 
 func verifyAgainstEnrolledProfile(prof *profile.Profile, rec *enroll.Record, entry profile.Entry) error {
-	eff := prof.ForAgent(rec.Name)
-	if len(eff.Entries) == 0 {
+	if prof == nil {
+		return nil
+	}
+	// ReadProfile already scoped prof for rec.Name and applied EntryPorts + LocalEntries.
+	if len(prof.Entries) == 0 {
 		return nil
 	}
 	var declared *profile.Entry
-	for i := range eff.Entries {
-		if eff.Entries[i].ID == entry.ID {
-			declared = &eff.Entries[i]
+	for i := range prof.Entries {
+		if prof.Entries[i].ID == entry.ID {
+			declared = &prof.Entries[i]
 			break
 		}
 	}
 	if declared == nil {
 		return valise.New("entry_not_declared", "已接入的 profile 未声明入口 "+entry.ID, "更新接入的 profile 后重试")
+	}
+	if declared.LocalSource != "" && (entry.Prepare != nil || entry.Start != nil) {
+		return valise.New("entry_not_declared", "本地汇报入口 "+entry.ID+" 仅支持只读转发，不允许执行准备或启动命令", "在服务器终端手动管理该入口")
 	}
 	if declared.Prepare != nil && entry.Prepare != nil {
 		if len(declared.Prepare.CheckArgv) > 0 && !slices.Equal(declared.Prepare.CheckArgv, entry.Prepare.CheckArgv) {
@@ -384,6 +390,8 @@ func ProbeEntry(ctx context.Context, e *porterenroll.Env, home string, p login.E
 		Prepared:    prepared,
 		PrepareNote: note,
 		HasStart:    p.Entry.Start != nil && len(p.Entry.Start.Argv) > 0,
+		AgentHint:   p.Entry.AgentHint,
+		LocalSource: p.Entry.LocalSource,
 	}
 	if st, err := readEntryState(home, p.InstanceID, p.Entry.ID); err == nil && st != nil {
 		if isEntryStateAlive(ctx, e, st) {

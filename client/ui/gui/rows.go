@@ -31,6 +31,7 @@ type agentRow struct {
 	ServiceSummary                                  string
 	HasService                                      bool
 	HasNative                                       bool
+	NoSecretRules                                   bool
 	Profile                                         string // profile id, for its display
 	SubName                                         string // non-empty when this is a sub-agent (InstanceSummary.Name)
 }
@@ -57,6 +58,7 @@ func (a *App) agentRows(res service.AgentListResult) []agentRow {
 		r.Service, r.ServiceTone = serviceText(in.Service)
 		r.HasService, r.Profile, r.SubName = len(in.Service) > 0, in.ProfileID, in.Name
 		r.HasNative = in.NativeCLI
+		r.NoSecretRules = in.HasSecretRules != nil && !*in.HasSecretRules
 		r.MissingRoots = append([]string(nil), in.MissingRoots...)
 		r.StateMissing = in.StateMissing()
 		if len(in.Service) > 0 {

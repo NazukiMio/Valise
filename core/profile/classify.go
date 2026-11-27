@@ -186,3 +186,33 @@ func (c *Classifier) Sidecar(root, rel string) (string, bool) {
 	}
 	return "", false
 }
+
+// HasSecretRules reports whether any explicit credential rule or SQLite
+// secret_tables declaration exists across the profile and instance dossier.
+func HasSecretRules(p *Profile, overrides []Override, localSQLite []SQLiteRef) bool {
+	if p != nil {
+		for _, r := range p.Paths {
+			if r.Category == CategorySecrets {
+				return true
+			}
+		}
+		if p.Consistency != nil {
+			for _, s := range p.Consistency.SQLite {
+				if len(s.SecretTables) > 0 {
+					return true
+				}
+			}
+		}
+	}
+	for _, o := range overrides {
+		if o.Category == CategorySecrets {
+			return true
+		}
+	}
+	for _, s := range localSQLite {
+		if len(s.SecretTables) > 0 {
+			return true
+		}
+	}
+	return false
+}

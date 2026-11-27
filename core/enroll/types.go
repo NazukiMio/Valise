@@ -8,7 +8,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"valise/core/identity"
 	"valise/core/profile"
@@ -165,10 +168,11 @@ func (s ServiceState) Exists() bool { return s.LoadState == "loaded" }
 
 // EntryState is the observed state of an entry port on the server.
 type EntryState struct {
-	ID        string `json:"id"`
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	Listening bool   `json:"listening"`
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name,omitempty"`
+	Host        string `json:"host"`
+	Port        int    `json:"port"`
+	Listening   bool   `json:"listening"`
 }
 
 // Report is the enrollment report.
@@ -287,13 +291,99 @@ type ToolDep struct {
 	Reason  string `json:"reason,omitempty"`
 }
 
-// DossierUpdateParams directly manages an instance's local_roots and tool_deps.
+// LocalEntry records a user-approved, declarative loopback web entry reported
+// by an agent or added locally to the instance dossier. It holds no commands.
+type LocalEntry struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Port        int    `json:"port"`
+	Path        string `json:"path"`
+	Hint        string `json:"hint,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+var localEntryIDRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+func hasCtrlChar(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func truncateUTF8Bytes(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	for max > 0 && !utf8.RuneStart(s[max]) {
+		max--
+	}
+	return s[:max]
+}
+
+// ValidLocalEntry normalizes and validates a declarative LocalEntry.
+func ValidLocalEntry(e *LocalEntry) error {
+	if e == nil {
+		return fmt.Errorf("入口定义不能为空")
+	}
+	e.ID = strings.TrimSpace(e.ID)
+	if e.ID == "" || len(e.ID) > 32 || !localEntryIDRe.MatchString(e.ID) {
+		return fmt.Errorf("入口 id 无效（仅限小写字母、数字和连字符，最长 32 个字符）：%q", e.ID)
+	}
+	e.DisplayName = strings.TrimSpace(e.DisplayName)
+	if !utf8.ValidString(e.DisplayName) || hasCtrlChar(e.DisplayName) {
+		return fmt.Errorf("入口名称包含非法控制字符")
+	}
+	if n := utf8.RuneCountInString(e.DisplayName); n == 0 || n > 60 {
+		return fmt.Errorf("入口名称长度必须在 1 到 60 个字符之间")
+	}
+	if e.Port < 1 || e.Port > 65535 {
+		return fmt.Errorf("入口端口必须在 1 到 65535 之间：%d", e.Port)
+	}
+	p := strings.TrimSpace(e.Path)
+	if p == "" {
+		p = "/"
+	}
+	if !strings.HasPrefix(p, "/") || len(p) > 128 || !utf8.ValidString(p) || hasCtrlChar(p) ||
+		strings.ContainsAny(p, "?#\\ \t\r\n") || strings.Contains(p, "..") {
+		return fmt.Errorf("入口路径必须是以 / 开头、不含查询参数或特殊字符的相对路径：%q", e.Path)
+	}
+	e.Path = p
+
+	hint := strings.TrimSpace(e.Hint)
+	if !utf8.ValidString(hint) {
+		return fmt.Errorf("入口说明必须是合法 UTF-8 文本")
+	}
+	hint = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ", "\t", " ").Replace(hint)
+	hint = strings.Join(strings.Fields(hint), " ")
+	if hasCtrlChar(hint) {
+		return fmt.Errorf("入口说明不能包含控制字符")
+	}
+	if runes := []rune(hint); len(runes) > 200 {
+		hint = string(runes[:200])
+	}
+	e.Hint = hint
+
+	reason := strings.TrimSpace(e.Reason)
+	if !utf8.ValidString(reason) || hasCtrlChar(strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(reason)) {
+		return fmt.Errorf("入口原因包含非法控制字符")
+	}
+	e.Reason = truncateUTF8Bytes(reason, 500)
+	return nil
+}
+
+// DossierUpdateParams directly manages an instance's local_roots, tool_deps,
+// and local_entries.
 type DossierUpdateParams struct {
-	InstanceID      string      `json:"instance_id"`
-	AddRoots        []LocalRoot `json:"add_roots,omitempty"`
-	RemoveRootIDs   []string    `json:"remove_root_ids,omitempty"`
-	AddToolDeps     []ToolDep   `json:"add_tool_deps,omitempty"`
-	RemoveToolNames []string    `json:"remove_tool_names,omitempty"`
+	InstanceID      string       `json:"instance_id"`
+	AddRoots        []LocalRoot  `json:"add_roots,omitempty"`
+	RemoveRootIDs   []string     `json:"remove_root_ids,omitempty"`
+	AddToolDeps     []ToolDep    `json:"add_tool_deps,omitempty"`
+	RemoveToolNames []string     `json:"remove_tool_names,omitempty"`
+	AddEntries      []LocalEntry `json:"add_entries,omitempty"`
+	RemoveEntryIDs  []string     `json:"remove_entry_ids,omitempty"`
 }
 
 // DossierUpdateResult returns the updated instance record.
@@ -319,6 +409,8 @@ type Record struct {
 	ExternalRefs []ExternalRef `json:"external_refs,omitempty"`
 	// ToolDeps holds user-confirmed companion CLI tools checked read-only on migration.
 	ToolDeps []ToolDep `json:"tool_deps,omitempty"`
+	// LocalEntries holds user-approved declarative web entries reported by an agent.
+	LocalEntries []LocalEntry `json:"local_entries,omitempty"`
 	// EntryPorts override the profile's entry ports for this instance after
 	// a port change (docs/LOGIN_RELAY.md 4.2).
 	EntryPorts map[string]int `json:"entry_ports,omitempty"`
@@ -366,6 +458,7 @@ func RecordFrom(r *Report, now time.Time) Record {
 	var localRoots []LocalRoot
 	var externalRefs []ExternalRef
 	var toolDeps []ToolDep
+	var localEntries []LocalEntry
 	var displayName string
 	if r.Previous != nil {
 		if r.Overrides == nil && len(r.Previous.LocalOverrides) > 0 {
@@ -390,13 +483,16 @@ func RecordFrom(r *Report, now time.Time) Record {
 		if len(r.Previous.ToolDeps) > 0 {
 			toolDeps = append([]ToolDep(nil), r.Previous.ToolDeps...)
 		}
+		if len(r.Previous.LocalEntries) > 0 {
+			localEntries = append([]LocalEntry(nil), r.Previous.LocalEntries...)
+		}
 		displayName = r.Previous.DisplayName
 	}
 	return Record{
 		InstanceID: r.InstanceID, ProfileID: r.ProfileID, ProfileVersion: r.ProfileVersion,
 		Roots: roots, Provenance: r.Provenance, Service: r.Service, Entries: r.Entries,
 		LocalOverrides: ov, LocalSQLite: localSQLite, LocalRoots: localRoots,
-		ExternalRefs: externalRefs, ToolDeps: toolDeps,
+		ExternalRefs: externalRefs, ToolDeps: toolDeps, LocalEntries: localEntries,
 		EntryPorts: r.EntryPorts, EnrolledAt: now.UTC(),
 		Name: r.Name, Env: r.Env, DisplayName: displayName,
 		HarnessName: r.HarnessName, HarnessAgents: r.HarnessAgents,
@@ -415,6 +511,50 @@ func (r *Record) ApplyEntryPorts(p *profile.Profile) {
 		}
 	}
 	p.Entries = entries
+}
+
+// ApplyLocalEntries appends user-approved dossier LocalEntries onto p.Entries
+// without overriding official profile entries (and skipping local entries
+// shadowed by an official entry's id or managed port).
+func (r *Record) ApplyLocalEntries(p *profile.Profile) (shadowed []string) {
+	if r == nil || p == nil || len(r.LocalEntries) == 0 {
+		return nil
+	}
+	entries := append([]profile.Entry{}, p.Entries...)
+	usedID := make(map[string]bool, len(entries))
+	managedPort := make(map[int]bool, len(entries))
+	usedPort := make(map[int]bool, len(entries))
+	for _, e := range entries {
+		usedID[e.ID] = true
+		usedPort[e.Port] = true
+		if e.Prepare != nil || e.Start != nil {
+			managedPort[e.Port] = true
+		}
+	}
+	for _, le := range r.LocalEntries {
+		cp := le
+		if ValidLocalEntry(&cp) != nil {
+			continue
+		}
+		if usedID[cp.ID] || managedPort[cp.Port] || usedPort[cp.Port] {
+			shadowed = append(shadowed, cp.ID)
+			continue
+		}
+		usedID[cp.ID] = true
+		usedPort[cp.Port] = true
+		entries = append(entries, profile.Entry{
+			ID:          cp.ID,
+			DisplayName: cp.DisplayName,
+			Kind:        "web",
+			Host:        "127.0.0.1",
+			Port:        cp.Port,
+			Path:        cp.Path,
+			AgentHint:   cp.Hint,
+			LocalSource: "agent_dossier",
+		})
+	}
+	p.Entries = entries
+	return shadowed
 }
 
 // Change is one difference from the previous enrollment.
@@ -462,6 +602,9 @@ type InstanceSummary struct {
 	// MissingRoots lists enrolled root IDs whose directory on the server is
 	// missing or no longer a directory (e.g. uninstalled outside Valise).
 	MissingRoots []string `json:"missing_roots,omitempty"`
+	// HasSecretRules reports whether the effective profile + dossier declares
+	// any secrets path rules or SQLite secret_tables (nil on older porters).
+	HasSecretRules *bool `json:"has_secret_rules,omitempty"`
 }
 
 // StateMissing reports whether the instance's state root directory is missing.

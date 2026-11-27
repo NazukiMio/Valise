@@ -80,6 +80,7 @@ type DossierReviveSummary struct {
 	LocalRoots     []enroll.LocalRoot   `json:"local_roots,omitempty"`
 	ExternalRefs   []enroll.ExternalRef `json:"external_refs,omitempty"`
 	ToolDeps       []enroll.ToolDep     `json:"tool_deps,omitempty"`
+	LocalEntries   []enroll.LocalEntry  `json:"local_entries,omitempty"`
 }
 
 // RevivePlan is shown to the user before anything changes.
@@ -780,6 +781,7 @@ func planRecord(instance string, prof profile.Profile, roots []revive.RootPlan, 
 		LocalRoots:   remapLocalRoots(head.LocalRoots, roots),
 		ExternalRefs: append([]enroll.ExternalRef(nil), head.ExternalRefs...),
 		ToolDeps:     append([]enroll.ToolDep(nil), head.ToolDeps...),
+		LocalEntries: append([]enroll.LocalEntry(nil), head.LocalEntries...),
 		EnrolledAt:   time.Now().UTC(), Name: head.Name, DisplayName: displayName}
 	if len(head.Env) > 0 {
 		rec.Env = map[string]string{}
@@ -829,7 +831,7 @@ func shortCommit(c string) string {
 
 // summarizeDossier lists what the snapshot's record carries to the target.
 func (p *RevivePlan) summarizeDossier(head *vault.Snapshot) {
-	if len(head.LocalOverrides) == 0 && len(head.LocalSQLite) == 0 && len(head.LocalRoots) == 0 && len(head.ExternalRefs) == 0 && len(head.ToolDeps) == 0 {
+	if len(head.LocalOverrides) == 0 && len(head.LocalSQLite) == 0 && len(head.LocalRoots) == 0 && len(head.ExternalRefs) == 0 && len(head.ToolDeps) == 0 && len(head.LocalEntries) == 0 {
 		return
 	}
 	d := &DossierReviveSummary{
@@ -837,6 +839,7 @@ func (p *RevivePlan) summarizeDossier(head *vault.Snapshot) {
 		LocalRoots:     append([]enroll.LocalRoot(nil), head.LocalRoots...),
 		ExternalRefs:   append([]enroll.ExternalRef(nil), head.ExternalRefs...),
 		ToolDeps:       append([]enroll.ToolDep(nil), head.ToolDeps...),
+		LocalEntries:   append([]enroll.LocalEntry(nil), head.LocalEntries...),
 	}
 	for _, q := range head.LocalSQLite {
 		d.LocalSQLite = append(d.LocalSQLite, q.Root+":"+q.Glob)

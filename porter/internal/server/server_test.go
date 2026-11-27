@@ -393,11 +393,12 @@ func TestDossierUpdateRPC(t *testing.T) {
 		}
 	}
 
-	// 4. Add a valid local_root and tool_dep.
+	// 4. Add a valid local_root, tool_dep, and local_entry.
 	resp := call(enroll.DossierUpdateParams{
 		InstanceID:  "demo",
 		AddRoots:    []enroll.LocalRoot{{ID: "ext-notes", Path: extraDir, Category: "memory", Reason: "personal notes"}},
 		AddToolDeps: []enroll.ToolDep{{Name: "ffmpeg", Purpose: "audio", Reason: "voice"}},
+		AddEntries:  []enroll.LocalEntry{{ID: "webapp", DisplayName: "WebApp", Port: 7860, Path: "/ui", Hint: "run demo ui"}},
 	})
 	if resp.Error != nil {
 		t.Fatalf("dossier_update add failed: %+v", resp.Error)
@@ -408,6 +409,7 @@ func TestDossierUpdateRPC(t *testing.T) {
 	}
 	if len(addRes.Record.LocalRoots) != 1 || addRes.Record.Roots["ext-notes"] != extraDir ||
 		len(addRes.Record.ToolDeps) != 1 || addRes.Record.ToolDeps[0].Name != "ffmpeg" ||
+		len(addRes.Record.LocalEntries) != 1 || addRes.Record.LocalEntries[0].ID != "webapp" ||
 		len(addRes.Record.ExternalRefs) != 0 {
 		t.Fatalf("unexpected add result: %+v", addRes.Record)
 	}
@@ -416,11 +418,12 @@ func TestDossierUpdateRPC(t *testing.T) {
 		t.Fatalf("ValidateIdentity failed after dossier_update add: %v", err)
 	}
 
-	// 5. Remove the local_root and tool_dep.
+	// 5. Remove the local_root, tool_dep, and local_entry.
 	resp = call(enroll.DossierUpdateParams{
 		InstanceID:      "demo",
 		RemoveRootIDs:   []string{"ext-notes"},
 		RemoveToolNames: []string{"ffmpeg"},
+		RemoveEntryIDs:  []string{"webapp"},
 	})
 	if resp.Error != nil {
 		t.Fatalf("dossier_update remove failed: %+v", resp.Error)
@@ -429,7 +432,8 @@ func TestDossierUpdateRPC(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &rmRes); err != nil {
 		t.Fatal(err)
 	}
-	if len(rmRes.Record.LocalRoots) != 0 || rmRes.Record.Roots["ext-notes"] != "" || len(rmRes.Record.ToolDeps) != 0 {
+	if len(rmRes.Record.LocalRoots) != 0 || rmRes.Record.Roots["ext-notes"] != "" ||
+		len(rmRes.Record.ToolDeps) != 0 || len(rmRes.Record.LocalEntries) != 0 {
 		t.Fatalf("unexpected remove result: %+v", rmRes.Record)
 	}
 	if err := porterenroll.ValidateIdentity(context.Background(), home, boundAgent.Ref); err != nil {

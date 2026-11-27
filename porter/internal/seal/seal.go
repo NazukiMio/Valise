@@ -264,7 +264,7 @@ func sealWithLock(ctx context.Context, e *porterenroll.Env, p Paths, params vaul
 		Profile:     vault.ProfileRef{ID: prof.ID, Version: prof.ProfileVersion, Status: prof.Status},
 		ProfileDoc:  prof, Provenance: rec.Provenance, LocalOverrides: rec.LocalOverrides,
 		LocalSQLite: rec.LocalSQLite, LocalRoots: rec.LocalRoots,
-		ExternalRefs: rec.ExternalRefs, ToolDeps: rec.ToolDeps,
+		ExternalRefs: rec.ExternalRefs, ToolDeps: rec.ToolDeps, LocalEntries: rec.LocalEntries,
 		Roots: rec.Roots, SQLite: rep.SQLite,
 		Name: rec.Name, Env: rec.Env,
 		Notes: vault.Notes{Unstable: rep.Unstable, UnclassifiedCount: rep.UnclassifiedCount}}
