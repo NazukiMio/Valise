@@ -30,7 +30,11 @@ type agentRow struct {
 	HasService                                      bool
 	HasNative                                       bool
 	Profile                                         string // profile id, for its display
+	SubName                                         string // non-empty when this is a sub-agent (InstanceSummary.Name)
 }
+
+// IsSubAgent reports whether this row is a named sub-agent of a harness.
+func (r agentRow) IsSubAgent() bool { return r.SubName != "" }
 
 // Retired is an agent no longer in use here: migrated away or superseded.
 func (r agentRow) Retired() bool { return r.Note != "" }
@@ -49,7 +53,7 @@ func (a *App) agentRows(res service.AgentListResult) []agentRow {
 			r.Harness = in.ProfileID
 		}
 		r.Service, r.ServiceTone = serviceText(in.Service)
-		r.HasService, r.Profile = len(in.Service) > 0, in.ProfileID
+		r.HasService, r.Profile, r.SubName = len(in.Service) > 0, in.ProfileID, in.Name
 		r.HasNative = in.NativeCLI
 		r.MissingRoots = append([]string(nil), in.MissingRoots...)
 		r.StateMissing = in.StateMissing()

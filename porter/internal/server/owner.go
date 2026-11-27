@@ -127,3 +127,36 @@ func leafOnServer(st *vaultrpc.StatusResult, leaf string) bool {
 	}
 	return false
 }
+
+// snapshotsFoundElsewhere reports whether every listed snapshot is recorded
+// on a copy location, so deleting them from the server may go at the owner
+// tier; anything else is developer mode.
+func snapshotsFoundElsewhere(st *vaultrpc.StatusResult, ids []string) bool {
+	synced := map[string]bool{}
+	for _, t := range st.Targets {
+		for _, id := range t.LastSynced {
+			synced[id] = true
+		}
+	}
+	for _, id := range ids {
+		if !synced[id] {
+			return false
+		}
+	}
+	return len(ids) > 0
+}
+
+// snapshotsOnServer reports whether the server still holds every listed
+// snapshot, so their copies on a cloud backup may go at the owner tier.
+func snapshotsOnServer(st *vaultrpc.StatusResult, ids []string) bool {
+	have := map[string]bool{}
+	for _, m := range st.Snapshots {
+		have[m.SnapshotID] = true
+	}
+	for _, id := range ids {
+		if !have[id] {
+			return false
+		}
+	}
+	return len(ids) > 0
+}

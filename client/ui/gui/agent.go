@@ -17,6 +17,7 @@ const (
 	tabJourney
 	tabHealth
 	tabManage
+	tabSubAgents
 )
 
 // pageAgent names the agent page's tree in a theme (Theme.Pages).
@@ -37,17 +38,28 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 		row = &agentRow{Server: server, Instance: instance, Name: instance, Initial: initial(instance)}
 	}
 	points := a.pointsOf(server, instance)
+	isMain := !row.IsSubAgent()
+	if !isMain && a.agentTab == tabSubAgents {
+		a.agentTab = tabOverview
+	}
 	renderSections(c, cur.Pages[pageAgent], []pageSection{
 		{"header", func(c *ui.Context) { a.agentHeader(c, row) }},
 		{"status", func(c *ui.Context) {
 			if a.iconErr != nil {
 				errorBox(c, a.iconErr, a.fold("icon-err"))
 			}
+			a.subAgentParentBar(c, row)
 			a.agentForgetBanner(c, row)
 			a.entryReport(c, row)
 		}},
 		{"tabs", func(c *ui.Context) {
-			if ui.Tabs(c, &a.agentTab, T("agent.tab.overview"), T("agent.tab.journey"), T("agent.tab.health"), T("agent.tab.manage")).Changed() {
+			var tabEl ui.Element
+			if isMain {
+				tabEl = ui.Tabs(c, &a.agentTab, T("agent.tab.overview"), T("agent.tab.journey"), T("agent.tab.health"), T("agent.tab.manage"), T("agent.tab.subagents"))
+			} else {
+				tabEl = ui.Tabs(c, &a.agentTab, T("agent.tab.overview"), T("agent.tab.journey"), T("agent.tab.health"), T("agent.tab.manage"))
+			}
+			if tabEl.Changed() {
 				a.closePoint()
 			}
 		}},
@@ -64,6 +76,8 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 					a.agentKitCard(c, row)
 				}
 				a.agentForgetManageRow(c, row)
+			case tabSubAgents:
+				a.subAgentsTab(c, row)
 			default:
 				a.overview(c, row, points)
 			}

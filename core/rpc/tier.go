@@ -47,6 +47,7 @@ var dailyMethods = map[string]bool{
 	"vault_verify":            true,
 	"vault_files":             true,
 	"seal":                    true,
+	"seal_bundle":             true,
 	"loopback_listeners":      true,
 	"sync":                    true,
 	"journey_list":            true,
@@ -99,13 +100,15 @@ var dailyMethods = map[string]bool{
 // action's risk, docs/INSTALL.md section 5) and the deletions (owner when
 // what is deleted can still be found elsewhere, developer mode otherwise).
 var conditionalMethods = map[string]bool{
-	"recipient_add":      true,
-	"action_run":         true,
-	"action_resume":      true,
-	"action_cleanup":     true,
-	"leaf_delete":        true,
-	"target_leaf_delete": true,
-	"prev_drop":          true,
+	"recipient_add":          true,
+	"action_run":             true,
+	"action_resume":          true,
+	"action_cleanup":         true,
+	"leaf_delete":            true,
+	"target_leaf_delete":     true,
+	"snapshot_delete":        true,
+	"target_snapshot_delete": true,
+	"prev_drop":              true,
 }
 
 // ownerMethods are basic operations that write into the agent or change

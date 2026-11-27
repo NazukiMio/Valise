@@ -113,6 +113,7 @@ func Promote(ctx context.Context, source *Vault, dest string, meta Meta, note st
 		ix.Blobs[i] = w.known[entry.ID]
 	}
 	ix.Epoch = epoch
+	ix.FullDeps = true
 	index := mustJSON(ix)
 	for _, entry := range []struct {
 		path string

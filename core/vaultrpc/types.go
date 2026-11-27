@@ -14,11 +14,19 @@ const (
 	MethodRecipientAdd    = "recipient_add"
 	MethodSeal            = "seal"
 	MethodSnapshotPromote = "snapshot_promote"
-	SavepointsCapability  = "savepoints/1"
-	MethodStatus          = "vault_status"
-	MethodVerify          = "vault_verify"
-	MethodFiles           = "vault_files"
-	MethodTargetSet       = "target_set"
+	// MethodSealBundle seals several same-harness members under one lock and
+	// one bundle id (capability BundleSealCapability).
+	MethodSealBundle = "seal_bundle"
+	// MethodSnapshotDelete deletes chosen snapshots of a server leaf and
+	// MethodTargetSnapshotDelete of a copy location (capability
+	// SnapshotDeleteCapability).
+	MethodSnapshotDelete       = "snapshot_delete"
+	MethodTargetSnapshotDelete = "target_snapshot_delete"
+	SavepointsCapability       = "savepoints/1"
+	MethodStatus               = "vault_status"
+	MethodVerify               = "vault_verify"
+	MethodFiles                = "vault_files"
+	MethodTargetSet            = "target_set"
 	// MethodTargetRemove forgets a copy location on the server: its line
 	// in targets.json and its sync state, never the files saved there
 	// (docs/ARCHITECTURE.md section 7; capability TargetRemoveCapability).
@@ -179,6 +187,9 @@ type SyncRecordParams struct {
 	Snapshots []string `json:"snapshots"`
 	// Forget drops a period the client deleted from the station.
 	Forget string `json:"forget,omitempty"`
+	// ForgetSnapshots drops individually deleted snapshots from the record
+	// (snapshot-delete/1).
+	ForgetSnapshots []string `json:"forget_snapshots,omitempty"`
 }
 
 // AutoSync is a target's automatic backup setting.
@@ -567,4 +578,53 @@ type ServerLeaveParams struct {
 type ServerLeaveResult struct {
 	Timers []string `json:"timers,omitempty"`
 	Porter string   `json:"porter,omitempty"`
+}
+
+// Capabilities added with bundle seals and per-snapshot deletion.
+const (
+	SnapshotDeleteCapability = "snapshot-delete/1"
+	BundleSealCapability     = "bundle-seal/1"
+)
+
+// SealBundleParams seals Members (instance ids of one harness profile) as one
+// bundle. Tier, Reason, Kind and Note behave as in SealParams.
+type SealBundleParams struct {
+	Members []string `json:"members"`
+	Tier    string   `json:"tier"`
+	Reason  string   `json:"reason,omitempty"`
+	Kind    string   `json:"kind,omitempty"`
+	Note    string   `json:"note,omitempty"`
+}
+
+// SealBundleResult lists the bundle id and each member's report, in order.
+type SealBundleResult struct {
+	BundleID string       `json:"bundle_id"`
+	Members  []string     `json:"members"`
+	Reports  []SealReport `json:"reports"`
+	// AutoSync lists the targets an automatic cloud backup was started for.
+	AutoSync []string `json:"auto_sync,omitempty"`
+}
+
+// SnapshotDeleteParams deletes the chosen snapshots of one server leaf.
+type SnapshotDeleteParams struct {
+	Leaf        string   `json:"leaf"`
+	SnapshotIDs []string `json:"snapshot_ids"`
+}
+
+// SnapshotDeleteResult reports a snapshot deletion.
+type SnapshotDeleteResult struct {
+	Leaf         string   `json:"leaf"`
+	Deleted      int      `json:"deleted"`
+	Missing      []string `json:"missing,omitempty"`
+	PacksRemoved int      `json:"packs_removed"`
+	FreedBytes   int64    `json:"freed_bytes"`
+	IndexesKept  int      `json:"indexes_kept"`
+}
+
+// TargetSnapshotDeleteParams deletes the chosen snapshots of one leaf on a
+// copy location.
+type TargetSnapshotDeleteParams struct {
+	Target      string   `json:"target"`
+	Leaf        string   `json:"leaf"`
+	SnapshotIDs []string `json:"snapshot_ids"`
 }

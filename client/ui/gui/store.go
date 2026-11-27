@@ -17,13 +17,16 @@ import (
 // leaves this computer.
 
 type prefs struct {
-	View  string `json:"view"`  // "cards" (default) or "list"
-	Theme string `json:"theme"` // ThemeSystem (default), a built-in or an imported id
-	Lang  string `json:"lang"`  // "" or zh-CN (default), or an imported catalog's id
+	View         string `json:"view"`                     // "cards" (default) or "list"
+	SubAgentView string `json:"sub_agent_view,omitempty"` // "flat" (default) or "grouped"
+	Theme        string `json:"theme"`                    // ThemeSystem (default), a built-in or an imported id
+	Lang         string `json:"lang"`                     // "" or zh-CN (default), or an imported catalog's id
 	// Dismissed maps a reminder's key to the state it was acknowledged in;
 	// a different state shows the reminder again.
 	Dismissed map[string]string `json:"dismissed"`
 }
+
+func (p prefs) subAgentGrouped() bool { return p.SubAgentView == "grouped" }
 
 func (a *App) guiDir() string { return filepath.Join(a.svc.Dirs.Data, "desktop") }
 

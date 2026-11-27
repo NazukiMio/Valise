@@ -12,14 +12,16 @@ import (
 
 // schedEdit is the schedule and period/retention state being edited.
 type schedEdit struct {
-	cadence    string // "off", "hourly", "daily", "weekly", "monthly"
-	everyHours string // "1", "2", "4", "6", "8", "12"
-	weekdays   map[string]bool
-	dayOfMonth string
-	at, tz     string
-	catchUp    bool
-	period     string
-	keep       string
+	cadence       string // "off", "hourly", "daily", "weekly", "monthly"
+	everyHours    string // "1", "2", "4", "6", "8", "12"
+	weekdays      map[string]bool
+	dayOfMonth    string
+	at, tz        string
+	catchUp       bool
+	fullCycle     string // "none", "weekly", "monthly"
+	bundleMembers map[string]bool
+	period        string
+	keep          string
 }
 
 var (
@@ -130,16 +132,26 @@ func newSchedEdit(d protection.Desired) *schedEdit {
 	if d.Schedule.DayOfMonth >= 1 && d.Schedule.DayOfMonth <= 28 {
 		dom = strconv.Itoa(d.Schedule.DayOfMonth)
 	}
+	fc := d.Schedule.FullCycle
+	if fc != protection.FullCycleWeekly && fc != protection.FullCycleMonthly {
+		fc = protection.FullCycleNone
+	}
+	bms := map[string]bool{}
+	for _, m := range d.BundleMembers {
+		bms[m] = true
+	}
 	return &schedEdit{
-		cadence:    cadence,
-		everyHours: every,
-		weekdays:   days,
-		dayOfMonth: dom,
-		at:         orText(d.Schedule.DailyAt, "04:40"),
-		tz:         orText(d.Schedule.Timezone, localZone()),
-		catchUp:    d.Schedule.CatchUpEnabled(),
-		period:     orText(d.Period.Unit, "month"),
-		keep:       strconv.Itoa(d.Period.KeepAutoPeriods),
+		cadence:       cadence,
+		everyHours:    every,
+		weekdays:      days,
+		dayOfMonth:    dom,
+		at:            orText(d.Schedule.DailyAt, "04:40"),
+		tz:            orText(d.Schedule.Timezone, localZone()),
+		catchUp:       d.Schedule.CatchUpEnabled(),
+		fullCycle:     fc,
+		bundleMembers: bms,
+		period:        orText(d.Period.Unit, "month"),
+		keep:          strconv.Itoa(d.Period.KeepAutoPeriods),
 	}
 }
 
@@ -159,7 +171,9 @@ func (a *App) scheduleDialog(c *ui.Context, row *agentRow, ps *protState) {
 
 			if e.cadence != "off" {
 				a.scheduleCadenceFields(c, e)
+				a.scheduleFullCycleFields(c, e)
 			}
+			a.scheduleBundleFields(c, row, e)
 
 			ui.Box(c).Height(1).Background(palette.Line)
 			ui.Text(c, T("protect.sched.section_period")).Bold()
@@ -314,6 +328,9 @@ func buildScheduleFromEdit(e *schedEdit, prev protection.Schedule) (protection.S
 	default:
 		return protection.Schedule{}, false
 	}
+	if e.fullCycle == protection.FullCycleWeekly || e.fullCycle == protection.FullCycleMonthly {
+		s.FullCycle = e.fullCycle
+	}
 	return s, true
 }
 
@@ -335,6 +352,7 @@ func (a *App) saveSchedule(row *agentRow, ps *protState) {
 		return
 	}
 	d.Schedule = sched
+	d.BundleMembers = buildBundleMembersFromEdit(row.Instance, e.bundleMembers)
 	d.Period.Unit = orText(e.period, "month")
 	if ps.savepointsSupported {
 		keep, ok := parseRetention(e.keep)

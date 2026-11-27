@@ -53,6 +53,17 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		return nil, err
 	}
 	defer unlock()
+	return sealWithLock(ctx, e, p, params, initiator, start, kind, note, nil)
+}
+
+// bundleRef marks the members of one bundle seal.
+type bundleRef struct {
+	ID      string
+	Members []string
+}
+
+// sealWithLock seals one instance; the caller holds the vault lock.
+func sealWithLock(ctx context.Context, e *porterenroll.Env, p Paths, params vaultrpc.SealParams, initiator string, start time.Time, kind, note string, bundle *bundleRef) (rep *vaultrpc.SealReport, err error) {
 	rec, err := porterenroll.ReadRecord(p.Home, params.InstanceID)
 	if err != nil {
 		return nil, err
@@ -257,7 +268,11 @@ func sealLocked(ctx context.Context, e *porterenroll.Env, p Paths, params vaultr
 		Roots: rec.Roots, SQLite: rep.SQLite,
 		Name: rec.Name, Env: rec.Env,
 		Notes: vault.Notes{Unstable: rep.Unstable, UnclassifiedCount: rep.UnclassifiedCount}}
-	meta, err := w.Commit(snap, files, vault.Meta{Kind: kind, Note: note})
+	meta0 := vault.Meta{Kind: kind, Note: note}
+	if bundle != nil {
+		meta0.BundleID, meta0.BundleMembers = bundle.ID, append([]string(nil), bundle.Members...)
+	}
+	meta, err := w.Commit(snap, files, meta0)
 	if err != nil {
 		return nil, err
 	}

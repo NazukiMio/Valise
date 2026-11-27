@@ -80,6 +80,9 @@ type Remote interface {
 	// DeleteDir deletes parent/name: the DELETING marker first, then
 	// everything else, the marker last.
 	DeleteDir(ctx context.Context, parent, name string) error
+	// DeleteFiles deletes base/<rel> for each rel; a missing file is not an
+	// error and a rel that is not a clean relative path is refused.
+	DeleteFiles(ctx context.Context, base string, rels []string) error
 	// Fetch downloads base/<rel> for each rel into dir/<rel>.
 	Fetch(ctx context.Context, base string, rels []string, dir string) error
 	// Probe logs in and lists base without recursing, within ProbeTimeout;

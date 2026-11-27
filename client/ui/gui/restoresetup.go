@@ -55,6 +55,16 @@ func (a *App) restoreSetup(c *ui.Context, r *restoreFlow) {
 		a.restoreProgress(c, r)
 		return
 	}
+	if len(r.point.BundleMembers) > 1 && r.bundleErr == nil {
+		card(ui.Column(c)).Gap(spInside).Border(1, palette.TroubleBorder).Background(palette.TroubleBg).Children(func() {
+			notice(c, "warn", T("bundle.point_badge", "members", otherBundleMembers(r.point)))
+			ui.Row(c).Justify(ui.End).Children(func() {
+				ui.Button(c, T("bundle.switch_restore")).OnClick(func() {
+					a.openBundleRestoreFromFlow(r, r.point.BundleID, r.point.BundleMembers)
+				})
+			})
+		})
+	}
 	card(ui.Column(c)).Gap(10).Children(func() {
 		ui.Text(c, T("restore.how")).Bold()
 		ui.RadioGroup(c, func() {

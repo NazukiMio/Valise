@@ -212,6 +212,8 @@ func (a *App) pageSlot(c *ui.Context, n *Node) {
 						a.renamePage(c, r.Param("name"))
 					case r.Match("/servers/{name}/migrate"):
 						a.migratePage(c, r.Param("name"))
+					case r.Match("/servers/{name}/move-all"):
+						a.moveAllPage(c, r.Param("name"))
 					case r.Match("/servers/{name}/porter"):
 						a.porterPage(c, r.Param("name"))
 					case r.Match("/servers/{name}/shell"):

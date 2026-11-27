@@ -82,6 +82,11 @@ func (s Schedule) validate() error {
 	default:
 		return valise.New("schedule_invalid", "定时频率无效", "选择 daily、hourly、weekly 或 monthly")
 	}
+	switch s.FullCycle {
+	case "", FullCycleNone, FullCycleWeekly, FullCycleMonthly:
+	default:
+		return valise.New("schedule_invalid", "完整快照周期无效", "选择 none、weekly 或 monthly")
+	}
 	if !*s.Enabled {
 		if s.DailyAt != "" && !dailyRE.MatchString(s.DailyAt) {
 			return valise.New("schedule_invalid", "必须明确选择启用状态、每日时间与 IANA 时区", "填写 HH:mm 时间及有效时区")
@@ -155,8 +160,31 @@ func (d Desired) Validate() error {
 	}
 	return nil
 }
+
+// ValidateBundleMembers checks a bundle member list: valid unique instance
+// ids, at least two, naming the agent itself.
+func ValidateBundleMembers(self string, members []string) error {
+	if len(members) == 0 {
+		return nil
+	}
+	seen, hasSelf := map[string]bool{}, false
+	for _, m := range members {
+		if enroll.ValidInstanceID(m) != nil || seen[m] {
+			return valise.New("bundle_invalid", "组合备份成员无效或重复", "选择同一 Harness 的已接入实例")
+		}
+		seen[m], hasSelf = true, hasSelf || m == self
+	}
+	if len(members) < 2 || !hasSelf {
+		return valise.New("bundle_invalid", "组合备份至少包含本实例和另一个同 Harness 实例", "选择至少两个成员，且包含本实例")
+	}
+	return nil
+}
+
 func (p PrepareParams) Validate() error {
 	if err := ValidateAgent(p.AgentRef); err != nil {
+		return err
+	}
+	if err := ValidateBundleMembers(p.AgentRef.InstanceID, p.Desired.BundleMembers); err != nil {
 		return err
 	}
 	return p.Desired.Validate()

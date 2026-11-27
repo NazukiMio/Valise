@@ -178,6 +178,7 @@ func scanLeaf(ctx context.Context, root *os.Root, leaf string, loc LocationRef, 
 			if p.Kind == vault.KindSavepoint {
 				p.Note, _ = vault.NormalizeNote(m.Note)
 			}
+			p.BundleID, p.BundleMembers = m.BundleID, append([]string(nil), m.BundleMembers...)
 			p.Warnings = []string{"snapshot_time_uses_source_clock"}
 			points[ref] = p
 		} else if p.Copies[0].MetadataDigest != copy.MetadataDigest || p.Copies[0].HeaderDigest != copy.HeaderDigest {

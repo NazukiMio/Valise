@@ -42,11 +42,16 @@ type ReviveOptions struct {
 	// SkipService moves data and dossier only: the service is neither
 	// installed nor started on the target.
 	SkipService bool `json:"skip_service,omitempty"`
+	// AllowBundleMember permits planning a single member of a same-harness
+	// bundle snapshot (used by PrepareBundleRestore). Without it, a bundled
+	// snapshot is refused with bundle_not_standalone.
+	AllowBundleMember bool `json:"allow_bundle_member,omitempty"`
 	// Source reads the snapshot from a copy instead of From's vault
 	// (docs/ARCHITECTURE.md 8.2.3): repo:<名>[/<服务器名>], dir:<路径> or
 	// cloud:<名>[/<服务器名>].
-	Source string `json:"source,omitempty"`
-	Fault  string `json:"-"` // drills only
+	Source         string `json:"source,omitempty"`
+	Fault          string `json:"-"` // drills only
+	autoNamedRoots func(prof profile.Profile, head *vault.Snapshot, first revive.InspectResult) map[string]string
 }
 
 // ToolCheckResult compares snapshot companion CLI dependencies against what the
@@ -274,6 +279,9 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 			rp.Snapshot = m
 		}
 	}
+	if !o.testOnly && len(rp.Snapshot.BundleMembers) > 1 && !o.AllowBundleMember {
+		return nil, newBundleNotStandaloneError(rp.Snapshot.BundleID, rp.Snapshot.InstanceID, rp.Snapshot.BundleMembers)
+	}
 	set, err := s.Profiles()
 	if err != nil {
 		return nil, err
@@ -303,7 +311,8 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	// stopped, started or shown (profile.ForAgent).
 	prof = prof.ForAgent(head.Name)
 	rp.profileName = head.Name
-	if head.Name != "" && o.Mode != revive.ModeRollback && o.Roots[profile.StateRoot] == "" {
+	if head.Name != "" && o.Mode != revive.ModeRollback && o.Roots[profile.StateRoot] == "" &&
+		!(o.Mode == revive.ModeMigrate && o.autoNamedRoots != nil) {
 		return nil, valise.New("named_needs_root", "这是命名实例 "+head.Name+" 的备份，迁移或克隆时 Valise 不猜目标目录（默认目录属于另一个 agent）",
 			"请在目标目录设置中明确指定状态目录路径")
 	}
@@ -347,6 +356,25 @@ func (s *Service) planRevive(ctx context.Context, o ReviveOptions, passphrase st
 	var first revive.InspectResult
 	if err := s.callOwner(ctx, rp.target, nil, revive.MethodInspect, revive.InspectParams{Profile: prof, InstanceID: instance}, &first); err != nil {
 		return nil, err
+	}
+	if head.Name != "" && o.Mode == revive.ModeMigrate && o.Roots[profile.StateRoot] == "" && o.autoNamedRoots != nil {
+		derived := o.autoNamedRoots(prof, head, first)
+		if derived[profile.StateRoot] == "" {
+			return nil, valise.New("named_needs_root", "这是命名实例 "+head.Name+" 的备份，迁移或克隆时 Valise 不猜目标目录（默认目录属于另一个 agent）",
+				"请在目标目录设置中明确指定状态目录路径")
+		}
+		merged := make(map[string]string, len(o.Roots)+len(derived))
+		for k, v := range derived {
+			if v != "" {
+				merged[k] = v
+			}
+		}
+		for k, v := range o.Roots {
+			if v != "" {
+				merged[k] = v
+			}
+		}
+		o.Roots = merged
 	}
 	roots, err := mapRoots(o, head, first, prof)
 	if err != nil {

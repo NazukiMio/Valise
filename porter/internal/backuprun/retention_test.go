@@ -75,3 +75,59 @@ func TestAcceptedTimerRetiresOnlyAfterItSeals(t *testing.T) {
 		t.Fatalf("timer and manual backups on wrong tracks: %+v", status.Leaves)
 	}
 }
+
+func TestNeedsFullCycleBundleMembers(t *testing.T) {
+	s, _ := fixture(t)
+	paths := seal.Paths{Home: s.Home}
+	recipients, err := seal.ReadRecipients(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.November, 25, 12, 0, 0, 0, time.UTC)
+	sched := cp.Schedule{FullCycle: cp.FullCycleWeekly, Timezone: "UTC"}
+	period := cp.Period{Unit: "month", Timezone: "UTC"}
+
+	sealAuto := func(inst, tier, kind string) {
+		t.Helper()
+		per := vault.NextPeriod(inst, nil, vault.DefaultPeriodSetting, now)
+		dir, err := paths.LeafDir(per.Leaf())
+		if err != nil {
+			t.Fatal(err)
+		}
+		put(t, filepath.Join(dir, vault.PeriodFile), per)
+		w, err := vault.OpenWriter(dir, recipients, paths.DedupeKey, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Commit(vault.Snapshot{InstanceID: inst, Tier: tier, CreatedAt: now}, vault.Files{}, vault.Meta{Kind: kind}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Neither member has a full snapshot yet -> needs full.
+	if !needsFullCycle(paths, "main", []string{"main", "sub1"}, sched, period, now) {
+		t.Fatal("expected needsFullCycle=true when no member has full snapshot")
+	}
+
+	// Only main has an auto full snapshot; sub1 has only soul -> still needs full!
+	sealAuto("main", vault.TierFull, vault.KindAuto)
+	sealAuto("sub1", vault.TierSoul, vault.KindAuto)
+	if needsFullCycle(paths, "main", nil, sched, period, now) {
+		t.Fatal("single main with auto full should not need full")
+	}
+	if !needsFullCycle(paths, "main", []string{"main", "sub1"}, sched, period, now) {
+		t.Fatal("bundle missing sub1 auto full must upgrade to full")
+	}
+
+	// Manual savepoint full for sub1 does not satisfy automatic full cycle.
+	sealAuto("sub1", vault.TierFull, vault.KindSavepoint)
+	if !needsFullCycle(paths, "main", []string{"main", "sub1"}, sched, period, now) {
+		t.Fatal("savepoint full for sub1 should not satisfy automatic full cycle")
+	}
+
+	// Once sub1 also has an auto full (or raw) snapshot -> no longer needs full.
+	sealAuto("sub1", vault.TierRaw, vault.KindAuto)
+	if needsFullCycle(paths, "main", []string{"main", "sub1"}, sched, period, now) {
+		t.Fatal("expected needsFullCycle=false once all bundle members have auto full/raw")
+	}
+}

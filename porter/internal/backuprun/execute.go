@@ -44,13 +44,40 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 	tier := r.Plan.Scope.Tier
 	if r.Request.Selection.Tier != "" {
 		tier = r.Request.Selection.Tier
+	} else if r.Plan.Schedule.FullCycleEnabled() && !cp.FullTier(tier) &&
+		needsFullCycle(paths, r.AgentRef.InstanceID, r.Plan.BundleMembers, r.Plan.Schedule, r.Plan.Period, time.Now().UTC()) {
+		tier = vault.TierFull
 	}
 	initiator := "planned"
 	if r.Request.Reason == "timer" {
 		initiator = vaultrpc.InitiatorTimer
 	}
-	rep, err := seal.SealPlanned(ctx, s.Env, paths, vaultrpc.SealParams{InstanceID: r.AgentRef.InstanceID, Tier: tier,
-		Reason: r.Request.Reason, Note: r.Request.Selection.Note}, initiator)
+	var rep *vaultrpc.SealReport
+	var err error
+	if len(r.Plan.BundleMembers) > 0 {
+		var bres *vaultrpc.SealBundleResult
+		bres, err = seal.SealBundlePlanned(ctx, s.Env, paths, vaultrpc.SealBundleParams{
+			Members: r.Plan.BundleMembers,
+			Tier:    tier,
+			Reason:  r.Request.Reason,
+			Note:    r.Request.Selection.Note,
+		}, initiator)
+		if err == nil && bres != nil {
+			for i := range bres.Reports {
+				if bres.Reports[i].InstanceID == r.AgentRef.InstanceID {
+					r0 := bres.Reports[i]
+					rep = &r0
+					break
+				}
+			}
+			if rep == nil {
+				err = failure("backup_failed")
+			}
+		}
+	} else {
+		rep, err = seal.SealPlanned(ctx, s.Env, paths, vaultrpc.SealParams{InstanceID: r.AgentRef.InstanceID, Tier: tier,
+			Reason: r.Request.Reason, Note: r.Request.Selection.Note}, initiator)
+	}
 	if err != nil {
 		// A failed call can have crossed the snapshot publication boundary. Never
 		// retry it or claim no snapshot exists without fixed-executor evidence.
@@ -85,8 +112,20 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 	if err := s.persist(r); err != nil {
 		return err
 	}
+	explicitTargets := len(r.Request.Selection.Targets) > 0
+	copies := r.Plan.ServerCopies
+	if explicitTargets {
+		copies = make([]cp.ServerCopy, 0, len(r.Request.Selection.Targets))
+		for _, targetID := range r.Request.Selection.Targets {
+			enabled := true
+			copies = append(copies, cp.ServerCopy{
+				TargetRef: cp.LocationRef{Kind: "legacy_target", ID: targetID, AuthorityID: r.AgentRef.ServerUID},
+				Enabled:   &enabled,
+			})
+		}
+	}
 	partial, cancelled := false, false
-	for i, copy := range r.Plan.ServerCopies {
+	for i, copy := range copies {
 		if r.Request.Selection.SkipCopies {
 			copy.Enabled = new(false)
 		}
@@ -102,7 +141,13 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 				component.ErrorCode = "cancelled"
 			}
 		} else if copy.Enabled != nil && *copy.Enabled {
-			due, checkErr := s.copyDue(r, copy)
+			var due bool
+			var checkErr error
+			if explicitTargets {
+				due = true
+			} else {
+				due, checkErr = s.copyDue(r, copy)
+			}
 			switch {
 			case ref.AuthorityID != r.AgentRef.ServerUID:
 				component.State = "failed"
@@ -129,7 +174,7 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 					component.State = "cancelled"
 					component.ErrorCode = "cancelled"
 					r.Components[len(r.Components)-1] = component
-					s.appendSkippedRemaining(r, r.Plan.ServerCopies[i+1:])
+					s.appendSkippedRemaining(r, copies[i+1:])
 					s.markCancelled(r)
 					return s.persist(r)
 				}
@@ -153,10 +198,16 @@ func (s Store) execute(ctx context.Context, r *Run) error {
 		}
 	}
 	if !cancelled && ctx.Err() == nil && initiator == vaultrpc.InitiatorTimer && r.Plan.Period.KeepAutoPeriods > 0 {
+		members := []string{r.AgentRef.InstanceID}
+		if len(r.Plan.BundleMembers) > 0 {
+			members = r.Plan.BundleMembers
+		}
 		component := cp.BackupComponent{Kind: "leaf_retire", State: "succeeded"}
-		if err := seal.RetireExpiredAutoLeaves(paths, r.AgentRef.InstanceID, r.Plan.Period.KeepAutoPeriods); err != nil {
-			component.State, component.ErrorCode = "failed", "leaf_retire_failed"
-			partial = true
+		for _, inst := range members {
+			if err := seal.RetireExpiredAutoLeaves(paths, inst, r.Plan.Period.KeepAutoPeriods); err != nil {
+				component.State, component.ErrorCode = "failed", "leaf_retire_failed"
+				partial = true
+			}
 		}
 		r.Components = append(r.Components, component)
 	}
@@ -274,4 +325,46 @@ func (s Store) copyDue(current *Run, c cp.ServerCopy) (bool, error) {
 		}
 	}
 	return latest.IsZero() || time.Since(latest) >= interval, nil
+}
+
+// needsFullCycle reports whether the current FullCycle bucket is missing an
+// automatic full (or raw) snapshot for instanceID or any member in members.
+func needsFullCycle(paths seal.Paths, instanceID string, members []string, sched cp.Schedule, period cp.Period, now time.Time) bool {
+	tz := sched.Timezone
+	if tz == "" {
+		tz = period.Timezone
+	}
+	if tz == "" {
+		tz = "UTC"
+	}
+	cur := cp.FullCycleKey(sched.FullCycle, now, tz)
+	if cur == "" {
+		return false
+	}
+	st, err := seal.Status(paths)
+	if err != nil {
+		return false
+	}
+	need := map[string]bool{}
+	if instanceID != "" {
+		need[instanceID] = true
+	}
+	for _, m := range members {
+		if m != "" {
+			need[m] = true
+		}
+	}
+	if len(need) == 0 {
+		return false
+	}
+	for _, m := range st.Snapshots {
+		if need[m.InstanceID] && m.Kind == vault.KindAuto && cp.FullTier(m.Tier) &&
+			cp.FullCycleKey(sched.FullCycle, m.CreatedAt, tz) == cur {
+			delete(need, m.InstanceID)
+			if len(need) == 0 {
+				return false
+			}
+		}
+	}
+	return len(need) > 0
 }

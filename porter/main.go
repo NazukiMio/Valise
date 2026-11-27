@@ -19,6 +19,7 @@ import (
 	_ "time/tzdata" // period time zones (docs/VAULT_FORMAT.md 10.2) on servers without zoneinfo
 	"valise/porter/internal/recovery"
 
+	"valise/core/action"
 	"valise/core/enroll"
 	"valise/core/identity"
 	coreinstall "valise/core/install"
@@ -529,7 +530,7 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 	info := rpc.VersionInfo{
 		Name: "valise-porter", Version: version, Protocol: rpc.ProtocolVersion,
 		OS: runtime.GOOS, Arch: runtime.GOARCH, SelfSHA256: sum,
-		Capabilities: []string{identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.CapabilityV3, protection.BackupCapability, protection.BackupCapabilityV2, protection.BackupCapabilityV3, sysfix.Capability, vaultrpc.JourneyCapability, vaultrpc.CopyCheckCapability, vaultrpc.CopyVerifyCapability, vaultrpc.CloudCapability, vaultrpc.CloudFormCapability, vaultrpc.TargetRemoveCapability, identity.LostSourceCapability, corerevive.BodyDirsCapability, corerevive.ReviewCapability, coreinstall.NativeCapability, enroll.ForgetCapability, enroll.DossierCapability},
+		Capabilities: []string{action.CapabilityTransactions, identity.Capability, identity.ListCapability, protection.Capability, protection.CapabilityV2, protection.CapabilityV3, protection.CapabilityV4, protection.BackupCapability, protection.BackupCapabilityV2, protection.BackupCapabilityV3, protection.BackupCapabilityV4, vaultrpc.SnapshotDeleteCapability, vaultrpc.BundleSealCapability, sysfix.Capability, vaultrpc.JourneyCapability, vaultrpc.SavepointsCapability, vaultrpc.CopyCheckCapability, vaultrpc.CopyVerifyCapability, vaultrpc.CloudCapability, vaultrpc.CloudFormCapability, vaultrpc.TargetRemoveCapability, identity.LostSourceCapability, corerevive.BodyDirsCapability, corerevive.StageDirsCapability, corerevive.ReviewCapability, coreinstall.NativeCapability, enroll.ForgetCapability, enroll.DossierCapability, login.LoopbackListenersCapability},
 	}
 	if err := json.NewEncoder(stdout).Encode(info); err != nil {
 		return 1

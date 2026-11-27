@@ -32,6 +32,9 @@ func n2Compatibility(hello *rpc.HelloResult, method string, params any) error {
 		if usesScheduleV3(params) {
 			capability = protection.CapabilityV3
 		}
+		if usesPlanV4(params) {
+			capability = protection.CapabilityV4
+		}
 	case protection.MethodTargetChangePrepare, protection.MethodTargetChangeApply:
 		capability = protection.CapabilityV2
 	case vaultrpc.MethodJourney:
@@ -44,12 +47,23 @@ func n2Compatibility(hello *rpc.HelloResult, method string, params any) error {
 		capability = vaultrpc.TargetRemoveCapability
 	case vaultrpc.MethodCloudPrepare, vaultrpc.MethodCloudForget:
 		capability = vaultrpc.CloudCapability
+	case vaultrpc.MethodSnapshotDelete, vaultrpc.MethodTargetSnapshotDelete:
+		capability = vaultrpc.SnapshotDeleteCapability
+	case vaultrpc.MethodSealBundle:
+		capability = vaultrpc.BundleSealCapability
+	case vaultrpc.MethodSyncRecord:
+		if usesForgetSnapshots(params) {
+			capability = vaultrpc.SnapshotDeleteCapability
+		}
 	case protection.MethodRunCancel:
 		capability = protection.BackupCapabilityV2
 	case protection.MethodBackup, protection.MethodRunStatus, protection.MethodSnapshotBinding:
 		capability = protection.BackupCapability
 		if method == protection.MethodBackup && usesBackupSelection(params) {
 			capability = protection.BackupCapabilityV3
+		}
+		if method == protection.MethodBackup && usesBackupV4(params) {
+			capability = protection.BackupCapabilityV4
 		}
 	}
 	if (method == vaultrpc.MethodSnapshotPromote || usesSavepointFields(method, params)) &&
@@ -101,6 +115,24 @@ func usesScheduleV3(params any) bool {
 	return p.Desired.Schedule.UsesV3()
 }
 
+func usesPlanV4(params any) bool {
+	switch p := params.(type) {
+	case protection.PrepareParams:
+		return p.Desired.UsesV4()
+	case *protection.PrepareParams:
+		return p != nil && p.Desired.UsesV4()
+	}
+	b, err := json.Marshal(params)
+	if err != nil {
+		return true
+	}
+	var p protection.PrepareParams
+	if json.Unmarshal(b, &p) != nil {
+		return true
+	}
+	return p.Desired.UsesV4()
+}
+
 func usesBackupSelection(params any) bool {
 	b, err := json.Marshal(params)
 	if err != nil {
@@ -109,7 +141,34 @@ func usesBackupSelection(params any) bool {
 	var p struct {
 		Selection protection.BackupSelection `json:"selection"`
 	}
-	return json.Unmarshal(b, &p) != nil || p.Selection != (protection.BackupSelection{})
+	if json.Unmarshal(b, &p) != nil {
+		return true
+	}
+	return p.Selection.Tier != "" || p.Selection.SkipCopies || p.Selection.Note != "" || len(p.Selection.Targets) > 0
+}
+
+func usesBackupV4(params any) bool {
+	b, err := json.Marshal(params)
+	if err != nil {
+		return true
+	}
+	var p struct {
+		Selection protection.BackupSelection `json:"selection"`
+	}
+	if json.Unmarshal(b, &p) != nil {
+		return true
+	}
+	return len(p.Selection.Targets) > 0
+}
+
+func usesForgetSnapshots(params any) bool {
+	switch p := params.(type) {
+	case vaultrpc.SyncRecordParams:
+		return len(p.ForgetSnapshots) > 0
+	case *vaultrpc.SyncRecordParams:
+		return p != nil && len(p.ForgetSnapshots) > 0
+	}
+	return false
 }
 
 func usesSavepointFields(method string, params any) bool {

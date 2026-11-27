@@ -20,6 +20,9 @@ const (
 	// keeps the synchronous backup-runs/1 behaviour.
 	BackupCapabilityV2 = "backup-runs/2"
 	BackupCapabilityV3 = "backup-runs/3"
+	// BackupCapabilityV4 adds selection.targets: an explicit manual copy
+	// target list that bypasses interval throttling.
+	BackupCapabilityV4 = "backup-runs/4"
 	BackupRunSchema    = "valise-backup-run/1"
 )
 
@@ -41,11 +44,29 @@ type BackupSelection struct {
 	Tier       string `json:"tier"`
 	SkipCopies bool   `json:"skip_copies,omitempty"`
 	Note       string `json:"note,omitempty"`
+	// Targets (backup-runs/4) names the copy locations this manual run syncs
+	// to, and only those; empty uses the accepted plan's copies.
+	Targets []string `json:"targets,omitempty"`
+}
+
+// validTargets checks an explicit target list: unique, plain names.
+func validTargets(targets []string) bool {
+	seen := map[string]bool{}
+	for _, t := range targets {
+		if t == "" || len(t) > 64 || seen[t] || strings.ContainsAny(t, " \t\r\n/\\\"'") {
+			return false
+		}
+		seen[t] = true
+	}
+	return true
 }
 
 func (s BackupSelection) Validate() error {
 	if _, err := vault.NormalizeNote(s.Note); err != nil {
 		return err
+	}
+	if len(s.Targets) > 0 && (s.SkipCopies || !validTargets(s.Targets)) {
+		return valise.New("request_invalid", "指定的备份位置无效", "选择已有备份位置，且不要同时跳过复制")
 	}
 	if s.Tier == "" && !s.SkipCopies {
 		return nil
@@ -143,6 +164,9 @@ func (p BackupParams) Normalize() (BackupParams, error) {
 	p.Reason = strings.TrimSpace(p.Reason)
 	if p.Reason == "" {
 		p.Reason = "manual"
+	}
+	if len(p.Selection.Targets) > 0 && (p.Reason != "manual" || p.Selection.SkipCopies || !validTargets(p.Selection.Targets)) {
+		return p, valise.New("request_invalid", "指定的备份位置无效", "只有手动备份可以指定备份位置，且不要同时跳过复制")
 	}
 	if err := ValidateAgent(p.AgentRef); err != nil {
 		return p, err

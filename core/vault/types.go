@@ -93,6 +93,9 @@ type Index struct {
 	SnapshotID string      `json:"snapshot_id"`
 	Epoch      int         `json:"epoch"`
 	Blobs      []BlobEntry `json:"blobs"`
+	// FullDeps marks an index listing the snapshot's complete dependency set
+	// (every kind); older indexes of non-automatic snapshots list new blobs only.
+	FullDeps bool `json:"full_deps,omitempty"`
 }
 
 // BlobEntry locates one blob inside a pack.
@@ -215,7 +218,14 @@ type Meta struct {
 	Kind         string    `json:"kind,omitempty"`
 	Note         string    `json:"note,omitempty"`
 	PromotedFrom string    `json:"promoted_from,omitempty"`
+	// BundleID and BundleMembers mark a same-harness bundle seal: every member
+	// snapshot carries the same id and the member instance ids.
+	BundleID      string   `json:"bundle_id,omitempty"`
+	BundleMembers []string `json:"bundle_members,omitempty"`
 }
+
+// NewBundleID returns a bundle id ("b_" + ULID).
+func NewBundleID(now time.Time) string { return NewID("b", now) }
 
 // TierCategories are the categories each tier seals
 // (docs/ARCHITECTURE.md section 5).

@@ -264,8 +264,11 @@ func (a *App) agentsHere(c *ui.Context, name string) {
 		}
 	}
 	card(ui.Column(c)).Gap(10).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Gap(spInside).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, T("server.agents_here", "n", len(here))).FontSize(16).Bold().Grow(1)
+			if len(here) > 0 {
+				ui.Button(c, T("moveall.entry")).OnClick(func() { a.router.Push("/servers/" + name + "/move-all") })
+			}
 			ui.Button(c, T("server.find")).OnClick(func() { a.router.Push("/servers/" + name + "/agents") })
 		})
 		if len(here) == 0 {

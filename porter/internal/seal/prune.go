@@ -196,12 +196,16 @@ func onlyAutomatic(leaf LeafInfo, instance string) bool {
 			metas[id] = true
 		}
 	}
-	if len(metas) == 0 || len(metas) != len(headers) {
-		return false
-	}
-	for id := range metas {
-		if !headers[id] {
+	// An ended period whose snapshots were all deleted by hand holds nothing
+	// to protect: it may retire like any other empty automatic period.
+	if len(metas) != 0 || len(headers) != 0 {
+		if len(metas) == 0 || len(metas) != len(headers) {
 			return false
+		}
+		for id := range metas {
+			if !headers[id] {
+				return false
+			}
 		}
 	}
 	_, err = os.Lstat(filepath.Join(leaf.Dir, vault.DeletingFile))

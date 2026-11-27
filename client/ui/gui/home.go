@@ -167,12 +167,18 @@ func (a *App) agentsSlot(c *ui.Context, n *Node, d *homeData) {
 	outer := Node{Padding: n.Padding, Width: n.Width, MaxWidth: n.MaxWidth, Grow: n.Grow, Background: n.Background, Image: n.Image, Radius: n.Radius}
 	outer.box(ui.Column(c).Gap(spSection)).Children(func() {
 		sub := &Node{Style: n.Style, Columns: n.Columns, Gap: n.Gap}
+		grouped := a.prefs.subAgentGrouped() && strings.TrimSpace(a.query) == ""
 		for _, g := range groups {
 			ui.Column(c.Key("srv-grp-" + g.server)).Gap(10).Children(func() {
 				a.serverGroupHead(c, g.server, len(g.rows))
-				if a.prefs.View == "list" {
+				switch {
+				case grouped && a.prefs.View == "list":
+					a.agentGroupedList(c, "gl-"+g.server+"-", g.rows)
+				case grouped:
+					a.agentGroupedGrid(c, sub, g.rows)
+				case a.prefs.View == "list":
 					a.agentList(c, "l-"+g.server+"-", g.rows)
-				} else {
+				default:
 					a.agentGrid(c, sub, g.rows)
 				}
 			})

@@ -248,7 +248,7 @@ func (a *App) kitStatusSection(c *ui.Context, st *agentKitState) {
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		switch {
 		case hasMissing:
-			ui.PrimaryButton(c, T("kit.install_open")).OnClick(openInstall)
+			ui.Button(c, T("kit.install_open")).OnClick(openInstall)
 		case hasBoth:
 			ui.Button(c, T("kit.compare_update_open")).OnClick(openInstall)
 		case hasLocalMod:

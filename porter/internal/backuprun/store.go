@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"syscall"
 	"time"
 
@@ -136,7 +137,7 @@ func (s Store) load(id string) (*Run, error) {
 		return nil, failure("record_corrupt")
 	}
 	digest, _ := cp.Digest(p)
-	if r.Schema != cp.BackupRunSchema || r.RunID != id || r.Request != p || p.RunID != id || r.AgentRef != p.AgentRef || r.RequestDigest != digest || r.Plan.AgentRef != r.AgentRef || r.Plan.Revision != p.ExpectedRevision || r.Plan.Validate() != nil || r.AcceptedAt.IsZero() || r.UpdatedAt.IsZero() {
+	if r.Schema != cp.BackupRunSchema || r.RunID != id || !reflect.DeepEqual(r.Request, p) || p.RunID != id || r.AgentRef != p.AgentRef || r.RequestDigest != digest || r.Plan.AgentRef != r.AgentRef || r.Plan.Revision != p.ExpectedRevision || r.Plan.Validate() != nil || r.AcceptedAt.IsZero() || r.UpdatedAt.IsZero() {
 		return nil, failure("record_corrupt")
 	}
 	switch r.Execution {

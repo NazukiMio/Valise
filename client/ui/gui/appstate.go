@@ -21,25 +21,33 @@ import (
 // hooks are what the window borrows from the system and the service; tests
 // replace them.
 type hooks struct {
-	scanTimeline          func(context.Context, service.TimelineScanRequest, func(service.TimelineUpdate)) error
-	runRestoreTest        func(context.Context, service.SelectedRestoreTest) (*service.RestoreTest, error)
-	entryOpener           func(context.Context, string, string, service.OpenOptions) error
-	openURL               func(string) error
-	pickImage             func() (string, error)                               // the system's open dialog; "" when cancelled
-	pickFolder            func(title, message string) (string, error)          // the system's folder dialog; "" when cancelled
-	pickFile              func(title, message string) (string, error)          // one file (a private key, a porter build)
-	newTerminal           func(io.ReadWriteCloser) (*terminal.Terminal, error) // nil: output shows as text
-	newNativeTestTerminal func(io.ReadWriteCloser) (io.Closer, error)          // tests only
-	copyText              func(string) error                                   // the system clipboard; nil hides 复制
-	setAgentLabel         func(context.Context, string, string, string) error  // tests only; nil uses svc
-	inspectPlacement      func(context.Context, service.TargetPlacementRequest) (*service.TargetPlacement, error)
-	forgetInstanceFn      func(context.Context, string, string) (*enroll.InstanceForgetResult, error)
-	prepareRestoreFn      func(context.Context, service.RestoreRequest) (*service.PreparedRestore, error)
-	rewireMigratedMCP     func(context.Context, string, string) (*service.KitPlan, error)
-	enrollBatchFn         func(context.Context, string, []service.EnrollBatchItem) (*service.EnrollBatchResult, error)
-	quickReenrollFn       func(context.Context, string, string) (*service.EnrollBatchResult, error)
-	forwardPageFn         func(context.Context, string, *service.ForwardTarget, service.OpenOptions) error
-	loopbackListenersFn   func(context.Context, string) ([]int, error)
+	scanTimeline            func(context.Context, service.TimelineScanRequest, func(service.TimelineUpdate)) error
+	runRestoreTest          func(context.Context, service.SelectedRestoreTest) (*service.RestoreTest, error)
+	entryOpener             func(context.Context, string, string, service.OpenOptions) error
+	openURL                 func(string) error
+	pickImage               func() (string, error)                               // the system's open dialog; "" when cancelled
+	pickFolder              func(title, message string) (string, error)          // the system's folder dialog; "" when cancelled
+	pickFile                func(title, message string) (string, error)          // one file (a private key, a porter build)
+	newTerminal             func(io.ReadWriteCloser) (*terminal.Terminal, error) // nil: output shows as text
+	newNativeTestTerminal   func(io.ReadWriteCloser) (io.Closer, error)          // tests only
+	copyText                func(string) error                                   // the system clipboard; nil hides 复制
+	setAgentLabel           func(context.Context, string, string, string) error  // tests only; nil uses svc
+	inspectPlacement        func(context.Context, service.TargetPlacementRequest) (*service.TargetPlacement, error)
+	forgetInstanceFn        func(context.Context, string, string) (*enroll.InstanceForgetResult, error)
+	prepareRestoreFn        func(context.Context, service.RestoreRequest) (*service.PreparedRestore, error)
+	rewireMigratedMCP       func(context.Context, string, string) (*service.KitPlan, error)
+	enrollBatchFn           func(context.Context, string, []service.EnrollBatchItem) (*service.EnrollBatchResult, error)
+	quickReenrollFn         func(context.Context, string, string) (*service.EnrollBatchResult, error)
+	forwardPageFn           func(context.Context, string, *service.ForwardTarget, service.OpenOptions) error
+	loopbackListenersFn     func(context.Context, string) ([]int, error)
+	previewSnapDeleteFn     func(context.Context, service.SnapshotDeleteRequest) (*service.SnapshotDeletePreview, error)
+	deleteSnapshotsFn       func(context.Context, service.SnapshotDeleteRequest) (*service.SnapshotDeleteBatchResult, error)
+	createManualSavepointFn func(context.Context, service.ManualSavepointRequest) (*service.ManualSavepointResult, error)
+	prepareBundleRestoreFn  func(context.Context, service.BundleRestoreOptions, string) (*service.BundleRestorePlan, error)
+	runBundleRestoreFn      func(context.Context, *service.BundleRestorePlan, service.ReviveConfirm) (*service.BundleRestoreResult, error)
+	inspectHarnessMoveFn    func(context.Context, string, string) (*service.HarnessMoveInspection, error)
+	prepareHarnessMoveFn    func(context.Context, service.HarnessMoveOptions, string) (*service.HarnessMovePlan, error)
+	runHarnessMoveFn        func(context.Context, *service.HarnessMovePlan, service.ReviveConfirm) (*service.HarnessMoveResult, error)
 }
 
 // agentData is what was read about the agents, shared by every page.
@@ -114,6 +122,7 @@ type journeyView struct {
 	curveScroll      ui.ScrollState
 	curveScrollScope string
 	curveCount       int
+	snapDelete       *snapDeleteState
 }
 
 // closePoint goes back from a point to the list.
@@ -172,6 +181,7 @@ type serversView struct {
 	forgetting          string        // the removed server whose record is being forgotten
 	forgetErr           error
 	serverShell         *serverShellRun // the server command line, nil when none
+	moveAll             *moveAllState   // harness-by-harness one-click migration
 	kitHook             *kitOps         // tests only
 	cleanupHook         *cleanupOps     // tests only
 }
@@ -247,6 +257,7 @@ type keysView struct {
 // restoreView is restoring, migrating and copying.
 type restoreView struct {
 	restore         *restoreFlow
+	bundleRestore   *bundleRestoreFlow
 	restoreTasks    []service.RestoreTask
 	restoreTasksErr error
 }

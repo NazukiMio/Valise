@@ -283,6 +283,11 @@ profile 负责通用规则，档案记录这台服务器实际探测并经用户
 - 计划按 N1 契约第 4 节分别持久化 ServerProtectionPlan 与 ClientProtectionBinding，分别使用单调 revision 和预期版本比较；首次接管须展示差异并由主人确认。服务器以固定提交事务协调计划、timer 与周期兼容投影；失败/崩溃如实报告 pending、已提交或待核实，不伪造跨机器原子回滚。
 - 已接管实例的旧无版本 timer/周期/自动同步写入口必须由新版 porter 拒绝；旧显式 seal tier 与受管方 MCP soul 行为保留。新客户端遇旧 porter 不模拟新计划，不能无感降级为 soul。具体 schema、存储位置、方法与错误按 N1 契约实现；本次定稿不提升线级协议版本。保护计划修改仍沿用主人权限，不能由受管 agent 自行修改。
 
+### 5.2 智能周期与手动存档点（2026-11-26，目标契约）
+
+- 自动计划可开启两档智能周期（`Schedule.FullCycle`，`protection-plan/4`）：日常走轻档，周期边界若当日/周/月内还没有自动 full 快照，则自动升级为 full。手动存档点是独立入口：用户当次选择档位（soul-only / soul-secrets / full / raw）、目标列表、可选同 Harness 组合成员与备注，不读取计划。
+- 组合封存只允许同一 `ProfileID` 的实例（`bundle_cross_harness`）；Harness 知识仍只在 profile，组合判定只比较 ProfileID。
+
 ## 6. 封存流水线
 
 定时任务写入自动日期周期；手动与安全备份写入永久 `savepoints/` 叶子。新自动快照记录完整密文块索引；晋升由主人确认后在源服务器把相关密文独立写入存档点，保留原加密头，不需要私钥。发布与退役共用备份库锁。
@@ -316,6 +321,14 @@ profile 负责通用规则，档案记录这台服务器实际探测并经用户
 封存由 porter 在服务器上使用收件人公钥加密完成，**不需要客户端在线**。
 
 **教学备份**（2026-11-01 用户决定）：首次备份教程中建立的备份带教学标记。标记不写入备份库格式（VAULT_FORMAT.md 不变），而是由客户端在封存请求中带 `purpose: "tutorial"`，porter 把它写入该次封存的审计记录，经 `seal_log` 返回给界面。界面在备份列表与详情中标"教学"，并说明它只证明当时的流程与内容，不证明之后新增的配置、渠道凭据或工作区已被覆盖；用户完成重要配置后，界面适时建议建立一次实际的备份。备份库只追加，教学备份与其他备份一样保留，随所在周期一起删除。服务器丢失、只剩远程备份位置副本时教学标记随审计记录丢失，界面按普通备份显示。
+
+### 6.1 组合封存与单快照删除（2026-11-26，目标契约）
+
+- **组合封存**（`seal_bundle`，`bundle-seal/1`）：一把锁内校验成员齐全且 `ProfileID` 相同，成员快照共享 `Meta.BundleID`（`b_<ULID>`）与 `BundleMembers`。
+- **全依赖索引**：所有新快照（自动与存档点）及晋升后的索引都写 `Index.FullDeps=true`，表示索引列出该快照恢复所需的全部密文块。
+- **删除顺序**（`snapshot-delete/1`）：先删所选快照的 meta、header、index，再扫描同叶子其余 index，只清扫不被任何留存 index 引用的孤立 pack；不重写不可变 pack。
+- **目标 index 保留**：若存在更早、无 `FullDeps` 的存档点（非自动、未晋升、同 epoch、创建时间不早于被删快照），可能依赖被删快照的 index，则保留该 index。
+- 同步记录由 `ForgetSnapshots` 清除；各位置（`server_vault`、`server_target`、`station`、`local_repo`、`local_cloud`）分别确认。自动退役遇已删快照跳过，空周期按 `onlyAutomatic` 规则可退役，`savepoints/` 不自动退役。契约见 SERVICE_CONTRACTS.md 4.6。
 
 ## 7. 备份库与同步
 
@@ -537,6 +550,12 @@ profile 可以把某些凭据声明为 `exclusive_secrets`，例如社交平台�
 配置事务不执行完整 revive，不重建身体；只复用同文件系统暂存/目录交换的机制。独立记录在 `~/.local/state/valise/action-journal/`（`valise-action-operation/1`，0700/0600），终态移入 done；每次副作用前 intent、完成后结果均原子写入并 fsync。保存冻结计划、原服务状态、步骤进度和目录身份，不保存文件内容、命令输出、登录环境或凭据。备份库格式不变。
 
 协议 1.3 增加事务能力与 pending_actions，客户端先核实服务器能力才登记或执行事务；action_plan/status 日常只读，run/resume 按冻结风险分级（B03 config 为管理登录），cleanup 按现有删除分级。与封存/交换共用修改互斥，未完成记录阻止冲突操作；重连提示用户，未知步骤不重跑。现场不符或记录损坏时停止。详细阶段、恢复分支与兼容要求见 [已确认 B03 设计](history/B03_DESIGN_PROPOSAL_2026-11-05.md) 第 4–6 节。
+
+### 8.7 组合恢复与 Harness 一键搬家（2026-11-26，目标契约，待实现）
+
+- **组合成员单独复活**：默认拒绝，返回 `bundle_not_standalone`（列出成员名）；仅 `AllowBundleMember` 时放行。
+- **组合恢复**（`PrepareBundleRestore` / `RunBundleRestore`）：主 Agent（`Name==""`）先恢复，再恢复子 Agent；与主 Agent 共用服务的成员设 `SkipService`，不重复处理服务。
+- **Harness 一键搬家**（`InspectHarnessMove` / `PrepareHarnessMove` / `RunHarnessMove`）：把活跃成员按 `ProfileID` 分组，整组都须有 full/raw 备份才可搬；按 Harness 逐个顺序执行，某个 Harness 失败则记录原因，其余继续。每个组内仍走 8.2 的暂存、交换日志与保留旧目录流程，不引入新的执行路径。
 
 ## 9. 体检（代码部分）
 

@@ -25,6 +25,12 @@ const CapabilityV2 = "protection-plan/2"
 // CapabilityV3 adds hourly, weekly and monthly schedule cadences, and allows
 // disabled schedules to omit daily_at.
 const CapabilityV3 = "protection-plan/3"
+
+// CapabilityV4 adds schedule.full_cycle (light runs with an automatic full
+// snapshot at each day/week/month boundary) and desired.bundle_members
+// (same-harness bundle sealing). A client sends them only to a porter
+// declaring it; Desired is decoded strictly, so an older porter refuses them.
+const CapabilityV4 = "protection-plan/4"
 const (
 	MethodGet       = "protection_get"
 	MethodPrepare   = "protection_prepare"
@@ -69,6 +75,23 @@ type Schedule struct {
 	EveryHours int      `json:"every_hours,omitempty"`
 	Weekdays   []string `json:"weekdays,omitempty"`
 	DayOfMonth int      `json:"day_of_month,omitempty"`
+	// FullCycle (protection-plan/4) is the full-snapshot boundary of the
+	// two-tier cycle: "" or "none" (off), "weekly" or "monthly". Runs of a
+	// lighter scope upgrade to full when the automatic full snapshot of the
+	// current week/month does not exist yet.
+	FullCycle string `json:"full_cycle,omitempty"`
+}
+
+// Full cycle values.
+const (
+	FullCycleNone    = "none"
+	FullCycleWeekly  = "weekly"
+	FullCycleMonthly = "monthly"
+)
+
+// FullCycleEnabled reports whether the schedule asks for periodic full runs.
+func (s Schedule) FullCycleEnabled() bool {
+	return s.FullCycle == FullCycleWeekly || s.FullCycle == FullCycleMonthly
 }
 
 // CatchUpEnabled treats an absent catch_up as off.
@@ -107,7 +130,15 @@ type Desired struct {
 	Schedule     Schedule     `json:"schedule"`
 	Period       Period       `json:"period"`
 	ServerCopies []ServerCopy `json:"server_copies"`
+	// BundleMembers (protection-plan/4) lists the instance ids sealed
+	// together with this agent each run, itself included; all must share one
+	// harness profile. Empty means the agent is sealed alone.
+	BundleMembers []string `json:"bundle_members,omitempty"`
 }
+
+// UsesV4 reports whether the settings need protection-plan/4.
+func (d Desired) UsesV4() bool { return d.Schedule.FullCycleEnabled() || len(d.BundleMembers) > 0 }
+
 type ServerPlan struct {
 	SchemaVersion string            `json:"schema_version"`
 	AgentRef      identity.AgentRef `json:"agent_ref"`

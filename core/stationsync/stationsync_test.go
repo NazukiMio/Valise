@@ -1,8 +1,12 @@
 package stationsync
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFailureNamesTheCause(t *testing.T) {
@@ -54,5 +58,64 @@ func TestWhyNoRsync(t *testing.T) {
 	out := "rsync: unrecognized option `--mkpath'\nusage: rsync [-0468B]\n\t[-f filter]\n\t[--backup-dir=dir]\n\t[--checksum-seed=NUM]\n\t[--compare-dest=dir]\n\t[--read-batch=file] [--remove-source-files] [--rsync-path=program]\n"
 	if got := whyNoRsync(out); got != "这里的 rsync 版本太旧" {
 		t.Fatal(got)
+	}
+}
+
+func TestValidRels(t *testing.T) {
+	for _, ok := range []string{"snapshots/s_X.age", "index/a.json"} {
+		if err := ValidRels([]string{ok}); err != nil {
+			t.Errorf("%s: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{
+		"", "/etc/passwd", "../x", "a/../../x", "a//b", "a/./b", "a\\b", ".", "a/..", "a\nb", `a"b`,
+		"snapshots/*.age", "index/s_?.json", "packs/[a]/x.pack", "packs/a/x].pack",
+		" snapshots/a.age", "snapshots/a.age ", "\tsnapshots/a.age", "#snapshots/a.age", ";snapshots/a.age",
+	} {
+		if err := ValidRels([]string{bad}); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
+type captureRunner struct {
+	argv  [][]string
+	batch string
+}
+
+func (c *captureRunner) Run(_ context.Context, _ time.Duration, argv ...string) (int, []byte, []byte, error) {
+	c.argv = append(c.argv, argv)
+	for i, a := range argv {
+		if a == "-b" && i+1 < len(argv) {
+			b, _ := os.ReadFile(argv[i+1])
+			c.batch = string(b)
+		}
+	}
+	return 0, nil, nil, nil
+}
+
+func TestDeleteFilesCommands(t *testing.T) {
+	st := Station{Name: "nas", Host: "nas", Tmp: filepath.Join(t.TempDir(), "tmp")}
+	c := &captureRunner{}
+	rels := []string{"snapshots/s_A.age", "index/s_A.json"}
+	if err := (&sftpRemote{run: c, st: st}).DeleteFiles(context.Background(), "nas:/data/box/demo/x", rels); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(c.batch, `-rm "/data/box/demo/x/snapshots/s_A.age"`) || !strings.Contains(c.batch, `-rm "/data/box/demo/x/index/s_A.json"`) {
+		t.Fatalf("sftp batch: %q", c.batch)
+	}
+	c = &captureRunner{}
+	if err := (&rsyncRemote{run: c, st: st}).DeleteFiles(context.Background(), "nas:/data/x", rels); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(c.argv[0], " ")
+	if !strings.Contains(joined, "--delete") || !strings.Contains(joined, "--include /index/s_A.json") || !strings.HasSuffix(joined, "nas:/data/x/") {
+		t.Fatalf("rsync argv: %s", joined)
+	}
+	if err := (&rsyncRemote{run: c, st: st}).DeleteFiles(context.Background(), "nas:/data/x", []string{"../x"}); err == nil {
+		t.Fatal("escape accepted")
+	}
+	if err := (&rcloneRemote{run: c, st: st}).DeleteFiles(context.Background(), "r:x", []string{"/abs"}); err == nil {
+		t.Fatal("abs accepted")
 	}
 }

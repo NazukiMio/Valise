@@ -57,6 +57,7 @@ type restoreFlow struct {
 	rewireJ        job
 	rewirePlan     *service.KitPlan
 	postCopyNote   string
+	bundleErr      *service.BundleNotStandaloneError
 }
 
 func (a *App) openRestore(p journey.TimelinePoint, origin string) {
@@ -75,6 +76,10 @@ func (a *App) openRestore(p journey.TimelinePoint, origin string) {
 }
 
 func (a *App) restorePage(c *ui.Context) {
+	if a.bundleRestore != nil {
+		a.bundleRestorePage(c)
+		return
+	}
 	r := a.restore
 	if r == nil {
 		pageHead(c, T("restore.title"), T("restore.choose_point"))
@@ -94,7 +99,9 @@ func (a *App) restorePage(c *ui.Context) {
 			pointFact(c, T("restore.origin"), orText(r.origin, T("restore.origin_unknown")))
 		})
 	}
-	if r.j.err != nil {
+	if r.bundleErr != nil {
+		a.bundleInterceptBanner(c, r)
+	} else if r.j.err != nil {
 		errorBox(c, r.j.err, a.fold("restore-error"))
 	}
 	switch r.step {
@@ -147,7 +154,7 @@ func (a *App) prepareRestore(r *restoreFlow) {
 		r.plan.Revive.Close()
 		r.plan = nil
 	}
-	r.credential, r.swap = false, false
+	r.credential, r.swap, r.bundleErr = false, false, nil
 	r.j = job{busy: true, doing: T("restore.reading"), doingAt: time.Now()}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	r.j.cancel = cancel
@@ -161,6 +168,7 @@ func (a *App) prepareRestore(r *restoreFlow) {
 		p, err := fn(ctx, req)
 		a.update(func() {
 			r.j.busy, r.j.err, r.j.cancel = false, err, nil
+			r.bundleErr = extractBundleNotStandalone(err)
 			if err == nil {
 				r.plan = p
 				r.remapHomeSymlinks = r.mode == revive.ModeMigrate && p.Revive.HomeChanged

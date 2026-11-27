@@ -381,6 +381,49 @@ func init() {
 		}
 		return seal.PromoteSnapshot(ctx, paths(s), p, vaultrpc.InitiatorClient)
 	}
+	methods[vaultrpc.MethodSealBundle] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.SealBundleParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		return seal.SealBundle(ctx, s.loginEnv(ctx), paths(s), p, vaultrpc.InitiatorClient)
+	}
+	methods[vaultrpc.MethodSnapshotDelete] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.SnapshotDeleteParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		st, err := seal.Status(paths(s))
+		if err != nil {
+			return nil, err
+		}
+		tier := rpc.TierAdmin
+		if snapshotsFoundElsewhere(st, p.SnapshotIDs) {
+			tier = rpc.TierOwner
+		}
+		if err := s.require(tier, vaultrpc.MethodSnapshotDelete); err != nil {
+			return nil, err
+		}
+		return seal.DeleteSnapshots(paths(s), p, vaultrpc.InitiatorClient)
+	}
+	methods[vaultrpc.MethodTargetSnapshotDelete] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p vaultrpc.TargetSnapshotDeleteParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		st, err := seal.Status(paths(s))
+		if err != nil {
+			return nil, err
+		}
+		tier := rpc.TierAdmin
+		if snapshotsOnServer(st, p.SnapshotIDs) {
+			tier = rpc.TierOwner
+		}
+		if err := s.require(tier, vaultrpc.MethodTargetSnapshotDelete); err != nil {
+			return nil, err
+		}
+		return seal.TargetSnapshotDelete(ctx, s.loginEnv(ctx), paths(s), p, vaultrpc.InitiatorClient)
+	}
 	methods[vaultrpc.MethodStatus] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		return seal.Status(paths(s))
 	}
@@ -590,6 +633,9 @@ func init() {
 		var p vaultrpc.SyncRecordParams
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return nil, errInvalidParams
+		}
+		if len(p.ForgetSnapshots) > 0 {
+			return struct{}{}, seal.ForgetSnapshotsSynced(paths(s), p.Target, p.ForgetSnapshots)
 		}
 		if p.Forget != "" {
 			return struct{}{}, seal.ForgetSynced(paths(s), p.Target, p.Forget)

@@ -378,14 +378,11 @@ func (w *Writer) Commit(snap Snapshot, files Files, meta Meta) (*Meta, error) {
 	if w.newBlobs == nil {
 		w.newBlobs = []BlobEntry{}
 	}
-	entries := w.newBlobs
-	if meta.Kind == KindAuto {
-		entries, err = w.snapshotEntries(blobs, files)
-		if err != nil {
-			return nil, err
-		}
+	entries, err := w.snapshotEntries(blobs, files)
+	if err != nil {
+		return nil, err
 	}
-	ix := mustJSON(Index{Format: FormatIndex, SnapshotID: snap.SnapshotID, Epoch: w.params.Epoch, Blobs: entries})
+	ix := mustJSON(Index{Format: FormatIndex, SnapshotID: snap.SnapshotID, Epoch: w.params.Epoch, Blobs: entries, FullDeps: true})
 	if err := writeOnce(w.dir, IndexPath(snap.SnapshotID), ix); err != nil {
 		return nil, err
 	}

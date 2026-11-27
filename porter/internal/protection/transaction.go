@@ -15,6 +15,7 @@ import (
 	"valise/core/valise"
 	"valise/core/vault"
 	"valise/core/vaultrpc"
+	porterenroll "valise/porter/internal/enroll"
 	"valise/porter/internal/fault"
 	"valise/porter/internal/seal"
 )
@@ -117,6 +118,9 @@ func (s Store) preconditions(ctx context.Context, p cp.PrepareParams) (string, e
 		return "", err
 	}
 	if err = s.validateTargets(p, targets); err != nil {
+		return "", err
+	}
+	if err = s.validateBundle(p); err != nil {
 		return "", err
 	}
 	v := s.observe(ctx, p.AgentRef.InstanceID)
@@ -440,4 +444,28 @@ func (s Store) WithAccepted(ctx context.Context, a identity.AgentRef, run func(*
 		return fail("result_unknown", "周期兼容投影与已接受计划不一致")
 	}
 	return run(p)
+}
+
+// validateBundle requires every bundle member to be an enrolled, current
+// instance of the same harness profile as the agent itself.
+func (s Store) validateBundle(p cp.PrepareParams) error {
+	if len(p.Desired.BundleMembers) == 0 {
+		return nil
+	}
+	profileID := ""
+	for _, m := range p.Desired.BundleMembers {
+		rec, err := porterenroll.ReadRecord(s.Home, m)
+		if err != nil {
+			return err
+		}
+		if rec == nil || rec.Superseded != nil {
+			return fail("plan_stale", "组合备份的成员实例已不存在或已被取代："+m)
+		}
+		if profileID == "" {
+			profileID = rec.ProfileID
+		} else if rec.ProfileID != profileID {
+			return fail("bundle_cross_harness", "组合备份的成员必须属于同一个 Harness")
+		}
+	}
+	return nil
 }

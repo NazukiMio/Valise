@@ -116,6 +116,19 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 - `target_change_prepare`（daily）列出所有引用该目标的计划及其版本，冻结新目标定义；`target_change_apply`（owner）在保护计划锁内逐一核对这些版本，全部一致才原子写入 `targets.json`，并把每个引用计划的版本加一，让其他客户端看到变化；任何一个不一致则整次不写。
 - 删除被引用的目标仍拒绝，须先修改计划不再复制；名称即标识，不支持改名。旧 `target_set` 对被引用目标继续拒绝。能力 `protection-plan/2`。
 
+### 4.6 智能周期、组合封存与单快照删除（2026-11-26，目标契约）
+
+以下为目标契约，不代表已实现；能力按项协商，缺能力即拒绝，不静默降级。
+
+- **两档智能周期（`protection-plan/4`）**：`Schedule.FullCycle` 取 `""` / `"none"`（关闭）/ `"weekly"` / `"monthly"`。开启后定时备份默认走轻档（日常增量范围），到周期边界时若该日/周/月内尚无自动 full 快照则自动升级为 full，不重复补 full；手动存档点不计入。旧 porter 读到未知值须拒绝，不当作关闭。
+- **同 Harness 组合（`Desired.BundleMembers`）**：计划可声明同 Harness 的组合封存成员；所有成员须共用同一 `ProfileID`，否则返回 `bundle_cross_harness`。组合的执行契约见 `bundle-seal/1`。
+- **手动备份目标（`backup-runs/4`）**：`BackupSelection.Targets` 为用户显式勾选的目标列表；设置后绕过 `copyDue` 节流，只同步到所列目标，随后执行 `RetireExpiredAutoLeaves`。未设置时沿用计划的自动复制规则。
+- **手动存档点与自动保护计划分离**：手动存档点由用户在一次操作里选择档位（soul-only / soul-secrets / full / raw）、目标列表、可选同 Harness 组合成员与备注，写入 `savepoints/`，不读取也不修改保护计划；自动保护计划只由已确认的计划驱动，两者互不借用设置。
+- **组合封存（`bundle-seal/1`，RPC `seal_bundle`）**：一次持同一把备份库锁，先校验所有成员存在且 `ProfileID` 一致，再逐成员封存；成功快照共享 `Meta.BundleID`（`b_<ULID>`）与 `BundleMembers`。任何成员校验失败则整次不封存。
+- **单快照删除（`snapshot-delete/1`）**：RPC `snapshot_delete`（服务器）与 `target_snapshot_delete`（同步目标），权限为 `TierOwner`（服务器）/ `TierAdmin`（目标）。位置 `server_vault`、`server_target`、`station`、`local_repo`、`local_cloud` 分别确认、互不连带。执行顺序见 ARCHITECTURE.md 6.1。`SyncRecordParams.ForgetSnapshots` 清除对应同步记录；`Remote.DeleteFiles` 幂等（文件不存在算成功），所有路径必须通过严格相对路径校验（拒绝绝对路径、`..`、空段与符号链接逃逸）。
+- **自动退役的“纯自动”判定**：`onlyAutomatic` 对快照已被全部手动删除的已结束周期返回 true，使 `RetireExpiredAutoLeaves` 能退役该空周期；永久 `savepoints/` 叶子仍不自动退役。
+- **组合成员的单独复活**：revive 遇到组合成员默认返回结构化错误 `bundle_not_standalone`（附成员名列表），仅当 `AllowBundleMember` 为真才允许单独复活。
+
 ## 5. 时间轴与副本证据
 
 
@@ -358,6 +371,8 @@ submission_key 标识一次用户意图。服务在发起副作用前持久记�
 ## 11. 能力协商与错误
 
 GetCapabilities 返回本客户端服务契约版本以及远端支持的 `identity`, `protection_plan`, `run_status`, `recovery_source` 等版本化能力；具体 hello 扩展字段待 N2 实现时核对现有协议并定版。已有 action_transactions 能力和 pending_actions 继续保留，不能用协议 minor 数字替代逐能力判断。
+
+新增能力（目标契约）：`protection-plan/4`（智能周期与组合成员）、`backup-runs/4`（手动目标列表）、`snapshot-delete/1`、`bundle-seal/1`；语义见 4.6。
 
 修改方法在第一步和执行前都验证必要能力；不认识 schema/tier/mode 拒绝写入，读取可展示“版本不支持”但不能按默认值解释。不得在本文仅凭新方法名就发布协议 1.4 或其它版本。
 

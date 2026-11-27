@@ -52,9 +52,31 @@ func (a *App) agentToolbar(c *ui.Context, n *Node, count, found int) {
 			a.focusSearch = false
 		}
 		ui.Row(c).Gap(2).Padding(2).Radius(9).Background(palette.Board).Border(1, palette.CardBorder).Children(func() {
+			a.subViewButton(c, "flat", T("home.subview.flat"))
+			a.subViewButton(c, "grouped", T("home.subview.grouped"))
+		})
+		ui.Row(c).Gap(2).Padding(2).Radius(9).Background(palette.Board).Border(1, palette.CardBorder).Children(func() {
 			a.viewButton(c, "cards", icons.cards, T("home.view_cards"))
 			a.viewButton(c, "list", icons.list, T("home.view_list"))
 		})
+	})
+}
+
+func (a *App) subViewButton(c *ui.Context, mode, label string) {
+	on := (mode == "grouped" && a.prefs.subAgentGrouped()) || (mode == "flat" && !a.prefs.subAgentGrouped())
+	b := ui.Box(c).Padding(4, 10).Radius(7).Center().Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(label).Selected(on)
+	ink := palette.TextSub
+	if on {
+		b.Background(palette.Card).Shadow(0, 1, 2, 0, palette.Shadow.Alpha(0.12))
+		ink = palette.Text
+	}
+	b.OnClick(func() {
+		if a.prefs.SubAgentView != mode {
+			a.prefs.SubAgentView = mode
+			a.savePrefs()
+		}
+	}).Children(func() {
+		ui.Text(c, label).FontSize(fsCaption).TextColor(ink)
 	})
 }
 

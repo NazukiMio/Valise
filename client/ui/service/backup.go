@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -185,7 +186,7 @@ func backupRequestDigest(host string, p protection.ServerPlan, selections ...pro
 		Host string
 		Plan protection.ServerPlan
 	}{host, p})
-	if len(selections) > 0 && selections[0] != (protection.BackupSelection{}) {
+	if len(selections) > 0 && !reflect.DeepEqual(selections[0], protection.BackupSelection{}) {
 		d, _ = protection.Digest(struct {
 			Base      string
 			Selection protection.BackupSelection
@@ -455,7 +456,7 @@ func backupRunMatches(t BackupTask, run protection.BackupRun) bool {
 	requestDigest, _ := protection.Digest(t.params())
 	planDigest, _ := protection.Digest(run.Plan)
 	expectedPlan, _ := protection.Digest(t.ServerPlan)
-	if run.Schema != protection.BackupRunSchema || run.RunID != t.RunID || run.AgentRef != t.AgentRef || run.Request != t.params() || run.RequestDigest != requestDigest || planDigest != expectedPlan || run.AcceptedAt.IsZero() || run.UpdatedAt.IsZero() {
+	if run.Schema != protection.BackupRunSchema || run.RunID != t.RunID || run.AgentRef != t.AgentRef || !reflect.DeepEqual(run.Request, t.params()) || run.RequestDigest != requestDigest || planDigest != expectedPlan || run.AcceptedAt.IsZero() || run.UpdatedAt.IsZero() {
 		return false
 	}
 	switch run.State {

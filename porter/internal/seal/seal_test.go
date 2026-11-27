@@ -227,11 +227,12 @@ func TestSealTiers(t *testing.T) {
 
 	// Unchanged instance: every payload blob is reused. Header growth is
 	// independent of payload dedupe; only index/head/meta may be added.
+	// With FullDeps every snapshot index lists its full dependency set.
 	again := w.seal(t, vault.TierSoul)
 	var index vault.Index
 	indexBytes, err := os.ReadFile(filepath.Join(w.leaf(t).Dir, vault.IndexPath(again.SnapshotID)))
-	if err != nil || json.Unmarshal(indexBytes, &index) != nil || len(index.Blobs) != 0 || again.NewEpoch {
-		t.Fatalf("unchanged payload was written again: %d blobs, %v", len(index.Blobs), err)
+	if err != nil || json.Unmarshal(indexBytes, &index) != nil || !index.FullDeps || len(index.Blobs) == 0 || again.NewEpoch {
+		t.Fatalf("expected full_deps index on unchanged seal: full_deps=%v blobs=%d err=%v", index.FullDeps, len(index.Blobs), err)
 	}
 	var headerBytes int64
 	for _, name := range []string{vault.IndexPath(again.SnapshotID), vault.SnapshotPath(again.SnapshotID), vault.MetaPath(again.SnapshotID)} {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -126,14 +127,14 @@ func TestOneOffBackupOverFakeSSHLeavesPlanUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.IncludesCredentials || p.Selection != selection {
+	if p.IncludesCredentials || !reflect.DeepEqual(p.Selection, selection) {
 		t.Fatalf("wrong scope %+v", p)
 	}
 	task, err := s.StartBackup(ctx, p.PlanID, "one-off")
 	if err != nil || task.State != "succeeded" {
 		t.Fatalf("task %+v %v", task, err)
 	}
-	if task.Run.Request.Selection != selection || task.Run.Components[1].State != "skipped" {
+	if !reflect.DeepEqual(task.Run.Request.Selection, selection) || task.Run.Components[1].State != "skipped" {
 		t.Fatalf("copy ran despite selection: %+v", task.Run)
 	}
 	status, err := s.VaultStatus(ctx, "box")
@@ -150,7 +151,7 @@ func TestOneOffBackupOverFakeSSHLeavesPlanUnchanged(t *testing.T) {
 		t.Fatal("one-off changed the accepted protection plan")
 	}
 	regular, err := s.PrepareBackup(ctx, "box", ref)
-	if err != nil || regular.Selection != (protection.BackupSelection{}) || regular.ServerPlan.Scope.Tier != "full" {
+	if err != nil || !reflect.DeepEqual(regular.Selection, protection.BackupSelection{}) || regular.ServerPlan.Scope.Tier != "full" {
 		t.Fatalf("selection leaked: %+v %v", regular, err)
 	}
 }

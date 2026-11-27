@@ -1,14 +1,18 @@
 # 当前状态与交接
 
-> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-26。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
+> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-27。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-26）
+## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-27）
 
-- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成 **WP0–WP6**、**Round 2–4 实机反馈修复**，以及基于 `stage-test-20261125-beta1-r4` 真机测试与 Agent 迁移体检报告开展的 **Round 5 第一批**：
-  - **Round 5 第一批（已完成代码提交，待用户决定先打测试包还是直接续做第二批 · WP1 / WP3 / WP5 / WP7 + 规范与 `GEMINI.md` 同步）**：
+- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成 **WP0–WP6**、**Round 2–4 实机反馈修复**，以及基于 `stage-test-20261125-beta1-r4` 真机测试与 Agent 迁移体检报告开展的 **Round 5 第一批与第二批**（待用户确认后构建合入轮次 R5 测试包）：
+  - **Round 5 第一批（`07f6375` · WP1 / WP3 / WP5 / WP7 + 规范与 `GEMINI.md` 同步）**：
     - `GEMINI.md` 已退役 `Gemini 4 Argon` 并切至「Claude 5.5 + Gemini 4 统一池」双池路由；
     - 本批交付：一键重接与多选全选批量接入（单次 PIN 租约）+ 全仓去 AI 防御腔文案清理（WP1）；保护技能四态升级识别 + 安装基线与可视化 Diff 对比窗（WP3）；安装检查与脚本全文带滚动条子窗口（WP5）；跨机 `$HOME` 软链重映射、默认自动重接 Valise MCP（不覆盖技能且按服务状态拆行汇报）、脱敏配置旧 `$HOME` 路径扫描与暂存安全替换、空目录保留与外部软链前置告警、桌面「打开本地页面」(`ForwardPage` + 回环监听探测) 与 `hermes v15`（WP7）；经 `auditor-b5a-r3`（`AUDIT_PASS`）及全仓 `./testbed/selfcheck.sh` + `-race` 复测通过。
-  - **Round 5 第二批（已定稿规划，待第一批完成后按用户确认继续）**：单选/多选删除单个快照及孤立块回收（WP2）、手动存档与自动备份拆分 +「大周期完整 + 日常轻量」智能双层自动备份（WP4）、同 Harness 子 Agent 平铺/收纳双视图 +「一起备份」联动存档 + 多 Harness 顺序「一键搬家」（WP6）。
+  - **Round 5 第二批（已完成代码提交 · WP2 / WP4 / WP6 + `SERVICE_CONTRACTS.md`/`ARCHITECTURE.md` 同步，未构建测试包，等待用户确认是否打包）**：
+    - **WP2（单/多选快照删除 + 孤立 pack 安全清扫 + 自动清理跳过空周期）**：`vault.Index` 写入 `FullDeps: true`；`core/vault/prune.go` 免密钥抗崩溃删除指定快照并保护旧非 `FullDeps` 存档点依赖索引，清理零引用 `packs/*.pack` 且对最后一条快照删除幂等；`stationsync.Remote.DeleteFiles`（rsync/sftp/rclone 三实现校验与幂等）；`onlyAutomatic` 放行已手动删空的已结束周期供 `RetireExpiredAutoLeaves` 退役（不触及 `savepoints/`）；`ForgetSnapshotsSynced` 同步清理；`snapshot-delete/1`、`snapshot_delete`/`target_snapshot_delete` RPC；桌面端时间线与备份位置（`server_vault`/`server_target`/`station`/`local_repo`/`local_cloud` 区分与云盘去重）支持单/多选删除与组合影响预览。
+    - **WP4（手动存档分离 + 两层智能周期 + 显式目标分发）**：`protection-plan/4`（`Schedule.FullCycle`: `""`/`"none"`/`"weekly"`/`"monthly"`）与 `backup-runs/4`（`BackupSelection.Targets` 绕过 `copyDue` 节流并按选定目标同步）；`needsFullCycle` 自动周期边界检查（覆盖全组 `BundleMembers`）自动升档 `full`；`CreateManualSavepoint`（含 `EnsureKeyRegistered`）从自动保护计划彻底拆出；桌面端「手动存档点」独立选档位/备注/去重后目标位置/同 Harness 组合兄弟与 `needKey` 门禁，`tabManage` 保持单屏至多 1 个 `ui.PrimaryButton`。
+    - **WP6（同 Harness 平铺/分组 + 联动存档 + 组合恢复拦截 + Harness 顺序搬家）**：首页支持「平铺 / 分组」视图切换，分组视图按同服务器同 `ProfileID` 折叠子 Agent 并独立叠加子异常提示；主 Agent 新增「子 Agent」页签，子 Agent 详情提供所属主 Agent 跳转；`bundle-seal/1`（`seal_bundle` RPC）与 `Desired.BundleMembers` 严格校验同 `ProfileID`（否则 `bundle_cross_harness`），写入统一 `BundleID` 与 `BundleMembers`；单机恢复/迁移检出多成员组合备份即拦截返回 `bundle_not_standalone` 并引导 `PrepareBundleRestore`/`RunBundleRestore`（主 Agent 优先、子 Agent 跳过服务并清空 `StopSource`，`ModeMigrate` 自动重映射/推导命名目录与诚实展示 blockers/确认流）；新增 `/servers/{name}/move-all` 与 `InspectHarnessMove`/`PrepareHarnessMove`/`RunHarnessMove` 按 Harness（`ProfileID`）顺序逐组搬家（单组失败记录原因，不阻塞其余分组）。
+    - **复审与全量验证**：经 `auditor-b5b`（发现 6 Must-fix + 2 Minor）返修并在 `auditor-b5b-r2` 获 `AUDIT_PASS`；`client/ui/{gui,tui}/*.go` 最大 399 行（`<= 400`）、`py_compile tools/standalone-restore/restore.py` 通过、`./testbed/selfcheck.sh` 输出 `SELFCHECK_PASS`，`core`/`porter`/`client`/`testbed`/`gui`/`tui` 及 Batch 2 定向 `service` 全量 `-count=1 -race` 通过。
 - **Round 4 实机反馈修复（`stage-test-20261124-beta1-r3/REPORT.md` #1–#5 + `auditor-b4` `AUDIT_PASS`）**：
   1. **恢复/迁移表单清理（#1）**：`restore.origin` 移至页面顶部上下文条并从「放到哪里」表单卡片移除，单备份源改只读展示。
   2. **资料包预览自动清旧覆盖 & 迁移接入继承（#2）**：正式资料包预览支持默认勾选自动清理本地旧版覆盖；未装底座空壳页增加无需手动接入/启网关安抚提示；`planRecord` 与 `RunRestore` 自动继承 `DisplayName` 与完整 Dossier（`LocalOverrides`、`LocalSQLite`、`ExternalRefs`、`LocalRoots`、`ToolDeps`），迁移计划默认勾选「沿用原机保护计划」（仅按目标存在复制目标最佳实践写入），迁移结果页探测新机 `$HOME`/MCP 并提供一键重接。

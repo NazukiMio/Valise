@@ -71,6 +71,7 @@ func (a *App) locationPage(c *ui.Context, name string) {
 	if ls.remove != "" {
 		a.removeDialog(c)
 	}
+	a.snapDeleteDialog(c)
 }
 
 // autoRows are the servers' automatic syncs to this location: after a
@@ -168,6 +169,9 @@ func (a *App) periodLine(c *ui.Context, l location, host string, r periodRow) {
 			})
 		}
 		ui.Button(c, T("loc.verify_open")).OnClick(func() { a.startVerify(host, r.leaf, l.Name, false) })
+		if len(r.here) > 0 && r.leaf != vault.LegacyLeaf {
+			quietButton(c, T("snapdel.select_open")).OnClick(func() { a.openLocationSnapDelete(l, host, r) })
+		}
 		if l.Kind != locRepo && !vault.IsSavepointLeaf(r.leaf) && (r.server == nil || !r.server.Current) {
 			ui.Button(c, T("loc.delete_open")).OnClick(func() { a.startVerify(host, r.leaf, l.Name, true) })
 		}

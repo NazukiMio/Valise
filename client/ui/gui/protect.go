@@ -39,6 +39,8 @@ type protState struct {
 	backupReadErr       error
 	newBackupConfirm    bool
 	oneOff              *oneOffBackup
+	manual              *manualSavepointState
+	serverTargets       []vaultrpc.TargetState
 	oneOffSupported     bool
 	savepointsSupported bool
 }
@@ -76,6 +78,7 @@ func (a *App) readProt(host string, ps *protState) {
 	var lcErr error
 	var tasks []service.BackupTask
 	var tasksErr error
+	var vaultTargets []vaultrpc.TargetState
 	var once, savepoints bool
 	a.start(&ps.read, time.Minute, func(ctx context.Context) (err error) {
 		tasks, tasksErr = a.svc.ListBackupTasks(ctx)
@@ -85,6 +88,9 @@ func (a *App) readProt(host string, ps *protState) {
 			once = e == nil && slices.Contains(caps, protection.BackupCapabilityV3)
 			savepoints = e == nil && slices.Contains(caps, vaultrpc.SavepointsCapability)
 			lc, lcErr = a.svc.LocalCopies(ctx, host, ref.InstanceID)
+			if st, stErr := a.svc.VaultStatus(ctx, host); stErr == nil && st != nil {
+				vaultTargets = st.Targets
+			}
 		}
 		return err
 	}, func(err error) {
@@ -98,6 +104,9 @@ func (a *App) readProt(host string, ps *protState) {
 			ps.view = &v
 			if lcErr == nil && lc != nil {
 				ps.localCopies = lc
+			}
+			if vaultTargets != nil {
+				ps.serverTargets = vaultTargets
 			}
 		}
 	})
@@ -142,6 +151,7 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 		})
 	}
 	d := ps.desired()
+	a.manualSavepointCard(c, row, ps)
 	card(ui.Column(c)).Gap(8).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			sectionTitle(ui.Text(c, T("protect.title"))).Grow(1)
@@ -163,6 +173,10 @@ func (a *App) manageTab(c *ui.Context, row *agentRow) {
 		settingRow(c, T("protect.schedule"), scheduleText(d.Schedule), "", func() {
 			ui.Button(c, T("protect.change")).OnClick(func() { ps.sched = newSchedEdit(d) })
 		})
+		settingRow(c, T("protect.fullcycle.label"), fullCycleText(d.Schedule.FullCycle), "", nil)
+		if len(d.BundleMembers) > 0 || len(sameHarnessPeers(a.agentRows(a.agents.value), *row)) > 0 {
+			settingRow(c, T("protect.bundle.label"), bundleMembersText(row.Instance, d.BundleMembers), "", nil)
+		}
 		settingRow(c, T("protect.period"), T("protect.period."+orText(d.Period.Unit, "month")), "", nil)
 		if ps.savepointsSupported {
 			keep := T("protect.retention.off")

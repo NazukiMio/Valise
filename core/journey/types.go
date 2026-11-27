@@ -59,11 +59,15 @@ type TimelinePoint struct {
 	Scope              Scope       `json:"scope"`
 	Kind               string      `json:"kind,omitempty"`
 	Note               string      `json:"note,omitempty"`
-	MetadataState      string      `json:"metadata_state"`
-	PlainBytes         int64       `json:"plain_bytes"`
-	FileCount          int         `json:"file_count"`
-	Copies             []Copy      `json:"copies"`
-	Warnings           []string    `json:"warnings,omitempty"`
+	// BundleID and BundleMembers mark a same-harness bundle backup: the
+	// snapshot cannot be revived on its own while it lists several members.
+	BundleID      string   `json:"bundle_id,omitempty"`
+	BundleMembers []string `json:"bundle_members,omitempty"`
+	MetadataState string   `json:"metadata_state"`
+	PlainBytes    int64    `json:"plain_bytes"`
+	FileCount     int      `json:"file_count"`
+	Copies        []Copy   `json:"copies"`
+	Warnings      []string `json:"warnings,omitempty"`
 }
 
 // Gap reports a missing/invalid published pair without inventing a saved point.

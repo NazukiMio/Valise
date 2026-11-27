@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 
 	"valise/core/journey"
@@ -22,7 +24,8 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		a.journeyFailedLocations(c)
 		for i, p := range points {
 			if pointKey(p) == a.point {
-				a.pointDetail(c, points, i, row.Server, row.Instance)
+				a.pointDetail(c, row, points, i, row.Server, row.Instance)
+				a.snapDeleteDialog(c)
 				return
 			}
 		}
@@ -39,7 +42,12 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 			return
 		}
 	}
-	ui.Row(c).Children(func() { ui.Segmented(c, &a.journeyFilter, T("savepoint.filter.all"), T("savepoint.filter.only")) })
+	ui.Row(c).Gap(spItem).AlignItems(ui.Center).Wrap().Children(func() {
+		ui.Segmented(c, &a.journeyFilter, T("savepoint.filter.all"), T("savepoint.filter.only"))
+		if len(points) > 0 {
+			a.journeyDeleteBar(c, row, points)
+		}
+	})
 	a.promotionResult(c)
 	if a.timeline.err != nil {
 		errorBox(c, a.timeline.err, a.fold("timeline-err"))
@@ -90,12 +98,32 @@ func (a *App) journey(c *ui.Context, row *agentRow, points []journey.TimelinePoi
 		})
 	}
 	muted(ui.Text(c, T("journey.all_locations")))
+	a.snapDeleteDialog(c)
 	// Legacy catalog key "journey.local_only" remains for locale compatibility.
+}
+
+func otherBundleMembers(p journey.TimelinePoint) string {
+	var others []string
+	for _, m := range p.BundleMembers {
+		if m != p.RecordedInstanceID {
+			others = append(others, m)
+		}
+	}
+	if len(others) == 0 {
+		others = p.BundleMembers
+	}
+	return strings.Join(others, T("common.list_sep"))
 }
 
 // pointLine is a node on the thin line and a one-line card.
 func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool) {
 	ui.Row(c).Gap(12).AlignItems(ui.Stretch).Children(func() {
+		if st := a.snapDelete; st != nil && st.selecting {
+			checked := st.selected[p.SnapshotRef.SnapshotID]
+			if ui.Checkbox(c.Key("sel-"+p.SnapshotRef.SnapshotID), &checked, "").Changed() {
+				st.selected[p.SnapshotRef.SnapshotID] = checked
+			}
+		}
 		ui.Column(c).Width(16).AlignItems(ui.Center).Children(func() {
 			top := ui.Box(c).Width(1).Height(13).Background(palette.Line)
 			if first {
@@ -114,6 +142,9 @@ func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				pointKind(c, p)
 				muted(ui.Text(c, tierText(p.Scope.Tier)))
+				if len(p.BundleMembers) > 1 {
+					ui.Text(c, T("bundle.point_badge", "members", otherBundleMembers(p))).FontSize(fsCaption).TextColor(palette.Warn).Wrap()
+				}
 				muted(ui.Text(c, pointLocations(p))).FontSize(fsCaption).Wrap()
 			})
 			muted(ui.Text(c, T("point.files", "n", p.FileCount, "size", size(p.PlainBytes))))
@@ -123,7 +154,7 @@ func (a *App) pointLine(c *ui.Context, p journey.TimelinePoint, first, last bool
 
 // pointDetail shows one saved point; earlier and later ones are a step
 // away. Recovery sources are resolved only from configured readers.
-func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int, origin, instance string) {
+func (a *App) pointDetail(c *ui.Context, row *agentRow, points []journey.TimelinePoint, i int, origin, instance string) {
 	p := points[i]
 	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 		if ui.Button(c, "‹ "+T("point.back")).Clicked() {
@@ -159,6 +190,9 @@ func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int, 
 	if p.MetadataState == "conflict" {
 		ui.Text(c, T("point.conflict")).TextColor(palette.Warn).Wrap()
 	}
+	if len(p.BundleMembers) > 1 {
+		notice(c, "warn", T("bundle.point_badge", "members", otherBundleMembers(p)))
+	}
 	if len(p.Warnings) > 0 {
 		card(ui.Column(c)).Children(func() {
 			ui.Text(c, T("point.warn")).Bold().TextColor(palette.Warn)
@@ -179,6 +213,9 @@ func (a *App) pointDetail(c *ui.Context, points []journey.TimelinePoint, i int, 
 		muted(ui.Text(c, T("restore.source_unavailable"))).Wrap()
 	}
 	a.promotePoint(c, p)
+	if pointLeaf(p) != "" {
+		quietButton(c, T("snapdel.delete_one")).OnClick(func() { a.openSinglePointDelete(row, p) })
+	}
 	ui.Collapsible(c, T("error.tech_info"), a.fold("point-tech"), func() {
 		muted(ui.Text(c, T("point.ids", "snapshot", p.SnapshotRef.SnapshotID, "vault", p.SnapshotRef.VaultID))).Font(cur.Fonts.Mono)
 	})
