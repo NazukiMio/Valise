@@ -13,12 +13,17 @@ import (
 // batchReviveOpts holds user opt-in flags and explicit confirmations shared by
 // bundle restore (WP6) and one-click harness move (WP6).
 type batchReviveOpts struct {
-	allowDraft           bool
-	allowSnapshotProfile bool
-	allowVersionMismatch bool
-	skipService          bool
-	credential           bool
-	sourceChoice         string
+	allowDraft             bool
+	allowSnapshotProfile   bool
+	allowVersionMismatch   bool
+	skipService            bool
+	carryMCP               bool
+	remapHomeSymlinks      bool
+	rewriteConfigHomePaths bool
+	carryProtection        bool
+	carryInitialized       bool
+	credential             bool
+	sourceChoice           string
 }
 
 func (o *batchReviveOpts) resetConfirmations() {
@@ -26,11 +31,24 @@ func (o *batchReviveOpts) resetConfirmations() {
 	o.sourceChoice = ""
 }
 
+func (o *batchReviveOpts) initCarryDefaults(mode string, sum batchReviveSummary) {
+	isMigrate := mode == revive.ModeMigrate
+	o.carryMCP = isMigrate && sum.hasMCP
+	o.remapHomeSymlinks = isMigrate && sum.hasHomeChanged
+	o.rewriteConfigHomePaths = false
+	o.carryProtection = isMigrate && len(sum.sourceProtections) > 0
+	o.carryInitialized = true
+}
+
 // buildConfirm constructs a valid service.ReviveConfirm with non-nil Swap and
 // UnverifiedSource callbacks after the user has reviewed and confirmed the plan.
 func (o batchReviveOpts) buildConfirm(confirmed bool) service.ReviveConfirm {
 	decision := service.SourceDecision(o.sourceChoice)
 	return service.ReviveConfirm{
+		CarryMCP:               o.carryMCP,
+		RemapHomeSymlinks:      o.remapHomeSymlinks,
+		RewriteConfigHomePaths: o.rewriteConfigHomePaths,
+		CarryProtection:        o.carryProtection,
 		UnverifiedSource: func(service.UnverifiedSource) service.SourceDecision {
 			return decision
 		},
@@ -43,16 +61,33 @@ func (o batchReviveOpts) buildConfirm(confirmed bool) service.ReviveConfirm {
 	}
 }
 
+type batchExtSymlink struct {
+	instanceID, root, path, target string
+}
+
+type batchConfigHomeHit struct {
+	instanceID, root, path, oldPath, newPath string
+	line                                     int
+}
+
 type batchReviveSummary struct {
-	hasBlockers     bool
-	hasDraft        bool
-	hasSnapProfile  bool
-	hasBodyMismatch bool
-	hasBodyMissing  bool
-	hasServiceMiss  bool
-	hasSecrets      bool
-	unverified      []*service.UnverifiedSource
-	allBackupFirst  bool
+	hasBlockers         bool
+	hasDraft            bool
+	hasSnapProfile      bool
+	hasBodyMismatch     bool
+	hasBodyMissing      bool
+	hasServiceMiss      bool
+	hasSecrets          bool
+	hasMCP              bool
+	hasHomeChanged      bool
+	sourceHome          string
+	targetHome          string
+	sourceProtections   []string
+	extSymlinks         []batchExtSymlink
+	configHomeHits      []batchConfigHomeHit
+	missingBodyProfiles []string
+	unverified          []*service.UnverifiedSource
+	allBackupFirst      bool
 }
 
 func planBlockerCount(rp *service.RevivePlan) int {
@@ -85,6 +120,8 @@ func movePlanRevivePlans(plan *service.HarnessMovePlan) []*service.RevivePlan {
 
 func summarizeRevivePlans(plans []*service.RevivePlan) batchReviveSummary {
 	sum := batchReviveSummary{allBackupFirst: true}
+	seenBodyProf := map[string]bool{}
+	seenProt := map[string]bool{}
 	for _, rp := range plans {
 		if rp == nil {
 			continue
@@ -102,12 +139,44 @@ func summarizeRevivePlans(plans []*service.RevivePlan) batchReviveSummary {
 				sum.hasBodyMismatch = true
 			case isBodyEnvBlocker(b.Code):
 				sum.hasBodyMissing = true
+				pid := rp.Plan.Profile.ID
+				if pid != "" && !seenBodyProf[pid] {
+					seenBodyProf[pid] = true
+					sum.missingBodyProfiles = append(sum.missingBodyProfiles, pid)
+				}
 			case isServiceEnvBlocker(b.Code):
 				sum.hasServiceMiss = true
 			}
 		}
 		if rp.RestoreSecret || len(rp.Excluded) > 0 {
 			sum.hasSecrets = true
+		}
+		if rp.Plan.Profile.AgentKit != nil && len(rp.Plan.Profile.AgentKit.MCPAddArgv) > 0 {
+			sum.hasMCP = true
+		}
+		if rp.HomeChanged {
+			sum.hasHomeChanged = true
+			if sum.sourceHome == "" {
+				sum.sourceHome = rp.SourceHome
+			}
+			if sum.targetHome == "" {
+				sum.targetHome = rp.TargetHome
+			}
+		}
+		if rp.SourceProtection != nil && rp.SourceProtection.Summary != "" && !seenProt[rp.SourceProtection.Summary] {
+			seenProt[rp.SourceProtection.Summary] = true
+			sum.sourceProtections = append(sum.sourceProtections, rp.SourceProtection.Summary)
+		}
+		for _, s := range rp.ExternalSymlinks {
+			sum.extSymlinks = append(sum.extSymlinks, batchExtSymlink{
+				instanceID: rp.Plan.InstanceID, root: s.Root, path: s.Path, target: s.Target,
+			})
+		}
+		for _, h := range rp.ConfigHomeHits {
+			sum.configHomeHits = append(sum.configHomeHits, batchConfigHomeHit{
+				instanceID: rp.Plan.InstanceID, root: h.Root, path: h.Path,
+				oldPath: h.OldPath, newPath: h.NewPath, line: h.Line,
+			})
 		}
 		if rp.UnverifiedSource != nil {
 			sum.unverified = append(sum.unverified, rp.UnverifiedSource)
@@ -122,31 +191,45 @@ func summarizeRevivePlans(plans []*service.RevivePlan) batchReviveSummary {
 	return sum
 }
 
-// renderRevivePlanDetails renders honest per-member warnings, blockers and
-// nested-instance conflicts for a RevivePlan inside a bundle or move-all plan.
-func renderRevivePlanDetails(c *ui.Context, keyPrefix string, rp *service.RevivePlan) {
+// renderRevivePlanDetails renders true hard blockers and nested-instance
+// conflicts directly while folding non-blocking warnings and consent-blocker
+// technical explanations under a calm two-layer summary (WP-E).
+func renderRevivePlanDetails(c *ui.Context, keyPrefix string, fold func(string) *bool, rp *service.RevivePlan) {
 	if rp == nil {
 		return
 	}
-	for i, w := range rp.Warnings {
-		notice(c.Key(keyPrefix+"-w-"+strconv.Itoa(i)), "warn", w)
-	}
+	var bgNotes []string
+	bgNotes = append(bgNotes, rp.Warnings...)
 	for i, b := range rp.Blockers {
 		msg := b.Reason
 		if msg == "" {
 			msg = b.Code
+		}
+		if isConsentBlocker(b.Code) {
+			bgNotes = append(bgNotes, msg)
+			continue
 		}
 		notice(c.Key(keyPrefix+"-b-"+strconv.Itoa(i)), "warn", msg)
 	}
 	if len(rp.Nested) > 0 {
 		notice(c.Key(keyPrefix+"-nested"), "warn", T("restore.nested", "names", strings.Join(rp.Nested, ", ")))
 	}
+	if len(bgNotes) > 0 {
+		subPanel(ui.Column(c.Key(keyPrefix + "-bg"))).Gap(4).Children(func() {
+			muted(ui.Text(c, T("restore.bg_notes_summary", "n", len(bgNotes)))).FontSize(fsSub).Wrap()
+			ui.Collapsible(c, T("restore.tech_details"), fold(keyPrefix+"-bg"), func() {
+				for i, note := range bgNotes {
+					muted(ui.Text(c.Key(keyPrefix+"-n-"+strconv.Itoa(i)), note)).FontSize(fsCaption).Wrap().Selectable()
+				}
+			})
+		})
+	}
 }
 
 // renderBatchReviveChecks draws opt-in blocker overrides (with a Replan button),
 // secret confirmation, and unverified-source decision controls. It returns true
 // only when every blocker is cleared and every required confirmation is made.
-func renderBatchReviveChecks(c *ui.Context, keyPrefix string, sum batchReviveSummary, opts *batchReviveOpts, onReplan func()) bool {
+func renderBatchReviveChecks(c *ui.Context, keyPrefix string, fold func(string) *bool, sum batchReviveSummary, opts *batchReviveOpts, onReplan func()) bool {
 	hasOptIn := sum.hasDraft || sum.hasSnapProfile || sum.hasBodyMismatch || sum.hasBodyMissing || sum.hasServiceMiss
 	if hasOptIn {
 		subPanel(ui.Column(c.Key(keyPrefix + "-optins"))).Gap(spInside).Children(func() {
@@ -179,12 +262,15 @@ func renderBatchReviveChecks(c *ui.Context, keyPrefix string, sum batchReviveSum
 	if len(sum.unverified) > 0 {
 		subPanel(ui.Column(c.Key(keyPrefix + "-unverified"))).Gap(spHair).Children(func() {
 			ui.Text(c, T("restore.unverified")).Bold().TextColor(palette.Warn)
-			for i, u := range sum.unverified {
-				muted(ui.Text(c.Key(keyPrefix+"-uv-"+strconv.Itoa(i)), T("restore.unverified_info",
-					"id", u.InstanceID, "profile", u.ProfileID, "version", u.ProfileVersion,
-					"server", u.SourceServer, "period", u.Period,
-					"time", u.CreatedAt.Local().Format("2006-01-02 15:04"), "tier", tierText(u.Tier)))).Wrap().Selectable()
-			}
+			muted(ui.Text(c, T("restore.unverified_summary"))).FontSize(fsSub).Wrap()
+			ui.Collapsible(c, T("restore.tech_details"), fold(keyPrefix+"-uv-detail"), func() {
+				for i, u := range sum.unverified {
+					muted(ui.Text(c.Key(keyPrefix+"-uv-"+strconv.Itoa(i)), T("restore.unverified_info",
+						"id", u.InstanceID, "profile", u.ProfileID, "version", u.ProfileVersion,
+						"server", u.SourceServer, "period", u.Period,
+						"time", u.CreatedAt.Local().Format("2006-01-02 15:04"), "tier", tierText(u.Tier)))).FontSize(fsCaption).Wrap().Selectable()
+				}
+			})
 			ui.RadioGroup(c, func() {
 				ui.Radio(c.Key(keyPrefix+"-uv-proceed"), &opts.sourceChoice, "proceed", T("restore.proceed"))
 				if sum.allBackupFirst {

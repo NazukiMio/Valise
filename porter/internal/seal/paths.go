@@ -48,7 +48,94 @@ func (p Paths) DedupeKey(vaultID string) string {
 func (p Paths) Lock() (unlock func(), err error) { return p.LockFor("") }
 
 // holderNames describe a lock holder to the user.
-var holderNames = map[string]string{"autosync": "正在后台自动同步到备份位置"}
+var holderNames = map[string]string{
+	"autosync":              "后台自动同步到备份位置",
+	"terminal-action":       "终端管理命令",
+	"native":                "命令行与向导",
+	"service_control":       "服务启停控制",
+	"instance_write":        "写入实例档案",
+	"instance_forget":       "移除实例记录",
+	"instance_reactivate":   "重新启用实例",
+	"entry_prepare":         "入口准备",
+	"entry_port_set":        "修改入口端口",
+	"agent_label_set":       "修改实例备注",
+	"stage_begin":           "准备恢复暂存目录",
+	"stage_verify":          "校验恢复暂存目录",
+	"swap":                  "原子目录交换",
+	"revive_resume":         "继续恢复流程",
+	"revive_review":         "核对恢复状态",
+	"revive_resume_checked": "确认后继续恢复",
+	"kit_install":           "安装代理工具包",
+	"kit_uninstall":         "卸载代理工具包",
+	"kit_tool_begin":        "安装辅助工具",
+	"kit_tool_remove":       "移除辅助工具",
+	"proposals_decide":      "应用分类变更",
+	"login_prepare":         "准备登录中继",
+	"login_end":             "结束登录中继",
+	"prev_drop":             "清理恢复前目录",
+	"old_cleanup":           "清理旧目录",
+	"seal":                  "建立备份",
+	"sync":                  "同步到备份位置",
+	"protection":            "更新保护计划",
+	"stage-write":           "写入恢复暂存文件",
+	"tool-put":              "上传辅助工具",
+	"action":                "管理动作",
+}
+
+type lockInfo struct {
+	Holder    string `json:"holder,omitempty"`
+	PID       int    `json:"pid,omitempty"`
+	StartedAt string `json:"started_at,omitempty"`
+}
+
+func parseLockInfo(b []byte) lockInfo {
+	s := strings.TrimSpace(string(b))
+	if s == "" {
+		return lockInfo{}
+	}
+	if strings.HasPrefix(s, "{") {
+		var info lockInfo
+		if json.Unmarshal([]byte(s), &info) == nil {
+			return info
+		}
+	}
+	// Legacy plain-text holder format.
+	return lockInfo{Holder: s}
+}
+
+func describeLockHolder(holder string) string {
+	holder = strings.TrimSpace(holder)
+	if holder == "" {
+		return "其他 Valise 操作"
+	}
+	if name, ok := holderNames[holder]; ok {
+		return name
+	}
+	if strings.HasPrefix(holder, "action:") {
+		if id := strings.TrimPrefix(holder, "action:"); id != "" {
+			return "管理动作 " + id
+		}
+		return "管理动作"
+	}
+	return holder
+}
+
+func formatBusyReason(info lockInfo) string {
+	name := describeLockHolder(info.Holder)
+	var meta []string
+	if info.PID > 0 {
+		meta = append(meta, fmt.Sprintf("PID %d", info.PID))
+	}
+	if info.StartedAt != "" {
+		if t, err := time.Parse(time.RFC3339, info.StartedAt); err == nil {
+			meta = append(meta, "始于 "+t.Local().Format("15:04"))
+		}
+	}
+	if len(meta) > 0 {
+		return fmt.Sprintf("服务器正被「%s」(%s) 占用", name, strings.Join(meta, "，"))
+	}
+	return fmt.Sprintf("服务器正被「%s」占用", name)
+}
 
 // LockFor takes the vault lock and records what holds it, so a refused
 // caller can say what is running.
@@ -73,12 +160,12 @@ func (p Paths) acquire(holder, except string) (*os.File, func(), error) {
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			reason := "服务器上正在进行另一次封存或同步"
-			if b, rerr := os.ReadFile(f.Name()); rerr == nil && holderNames[strings.TrimSpace(string(b))] != "" {
-				reason = "服务器上" + holderNames[strings.TrimSpace(string(b))]
+			var info lockInfo
+			if b, rerr := os.ReadFile(f.Name()); rerr == nil {
+				info = parseLockInfo(b)
 			}
 			f.Close()
-			return nil, nil, valise.New("vault_busy", reason, "稍等片刻再试")
+			return nil, nil, valise.New("vault_busy", formatBusyReason(info), "等待该操作完成，或在服务器终端检查并结束该进程")
 		}
 		f.Close()
 		return nil, nil, err
@@ -87,12 +174,25 @@ func (p Paths) acquire(holder, except string) (*os.File, func(), error) {
 		f.Close()
 		return nil, nil, err
 	}
-	f.Truncate(0)
-	f.WriteAt([]byte(holder), 0)
+	myPID := os.Getpid()
+	payload, _ := json.Marshal(lockInfo{
+		Holder:    holder,
+		PID:       myPID,
+		StartedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	_ = f.Truncate(0)
+	_, _ = f.WriteAt(payload, 0)
 	return f, func() {
-		f.Truncate(0)
+		// Only clear lock metadata if it still belongs to this process (or has
+		// no PID), so an inherited child that updated vault.lock keeps its info.
+		if b, rerr := os.ReadFile(f.Name()); rerr == nil {
+			cur := parseLockInfo(b)
+			if cur.PID == 0 || cur.PID == myPID {
+				_ = f.Truncate(0)
+			}
+		}
 		// Close releases this reference; an inherited child keeps its lock.
-		f.Close()
+		_ = f.Close()
 	}, nil
 }
 

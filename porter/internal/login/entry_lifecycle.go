@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,13 +32,20 @@ const (
 	entryPrepareTimeout   = 120 * time.Second
 	entryCheckTimeout     = 15 * time.Second
 	entryStopTimeout      = 15 * time.Second
+	maxCaptureLogBytes    = 256 << 10
 )
 
 var (
-	entryStartPoll = 250 * time.Millisecond
-	procRoot       = "/proc"
-	entryIDRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
-	unitSanitizeRe = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
+	entryStartPoll       = 250 * time.Millisecond
+	capturePostReadyWait = time.Second
+	unitActivePoll       = 250 * time.Millisecond
+	defaultRestartWait   = 20 * time.Second
+	procRoot             = "/proc"
+	entryIDRe            = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+	unitSanitizeRe       = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
+	relativeAuthSuffixRe = regexp.MustCompile(`(?i)(?:^|[\s"'(\[])((?:/[^\s"'<>]*)?[?#][^\s"'<>]*(?:token|key|secret|auth|code)=[^\s"'<>]+)`)
+	sensitiveParamRe     = regexp.MustCompile(`(?i)(?:^|[\s?&;#,"'(=])(?:token|key|secret|auth|code)\s*=`)
+	suspiciousTailRe     = regexp.MustCompile(`(?i)(?:http|tok|ken|key|sec|ret|auth|code|[=?#:/])`)
 )
 
 // entryState tracks a Valise-started detached entry process or transient unit
@@ -210,6 +221,38 @@ func isUnitActive(ctx context.Context, e *porterenroll.Env, unit string) bool {
 	}
 	s := strings.TrimSpace(string(out.Stdout))
 	return s == "active" || s == "activating"
+}
+
+func waitUnitActive(ctx context.Context, e *porterenroll.Env, unit string, timeout time.Duration) bool {
+	if unit == "" {
+		return false
+	}
+	if timeout <= 0 {
+		timeout = defaultRestartWait
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		out, err := e.Run(ctx, 5*time.Second, "", "systemctl", "--user", "is-active", unit)
+		if err == nil && out.Code == 0 {
+			s := strings.TrimSpace(string(out.Stdout))
+			if s == "active" || s == "" {
+				return true
+			}
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			return false
+		}
+		rem := time.Until(deadline)
+		sleep := unitActivePoll
+		if rem < sleep {
+			sleep = rem
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(sleep):
+		}
+	}
 }
 
 func procStart(pid int) string {
@@ -389,6 +432,11 @@ func PrepareEntry(ctx context.Context, e *porterenroll.Env, home string, p login
 				return nil, err
 			}
 			restarted = true
+			wait := defaultRestartWait
+			if prof != nil && prof.Health != nil && prof.Health.GraceSeconds > 0 {
+				wait = time.Duration(prof.Health.GraceSeconds) * time.Second
+			}
+			waitUnitActive(ctx, e, unit, wait)
 		}
 	}
 	prepared, note := evaluatePrepare(ctx, e, home, rec, pr)
@@ -481,6 +529,7 @@ func StartEntry(ctx context.Context, e *porterenroll.Env, home string, p login.E
 	}
 
 	startedBySystemd := false
+	var origLogFile *os.File
 	if _, err := e.LookPath("systemd-run"); err == nil {
 		unitBase := entryUnitName(p.InstanceID, p.Entry.ID)
 		unitFull := unitBase + ".service"
@@ -496,6 +545,24 @@ func StartEntry(ctx context.Context, e *porterenroll.Env, home string, p login.E
 			"--property=CollectMode=inactive-or-failed",
 			"--working-directory=" + home,
 		}
+		var captureLogPath string
+		if stSpec.CaptureURL {
+			if err := os.MkdirAll(entriesDir(home), 0o700); err != nil {
+				return nil, err
+			}
+			captureLogPath = entryLogPath(home, p.InstanceID, p.Entry.ID)
+			f, err := os.OpenFile(captureLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+			if err != nil {
+				return nil, err
+			}
+			_ = os.Chmod(captureLogPath, 0o600)
+			origLogFile = f
+			args = append(args,
+				"--setenv=PYTHONUNBUFFERED=1",
+				"--property=StandardOutput=append:"+captureLogPath,
+				"--property=StandardError=append:"+captureLogPath,
+			)
+		}
 		if pathVal := e.Get("PATH"); pathVal != "" {
 			args = append(args, "--setenv=PATH="+pathVal)
 		}
@@ -507,10 +574,15 @@ func StartEntry(ctx context.Context, e *porterenroll.Env, home string, p login.E
 		out, runErr := e.Run(ctx, 15*time.Second, home, args...)
 		if runErr == nil && out.Code == 0 {
 			state.Unit = unitFull
+			state.LogPath = captureLogPath
 			startedBySystemd = true
 		} else if isUnitActive(ctx, e, unitFull) {
 			state.Unit = unitFull
+			state.LogPath = captureLogPath
 			startedBySystemd = true
+		} else if origLogFile != nil {
+			_ = origLogFile.Close()
+			origLogFile = nil
 		}
 	}
 
@@ -519,13 +591,25 @@ func StartEntry(ctx context.Context, e *porterenroll.Env, home string, p login.E
 			return nil, err
 		}
 		logPath := entryLogPath(home, p.InstanceID, p.Entry.ID)
-		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		openFlags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+		if stSpec.CaptureURL {
+			openFlags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
+		}
+		logFile, err := os.OpenFile(logPath, openFlags, 0o600)
 		if err != nil {
 			return nil, err
 		}
+		if stSpec.CaptureURL {
+			_ = logFile.Truncate(0)
+			_ = os.Chmod(logPath, 0o600)
+		}
 		cmd := exec.Command(bin, exp[1:]...)
 		cmd.Dir = home
-		cmd.Env = e.Vars
+		cmdEnv := append([]string(nil), e.Vars...)
+		if stSpec.CaptureURL {
+			cmdEnv = append(cmdEnv, "PYTHONUNBUFFERED=1")
+		}
+		cmd.Env = cmdEnv
 		cmd.Stdin = nil
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
@@ -535,7 +619,11 @@ func StartEntry(ctx context.Context, e *porterenroll.Env, home string, p login.E
 			return nil, valise.New("entry_start_failed", "无法在后台启动入口进程", "检查命令与日志后重试").WithDetail(err.Error())
 		}
 		pid := cmd.Process.Pid
-		logFile.Close()
+		if stSpec.CaptureURL {
+			origLogFile = logFile
+		} else {
+			logFile.Close()
+		}
 		_ = cmd.Process.Release()
 		state.PID = pid
 		state.PGID = pid
@@ -543,8 +631,45 @@ func StartEntry(ctx context.Context, e *porterenroll.Env, home string, p login.E
 		state.LogPath = logPath
 	}
 
+	var authSuffix string
+	decoupled := false
+	decoupleAndSanitize := func() {
+		if decoupled || !stSpec.CaptureURL || state.LogPath == "" {
+			return
+		}
+		decoupled = true
+		sanitizeAndDecoupleEntryLog(state.LogPath, origLogFile, authSuffix)
+		origLogFile = nil
+	}
+	if stSpec.CaptureURL && state.LogPath != "" {
+		defer decoupleAndSanitize()
+	} else if origLogFile != nil {
+		defer origLogFile.Close()
+	}
+
 	if err := writeEntryState(home, state); err != nil {
 		return nil, err
+	}
+
+	hasTokenSuffix := func(s string) bool {
+		return strings.ContainsAny(s, "?#")
+	}
+	tryCapture := func() {
+		if !stSpec.CaptureURL || state.LogPath == "" || hasTokenSuffix(authSuffix) {
+			return
+		}
+		data := readBoundedFile(state.LogPath, maxCaptureLogBytes)
+		if len(data) == 0 {
+			return
+		}
+		if suf := extractPortURLSuffix(data, port); suf != "" {
+			if hasTokenSuffix(suf) || authSuffix == "" {
+				authSuffix = suf
+			}
+			if hasTokenSuffix(authSuffix) {
+				decoupleAndSanitize()
+			}
+		}
 	}
 
 	wait := time.Duration(stSpec.WaitSeconds) * time.Second
@@ -554,6 +679,7 @@ func StartEntry(ctx context.Context, e *porterenroll.Env, home string, p login.E
 	deadline := time.Now().Add(wait)
 	var listen *login.ListenResult
 	for {
+		tryCapture()
 		listen, _ = ListenAddrs(port)
 		if listen != nil && len(listen.Addrs) > 0 {
 			break
@@ -576,6 +702,32 @@ func StartEntry(ctx context.Context, e *porterenroll.Env, home string, p login.E
 	if listen != nil {
 		addrs = listen.Addrs
 	}
+	if len(addrs) > 0 {
+		waitEntryHTTPReady(ctx, addrs, port, p.Entry.Path, deadline, tryCapture)
+	}
+	tryCapture()
+	if stSpec.CaptureURL && !hasTokenSuffix(authSuffix) {
+		extraDeadline := time.Now().Add(capturePostReadyWait)
+		if deadline.Before(extraDeadline) {
+			extraDeadline = deadline
+		}
+		for !hasTokenSuffix(authSuffix) && time.Now().Before(extraDeadline) && ctx.Err() == nil {
+			rem := time.Until(extraDeadline)
+			sleep := entryStartPoll
+			if rem < sleep {
+				sleep = rem
+			}
+			if sleep <= 0 {
+				break
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(sleep):
+			}
+			tryCapture()
+		}
+	}
+
 	return &login.EntryStartResult{
 		EntryID:     p.Entry.ID,
 		Port:        port,
@@ -585,7 +737,222 @@ func StartEntry(ctx context.Context, e *porterenroll.Env, home string, p login.E
 		ManagedUnit: state.Unit,
 		ManagedPID:  state.PID,
 		LogPath:     state.LogPath,
+		AuthSuffix:  authSuffix,
 	}, nil
+}
+
+func waitEntryHTTPReady(ctx context.Context, addrs []string, port int, entryPath string, deadline time.Time, onPoll func()) bool {
+	probeHost := "127.0.0.1"
+	if len(addrs) > 0 && !slices.ContainsFunc(addrs, func(a string) bool {
+		ip := net.ParseIP(a)
+		return ip != nil && ip.To4() != nil
+	}) {
+		probeHost = "[::1]"
+	}
+	path := entryPath
+	if path == "" {
+		path = "/"
+	}
+	probeURL := fmt.Sprintf("http://%s:%d%s", probeHost, port, path)
+	client := &http.Client{
+		Transport: &http.Transport{DisableKeepAlives: true},
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	for {
+		if onPoll != nil {
+			onPoll()
+		}
+		rem := time.Until(deadline)
+		if rem <= 0 || ctx.Err() != nil {
+			return false
+		}
+		reqTimeout := 2 * time.Second
+		if rem < reqTimeout {
+			reqTimeout = rem
+		}
+		reqCtx, cancel := context.WithTimeout(ctx, reqTimeout)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, probeURL, nil)
+		if err == nil {
+			resp, doErr := client.Do(req)
+			if doErr == nil {
+				_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+				_ = resp.Body.Close()
+				cancel()
+				return true
+			}
+		}
+		cancel()
+		rem = time.Until(deadline)
+		if rem <= 0 || ctx.Err() != nil {
+			return false
+		}
+		sleep := entryStartPoll
+		if rem < sleep {
+			sleep = rem
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(sleep):
+		}
+	}
+}
+
+func readBoundedFile(path string, maxBytes int64) []byte {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	b, _ := io.ReadAll(io.LimitReader(f, maxBytes))
+	return b
+}
+
+func extractPortURLSuffix(output []byte, port int) string {
+	wantPort := strconv.Itoa(port)
+	text := string(output)
+	var fallback string
+	for _, m := range urlRe.FindAllString(text, -1) {
+		u, err := url.Parse(m)
+		if err != nil || u.Port() != wantPort {
+			continue
+		}
+		suffix := u.EscapedPath()
+		if suffix == "" {
+			suffix = "/"
+		}
+		if u.RawQuery != "" {
+			suffix += "?" + u.RawQuery
+		}
+		if u.Fragment != "" {
+			suffix += "#" + u.EscapedFragment()
+		}
+		if u.RawQuery != "" || u.Fragment != "" {
+			return suffix
+		}
+		if fallback == "" {
+			fallback = suffix
+		}
+	}
+	if m := relativeAuthSuffixRe.FindStringSubmatch(text); len(m) > 1 {
+		s := strings.TrimRight(m[1], `.,);]}>"'`)
+		if strings.HasPrefix(s, "?") || strings.HasPrefix(s, "#") {
+			s = "/" + s
+		}
+		return s
+	}
+	return fallback
+}
+
+func extractAuthSecrets(authSuffix string) []string {
+	if authSuffix == "" {
+		return nil
+	}
+	var out []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if len(s) >= 3 && !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	if u, err := url.Parse("http://localhost" + authSuffix); err == nil {
+		if u.RawQuery != "" {
+			add(u.RawQuery)
+			for _, vals := range u.Query() {
+				for _, v := range vals {
+					add(v)
+				}
+			}
+		}
+		if u.Fragment != "" {
+			add(u.Fragment)
+			if q, err := url.ParseQuery(u.Fragment); err == nil {
+				for _, vals := range q {
+					for _, v := range vals {
+						add(v)
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+func sanitizeLogContent(raw, authSuffix string) string {
+	if raw == "" {
+		return ""
+	}
+	secrets := extractAuthSecrets(authSuffix)
+	hasTrailingNL := strings.HasSuffix(raw, "\n")
+	lines := strings.Split(raw, "\n")
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		redact := strings.Contains(lower, "http://") ||
+			strings.Contains(lower, "https://") ||
+			strings.Contains(lower, "token") ||
+			sensitiveParamRe.MatchString(line)
+		if !redact {
+			for _, sec := range secrets {
+				if strings.Contains(line, sec) {
+					redact = true
+					break
+				}
+			}
+		}
+		if !redact && i == len(lines)-1 && !hasTrailingNL && suspiciousTailRe.MatchString(line) {
+			redact = true
+		}
+		if redact {
+			lines[i] = "[REDACTED]"
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// sanitizeAndDecoupleEntryLog reads the current capture log, redacts sensitive
+// lines in memory, atomically replaces logPath with a brand-new 0600 inode via
+// os.Rename so any detached child holding the old FD can never write plaintext
+// tokens to logPath, and truncates + closes origFile when provided.
+func sanitizeAndDecoupleEntryLog(logPath string, origFile *os.File, authSuffix string) {
+	defer func() {
+		if origFile != nil {
+			_ = origFile.Truncate(0)
+			_ = origFile.Close()
+		}
+	}()
+	if logPath == "" {
+		return
+	}
+	raw := string(readBoundedFile(logPath, maxCaptureLogBytes))
+	clean := sanitizeLogContent(raw, authSuffix)
+	dir := filepath.Dir(logPath)
+	tmp, err := os.CreateTemp(dir, ".entry-log-*")
+	if err != nil {
+		return
+	}
+	tmpPath := tmp.Name()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return
+	}
+	if _, err := tmp.WriteString(clean); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return
+	}
+	if err := os.Rename(tmpPath, logPath); err != nil {
+		_ = os.Remove(tmpPath)
+	}
 }
 
 // StopEntry stops a Valise-started entry (trying declared StopArgv first, then
@@ -598,8 +965,10 @@ func StopEntry(ctx context.Context, e *porterenroll.Env, home string, p login.En
 	}
 	st, _ := readEntryState(home, p.InstanceID, p.Entry.ID)
 	var details []string
+	var logPath string
 
 	if st != nil {
+		logPath = st.LogPath
 		if isEntryStateAlive(ctx, e, st) {
 			if p.Entry.Start != nil && len(p.Entry.Start.StopArgv) > 0 {
 				if exp, err := expandEntryArgv(home, rec, p.Entry.Start.StopArgv); err == nil {
@@ -629,6 +998,14 @@ func StopEntry(ctx context.Context, e *porterenroll.Env, home string, p login.En
 			}
 		}
 		_ = os.Remove(entryStatePath(home, p.InstanceID, p.Entry.ID))
+	}
+	if logPath == "" && p.Entry.Start != nil && p.Entry.Start.CaptureURL {
+		logPath = entryLogPath(home, p.InstanceID, p.Entry.ID)
+	}
+	if logPath != "" {
+		if _, err := os.Stat(logPath); err == nil {
+			sanitizeAndDecoupleEntryLog(logPath, nil, "")
+		}
 	}
 
 	listen, _ := ListenAddrs(port)

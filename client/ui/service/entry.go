@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"valise/client/tunnel"
@@ -40,6 +41,11 @@ type EntryStatus struct {
 type OpenOptions struct {
 	Entry string        // entry id; the profile's first entry when empty
 	Idle  time.Duration // close after this long without connections; 0 never
+	// InitialSuffix is an optional URL suffix (path + query + fragment, e.g.
+	// captured from entry startup output) appended to the browser URL when
+	// EntryAuth does not supply one. It may contain a token and must never be
+	// logged or placed in display.
+	InitialSuffix string
 	// Status receives each step; Ready receives the URL for the browser
 	// (it may hold the entry's token, so it is never shown) and a
 	// token-free URL to display, once the tunnel is up.
@@ -135,10 +141,12 @@ func (s *Service) OpenEntry(ctx context.Context, host, instance string, o OpenOp
 	if entry.Auth != nil && entry.Auth.Hint != "" {
 		hint = entry.Auth.Hint
 	}
+	authApplied := false
 	if entry.Auth != nil && (len(entry.Auth.URLArgv) > 0 || len(entry.Auth.TokenArgv) > 0) {
 		suffix, err := entryAuth(ctx, c, login.EntryAuthParams{InstanceID: instance, Entry: *entry})
 		if err == nil {
 			local = "http://127.0.0.1:" + strconv.Itoa(ln.Port) + suffix
+			authApplied = true
 			d := "已自动附带访问令牌打开浏览器"
 			status(EntryStatus{Step: EntryAuth, OK: true, Detail: d})
 		} else {
@@ -148,8 +156,20 @@ func (s *Service) OpenEntry(ctx context.Context, host, instance string, o OpenOp
 			}
 			status(EntryStatus{Step: EntryAuth, OK: false, Detail: reason + "。" + hint})
 		}
-	} else {
+	} else if o.InitialSuffix == "" {
 		status(EntryStatus{Step: EntryAuth, OK: false, Detail: hint})
+	}
+	if !authApplied && o.InitialSuffix != "" {
+		suffix := o.InitialSuffix
+		if strings.HasPrefix(suffix, "?") || strings.HasPrefix(suffix, "#") {
+			local = "http://127.0.0.1:" + strconv.Itoa(ln.Port) + entry.Path + suffix
+		} else {
+			if !strings.HasPrefix(suffix, "/") {
+				suffix = "/" + suffix
+			}
+			local = "http://127.0.0.1:" + strconv.Itoa(ln.Port) + suffix
+		}
+		status(EntryStatus{Step: EntryAuth, OK: true, Detail: "已自动附带访问令牌打开浏览器"})
 	}
 	c.Close()
 	if o.Ready != nil {

@@ -3,10 +3,13 @@ package login
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -432,5 +435,359 @@ esac
 	}
 	if strings.Contains(err.Error(), "SUPER_SECRET") || strings.Contains(ue.Detail, "SUPER_SECRET") {
 		t.Fatalf("PrepareEntry error leaked raw output: err=%q detail=%q", err.Error(), ue.Detail)
+	}
+}
+
+func TestPrepareEntryWaitsForUnitActiveAfterRestart(t *testing.T) {
+	home := t.TempDir()
+	procDir := filepath.Join(home, "procnet")
+	oldProc, oldUnitPoll := ProcNet, unitActivePoll
+	ProcNet, unitActivePoll = procDir, 20*time.Millisecond
+	t.Cleanup(func() {
+		ProcNet, unitActivePoll = oldProc, oldUnitPoll
+	})
+	writeFakeProcNet(t, procDir, 0)
+
+	prof := profile.Profile{
+		Schema: profile.Schema, ID: "demo", DisplayName: "Demo", ProfileVersion: 1, Status: profile.StatusDraft,
+		Service: &profile.Service{Candidates: []profile.ServiceUnit{{Scope: "user", Unit: "demo.service"}}},
+		Health:  &profile.Health{GraceSeconds: 5},
+	}
+	env := setupEntryTestEnv(t, home, prof)
+	binDir := filepath.Join(home, "bin")
+
+	// systemctl returns "activating" twice, then "active" and creates the ready marker.
+	systemctlScript := `#!/bin/sh
+if [ "$2" = "is-active" ]; then
+  count=0
+  if [ -f "$HOME/is_active_count" ]; then
+    count=$(cat "$HOME/is_active_count")
+  fi
+  count=$((count + 1))
+  echo "$count" > "$HOME/is_active_count"
+  if [ "$count" -lt 3 ]; then
+    echo "activating"
+    exit 3
+  fi
+  touch "$HOME/.demo/unit_active"
+  echo "active"
+  exit 0
+fi
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(binDir, "systemctl"), []byte(systemctlScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// check only returns "true" once unit_active marker exists.
+	demoScript := `#!/bin/sh
+case "$1" in
+enable) exit 0 ;;
+check)
+  if [ -f "$HOME/.demo/unit_active" ]; then
+    echo "true"
+  else
+    echo "false"
+  fi
+  ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(binDir, "demo"), []byte(demoScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := profile.Entry{
+		ID: "webapp", Kind: "web", Host: "127.0.0.1", Port: 9120, Path: "/",
+		Prepare: &profile.EntryPrepare{
+			CheckArgv:      profile.Argv{"demo", "check"},
+			ExpectOutput:   "true",
+			Steps:          []profile.Argv{{"demo", "enable"}},
+			RestartService: true,
+		},
+	}
+	res, err := PrepareEntry(context.Background(), env, home, login.EntryPrepareParams{InstanceID: "demo", Entry: entry})
+	if err != nil {
+		t.Fatalf("PrepareEntry: %v", err)
+	}
+	if !res.ServiceRestarted || !res.Prepared {
+		t.Fatalf("expected ServiceRestarted=true and Prepared=true after unit active wait, got %+v", res)
+	}
+}
+
+func TestStartEntryHTTPReadinessAndCaptureURLRedaction(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	port, err := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	home := t.TempDir()
+	procDir := filepath.Join(home, "procnet")
+	oldProc, oldPoll := ProcNet, entryStartPoll
+	ProcNet, entryStartPoll = procDir, 30*time.Millisecond
+	t.Cleanup(func() {
+		ProcNet, entryStartPoll = oldProc, oldPoll
+	})
+	writeFakeProcNet(t, procDir, 0)
+
+	prof := profile.Profile{
+		Schema: profile.Schema, ID: "demo", DisplayName: "Demo", ProfileVersion: 1, Status: profile.StatusDraft,
+	}
+	env := setupEntryTestEnv(t, home, prof)
+	binDir := filepath.Join(home, "bin")
+
+	// Setsid path: verifies PYTHONUNBUFFERED=1, prints startup log with one-time
+	// token URL, writes fake procnet, then simulates post-start HTTP access log
+	// containing a plaintext token written to its inherited stdout FD.
+	envMarker := filepath.Join(home, "pyunbuf.txt")
+	afterMarker := filepath.Join(home, "after-write.txt")
+	demoScript := fmt.Sprintf(`#!/bin/sh
+printf '%%s' "$PYTHONUNBUFFERED" > %q
+echo "Booting webapp..."
+echo "Open http://127.0.0.1:%d/?token=super-secret-tok-123"
+echo "token=should-also-be-redacted"
+printf '  sl  local_address rem_address   st\n   0: 0100007F:%04X 00000000:0000 0A 00000000:00000000 00000000 00000000  1000        0 1\n' > %q
+sleep 0.25
+echo "GET /?token=post-start-access-log-secret HTTP/1.1 200"
+echo "done" > %q
+sleep 30
+`, envMarker, port, port, filepath.Join(procDir, "tcp"), afterMarker)
+	if err := os.WriteFile(filepath.Join(binDir, "demo"), []byte(demoScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := profile.Entry{
+		ID: "webapp", Kind: "web", Host: "127.0.0.1", Port: port, Path: "/",
+		Start: &profile.EntryStart{
+			Argv:        profile.Argv{"demo", "serve"},
+			WaitSeconds: 5,
+			CaptureURL:  true,
+		},
+	}
+
+	res, err := StartEntry(context.Background(), env, home, login.EntryStartParams{InstanceID: "demo", Entry: entry})
+	if err != nil {
+		t.Fatalf("StartEntry: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = StopEntry(context.Background(), env, home, login.EntryStopParams{InstanceID: "demo", Entry: entry})
+	})
+
+	if !res.Listening {
+		t.Fatalf("expected Listening=true, got %+v", res)
+	}
+	if hits.Load() == 0 {
+		t.Fatal("expected HTTP readiness probe to hit loopback server")
+	}
+	if res.AuthSuffix != "/?token=super-secret-tok-123" {
+		t.Fatalf("AuthSuffix = %q, want %q", res.AuthSuffix, "/?token=super-secret-tok-123")
+	}
+	if pyVal, err := os.ReadFile(envMarker); err != nil || string(pyVal) != "1" {
+		t.Fatalf("expected PYTHONUNBUFFERED=1 in Setsid child env, got %q (err=%v)", string(pyVal), err)
+	}
+	// Wait until the detached child has written its post-start access log to the old FD.
+	waitDone := time.Now().Add(2 * time.Second)
+	for time.Now().Before(waitDone) {
+		if _, err := os.Stat(afterMarker); err == nil {
+			break
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	if _, err := os.Stat(afterMarker); err != nil {
+		t.Fatalf("detached child did not complete post-start write: %v", err)
+	}
+	logBytes, err := os.ReadFile(res.LogPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	logText := string(logBytes)
+	if strings.Contains(logText, "super-secret-tok-123") ||
+		strings.Contains(logText, "post-start-access-log-secret") ||
+		strings.Contains(logText, "http://") ||
+		strings.Contains(strings.ToLower(logText), "token") {
+		t.Fatalf("log file was not sanitized or still received child writes: %q", logText)
+	}
+	if !strings.Contains(logText, "Booting webapp...") || !strings.Contains(logText, "[REDACTED]") {
+		t.Fatalf("unexpected sanitized log content: %q", logText)
+	}
+	fi, err := os.Stat(res.LogPath)
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("expected 0600 log permissions, got %v (err=%v)", fi.Mode().Perm(), err)
+	}
+}
+
+func TestStartEntryCaptureURLSystemdRunPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	port, err := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	home := t.TempDir()
+	procDir := filepath.Join(home, "procnet")
+	oldProc, oldPoll := ProcNet, entryStartPoll
+	ProcNet, entryStartPoll = procDir, 30*time.Millisecond
+	t.Cleanup(func() {
+		ProcNet, entryStartPoll = oldProc, oldPoll
+	})
+	writeFakeProcNet(t, procDir, 0)
+
+	prof := profile.Profile{
+		Schema: profile.Schema, ID: "demo", DisplayName: "Demo", ProfileVersion: 1, Status: profile.StatusDraft,
+	}
+	env := setupEntryTestEnv(t, home, prof)
+	binDir := filepath.Join(home, "bin")
+
+	// Stub systemd-run that verifies --setenv=PYTHONUNBUFFERED=1 and StandardOutput/Error=append:...
+	systemdRunScript := fmt.Sprintf(`#!/bin/sh
+logpath=""
+errpath=""
+pyunbuf=""
+for arg in "$@"; do
+  case "$arg" in
+    --property=StandardOutput=append:*)
+      logpath="${arg#--property=StandardOutput=append:}"
+      ;;
+    --property=StandardError=append:*)
+      errpath="${arg#--property=StandardError=append:}"
+      ;;
+    --setenv=PYTHONUNBUFFERED=1)
+      pyunbuf="1"
+      ;;
+  esac
+done
+if [ -z "$logpath" ] || [ -z "$errpath" ] || [ "$pyunbuf" != "1" ]; then
+  echo "missing append log or PYTHONUNBUFFERED=1: out=$logpath err=$errpath py=$pyunbuf" >&2
+  exit 1
+fi
+echo "Ready at http://127.0.0.1:%d/app#token=sd-tok-999" >> "$logpath"
+printf '  sl  local_address rem_address   st\n   0: 0100007F:%04X 00000000:0000 0A 00000000:00000000 00000000 00000000  1000        0 1\n' > %q
+exit 0
+`, port, port, filepath.Join(procDir, "tcp"))
+	if err := os.WriteFile(filepath.Join(binDir, "systemd-run"), []byte(systemdRunScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "systemctl"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "demo"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := profile.Entry{
+		ID: "webapp", Kind: "web", Host: "127.0.0.1", Port: port, Path: "/",
+		Start: &profile.EntryStart{
+			Argv:        profile.Argv{"demo", "serve"},
+			WaitSeconds: 5,
+			CaptureURL:  true,
+		},
+	}
+
+	res, err := StartEntry(context.Background(), env, home, login.EntryStartParams{InstanceID: "demo", Entry: entry})
+	if err != nil {
+		t.Fatalf("StartEntry(systemd-run): %v", err)
+	}
+	if res.ManagedUnit == "" || res.LogPath == "" {
+		t.Fatalf("expected ManagedUnit and LogPath on systemd-run path, got %+v", res)
+	}
+	if res.AuthSuffix != "/app#token=sd-tok-999" {
+		t.Fatalf("AuthSuffix = %q, want %q", res.AuthSuffix, "/app#token=sd-tok-999")
+	}
+	logBytes, err := os.ReadFile(res.LogPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if strings.Contains(string(logBytes), "sd-tok-999") || strings.Contains(string(logBytes), "http://") {
+		t.Fatalf("systemd-run log file not sanitized: %q", string(logBytes))
+	}
+
+	// Simulate stray secret written before StopEntry and verify StopEntry re-sanitizes.
+	if err := os.WriteFile(res.LogPath, []byte("ok line\nGET /?secret=leaked-on-stop HTTP/1.1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := StopEntry(context.Background(), env, home, login.EntryStopParams{InstanceID: "demo", Entry: entry}); err != nil {
+		t.Fatalf("StopEntry: %v", err)
+	}
+	afterStop, err := os.ReadFile(res.LogPath)
+	if err != nil {
+		t.Fatalf("read log after stop: %v", err)
+	}
+	if strings.Contains(string(afterStop), "leaked-on-stop") || !strings.Contains(string(afterStop), "[REDACTED]") {
+		t.Fatalf("StopEntry did not sanitize log: %q", string(afterStop))
+	}
+}
+
+func TestStartEntryCaptureURLDelayedBannerAndPartialTail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	port, err := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	home := t.TempDir()
+	procDir := filepath.Join(home, "procnet")
+	oldProc, oldPoll, oldPost := ProcNet, entryStartPoll, capturePostReadyWait
+	ProcNet, entryStartPoll, capturePostReadyWait = procDir, 30*time.Millisecond, 600*time.Millisecond
+	t.Cleanup(func() {
+		ProcNet, entryStartPoll, capturePostReadyWait = oldProc, oldPoll, oldPost
+	})
+	writeFakeProcNet(t, procDir, 0)
+
+	prof := profile.Profile{
+		Schema: profile.Schema, ID: "demo", DisplayName: "Demo", ProfileVersion: 1, Status: profile.StatusDraft,
+	}
+	env := setupEntryTestEnv(t, home, prof)
+	binDir := filepath.Join(home, "bin")
+
+	// Listen immediately, then print ?key=... 120ms AFTER HTTP is already ready.
+	demoScript := fmt.Sprintf(`#!/bin/sh
+printf '  sl  local_address rem_address   st\n   0: 0100007F:%04X 00000000:0000 0A 00000000:00000000 00000000 00000000  1000        0 1\n' > %q
+sleep 0.12
+echo "Login path: /login?key=delayed-key-789"
+sleep 30
+`, port, filepath.Join(procDir, "tcp"))
+	if err := os.WriteFile(filepath.Join(binDir, "demo"), []byte(demoScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := profile.Entry{
+		ID: "webapp", Kind: "web", Host: "127.0.0.1", Port: port, Path: "/",
+		Start: &profile.EntryStart{
+			Argv:        profile.Argv{"demo", "serve"},
+			WaitSeconds: 5,
+			CaptureURL:  true,
+		},
+	}
+	res, err := StartEntry(context.Background(), env, home, login.EntryStartParams{InstanceID: "demo", Entry: entry})
+	if err != nil {
+		t.Fatalf("StartEntry delayed: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = StopEntry(context.Background(), env, home, login.EntryStopParams{InstanceID: "demo", Entry: entry})
+	})
+	if res.AuthSuffix != "/login?key=delayed-key-789" {
+		t.Fatalf("expected delayed AuthSuffix, got %q", res.AuthSuffix)
+	}
+
+	// Verify sanitizeLogContent catches all param variants, authSuffix values, and incomplete tail lines.
+	raw := "normal line\nauth=abc123\ncode=xyz999\ncustom-val-secret-42\nen=HALF_LINE_SECRET"
+	clean := sanitizeLogContent(raw, "/?foo=custom-val-secret-42")
+	for _, leak := range []string{"abc123", "xyz999", "custom-val-secret-42", "HALF_LINE_SECRET"} {
+		if strings.Contains(clean, leak) {
+			t.Fatalf("sanitizeLogContent leaked %q in %q", leak, clean)
+		}
+	}
+	if !strings.Contains(clean, "normal line") {
+		t.Fatalf("normal line lost in %q", clean)
 	}
 }

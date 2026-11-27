@@ -269,6 +269,7 @@ entries:
       argv: [example, dashboard, --no-open]   # 必填：后台启动命令（owner）
       stop_argv: null            # 可选：显式停止命令（owner）；未声明时直接停止 Valise 记录的单元或进程组
       wait_seconds: 15           # 可选：启动后轮询端口监听的超时秒数（默认 15）
+      capture_url: false         # 可选：启动时将输出定向至私有 0600 日志，在内存中提取同端口一次性令牌 URL 后缀并立即脱敏落盘文件
       verify: pending            # 未实机核实时标 pending
     # 改过端口后，新端口记在实例记录的 entry_ports 里（按入口 id），打开管理页、健康检查都用它；
     # profile 中的 port 只是默认值。

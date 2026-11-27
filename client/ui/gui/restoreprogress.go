@@ -17,21 +17,13 @@ func restoreStageText(stage string) string {
 	return T("restore.reading")
 }
 func (a *App) restoreProgress(c *ui.Context, r *restoreFlow) {
-	c.After(time.Second)
 	card(ui.Column(c)).Gap(12).Children(func() {
-		stageText := restoreStageText(r.progress.Stage)
-		if r.progress.Stage == "" && r.j.doing != "" {
-			stageText = r.j.doing
+		tr := restoreProgressTracker{
+			stage: r.progress.Stage,
+			done:  r.progress.Done,
+			total: r.progress.Total,
 		}
-		ui.Row(c).Gap(10).Children(func() {
-			ui.Spinner(c)
-			ui.Text(c, stageText).Bold()
-		})
-		muted(ui.Text(c, T("restore.elapsed", "duration", backupDuration(c.Now().Sub(r.j.doingAt))))).Wrap()
-		if p := r.progress; p.Total > 0 {
-			ui.Progress(c, float64(p.Done)/float64(p.Total))
-			muted(ui.Text(c, T("restore.bytes", "done", size(p.Done), "total", size(p.Total)))).Wrap()
-		}
+		renderRestoreAnimProgress(c, tr, r.j.doingAt, r.step, r.j.doing)
 		if r.step == "swap" {
 			muted(ui.Text(c, T("restore.swap_in_progress"))).Wrap()
 		} else {

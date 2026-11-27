@@ -16,13 +16,14 @@ import (
 // entryState is one entry's local SSH tunnel while this window lives.
 // The page itself opens only in the system browser (docs/UI.md 6).
 type entryState struct {
-	entryID string
-	busy    bool
-	open    bool
-	display string // token-free address, safe to show
-	steps   []service.EntryStatus
-	err     error
-	cancel  context.CancelFunc
+	entryID       string
+	busy          bool
+	open          bool
+	display       string // token-free address, safe to show
+	initialSuffix string // in-memory only; never shown, logged, or persisted
+	steps         []service.EntryStatus
+	err           error
+	cancel        context.CancelFunc
 }
 
 var entrySteps = map[string]string{
@@ -81,19 +82,23 @@ func (a *App) entryOptionLabel(profileID string, e enroll.EntryState) string {
 
 // openEntry starts the tunnel off the main thread; it stays up until it is
 // closed, the window closes, or it has been idle for DefaultEntryIdle.
-func (a *App) openEntry(server, instance, entryID string) {
+func (a *App) openEntry(server, instance, entryID, initialSuffix string) {
 	key := entryKey(server, instance, entryID)
-	if old := a.entries[key]; old != nil && old.cancel != nil {
-		old.cancel()
+	if old := a.entries[key]; old != nil {
+		old.initialSuffix = ""
+		if old.cancel != nil {
+			old.cancel()
+		}
 	}
-	st := &entryState{entryID: entryID, busy: true}
+	st := &entryState{entryID: entryID, busy: true, initialSuffix: initialSuffix}
 	a.entries[key] = st
 	ctx, cancel := context.WithCancel(context.Background())
 	st.cancel = cancel
 	a.run(func() {
 		err := a.entryOpener(ctx, server, instance, service.OpenOptions{
-			Entry: entryID,
-			Idle:  service.DefaultEntryIdle,
+			Entry:         entryID,
+			Idle:          service.DefaultEntryIdle,
+			InitialSuffix: initialSuffix,
 			Status: func(s service.EntryStatus) {
 				a.update(func() { st.steps = append(st.steps, s) })
 			},
@@ -114,8 +119,11 @@ func (a *App) openEntry(server, instance, entryID string) {
 }
 
 func (a *App) closeEntry(key string) {
-	if st := a.entries[key]; st != nil && st.cancel != nil {
-		st.cancel()
+	if st := a.entries[key]; st != nil {
+		st.initialSuffix = ""
+		if st.cancel != nil {
+			st.cancel()
+		}
 	}
 	delete(a.entries, key)
 }

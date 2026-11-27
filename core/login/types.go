@@ -172,6 +172,10 @@ type EntryStartResult struct {
 	ManagedPID  int      `json:"managed_pid,omitempty"`
 	LogPath     string   `json:"log_path,omitempty"`
 	AlreadyUp   bool     `json:"already_up,omitempty"`
+	// AuthSuffix is an optional URL suffix (path, query, fragment) captured
+	// from startup output when capture_url is enabled. It may carry a token and
+	// must never be logged, audited, or displayed in plain text.
+	AuthSuffix string `json:"auth_suffix,omitempty"`
 }
 
 // EntryStopParams asks porter to stop a Valise-started entry process or unit.

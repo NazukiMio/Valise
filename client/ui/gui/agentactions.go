@@ -193,7 +193,7 @@ func (a *App) runQuickAction(row *agentRow, st *agentServiceState, m *actionModa
 	var conn *installConn
 	if isTerm {
 		conn = newInstallConn()
-		tr := &serviceTermRun{title: m.action.Name, running: true, conn: conn, cancel: cancel}
+		tr := &serviceTermRun{title: m.action.Name, running: true, wantFocus: true, conn: conn, cancel: cancel}
 		tr.term = a.openInstallTerminal(conn, &tr.text)
 		m.termRun = tr
 		opts.IO = service.InstallIO{

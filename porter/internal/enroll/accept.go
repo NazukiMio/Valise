@@ -27,11 +27,6 @@ func AcceptRecord(home string, r enroll.Record, p profile.Profile) (path string,
 	if e := enroll.ValidInstanceID(p.ID); e != nil {
 		return "", nil, e
 	}
-	pb, err := json.Marshal(p)
-	if err != nil {
-		return "", nil, err
-	}
-	pd := sha256.Sum256(pb)
 	facts := r
 	facts.EnrolledAt = time.Time{}
 	rb, err := json.Marshal(facts)
@@ -40,12 +35,17 @@ func AcceptRecord(home string, r enroll.Record, p profile.Profile) (path string,
 	}
 	rd := sha256.Sum256(rb)
 	err = identitystore.WithLock(home, func() error {
+		effProf := EffectiveDossierProfile(home, r, p)
+		pdHex, e := identitystore.ProfileDigest(effProf)
+		if e != nil {
+			return e
+		}
 		old, e := ReadRecord(home, r.InstanceID)
 		if e != nil {
 			return e
 		}
 		in := identitystore.AcceptInput{InstallID: p.ID, InstanceID: r.InstanceID, Roots: r.Roots,
-			ProfileDigest: hex.EncodeToString(pd[:]), FactsDigest: hex.EncodeToString(rd[:]), Existing: old != nil,
+			ProfileDigest: pdHex, FactsDigest: hex.EncodeToString(rd[:]), Existing: old != nil,
 			Superseded: old != nil && old.Superseded != nil}
 		agent, e = identitystore.AcceptLocked(home, in, func() error {
 			var e error

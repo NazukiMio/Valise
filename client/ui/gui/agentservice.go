@@ -39,16 +39,17 @@ type agentServiceState struct {
 }
 
 type serviceTermRun struct {
-	title   string
-	running bool
-	term    *terminal.Terminal
-	text    tailText
-	input   string
-	conn    *installConn
-	cancel  context.CancelFunc
-	code    int
-	hasCode bool
-	err     error
+	title     string
+	running   bool
+	wantFocus bool
+	term      *terminal.Terminal
+	text      tailText
+	input     string
+	conn      *installConn
+	cancel    context.CancelFunc
+	code      int
+	hasCode   bool
+	err       error
 }
 
 type actionModalState struct {
@@ -356,7 +357,7 @@ func (a *App) startServiceInstall(row *agentRow, st *agentServiceState) {
 	ops := a.svcOps()
 	conn := newInstallConn()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	tr := &serviceTermRun{title: T("agent.service.install_title"), running: true, conn: conn, cancel: cancel}
+	tr := &serviceTermRun{title: T("agent.service.install_title"), running: true, wantFocus: true, conn: conn, cancel: cancel}
 	tr.term = a.openInstallTerminal(conn, &tr.text)
 	st.installRun = tr
 	a.run(func() {
@@ -383,5 +384,5 @@ func (a *App) startServiceInstall(row *agentRow, st *agentServiceState) {
 }
 
 func (a *App) renderServiceTerm(c *ui.Context, tr *serviceTermRun) {
-	a.renderTerminalPane(c, tr.title, tr.running, tr.term, &tr.text, &tr.input, tr.conn)
+	a.renderTerminalPaneFocus(c, tr.title, tr.running, tr.term, &tr.wantFocus, &tr.text, &tr.input, tr.conn)
 }

@@ -100,3 +100,56 @@ func TestOpenEntryBusyPort(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenEntryInitialSuffixHiddenFromDisplay(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+	defer srv.Close()
+	srvPort, _ := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	old := entryDialer
+	entryDialer = func(*ssh.Transport, string, int) tunnel.Dialer {
+		return func(ctx context.Context) (io.ReadWriteCloser, error) {
+			return net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(srvPort))
+		}
+	}
+	t.Cleanup(func() { entryDialer = old })
+
+	s, _ := loginWorld(t)
+	p := filepath.Join(s.Dirs.Data, "profiles", "demo.yaml")
+	port := freePort(t)
+	os.WriteFile(p, []byte(demoProfile+"entries: [ { id: web, kind: web, host: 127.0.0.1, port: "+strconv.Itoa(port)+", path: \"/\" } ]\n"), 0o644)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var gotOpen, gotDisplay string
+	var authStatus EntryStatus
+	err := s.OpenEntry(ctx, "box", "demo", OpenOptions{
+		InitialSuffix: "/?token=secret-one-time-tok",
+		Status: func(st EntryStatus) {
+			if st.Step == EntryAuth {
+				authStatus = st
+			}
+		},
+		Ready: func(open, display string) {
+			gotOpen = open
+			gotDisplay = display
+			cancel()
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOpen := "http://127.0.0.1:" + strconv.Itoa(port) + "/?token=secret-one-time-tok"
+	wantDisplay := "http://127.0.0.1:" + strconv.Itoa(port) + "/"
+	if gotOpen != wantOpen {
+		t.Fatalf("open URL = %q, want %q", gotOpen, wantOpen)
+	}
+	if gotDisplay != wantDisplay {
+		t.Fatalf("display URL = %q, want %q", gotDisplay, wantDisplay)
+	}
+	if strings.Contains(gotDisplay, "token") || strings.Contains(gotDisplay, "secret-one-time-tok") {
+		t.Fatalf("display URL leaked token: %q", gotDisplay)
+	}
+	if !authStatus.OK {
+		t.Fatalf("expected EntryAuth OK when InitialSuffix provided, got %+v", authStatus)
+	}
+}

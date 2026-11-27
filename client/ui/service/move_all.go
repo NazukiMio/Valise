@@ -44,15 +44,19 @@ type HarnessMoveInspection struct {
 
 // HarnessMoveOptions configures PrepareHarnessMove.
 type HarnessMoveOptions struct {
-	From                 string                       `json:"from"`
-	Target               string                       `json:"target"`
-	ProfileIDs           []string                     `json:"profile_ids,omitempty"` // empty = all ready groups
-	RootsByInstance      map[string]map[string]string `json:"roots_by_instance,omitempty"`
-	Source               string                       `json:"source,omitempty"`
-	AllowDraft           bool                         `json:"allow_draft_profile,omitempty"`
-	AllowSnapshotProfile bool                         `json:"allow_snapshot_profile,omitempty"`
-	AllowVersionMismatch bool                         `json:"allow_version_mismatch,omitempty"`
-	SkipService          bool                         `json:"skip_service,omitempty"`
+	From                   string                       `json:"from"`
+	Target                 string                       `json:"target"`
+	ProfileIDs             []string                     `json:"profile_ids,omitempty"` // empty = all ready groups
+	RootsByInstance        map[string]map[string]string `json:"roots_by_instance,omitempty"`
+	Source                 string                       `json:"source,omitempty"`
+	AllowDraft             bool                         `json:"allow_draft_profile,omitempty"`
+	AllowSnapshotProfile   bool                         `json:"allow_snapshot_profile,omitempty"`
+	AllowVersionMismatch   bool                         `json:"allow_version_mismatch,omitempty"`
+	SkipService            bool                         `json:"skip_service,omitempty"`
+	CarryMCP               bool                         `json:"carry_mcp,omitempty"`
+	RemapHomeSymlinks      bool                         `json:"remap_home_symlinks,omitempty"`
+	RewriteConfigHomePaths bool                         `json:"rewrite_config_home_paths,omitempty"`
+	CarryProtection        bool                         `json:"carry_protection,omitempty"`
 }
 
 // HarnessMoveGroupPlan holds the prepared plan (or preparation error) for one
@@ -68,9 +72,13 @@ type HarnessMoveGroupPlan struct {
 
 // HarnessMovePlan is the ordered batch of harness groups to migrate.
 type HarnessMovePlan struct {
-	From   string                 `json:"from"`
-	Target string                 `json:"target"`
-	Groups []HarnessMoveGroupPlan `json:"groups"`
+	From                   string                 `json:"from"`
+	Target                 string                 `json:"target"`
+	Groups                 []HarnessMoveGroupPlan `json:"groups"`
+	CarryMCP               bool                   `json:"carry_mcp,omitempty"`
+	RemapHomeSymlinks      bool                   `json:"remap_home_symlinks,omitempty"`
+	RewriteConfigHomePaths bool                   `json:"rewrite_config_home_paths,omitempty"`
+	CarryProtection        bool                   `json:"carry_protection,omitempty"`
 }
 
 // Close releases all sub-plans.
@@ -264,6 +272,8 @@ func (s *Service) InspectHarnessMove(ctx context.Context, from, target string) (
 // harness groups. A planning failure in one group is recorded on that group
 // and never prevents preparing the remaining groups.
 func (s *Service) PrepareHarnessMove(ctx context.Context, o HarnessMoveOptions, passphrase string) (*HarnessMovePlan, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	insp, err := s.InspectHarnessMove(ctx, o.From, o.Target)
 	if err != nil {
 		return nil, err
@@ -273,8 +283,12 @@ func (s *Service) PrepareHarnessMove(ctx context.Context, o HarnessMoveOptions, 
 		wanted[pid] = true
 	}
 	plan := &HarnessMovePlan{
-		From:   o.From,
-		Target: o.Target,
+		From:                   o.From,
+		Target:                 o.Target,
+		CarryMCP:               o.CarryMCP,
+		RemapHomeSymlinks:      o.RemapHomeSymlinks,
+		RewriteConfigHomePaths: o.RewriteConfigHomePaths,
+		CarryProtection:        o.CarryProtection,
 	}
 	for _, g := range insp.Groups {
 		if len(wanted) > 0 && !wanted[g.ProfileID] {
@@ -301,17 +315,21 @@ func (s *Service) PrepareHarnessMove(ctx context.Context, o HarnessMoveOptions, 
 				})
 			}
 			bp, perr := s.PrepareBundleRestore(ctx, BundleRestoreOptions{
-				Target:               o.Target,
-				From:                 o.From,
-				Mode:                 revive.ModeMigrate,
-				BundleID:             g.BundleID,
-				Members:              bMembers,
-				RootsByInstance:      o.RootsByInstance,
-				Source:               o.Source,
-				AllowDraft:           o.AllowDraft,
-				AllowSnapshotProfile: o.AllowSnapshotProfile,
-				AllowVersionMismatch: o.AllowVersionMismatch,
-				SkipService:          o.SkipService,
+				Target:                 o.Target,
+				From:                   o.From,
+				Mode:                   revive.ModeMigrate,
+				BundleID:               g.BundleID,
+				Members:                bMembers,
+				RootsByInstance:        o.RootsByInstance,
+				Source:                 o.Source,
+				AllowDraft:             o.AllowDraft,
+				AllowSnapshotProfile:   o.AllowSnapshotProfile,
+				AllowVersionMismatch:   o.AllowVersionMismatch,
+				SkipService:            o.SkipService,
+				CarryMCP:               o.CarryMCP,
+				RemapHomeSymlinks:      o.RemapHomeSymlinks,
+				RewriteConfigHomePaths: o.RewriteConfigHomePaths,
+				CarryProtection:        o.CarryProtection,
 			}, passphrase)
 			if perr != nil {
 				gp.PlanError = perr.Error()
@@ -343,6 +361,9 @@ func (s *Service) PrepareHarnessMove(ctx context.Context, o HarnessMoveOptions, 
 					gp.PlanError = ue.Reason
 				}
 			} else {
+				if !rp.SourceLost && o.From != "" && rp.SourceProtection == nil {
+					s.readSourceProtection(ctx, rp, o.From, rp.Snapshot.InstanceID)
+				}
 				gp.SinglePlan = rp
 			}
 		}
@@ -355,6 +376,8 @@ func (s *Service) PrepareHarnessMove(ctx context.Context, o HarnessMoveOptions, 
 // a time. A failure in one harness is recorded and execution continues with
 // the remaining harnesses.
 func (s *Service) RunHarnessMove(ctx context.Context, plan *HarnessMovePlan, confirm ReviveConfirm) (*HarnessMoveResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	return s.runHarnessMoveWith(ctx, plan, confirm, nil)
 }
 
@@ -364,6 +387,12 @@ func (s *Service) runHarnessMoveWith(ctx context.Context, plan *HarnessMovePlan,
 	if plan == nil || len(plan.Groups) == 0 {
 		return nil, valise.New("move_plan_empty", "没有可搬家的 Harness 分组", "先检查各 Harness 的完整备份状态")
 	}
+	effectiveConfirm := confirm
+	effectiveConfirm.CarryMCP = confirm.CarryMCP || plan.CarryMCP
+	effectiveConfirm.RemapHomeSymlinks = confirm.RemapHomeSymlinks || plan.RemapHomeSymlinks
+	effectiveConfirm.RewriteConfigHomePaths = confirm.RewriteConfigHomePaths || plan.RewriteConfigHomePaths
+	effectiveConfirm.CarryProtection = confirm.CarryProtection || plan.CarryProtection
+
 	res := &HarnessMoveResult{
 		From:   plan.From,
 		Target: plan.Target,
@@ -379,9 +408,9 @@ func (s *Service) runHarnessMoveWith(ctx context.Context, plan *HarnessMovePlan,
 				ErrorCode: gp.PlanErrorCode,
 			}
 		} else if runFn != nil {
-			gr = runFn(ctx, gp, confirm)
+			gr = runFn(ctx, gp, effectiveConfirm)
 		} else {
-			gr = s.runOneHarnessGroup(ctx, gp, confirm)
+			gr = s.runOneHarnessGroup(ctx, plan, gp, effectiveConfirm)
 		}
 		if !gr.Succeeded || gr.Partial {
 			res.Partial = true
@@ -391,55 +420,61 @@ func (s *Service) runHarnessMoveWith(ctx context.Context, plan *HarnessMovePlan,
 	return res, nil
 }
 
-func (s *Service) runOneHarnessGroup(ctx context.Context, gp HarnessMoveGroupPlan, confirm ReviveConfirm) HarnessMoveGroupResult {
+func (s *Service) runOneHarnessGroup(ctx context.Context, plan *HarnessMovePlan, gp HarnessMoveGroupPlan, confirm ReviveConfirm) HarnessMoveGroupResult {
 	gr := HarnessMoveGroupResult{ProfileID: gp.ProfileID}
+	var bp *BundleRestorePlan
 	switch {
 	case gp.BundlePlan != nil:
-		bres, err := s.RunBundleRestore(ctx, gp.BundlePlan, confirm)
-		if err != nil {
-			gr.Error = err.Error()
-			if ue, ok := valise.As(err); ok {
-				gr.ErrorCode = ue.Code
-				gr.Error = ue.Reason
-			}
-			return gr
-		}
-		gr.Members = bres.Members
-		gr.Partial = bres.Partial
-		gr.Succeeded = !bres.Partial
-		if bres.Partial {
-			for _, m := range bres.Members {
-				if m.Error != "" {
-					gr.Error = m.Error
-					gr.ErrorCode = m.ErrorCode
-					break
-				}
-			}
-		}
-		return gr
+		bp = gp.BundlePlan
 	case gp.SinglePlan != nil:
-		mr := BundleRestoreMemberResult{
-			InstanceID: gp.SinglePlan.Plan.InstanceID,
-			SnapshotID: gp.SinglePlan.Snapshot.SnapshotID,
+		target := plan.Target
+		if target == "" {
+			target = gp.SinglePlan.Target
 		}
-		swapRes, err := s.ExecuteReviveConfirmed(ctx, gp.SinglePlan, "", confirm)
-		mr.Result = swapRes
-		if err != nil {
-			mr.Error = err.Error()
-			if ue, ok := valise.As(err); ok {
-				mr.ErrorCode = ue.Code
-				mr.Error = ue.Reason
-			}
-			gr.Error = mr.Error
-			gr.ErrorCode = mr.ErrorCode
-		} else {
-			gr.Succeeded = true
+		from := plan.From
+		if from == "" {
+			from = gp.SinglePlan.From
 		}
-		gr.Members = []BundleRestoreMemberResult{mr}
-		return gr
+		mode := gp.SinglePlan.Plan.Mode
+		if mode == "" {
+			mode = revive.ModeMigrate
+		}
+		bp = &BundleRestorePlan{
+			Target:                 target,
+			From:                   from,
+			Mode:                   mode,
+			Plans:                  []*RevivePlan{gp.SinglePlan},
+			Order:                  []string{gp.SinglePlan.Plan.InstanceID},
+			CarryMCP:               plan.CarryMCP,
+			RemapHomeSymlinks:      plan.RemapHomeSymlinks,
+			RewriteConfigHomePaths: plan.RewriteConfigHomePaths,
+			CarryProtection:        plan.CarryProtection,
+		}
 	default:
 		gr.ErrorCode = "move_plan_empty"
 		gr.Error = "该 Harness 分组没有可执行的恢复计划"
 		return gr
 	}
+	bres, err := s.RunBundleRestore(ctx, bp, confirm)
+	if err != nil {
+		gr.Error = err.Error()
+		if ue, ok := valise.As(err); ok {
+			gr.ErrorCode = ue.Code
+			gr.Error = ue.Reason
+		}
+		return gr
+	}
+	gr.Members = bres.Members
+	gr.Partial = bres.Partial
+	gr.Succeeded = !bres.Partial
+	if bres.Partial {
+		for _, m := range bres.Members {
+			if m.Error != "" {
+				gr.Error = m.Error
+				gr.ErrorCode = m.ErrorCode
+				break
+			}
+		}
+	}
+	return gr
 }

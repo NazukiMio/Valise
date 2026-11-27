@@ -19,24 +19,31 @@ type restoreInstallState struct {
 	run       *customInstallRun
 }
 
-func (a *App) ensureRestoreInlineInstall(r *restoreFlow, host, profileID string) *customInstallRun {
-	if r.inlineInstall == nil || r.inlineInstall.host != host || r.inlineInstall.profileID != profileID {
+func (a *App) ensureInlineInstallRun(slot **restoreInstallState, host, profileID string, onReplan func()) *customInstallRun {
+	if *slot == nil || (*slot).host != host || (*slot).profileID != profileID {
 		ci := &customInstallRun{}
 		ci.onDone = func(res *service.InstallResult, err error) {
-			if err == nil && res != nil && res.Completed {
-				a.prepareRestore(r)
+			if err == nil && res != nil && res.Completed && onReplan != nil {
+				onReplan()
 			}
 		}
-		r.inlineInstall = &restoreInstallState{host: host, profileID: profileID, run: ci}
+		*slot = &restoreInstallState{host: host, profileID: profileID, run: ci}
 	}
-	return r.inlineInstall.run
+	return (*slot).run
+}
+
+func (a *App) ensureRestoreInlineInstall(r *restoreFlow, host, profileID string) *customInstallRun {
+	return a.ensureInlineInstallRun(&r.inlineInstall, host, profileID, func() { a.prepareRestore(r) })
 }
 
 func (a *App) restoreMissingBodyBox(c *ui.Context, r *restoreFlow, p *service.RevivePlan) {
 	host := p.Target
 	profileID := p.Plan.Profile.ID
 	ci := a.ensureRestoreInlineInstall(r, host, profileID)
+	a.inlineInstallBodyBox(c, host, profileID, ci, true, true, func() { a.prepareRestore(r) })
+}
 
+func (a *App) inlineInstallBodyBox(c *ui.Context, host, profileID string, ci *customInstallRun, usePrimary, allowPlanPrimary bool, onReplan func()) {
 	subPanel(ui.Column(c)).Gap(8).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
 			ui.Text(c, T("restore.inline_install.title")).Bold().Grow(1)
@@ -64,10 +71,10 @@ func (a *App) restoreMissingBodyBox(c *ui.Context, r *restoreFlow, p *service.Re
 		case ci.conn != nil:
 			a.renderTerminalPane(c, ci.step, ci.running, ci.term, &ci.text, &ci.input, ci.conn)
 			if !ci.running {
-				a.restoreInlineInstallOutcome(c, r, host, profileID, ci)
+				a.inlineInstallOutcome(c, host, profileID, ci, usePrimary, onReplan)
 			}
 		case ci.plan != nil:
-			a.customPlanBody(c, host, ci, false, func() { ci.plan, ci.riskErr, ci.copied = nil, nil, "" })
+			a.customPlanBody(c, host, ci, false, allowPlanPrimary, func() { ci.plan, ci.riskErr, ci.copied = nil, nil, "" })
 		default:
 			ui.TextArea(c, &ci.raw).Height(64).Label(T("install.custom.input_label")).Placeholder(T("install.custom.input_placeholder"))
 			if ci.planning {
@@ -81,15 +88,21 @@ func (a *App) restoreMissingBodyBox(c *ui.Context, r *restoreFlow, p *service.Re
 				errorBox(c, ci.planErr, a.fold("ri-plan-err-"+host+"-"+profileID))
 			}
 			ui.Row(c).Gap(8).Justify(ui.End).Wrap().Children(func() {
-				ui.PrimaryButton(c, T("restore.inline_install.prepare")).OnClick(func() {
-					a.prepareCustomInstallForProfile(host, ci, profileID)
-				})
+				if usePrimary {
+					ui.PrimaryButton(c, T("restore.inline_install.prepare")).OnClick(func() {
+						a.prepareCustomInstallForProfile(host, ci, profileID)
+					})
+				} else {
+					ui.Button(c, T("restore.inline_install.prepare")).OnClick(func() {
+						a.prepareCustomInstallForProfile(host, ci, profileID)
+					})
+				}
 			})
 		}
 	})
 }
 
-func (a *App) restoreInlineInstallOutcome(c *ui.Context, r *restoreFlow, host, profileID string, ci *customInstallRun) {
+func (a *App) inlineInstallOutcome(c *ui.Context, host, profileID string, ci *customInstallRun, usePrimary bool, onReplan func()) {
 	res := ci.res
 	gated := false
 	if e, ok := valise.As(ci.err); ok && e.Code == service.GateCode {
@@ -111,10 +124,18 @@ func (a *App) restoreInlineInstallOutcome(c *ui.Context, r *restoreFlow, host, p
 	ui.Row(c).Gap(8).Justify(ui.End).Wrap().Children(func() {
 		ui.Button(c, T("install.custom.edit")).OnClick(func() { ci.conn, ci.err, ci.res = nil, nil, nil })
 		if gated && ci.acceptRisk {
-			ui.PrimaryButton(c, T("install.custom.continue_once")).OnClick(func() { a.startCustomInstall(host, ci, true) })
+			if usePrimary {
+				ui.PrimaryButton(c, T("install.custom.continue_once")).OnClick(func() { a.startCustomInstall(host, ci, true) })
+			} else {
+				ui.Button(c, T("install.custom.continue_once")).OnClick(func() { a.startCustomInstall(host, ci, true) })
+			}
 		}
-		if res != nil && res.Completed {
-			ui.PrimaryButton(c, T("restore.inline_install.replan")).OnClick(func() { a.prepareRestore(r) })
+		if res != nil && res.Completed && onReplan != nil {
+			if usePrimary {
+				ui.PrimaryButton(c, T("restore.inline_install.replan")).OnClick(onReplan)
+			} else {
+				ui.Button(c, T("restore.inline_install.replan")).OnClick(onReplan)
+			}
 		}
 	})
 }

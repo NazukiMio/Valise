@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
@@ -22,6 +23,7 @@ type serverShellRun struct {
 	termClose        io.Closer
 	conn             *installConn
 	running, stopped bool
+	wantFocus        bool
 	acceptRisk       bool
 	cancel           context.CancelFunc
 	code             int
@@ -33,8 +35,22 @@ func (r *serverShellRun) active() bool {
 	return r != nil && r.running && !r.stopped
 }
 
+func (a *App) openServerShellFromAgent(server, instance string) {
+	a.serverShellBack = "/agents/" + server + "/" + instance
+	a.navigate("/servers/" + server + "/shell")
+}
+
 func (a *App) serverShellPage(c *ui.Context, server string) {
-	ui.Row(c).Children(func() { backLink(c, server, "/servers/"+server) })
+	backLabel, backPath := server, "/servers/"+server
+	fromAgent := strings.HasPrefix(a.serverShellBack, "/agents/"+server+"/")
+	if fromAgent {
+		backLabel, backPath = T("native.back"), a.serverShellBack
+	}
+	ui.Row(c).Children(func() {
+		if backLink(c, backLabel, backPath).Clicked() && fromAgent {
+			a.serverShellBack = ""
+		}
+	})
 	pageHead(c, T("server.shell_title"), server)
 	r := a.serverShell
 	if r.active() && r.server != server {
@@ -57,7 +73,7 @@ func (a *App) startServerShell(server string, acceptRisk bool) {
 	if old := a.serverShell; old != nil && old.termClose != nil {
 		_ = old.termClose.Close()
 	}
-	r := &serverShellRun{server: server, code: -1}
+	r := &serverShellRun{server: server, code: -1, wantFocus: true}
 	a.debugAction("server_shell_start", server)
 	a.serverShell = r
 	conn := newInstallConn()
@@ -159,7 +175,10 @@ func (a *App) serverShellRunView(c *ui.Context, r *serverShellRun) {
 			ui.Button(c, T("native.to_prepare")).OnClick(func() { a.closeServerShell(r) })
 		})
 		if r.term != nil {
-			terminal.View(c, r.term).Height(360).AutoFocus()
+			el := terminal.View(c, r.term).Height(360)
+			if r.running {
+				focusTerminal(c, el, &r.wantFocus, a.modalOpen())
+			}
 		}
 		if r.err != nil {
 			if gated {

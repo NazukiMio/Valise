@@ -307,7 +307,7 @@ profile 负责通用规则，档案记录这台服务器实际探测并经用户
 - **profile 来源**：`enroll --accept` 时，客户端把当时生效的 profile（已合并子 profile）连同实例记录一起写到服务器的实例档案（`dossiers/<install_id>.profile.json`，4.1 节）。封存一律使用这份 profile，因此定时封存和 MCP 封存不需要客户端在线。profile 升级后需要重新登记。
 - **档位**：见第 5 节的表格。`local_overrides` 参与分类。
 - **body_patch**：git 来源且工作树 dirty 时，封存当时的 `git diff HEAD --binary` 作为虚拟文件 `valise:body.patch`。
-- **互斥**：同一台服务器同一时刻只允许一个封存或同步，用 `~/.local/state/valise/vault.lock`（flock）保证。
+- **互斥**：同一台服务器同一时刻只允许一个变更类操作（封存、同步、管理命令、恢复交换、入口准备等），用 `~/.local/state/valise/vault.lock`（flock）保证。持锁时写入结构化 JSON 元数据（`holder`、`pid`、`started_at`，兼容读取旧版纯文本 holder）；锁竞争返回 `vault_busy` 时如实报告具体占用方、PID 与本地开始时间，并提示等待或检查结束该进程；释放锁时仅在文件中的 PID 为 0 或等于自身 PID 时清空文件内容，避免覆盖仍存活的继承子进程信息。
 - **临时文件**：SQLite 副本写在 `~/.local/state/valise/tmp/`，封存结束后由 Go 代码删除。
 - **变动统计**（M4 实现）：每次封存后，porter 更新 `~/.local/state/valise/seen/<instance_id>.json`，记录 identity、config、skills 类文件的路径、SHA-256、连续发生变化的封存次数。它只包含路径和哈希，不含文件内容；服务器本来就持有这些明文文件，因此不新增暴露面。这份统计是给 agent 和用户的归类线索（见 AGENT_KIT.md 第 3.1 节），不会自动修改任何分类。
 

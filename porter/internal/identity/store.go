@@ -2,6 +2,8 @@
 package identity
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -10,8 +12,21 @@ import (
 
 	"valise/core/enroll"
 	model "valise/core/identity"
+	"valise/core/profile"
 	"valise/core/valise"
 )
+
+// ProfileDigest returns the canonical SHA-256 hex digest of a profile's JSON
+// representation, shared by enrollment acceptance, recovery finalization, and
+// identity validation.
+func ProfileDigest(p profile.Profile) (string, error) {
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
 
 func Dir(home string) string           { return filepath.Join(home, ".config", "valise", "identity") }
 func agentPath(home, id string) string { return filepath.Join(Dir(home), "agents", id+".json") }

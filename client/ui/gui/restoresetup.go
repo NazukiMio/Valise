@@ -173,8 +173,15 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 	if r.envAutoSkipped {
 		notice(c, "ok", T("restore.env.auto_skipped_note"))
 	}
-	for i, w := range p.Warnings { // warnings come first and are never secondary text
-		notice(c.Key(i), "warn", w)
+	if len(p.Warnings) > 0 {
+		subPanel(ui.Column(c)).Gap(4).Children(func() {
+			muted(ui.Text(c, T("restore.warnings_summary", "n", len(p.Warnings)))).FontSize(fsSub).Wrap()
+			ui.Collapsible(c, T("restore.tech_details"), a.fold("restore-plan-warnings"), func() {
+				for i, w := range p.Warnings {
+					muted(ui.Text(c.Key("rw-"+itoa(i)), w)).FontSize(fsCaption).Wrap().Selectable()
+				}
+			})
+		})
 	}
 	card(ui.Column(c)).Gap(8).Children(func() {
 		ui.Text(c, T("restore.plan")).Bold()
@@ -248,7 +255,10 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 	if u := p.UnverifiedSource; u != nil {
 		card(ui.Column(c)).Gap(6).Children(func() {
 			ui.Text(c, T("restore.unverified")).Bold().TextColor(palette.Warn)
-			muted(ui.Text(c, T("restore.unverified_info", "id", u.InstanceID, "profile", u.ProfileID, "version", u.ProfileVersion, "server", u.SourceServer, "period", u.Period, "time", u.CreatedAt.Local().Format("2006-01-02 15:04"), "tier", tierText(u.Tier)))).Wrap().Selectable()
+			muted(ui.Text(c, T("restore.unverified_summary"))).FontSize(fsSub).Wrap()
+			ui.Collapsible(c, T("restore.tech_details"), a.fold("restore-unverified-detail"), func() {
+				muted(ui.Text(c, T("restore.unverified_info", "id", u.InstanceID, "profile", u.ProfileID, "version", u.ProfileVersion, "server", u.SourceServer, "period", u.Period, "time", u.CreatedAt.Local().Format("2006-01-02 15:04"), "tier", tierText(u.Tier)))).FontSize(fsCaption).Wrap().Selectable()
+			})
 			ui.RadioGroup(c, func() {
 				ui.Radio(c, &r.sourceChoice, "proceed", T("restore.proceed"))
 				if u.BackupFirst {
@@ -275,7 +285,9 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 			subPanel(ui.Column(c.Key("blk-" + b.Code))).Gap(6).Children(func() {
 				ui.Checkbox(c, &r.draft, T("restore.allow_draft"))
 				if b.Reason != "" {
-					muted(ui.Text(c, b.Reason)).FontSize(fsCaption).Wrap().Selectable()
+					ui.Collapsible(c, T("restore.tech_details"), a.fold("restore-blk-"+b.Code), func() {
+						muted(ui.Text(c, b.Reason)).FontSize(fsCaption).Wrap().Selectable()
+					})
 				}
 			})
 		case "profile_from_snapshot":
@@ -283,7 +295,9 @@ func (a *App) restorePlan(c *ui.Context, r *restoreFlow) {
 			subPanel(ui.Column(c.Key("blk-" + b.Code))).Gap(6).Children(func() {
 				ui.Checkbox(c, &r.snapshotProfile, T("restore.allow_snapshot"))
 				if b.Reason != "" {
-					muted(ui.Text(c, b.Reason)).FontSize(fsCaption).Wrap().Selectable()
+					ui.Collapsible(c, T("restore.tech_details"), a.fold("restore-blk-"+b.Code), func() {
+						muted(ui.Text(c, b.Reason)).FontSize(fsCaption).Wrap().Selectable()
+					})
 				}
 			})
 		default:

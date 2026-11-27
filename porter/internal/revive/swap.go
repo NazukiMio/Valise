@@ -151,7 +151,11 @@ func (r *Runner) advance(ctx context.Context, j *revive.Journal) (*revive.SwapRe
 					}
 				}
 			} else {
-				for _, en := range j.Plan.Profile.Entries {
+				eff := j.Plan.Profile
+				if j.Plan.Record != nil {
+					eff = eff.ForAgent(j.Plan.Record.Name)
+				}
+				for _, en := range eff.Entries {
 					if dialOK(en.Host, en.Port) {
 						return fail(valise.New("harness_running", fmt.Sprintf("入口 %s:%d 仍在监听，harness 可能在前台运行", en.Host, en.Port), "先手动停止 harness，再重试"))
 					}

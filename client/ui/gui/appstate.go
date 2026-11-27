@@ -193,6 +193,7 @@ type serversView struct {
 	forgetting          string        // the removed server whose record is being forgotten
 	forgetErr           error
 	serverShell         *serverShellRun // the server command line, nil when none
+	serverShellBack     string          // return route when opened from an agent page
 	moveAll             *moveAllState   // harness-by-harness one-click migration
 	kitHook             *kitOps         // tests only
 	cleanupHook         *cleanupOps     // tests only

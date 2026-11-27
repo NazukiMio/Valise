@@ -26,6 +26,7 @@ type customInstallRun struct {
 	sentence   string
 	riskErr    error
 	running    bool
+	wantFocus  bool
 	step       string
 	term       *terminal.Terminal
 	text       tailText
@@ -73,6 +74,14 @@ func (a *App) openInstallTerminal(conn *installConn, text *tailText) *terminal.T
 }
 
 func (a *App) renderTerminalPane(c *ui.Context, step string, running bool, term *terminal.Terminal, text *tailText, input *string, conn *installConn) {
+	var want *bool
+	if conn != nil {
+		want = &conn.wantFocus
+	}
+	a.renderTerminalPaneFocus(c, step, running, term, want, text, input, conn)
+}
+
+func (a *App) renderTerminalPaneFocus(c *ui.Context, step string, running bool, term *terminal.Terminal, wantFocus *bool, text *tailText, input *string, conn *installConn) {
 	card(ui.Column(c)).Gap(10).Children(func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, orText(step, T("install.connecting"))).Bold().Grow(1)
@@ -82,7 +91,10 @@ func (a *App) renderTerminalPane(c *ui.Context, step string, running bool, term 
 		})
 		muted(ui.Text(c, T("install.type_here_hint")))
 		if term != nil {
-			terminal.View(c, term).Height(320).AutoFocus()
+			el := terminal.View(c, term).Height(320)
+			if running {
+				focusTerminal(c, el, wantFocus, a.modalOpen())
+			}
 		} else {
 			if text.cut {
 				muted(ui.Text(c, T("install.text_cut", "n", maxFallbackText>>10)))
@@ -161,11 +173,11 @@ func (a *App) prepareCustomInstallForProfile(host string, ci *customInstallRun, 
 
 func (a *App) customPlanView(c *ui.Context, host string, ci *customInstallRun) {
 	card(ui.Column(c)).Gap(12).Children(func() {
-		a.customPlanBody(c, host, ci, true, func() { ci.plan, ci.riskErr, ci.copied = nil, nil, "" })
+		a.customPlanBody(c, host, ci, true, true, func() { ci.plan, ci.riskErr, ci.copied = nil, nil, "" })
 	})
 }
 
-func (a *App) customPlanBody(c *ui.Context, host string, ci *customInstallRun, allowSave bool, onEdit func()) {
+func (a *App) customPlanBody(c *ui.Context, host string, ci *customInstallRun, allowSave, allowPrimary bool, onEdit func()) {
 	p := ci.plan
 	sectionTitle(ui.Text(c, T("install.will_do")))
 	muted(ui.Text(c, T("install.custom.source"))).Wrap()
@@ -245,7 +257,7 @@ func (a *App) customPlanBody(c *ui.Context, host string, ci *customInstallRun, a
 			if p.Kind != "script" {
 				label = T("install.custom.run_cmd")
 			}
-			ui.PrimaryButton(c, label).OnClick(func() {
+			onRun := func() {
 				if p.NeedsConfirm && strings.TrimSpace(ci.sentence) != install.RiskSentence {
 					ci.riskErr = valise.New("install_risk_sentence", T("install.custom.risk_mismatch", "sentence", install.RiskSentence), "")
 					return
@@ -255,14 +267,19 @@ func (a *App) customPlanBody(c *ui.Context, host string, ci *customInstallRun, a
 					a.saveCustomInstallPreset(ci.presetName, p.Raw, p.ProfileID)
 				}
 				a.startCustomInstall(host, ci, false)
-			})
+			}
+			if allowPrimary {
+				ui.PrimaryButton(c, label).OnClick(onRun)
+			} else {
+				ui.Button(c, label).OnClick(onRun)
+			}
 		}
 	})
 }
 
 func (a *App) startCustomInstall(host string, ci *customInstallRun, acceptRisk bool) {
 	conn := newInstallConn()
-	ci.conn, ci.running, ci.err, ci.res, ci.text = conn, true, nil, nil, tailText{}
+	ci.conn, ci.running, ci.wantFocus, ci.err, ci.res, ci.text = conn, true, true, nil, nil, tailText{}
 	ci.term = a.openInstallTerminal(conn, &ci.text)
 	plan, sentence, onDone := ci.plan, ci.sentence, ci.onDone
 	a.run(func() {
@@ -291,7 +308,7 @@ func (a *App) startCustomInstall(host string, ci *customInstallRun, acceptRisk b
 }
 
 func (a *App) customRunView(c *ui.Context, host string, ci *customInstallRun) {
-	a.renderTerminalPane(c, ci.step, ci.running, ci.term, &ci.text, &ci.input, ci.conn)
+	a.renderTerminalPaneFocus(c, ci.step, ci.running, ci.term, &ci.wantFocus, &ci.text, &ci.input, ci.conn)
 	if ci.running {
 		return
 	}

@@ -9,6 +9,7 @@ import (
 	"valise/core/enroll"
 	"valise/core/identity"
 	"valise/core/protection"
+	"valise/core/revive"
 	"valise/core/vault"
 )
 
@@ -336,4 +337,42 @@ func (s *Service) probeMigratedMCP(ctx context.Context, t RestoreTask, rp *Reviv
 		return
 	}
 	report.MCPNote = "目标服务器已检测到 Valise MCP 连通记录"
+}
+
+// resolveMigratedTargetAgent best-effort reads the bound target agent identity
+// after a migration swap has succeeded so protection carry-over can target it.
+func (s *Service) resolveMigratedTargetAgent(ctx context.Context, host, instanceID string) *identity.AgentRef {
+	if host == "" || instanceID == "" {
+		return nil
+	}
+	var binding identity.Binding
+	if err := s.call(ctx, host, identity.MethodGet, identity.GetParams{InstanceID: instanceID}, &binding); err != nil {
+		return nil
+	}
+	if binding.IdentityState != identity.Bound || binding.Agent == nil {
+		return nil
+	}
+	ref := binding.Agent.Ref
+	return &ref
+}
+
+// finalizeMigratedMember builds the PostMigrateReport for a single migrated
+// member after ExecuteReviveConfirmed has succeeded (used by RunBundleRestore
+// and RunHarnessMove so bundle and one-click move match single-agent migrate).
+func (s *Service) finalizeMigratedMember(ctx context.Context, target, from, mode string, rp *RevivePlan, carryProtection bool) *PostMigrateReport {
+	if mode != revive.ModeMigrate || rp == nil {
+		return nil
+	}
+	pmCtx, pmCancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	defer pmCancel()
+	synthTask := RestoreTask{
+		OpID:        rp.Plan.OpID,
+		Target:      target,
+		From:        from,
+		Instance:    rp.Plan.InstanceID,
+		Mode:        mode,
+		State:       "succeeded",
+		TargetAgent: s.resolveMigratedTargetAgent(pmCtx, target, rp.Plan.InstanceID),
+	}
+	return s.buildPostMigrateReport(pmCtx, synthTask, rp, carryProtection)
 }

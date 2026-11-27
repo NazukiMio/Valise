@@ -232,6 +232,13 @@ func (a *App) overview(c *ui.Context, row *agentRow, points []journey.TimelinePo
 					}
 				})
 			}
+			if !row.Retired() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+					ui.Button(c, T("agent.server_shell")).OnClick(func() {
+						a.openServerShellFromAgent(row.Server, row.Instance)
+					})
+				})
+			}
 		})
 	})
 	a.agentServiceCard(c, row)

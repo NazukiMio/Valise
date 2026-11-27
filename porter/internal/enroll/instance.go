@@ -241,9 +241,12 @@ func WriteRecord(home string, r enroll.Record, p profile.Profile) (string, error
 			d = &enroll.Dossier{InstallID: p.ID}
 		}
 	}
+	_, keepExisting := effectiveDossierProfile(home, d.InstallID, r, p)
 	d.Put(r, time.Now())
-	if err := writeDossierProfile(home, d.InstallID, p); err != nil {
-		return "", err
+	if !keepExisting {
+		if err := writeDossierProfile(home, d.InstallID, p); err != nil {
+			return "", err
+		}
 	}
 	if err := writeDossier(home, d); err != nil {
 		return "", err
@@ -251,6 +254,37 @@ func WriteRecord(home string, r enroll.Record, p profile.Profile) (string, error
 	// Also finish an interrupted conversion whose dossier was committed before
 	// its old files were archived. Queries still leave those duplicates alone.
 	return DossierPath(home, d.InstallID), archiveLegacy(home, r.InstanceID)
+}
+
+// EffectiveDossierProfile returns the profile that WriteRecord will keep on
+// disk in dossiers/<install_id>.profile.json: when a named sub-agent supplies
+// a stripped profile (Profile.ForAgent) while an unstripped same-version
+// profile already exists on disk, the existing profile is preserved.
+func EffectiveDossierProfile(home string, r enroll.Record, p profile.Profile) profile.Profile {
+	eff, _ := effectiveDossierProfile(home, p.ID, r, p)
+	return eff
+}
+
+func effectiveDossierProfile(home, installID string, r enroll.Record, p profile.Profile) (profile.Profile, bool) {
+	if r.Name != "" && installID != "" {
+		if existing, err := readDossierProfile(home, installID); err == nil && isStrippedSubAgentProfile(existing, &p) {
+			return *existing, true
+		}
+	}
+	return p, false
+}
+
+func isStrippedSubAgentProfile(existing, next *profile.Profile) bool {
+	if existing == nil || next == nil {
+		return false
+	}
+	if existing.ID != next.ID || existing.ProfileVersion != next.ProfileVersion {
+		return false
+	}
+	return (existing.Body != nil && next.Body == nil) ||
+		(existing.Provenance != nil && next.Provenance == nil) ||
+		(len(existing.Entries) > 0 && len(next.Entries) == 0) ||
+		(existing.Service != nil && next.Service == nil)
 }
 
 func writeFile0600(dir, final string, b []byte) error {

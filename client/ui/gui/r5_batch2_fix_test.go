@@ -14,6 +14,7 @@ import (
 
 func TestBundleRestoreAndMoveAllConfirmNotEmpty(t *testing.T) {
 	a, tt := world(t)
+	initTestKey(t, a)
 	a.agents.value.Observations = []service.AgentServerObservation{
 		{ConnectionID: "box", Status: "fresh"},
 		{ConnectionID: "box2", Status: "fresh"},
@@ -97,8 +98,15 @@ func TestBundleRestoreAndMoveAllConfirmNotEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if !tt.HasText(T("bundle.member.blocked", "n", 2)) || !tt.HasText("draft profile not verified") || !tt.HasText("disk low warning") {
-		t.Fatalf("expected honest blockers and warnings in bundle plan, got %q", tt.Texts())
+	if !tt.HasText(T("bundle.member.blocked", "n", 2)) || !tt.HasText(T("restore.bg_notes_summary", "n", 2)) {
+		t.Fatalf("expected honest blockers and two-layer background summary in bundle plan, got %q", tt.Texts())
+	}
+	if err := tt.Click(T("restore.tech_details")); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !tt.HasText("draft profile not verified") || !tt.HasText("disk low warning") {
+		t.Fatalf("expected expanded technical details to show draft reason and warning, got %q", tt.Texts())
 	}
 	if tt.HasText(T("bundle.member.main")) {
 		t.Fatalf("blocked main member must not render green ok main role: %q", tt.Texts())

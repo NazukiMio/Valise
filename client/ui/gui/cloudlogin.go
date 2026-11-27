@@ -106,7 +106,7 @@ func (a *App) askYes(ctx context.Context, lg *cloudLogin, text, yes string) bool
 func (a *App) terminalLogin(ctx context.Context, lg *cloudLogin, where, name, id string, opts service.CloudOptions) error {
 	ready := make(chan struct{})
 	a.update(func() {
-		lg.form, lg.conn = false, newInstallConn()
+		lg.form, lg.conn, lg.wantFocus = false, newInstallConn(), true
 		if a.newTerminal != nil {
 			if t, err := a.newTerminal(lg.conn); err == nil {
 				lg.term = t
@@ -185,7 +185,10 @@ func (a *App) cloudLoginView(c *ui.Context, ca *cloudAdd) {
 		case !lg.form:
 			muted(ui.Text(c, T("loc.cloud_terminal")))
 			if lg.term != nil {
-				terminal.View(c, lg.term).Height(320).AutoFocus()
+				el := terminal.View(c, lg.term).Height(320)
+				if lg.j.busy {
+					focusTerminal(c, el, &lg.wantFocus, a.modalOpen())
+				}
 			} else {
 				mono(ui.Text(c, orText(lg.text, T("install.no_output")))).FontSize(12).Wrap().Padding(10).Radius(8).Background(palette.Board)
 			}

@@ -45,18 +45,19 @@ const cloudAddRoute = "/locations/add/cloud"
 
 // cloudLogin is one login running in the terminal.
 type cloudLogin struct {
-	where   string // a host, or "" for this computer
-	conn    *installConn
-	term    *terminal.Terminal
-	text    string
-	status  string
-	ask     *cloudAsk
-	hosts   []string // a batch of servers, one after another
-	index   int      // the server being logged in, in hosts
-	results []cloudBatchResult
-	form    bool          // rclone's questions come as a form
-	q       *formQuestion // the question waiting for an answer
-	j       job
+	where     string // a host, or "" for this computer
+	conn      *installConn
+	term      *terminal.Terminal
+	wantFocus bool
+	text      string
+	status    string
+	ask       *cloudAsk
+	hosts     []string // a batch of servers, one after another
+	index     int      // the server being logged in, in hosts
+	results   []cloudBatchResult
+	form      bool          // rclone's questions come as a form
+	q         *formQuestion // the question waiting for an answer
+	j         job
 }
 
 // cloudAsk is a question the login waits on.

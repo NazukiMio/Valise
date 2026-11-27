@@ -23,6 +23,9 @@ type bundleRestoreFlow struct {
 	result                               *service.BundleRestoreResult
 	opts                                 batchReviveOpts
 	confirmed                            bool
+	inlineInstall                        *restoreInstallState
+	rewires                              map[string]*memberRewireState
+	progress                             restoreProgressTracker
 	j                                    job
 }
 
@@ -189,7 +192,7 @@ func (a *App) bundleRestorePage(c *ui.Context) {
 		}
 		canPrep := br.mode == revive.ModeRollback || (br.target != "" && br.target != br.from)
 		ui.Row(c).Justify(ui.End).Children(func() {
-			ui.PrimaryButton(c, T("bundle.restore.prepare")).Disabled(!canPrep).OnClick(func() { a.prepareBundleRestore(br) })
+			ui.PrimaryButton(c, T("bundle.restore.prepare")).Disabled(!canPrep).OnClick(func() { a.needKey(func() { a.prepareBundleRestore(br) }) })
 		})
 	})
 }
@@ -212,22 +215,40 @@ func (a *App) bundleRestorePlanView(c *ui.Context, br *bundleRestoreFlow) {
 			} else {
 				statusRow(c, "ok", rp.Plan.InstanceID, role)
 			}
-			renderRevivePlanDetails(c, "br-rp-"+rp.Plan.InstanceID, rp)
+			renderRevivePlanDetails(c, "br-rp-"+rp.Plan.InstanceID, a.fold, rp)
 		}
-		canRun := renderBatchReviveChecks(c, "br", sum, &br.opts, func() { a.prepareBundleRestore(br) })
+		if sum.hasBodyMissing {
+			pid := ""
+			if len(sum.missingBodyProfiles) > 0 {
+				pid = sum.missingBodyProfiles[0]
+			} else if len(bp.Plans) > 0 && bp.Plans[0] != nil {
+				pid = bp.Plans[0].Plan.Profile.ID
+			}
+			ci := a.ensureInlineInstallRun(&br.inlineInstall, bp.Target, pid, func() { a.prepareBundleRestore(br) })
+			a.inlineInstallBodyBox(c.Key("br-inst-"+pid), bp.Target, pid, ci, false, true, func() { a.prepareBundleRestore(br) })
+		}
+		a.renderBatchMigrateOptions(c, "br", bp.Mode, sum, &br.opts)
+		canRun := renderBatchReviveChecks(c, "br", a.fold, sum, &br.opts, func() { a.prepareBundleRestore(br) })
 		ui.Checkbox(c, &br.confirmed, T("bundle.restore.confirm_check"))
 		if br.j.busy {
-			a.jobLine(c, &br.j)
+			renderRestoreAnimProgress(c, br.progress, br.j.doingAt, "", T("bundle.restore.running"))
 			return
 		}
+		inlinePlanOpen := br.inlineInstall != nil && br.inlineInstall.run != nil && br.inlineInstall.run.plan != nil
 		ui.Row(c).Gap(spInside).Justify(ui.End).Children(func() {
 			ui.Button(c, T("common.back")).OnClick(func() {
 				bp.Close()
 				br.plan = nil
 				br.confirmed = false
+				br.inlineInstall = nil
 				br.opts.resetConfirmations()
+				br.opts.carryInitialized = false
 			})
-			ui.PrimaryButton(c, T("bundle.restore.run")).Disabled(!br.confirmed || !canRun).OnClick(func() { a.runBundleRestore(br) })
+			if inlinePlanOpen {
+				ui.Button(c, T("bundle.restore.run")).Disabled(!br.confirmed || !canRun).OnClick(func() { a.runBundleRestore(br) })
+			} else {
+				ui.PrimaryButton(c, T("bundle.restore.run")).Disabled(!br.confirmed || !canRun).OnClick(func() { a.runBundleRestore(br) })
+			}
 		})
 	})
 }
@@ -247,6 +268,9 @@ func (a *App) bundleRestoreResultView(c *ui.Context, br *bundleRestoreFlow) {
 			} else {
 				statusRow(c, "ok", mr.InstanceID, T("bundle.restore.member_ok"))
 			}
+			if mr.PostMigrate != nil {
+				a.renderMemberPostMigrate(c, "br", br.target, mr.InstanceID, mr.PostMigrate, &br.rewires)
+			}
 		}
 	})
 	ui.Row(c).Justify(ui.End).Children(func() {
@@ -259,16 +283,20 @@ func (a *App) bundleRestoreResultView(c *ui.Context, br *bundleRestoreFlow) {
 
 func (a *App) prepareBundleRestore(br *bundleRestoreFlow) {
 	opts := service.BundleRestoreOptions{
-		Target:               br.target,
-		From:                 br.from,
-		Mode:                 br.mode,
-		BundleID:             br.bundleID,
-		Members:              br.members,
-		Source:               br.source,
-		AllowDraft:           br.opts.allowDraft,
-		AllowSnapshotProfile: br.opts.allowSnapshotProfile,
-		AllowVersionMismatch: br.opts.allowVersionMismatch,
-		SkipService:          br.opts.skipService,
+		Target:                 br.target,
+		From:                   br.from,
+		Mode:                   br.mode,
+		BundleID:               br.bundleID,
+		Members:                br.members,
+		Source:                 br.source,
+		AllowDraft:             br.opts.allowDraft,
+		AllowSnapshotProfile:   br.opts.allowSnapshotProfile,
+		AllowVersionMismatch:   br.opts.allowVersionMismatch,
+		SkipService:            br.opts.skipService,
+		CarryMCP:               br.opts.carryMCP,
+		RemapHomeSymlinks:      br.opts.remapHomeSymlinks,
+		RewriteConfigHomePaths: br.opts.rewriteConfigHomePaths,
+		CarryProtection:        br.opts.carryProtection,
 	}
 	fn := a.prepareBundleRestoreFn
 	if fn == nil {
@@ -287,6 +315,9 @@ func (a *App) prepareBundleRestore(br *bundleRestoreFlow) {
 			br.plan = bp
 			br.confirmed = false
 			br.opts.resetConfirmations()
+			if !br.opts.carryInitialized {
+				br.opts.initCarryDefaults(bp.Mode, summarizeRevivePlans(bp.Plans))
+			}
 		}
 	})
 }
@@ -300,9 +331,16 @@ func (a *App) runBundleRestore(br *bundleRestoreFlow) {
 	if fn == nil {
 		fn = a.svc.RunBundleRestore
 	}
+	bp.CarryMCP = br.opts.carryMCP
+	bp.RemapHomeSymlinks = br.opts.remapHomeSymlinks
+	bp.RewriteConfigHomePaths = br.opts.rewriteConfigHomePaths
+	bp.CarryProtection = br.opts.carryProtection
 	confirm := br.opts.buildConfirm(br.confirmed)
+	br.progress = restoreProgressTracker{memberTotal: int64(len(bp.Plans))}
+	br.rewires = nil
 	var res *service.BundleRestoreResult
 	a.start(&br.j, 30*time.Minute, func(ctx context.Context) error {
+		ctx = a.withProgressTracker(ctx, &br.progress)
 		var err error
 		res, err = fn(ctx, bp, confirm)
 		return err

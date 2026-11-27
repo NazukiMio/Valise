@@ -21,37 +21,39 @@ import (
 // window. “Installed” is what detecting finds, said apart from exit codes.
 
 type installRun struct {
-	planning bool
-	plan     *service.InstallPlan
-	planErr  error
-	running  bool
-	step     string // the step running now
-	term     *terminal.Terminal
-	text     tailText // the output, when the terminal could not be loaded
-	input    string
-	conn     *installConn
-	res      *service.InstallResult
-	err      error
+	planning  bool
+	plan      *service.InstallPlan
+	planErr   error
+	running   bool
+	wantFocus bool
+	step      string // the step running now
+	term      *terminal.Terminal
+	text      tailText // the output, when the terminal could not be loaded
+	input     string
+	conn      *installConn
+	res       *service.InstallResult
+	err       error
 }
 
 // installConn joins the terminal to RunInstall: what the steps print is
 // read by the terminal, what is typed goes to their input.
 type installConn struct {
-	out      *io.PipeReader
-	outW     *io.PipeWriter
-	in       *io.PipeReader
-	inW      *io.PipeWriter
-	shown    bool
-	mu       sync.Mutex
-	cols     int
-	rows     int
-	wpx      int
-	hpx      int
-	onResize func(cols, rows, wpx, hpx int)
+	out       *io.PipeReader
+	outW      *io.PipeWriter
+	in        *io.PipeReader
+	inW       *io.PipeWriter
+	shown     bool
+	wantFocus bool
+	mu        sync.Mutex
+	cols      int
+	rows      int
+	wpx       int
+	hpx       int
+	onResize  func(cols, rows, wpx, hpx int)
 }
 
 func newInstallConn() *installConn {
-	c := &installConn{}
+	c := &installConn{wantFocus: true}
 	c.out, c.outW = io.Pipe()
 	c.in, c.inW = io.Pipe()
 	return c
@@ -276,7 +278,7 @@ func (a *App) changedScriptBox(c *ui.Context, p *service.InstallPlan, i int, st 
 
 func (a *App) startInstall(host string, ir *installRun) {
 	conn := newInstallConn()
-	ir.conn, ir.running, ir.err, ir.res, ir.text = conn, true, nil, nil, tailText{}
+	ir.conn, ir.running, ir.wantFocus, ir.err, ir.res, ir.text = conn, true, true, nil, nil, tailText{}
 	ir.term = a.openInstallTerminal(conn, &ir.text)
 	plan := ir.plan
 	a.run(func() {
@@ -297,7 +299,7 @@ func (a *App) startInstall(host string, ir *installRun) {
 }
 
 func (a *App) runView(c *ui.Context, key, host string, ir *installRun, name string) {
-	a.renderTerminalPane(c, ir.step, ir.running, ir.term, &ir.text, &ir.input, ir.conn)
+	a.renderTerminalPaneFocus(c, ir.step, ir.running, ir.term, &ir.wantFocus, &ir.text, &ir.input, ir.conn)
 	if ir.running {
 		return
 	}

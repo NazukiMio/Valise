@@ -2,9 +2,6 @@ package enroll
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"reflect"
 
 	model "valise/core/identity"
@@ -42,13 +39,24 @@ func ValidateIdentity(ctx context.Context, home string, ref model.AgentRef) erro
 	if err != nil {
 		return err
 	}
-	raw, err := json.Marshal(p)
+	if p.ID != ref.InstallID || p.ID != r.ProfileID || p.ProfileVersion != r.ProfileVersion {
+		return mismatch()
+	}
+	digest, err := identitystore.ProfileDigest(*p)
 	if err != nil {
 		return err
 	}
-	sum := sha256.Sum256(raw)
-	if hex.EncodeToString(sum[:]) != b.Agent.ProfileDigest {
-		return mismatch()
+	if digest != b.Agent.ProfileDigest {
+		if r.Name == "" {
+			return mismatch()
+		}
+		subDigest, err := identitystore.ProfileDigest(p.ForAgent(r.Name))
+		if err != nil {
+			return err
+		}
+		if subDigest != b.Agent.ProfileDigest {
+			return mismatch()
+		}
 	}
 	return ctx.Err()
 }

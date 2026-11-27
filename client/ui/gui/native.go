@@ -34,6 +34,7 @@ type nativeRun struct {
 	stoppingService  bool
 	stoppedUnits     []string
 	running, stopped bool
+	wantFocus        bool
 	acceptRisk       bool
 	cancel           context.CancelFunc
 	code             int
@@ -159,6 +160,7 @@ func (a *App) startNativeAccepted(server, instance string, mode service.NativeMo
 		server: server, instance: instance, mode: mode,
 		stopService: stopService, stoppingService: stopService,
 		stoppedUnits: append([]string(nil), n.pausedUnits...),
+		wantFocus:    true,
 		code:         -1,
 	}
 	a.debugAction("native_start", server+"/"+instance+"/"+string(mode))
@@ -272,7 +274,10 @@ func (a *App) nativeRunView(c *ui.Context, r *nativeRun, n *nativeState) {
 		a.nativeRunBar(c, r, n, info, gated)
 		a.nativeRestoreReport(c, n)
 		if r.term != nil {
-			terminal.View(c, r.term).Height(360).AutoFocus()
+			el := terminal.View(c, r.term).Height(360)
+			if r.running {
+				focusTerminal(c, el, &r.wantFocus, a.modalOpen())
+			}
 		}
 		if r.err != nil {
 			if gated {

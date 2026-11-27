@@ -3,7 +3,6 @@ package gui
 import (
 	"context"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -15,16 +14,19 @@ import (
 // moveAllState holds the harness-by-harness one-click server migration page
 // state at /servers/{name}/move-all (WP6).
 type moveAllState struct {
-	from         string
-	target       string
-	inspect      *service.HarnessMoveInspection
-	selected     map[string]bool // ProfileID -> selected
-	lastProfiles []string
-	plan         *service.HarnessMovePlan
-	result       *service.HarnessMoveResult
-	opts         batchReviveOpts
-	confirm      bool
-	j            job
+	from           string
+	target         string
+	inspect        *service.HarnessMoveInspection
+	selected       map[string]bool // ProfileID -> selected
+	lastProfiles   []string
+	plan           *service.HarnessMovePlan
+	result         *service.HarnessMoveResult
+	opts           batchReviveOpts
+	confirm        bool
+	inlineInstalls map[string]*restoreInstallState
+	rewires        map[string]*memberRewireState
+	progress       restoreProgressTracker
+	j              job
 }
 
 func (a *App) moveAllFor(from string) *moveAllState {
@@ -112,7 +114,7 @@ func (a *App) moveAllInspectView(c *ui.Context, st *moveAllState) {
 		chosen := st.selectedProfiles()
 		ui.Row(c).Justify(ui.End).Children(func() {
 			ui.PrimaryButton(c, T("moveall.prepare", "n", len(chosen))).Disabled(len(chosen) == 0 || st.j.busy).OnClick(func() {
-				a.runPrepareHarnessMove(st, chosen)
+				a.needKey(func() { a.runPrepareHarnessMove(st, chosen) })
 			})
 		})
 	})
@@ -178,15 +180,44 @@ func (a *App) moveAllPlanView(c *ui.Context, st *moveAllState) {
 				statusRow(c, "ok", title, T("moveall.plan_ready", "n", len(gp.Group.Members)))
 			}
 			for _, rp := range gPlans {
-				renderRevivePlanDetails(c, "ma-rp-"+gp.ProfileID+"-"+rp.Plan.InstanceID, rp)
+				renderRevivePlanDetails(c, "ma-rp-"+gp.ProfileID+"-"+rp.Plan.InstanceID, a.fold, rp)
 			}
 		}
-		canRun := renderBatchReviveChecks(c, "ma", sum, &st.opts, func() {
+		inlinePlanOpen := false
+		if sum.hasBodyMissing {
+			if st.inlineInstalls == nil {
+				st.inlineInstalls = map[string]*restoreInstallState{}
+			}
+			pids := sum.missingBodyProfiles
+			if len(pids) == 0 && len(st.plan.Groups) > 0 {
+				pids = []string{st.plan.Groups[0].ProfileID}
+			}
+			primaryPlanClaimed := false
+			for _, pid := range pids {
+				slot := st.inlineInstalls[pid]
+				ci := a.ensureInlineInstallRun(&slot, st.plan.Target, pid, func() {
+					a.runPrepareHarnessMove(st, st.lastProfiles)
+				})
+				st.inlineInstalls[pid] = slot
+				allowPlanPrimary := false
+				if ci.plan != nil {
+					inlinePlanOpen = true
+					if !primaryPlanClaimed {
+						primaryPlanClaimed, allowPlanPrimary = true, true
+					}
+				}
+				a.inlineInstallBodyBox(c.Key("ma-inst-"+pid), st.plan.Target, pid, ci, false, allowPlanPrimary, func() {
+					a.runPrepareHarnessMove(st, st.lastProfiles)
+				})
+			}
+		}
+		a.renderBatchMigrateOptions(c, "ma", revive.ModeMigrate, sum, &st.opts)
+		canRun := renderBatchReviveChecks(c, "ma", a.fold, sum, &st.opts, func() {
 			a.runPrepareHarnessMove(st, st.lastProfiles)
 		})
 		ui.Checkbox(c, &st.confirm, T("moveall.confirm_check"))
 		if st.j.busy {
-			a.jobLine(c, &st.j)
+			renderRestoreAnimProgress(c, st.progress, st.j.doingAt, "", T("moveall.running"))
 			return
 		}
 		ui.Row(c).Gap(spInside).Justify(ui.End).Children(func() {
@@ -194,11 +225,19 @@ func (a *App) moveAllPlanView(c *ui.Context, st *moveAllState) {
 				st.plan.Close()
 				st.plan = nil
 				st.confirm = false
+				st.inlineInstalls = nil
 				st.opts.resetConfirmations()
+				st.opts.carryInitialized = false
 			})
-			ui.PrimaryButton(c, T("moveall.run")).Disabled(!st.confirm || runnable == 0 || !canRun).OnClick(func() {
-				a.runExecuteHarnessMove(st)
-			})
+			if inlinePlanOpen {
+				ui.Button(c, T("moveall.run")).Disabled(!st.confirm || runnable == 0 || !canRun).OnClick(func() {
+					a.runExecuteHarnessMove(st)
+				})
+			} else {
+				ui.PrimaryButton(c, T("moveall.run")).Disabled(!st.confirm || runnable == 0 || !canRun).OnClick(func() {
+					a.runExecuteHarnessMove(st)
+				})
+			}
 		})
 	})
 }
@@ -221,6 +260,9 @@ func (a *App) moveAllResultView(c *ui.Context, st *moveAllState) {
 			for _, m := range gr.Members {
 				if m.Error != "" {
 					muted(ui.Text(c, T("moveall.member.failed", "id", m.InstanceID, "reason", m.Error))).FontSize(fsCaption).Wrap()
+				}
+				if m.PostMigrate != nil {
+					a.renderMemberPostMigrate(c, "ma-"+gr.ProfileID, res.Target, m.InstanceID, m.PostMigrate, &st.rewires)
 				}
 			}
 		}
@@ -279,13 +321,17 @@ func (a *App) runPrepareHarnessMove(st *moveAllState, profiles []string) {
 		fn = a.svc.PrepareHarnessMove
 	}
 	opts := service.HarnessMoveOptions{
-		From:                 st.from,
-		Target:               st.target,
-		ProfileIDs:           profiles,
-		AllowDraft:           st.opts.allowDraft,
-		AllowSnapshotProfile: st.opts.allowSnapshotProfile,
-		AllowVersionMismatch: st.opts.allowVersionMismatch,
-		SkipService:          st.opts.skipService,
+		From:                   st.from,
+		Target:                 st.target,
+		ProfileIDs:             profiles,
+		AllowDraft:             st.opts.allowDraft,
+		AllowSnapshotProfile:   st.opts.allowSnapshotProfile,
+		AllowVersionMismatch:   st.opts.allowVersionMismatch,
+		SkipService:            st.opts.skipService,
+		CarryMCP:               st.opts.carryMCP,
+		RemapHomeSymlinks:      st.opts.remapHomeSymlinks,
+		RewriteConfigHomePaths: st.opts.rewriteConfigHomePaths,
+		CarryProtection:        st.opts.carryProtection,
 	}
 	var plan *service.HarnessMovePlan
 	a.start(&st.j, 15*time.Minute, func(ctx context.Context) error {
@@ -300,6 +346,9 @@ func (a *App) runPrepareHarnessMove(st *moveAllState, profiles []string) {
 			st.plan = plan
 			st.confirm = false
 			st.opts.resetConfirmations()
+			if !st.opts.carryInitialized {
+				st.opts.initCarryDefaults(revive.ModeMigrate, summarizeRevivePlans(movePlanRevivePlans(plan)))
+			}
 		}
 	})
 }
@@ -313,9 +362,24 @@ func (a *App) runExecuteHarnessMove(st *moveAllState) {
 	if fn == nil {
 		fn = a.svc.RunHarnessMove
 	}
+	plan.CarryMCP = st.opts.carryMCP
+	plan.RemapHomeSymlinks = st.opts.remapHomeSymlinks
+	plan.RewriteConfigHomePaths = st.opts.rewriteConfigHomePaths
+	plan.CarryProtection = st.opts.carryProtection
+	for i := range plan.Groups {
+		if bp := plan.Groups[i].BundlePlan; bp != nil {
+			bp.CarryMCP = st.opts.carryMCP
+			bp.RemapHomeSymlinks = st.opts.remapHomeSymlinks
+			bp.RewriteConfigHomePaths = st.opts.rewriteConfigHomePaths
+			bp.CarryProtection = st.opts.carryProtection
+		}
+	}
 	confirm := st.opts.buildConfirm(st.confirm)
+	st.progress = restoreProgressTracker{}
+	st.rewires = nil
 	var res *service.HarnessMoveResult
 	a.start(&st.j, 30*time.Minute, func(ctx context.Context) error {
+		ctx = a.withProgressTracker(ctx, &st.progress)
 		var err error
 		res, err = fn(ctx, plan, confirm)
 		return err
@@ -329,5 +393,3 @@ func (a *App) runExecuteHarnessMove(st *moveAllState) {
 		}
 	})
 }
-
-var _ = strings.TrimSpace

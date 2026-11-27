@@ -2,9 +2,6 @@ package revive
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -125,7 +122,8 @@ func (r *Runner) persistRecoveryFacts(ctx context.Context, j *revive.Journal) er
 		return nil
 	}
 	rec := *j.Plan.Record
-	porterenroll.Refresh(ctx, r.Env, &j.Plan.Profile, &rec)
+	eff := j.Plan.Profile.ForAgent(rec.Name)
+	porterenroll.Refresh(ctx, r.Env, &eff, &rec)
 	if _, err := porterenroll.WriteRecord(r.Env.Home, rec, j.Plan.Profile); err != nil {
 		return err
 	}
@@ -188,12 +186,12 @@ func (r *Runner) finalizeIdentity(ctx context.Context, j *revive.Journal) error 
 			return identityFailure()
 		}
 		roots, install = j.Plan.Record.Roots, j.Plan.Profile.ID
-		raw, err := json.Marshal(j.Plan.Profile)
+		effProf := porterenroll.EffectiveDossierProfile(r.Env.Home, *j.Plan.Record, j.Plan.Profile)
+		var err error
+		digest, err = identitystore.ProfileDigest(effProf)
 		if err != nil {
 			return err
 		}
-		sum := sha256.Sum256(raw)
-		digest = hex.EncodeToString(sum[:])
 	}
 	_, _, err := identitystore.CompleteRecovery(r.Env.Home, identitystore.RecoveryInput{OperationRef: j.Plan.OpID, Context: provenance, SourceDisposition: disposition, InstallID: install, InstanceID: j.Plan.InstanceID, Roots: roots, ProfileDigest: digest}, func() error { return r.persistRecoveryFacts(ctx, j) })
 	return err

@@ -59,30 +59,42 @@ type BundleRestoreMember struct {
 	SkipService bool   `json:"skip_service,omitempty"`
 }
 
+// StageBundleMember is reported via Progress before each member in a bundle
+// restore starts (Done = 1-based member index, Total = member count).
+const StageBundleMember = "bundle_member"
+
 // BundleRestoreOptions configures a same-harness bundle restore.
 type BundleRestoreOptions struct {
-	Target               string                       `json:"target"`
-	From                 string                       `json:"from,omitempty"`
-	Mode                 string                       `json:"mode"` // rollback | migrate | clone
-	BundleID             string                       `json:"bundle_id,omitempty"`
-	Members              []BundleRestoreMember        `json:"members,omitempty"`
-	RootsByInstance      map[string]map[string]string `json:"roots_by_instance,omitempty"`
-	Source               string                       `json:"source,omitempty"`
-	AllowDraft           bool                         `json:"allow_draft_profile,omitempty"`
-	AllowSnapshotProfile bool                         `json:"allow_snapshot_profile,omitempty"`
-	AllowVersionMismatch bool                         `json:"allow_version_mismatch,omitempty"`
-	SkipService          bool                         `json:"skip_service,omitempty"`
+	Target                 string                       `json:"target"`
+	From                   string                       `json:"from,omitempty"`
+	Mode                   string                       `json:"mode"` // rollback | migrate | clone
+	BundleID               string                       `json:"bundle_id,omitempty"`
+	Members                []BundleRestoreMember        `json:"members,omitempty"`
+	RootsByInstance        map[string]map[string]string `json:"roots_by_instance,omitempty"`
+	Source                 string                       `json:"source,omitempty"`
+	AllowDraft             bool                         `json:"allow_draft_profile,omitempty"`
+	AllowSnapshotProfile   bool                         `json:"allow_snapshot_profile,omitempty"`
+	AllowVersionMismatch   bool                         `json:"allow_version_mismatch,omitempty"`
+	SkipService            bool                         `json:"skip_service,omitempty"`
+	CarryMCP               bool                         `json:"carry_mcp,omitempty"`
+	RemapHomeSymlinks      bool                         `json:"remap_home_symlinks,omitempty"`
+	RewriteConfigHomePaths bool                         `json:"rewrite_config_home_paths,omitempty"`
+	CarryProtection        bool                         `json:"carry_protection,omitempty"`
 }
 
 // BundleRestorePlan holds the ordered member plans of a bundle restore: main
 // agent (Name == "") first, sub-agents second.
 type BundleRestorePlan struct {
-	BundleID string        `json:"bundle_id,omitempty"`
-	Target   string        `json:"target"`
-	From     string        `json:"from"`
-	Mode     string        `json:"mode"`
-	Plans    []*RevivePlan `json:"plans"`
-	Order    []string      `json:"order"`
+	BundleID               string        `json:"bundle_id,omitempty"`
+	Target                 string        `json:"target"`
+	From                   string        `json:"from"`
+	Mode                   string        `json:"mode"`
+	Plans                  []*RevivePlan `json:"plans"`
+	Order                  []string      `json:"order"`
+	CarryMCP               bool          `json:"carry_mcp,omitempty"`
+	RemapHomeSymlinks      bool          `json:"remap_home_symlinks,omitempty"`
+	RewriteConfigHomePaths bool          `json:"rewrite_config_home_paths,omitempty"`
+	CarryProtection        bool          `json:"carry_protection,omitempty"`
 }
 
 // Close releases every member plan.
@@ -99,11 +111,12 @@ func (bp *BundleRestorePlan) Close() {
 
 // BundleRestoreMemberResult is one member's outcome during RunBundleRestore.
 type BundleRestoreMemberResult struct {
-	InstanceID string             `json:"instance_id"`
-	SnapshotID string             `json:"snapshot_id"`
-	Result     *revive.SwapResult `json:"result,omitempty"`
-	Error      string             `json:"error,omitempty"`
-	ErrorCode  string             `json:"error_code,omitempty"`
+	InstanceID  string             `json:"instance_id"`
+	SnapshotID  string             `json:"snapshot_id"`
+	Result      *revive.SwapResult `json:"result,omitempty"`
+	PostMigrate *PostMigrateReport `json:"post_migrate,omitempty"`
+	Error       string             `json:"error,omitempty"`
+	ErrorCode   string             `json:"error_code,omitempty"`
 }
 
 // BundleRestoreResult summarizes a RunBundleRestore execution.
@@ -132,6 +145,8 @@ func orderBundleMembers(members []BundleRestoreMember) []BundleRestoreMember {
 // bundle. Main agent (Name == "") is ordered first; sub-agents follow with
 // SkipService enabled when sharing the harness service or having no own unit.
 func (s *Service) PrepareBundleRestore(ctx context.Context, o BundleRestoreOptions, passphrase string) (*BundleRestorePlan, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	from := o.From
 	if from == "" {
 		from = o.Target
@@ -202,12 +217,16 @@ func (s *Service) PrepareBundleRestore(ctx context.Context, o BundleRestoreOptio
 	}
 	ordered := orderBundleMembers(members)
 	bp := &BundleRestorePlan{
-		BundleID: o.BundleID,
-		Target:   o.Target,
-		From:     from,
-		Mode:     o.Mode,
-		Plans:    make([]*RevivePlan, 0, len(ordered)),
-		Order:    make([]string, 0, len(ordered)),
+		BundleID:               o.BundleID,
+		Target:                 o.Target,
+		From:                   from,
+		Mode:                   o.Mode,
+		Plans:                  make([]*RevivePlan, 0, len(ordered)),
+		Order:                  make([]string, 0, len(ordered)),
+		CarryMCP:               o.CarryMCP,
+		RemapHomeSymlinks:      o.RemapHomeSymlinks,
+		RewriteConfigHomePaths: o.RewriteConfigHomePaths,
+		CarryProtection:        o.CarryProtection,
 	}
 
 	occupied := map[string]string{}
@@ -309,6 +328,9 @@ func (s *Service) PrepareBundleRestore(ctx context.Context, o BundleRestoreOptio
 			bp.Close()
 			return nil, err
 		}
+		if o.Mode == revive.ModeMigrate && !rp.SourceLost && from != "" && rp.SourceProtection == nil {
+			s.readSourceProtection(ctx, rp, from, rp.Snapshot.InstanceID)
+		}
 		for _, r := range rp.Plan.Roots {
 			if r.ID == profile.StateRoot && r.Path != "" {
 				allocated[filepath.Clean(r.Path)] = rp.Plan.InstanceID
@@ -365,19 +387,31 @@ func (s *Service) PrepareBundleRestore(ctx context.Context, o BundleRestoreOptio
 			"确认该组合备份的所有成员快照仍然存在后再重试",
 		).WithDetail("bundle_id=" + bp.BundleID + ";missing=" + strings.Join(missing, ","))
 	}
-	// Enforce SkipService on sub-agents when a main agent is present or the
-	// sub-agent has no independent service, and never stop the source service
-	// twice for sub-agents.
+	// Enforce SkipService on all named sub-agents (even when i == 0 or no main
+	// agent is in the bundle) and on secondary members when a main agent is
+	// present, clearing any service_missing blocker from earlier planning when
+	// mem.Name was not yet known.
 	hasMain := len(bp.Plans) > 0 && bp.Plans[0].profileName == ""
 	for i, rp := range bp.Plans {
 		bp.Order = append(bp.Order, rp.Plan.InstanceID)
-		if i > 0 && (rp.profileName != "" || hasMain) {
-			if rp.profileName != "" {
-				rp.DataOnly = true
-				rp.Plan.Unit = ""
-				rp.Plan.InstallService = false
-				rp.InstallArgv = nil
-				rp.StopSource = ""
+		if rp.profileName != "" || (i > 0 && hasMain) {
+			rp.DataOnly = true
+			rp.Plan.Unit = ""
+			rp.Plan.InstallService = false
+			rp.InstallArgv = nil
+			rp.StopSource = ""
+			if len(rp.Blockers) > 0 {
+				filtered := rp.Blockers[:0]
+				for _, b := range rp.Blockers {
+					if b.Code != "service_missing" {
+						filtered = append(filtered, b)
+					}
+				}
+				if len(filtered) == 0 {
+					rp.Blockers = nil
+				} else {
+					rp.Blockers = filtered
+				}
 			}
 		}
 		if rp.DataOnly || rp.Plan.Unit == "" {
@@ -390,19 +424,29 @@ func (s *Service) PrepareBundleRestore(ctx context.Context, o BundleRestoreOptio
 // RunBundleRestore executes every member plan in order (main agent first,
 // sub-agents second).
 func (s *Service) RunBundleRestore(ctx context.Context, bp *BundleRestorePlan, confirm ReviveConfirm) (*BundleRestoreResult, error) {
+	stopOp := s.BeginOperation()
+	defer stopOp()
 	if bp == nil || len(bp.Plans) == 0 {
 		return nil, valise.New("bundle_empty", "组合恢复计划为空", "重新准备组合恢复计划")
 	}
+	memberConfirm := confirm
+	memberConfirm.CarryMCP = confirm.CarryMCP || bp.CarryMCP
+	memberConfirm.RemapHomeSymlinks = confirm.RemapHomeSymlinks || bp.RemapHomeSymlinks
+	memberConfirm.RewriteConfigHomePaths = confirm.RewriteConfigHomePaths || bp.RewriteConfigHomePaths
+	memberConfirm.CarryProtection = confirm.CarryProtection || bp.CarryProtection
+
 	res := &BundleRestoreResult{
 		BundleID: bp.BundleID,
 		Members:  make([]BundleRestoreMemberResult, 0, len(bp.Plans)),
 	}
-	for _, rp := range bp.Plans {
+	total := int64(len(bp.Plans))
+	for i, rp := range bp.Plans {
+		report(ctx, StageBundleMember, int64(i+1), total)
 		mr := BundleRestoreMemberResult{
 			InstanceID: rp.Plan.InstanceID,
 			SnapshotID: rp.Snapshot.SnapshotID,
 		}
-		swapRes, err := s.ExecuteReviveConfirmed(ctx, rp, "", confirm)
+		swapRes, err := s.ExecuteReviveConfirmed(ctx, rp, "", memberConfirm)
 		mr.Result = swapRes
 		if err != nil {
 			res.Partial = true
@@ -411,6 +455,23 @@ func (s *Service) RunBundleRestore(ctx context.Context, bp *BundleRestorePlan, c
 				mr.ErrorCode = ue.Code
 				mr.Error = ue.Reason
 			}
+		} else if swapRes != nil && swapRes.State == revive.StateRolledBack {
+			res.Partial = true
+			mr.ErrorCode = "rolled_back"
+			mr.Error = swapRes.Message
+			if mr.Error == "" {
+				mr.Error = "恢复已自动退回"
+			}
+		} else if bp.Mode == revive.ModeMigrate {
+			target := bp.Target
+			if target == "" {
+				target = rp.Target
+			}
+			from := bp.From
+			if from == "" {
+				from = rp.From
+			}
+			mr.PostMigrate = s.finalizeMigratedMember(ctx, target, from, bp.Mode, rp, memberConfirm.CarryProtection)
 		}
 		res.Members = append(res.Members, mr)
 	}

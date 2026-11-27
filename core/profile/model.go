@@ -317,6 +317,7 @@ type EntryStart struct {
 	Argv        Argv   `yaml:"argv" json:"argv"`
 	StopArgv    Argv   `yaml:"stop_argv" json:"stop_argv,omitempty"`
 	WaitSeconds int    `yaml:"wait_seconds" json:"wait_seconds,omitempty"`
+	CaptureURL  bool   `yaml:"capture_url,omitempty" json:"capture_url,omitempty"`
 	Verify      string `yaml:"verify" json:"verify,omitempty"`
 }
 

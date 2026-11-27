@@ -99,8 +99,8 @@ login:
 部分 harness 的管理面板或 Web 工作台不随主网关自动常驻，或需先修改配置/构建前端资源后才能按需启动。能力 `entry-lifecycle/1` 提供四个通用 RPC：
 
 - **`entry_probe`（`daily`）**：探测入口端口的远端监听状态（`listen_addrs`）、按实例 `state` 根检查 `prepare.check_paths` 与 `prepare.check_argv`（含 `expect_output`），并读取 `~/.local/state/valise/entries/<inst>_<entry>.json` 确认由 Valise 拉起的进程或 transient 单元是否仍在运行。旧版 porter 不宣告 `entry-lifecycle/1` 时，客户端自动降级为仅调用 `listen_addrs`。
-- **`entry_prepare`（`admin`）**：按实例环境变量直调（无 shell 包装）顺序执行 `entries[].prepare.steps`，`restart_service: true` 时重启实例 systemd 服务并返回最新探测结果。
-- **`entry_start`（`owner`）**：若端口已在监听则直接返回；否则脱离终端在服务器后台启动 `entries[].start.argv`——优先通过 `systemd-run --user --unit=valise-entry-<safeInst>-<safeEntry> --property=CollectMode=inactive-or-failed` 启动，无 systemd user bus 时回退 `Setsid: true` 并将输出重定向到 `~/.local/state/valise/entries/<inst>_<entry>.log`（0600），记录状态文件后轮询 `listen_addrs` 至多 `wait_seconds`（默认 15 秒）即刻退出。**`valise-porter` 绝不常驻。**
+- **`entry_prepare`（`admin`）**：按实例环境变量直调（无 shell 包装）顺序执行 `entries[].prepare.steps`；`restart_service: true` 时重启实例 systemd 服务并主动轮询单元状态直至 `active`（上限取 `health.grace_seconds` 或 20 秒），再评估准备状态与端口监听。
+- **`entry_start`（`owner`）**：若端口已在监听则直接返回；否则脱离终端在服务器后台启动 `entries[].start.argv`——优先通过 `systemd-run --user --unit=valise-entry-<safeInst>-<safeEntry> --property=CollectMode=inactive-or-failed` 启动，无 systemd user bus 时回退 `Setsid: true` 并将输出重定向到 `~/.local/state/valise/entries/<inst>_<entry>.log`（0600），记录状态文件后轮询 `listen_addrs` 至多 `wait_seconds`（默认 15 秒）；检出端口监听后在剩余时限内对本机回环地址执行 HTTP 就绪探测（`DisableKeepAlives: true`），待收到 HTTP 响应或超时后即刻退出。当 profile 声明 `capture_url: true` 时，`systemd-run` 与 `Setsid` 路径均将输出定向至私有 `0600` 日志文件，在启动/就绪探测期间从内存提取指向同端口的一次性令牌 URL 后缀返回给客户端用于打开浏览器（不入日志、审计或界面明文显示），并在提取后及返回前立即重写脱敏磁盘日志中含 `http://`、`https://` 或 `token` 的行，确保磁盘不留明文令牌。**`valise-porter` 绝不常驻。**
 - **`entry_stop`（`owner`）**：显式停止远端面板。若声明了 `stop_argv` 先尝试调用，再停止状态文件中记录的 transient systemd 单元或进程组，清理状态文件并返回最新端口状态。
 - **关闭转发与停止远端面板解耦**：关闭本机 SSH 转发隧道只断开本机端口转发，不自动终止服务器上的面板进程；仅当用户显式触发「停止远端面板」时才调用 `entry_stop`。
 - **多入口并发转发**：客户端按 `(host, instance, entryID)` 独立管理转发会话，允许同一实例或不同实例的多个不同端口入口同时建立隧道并独立关闭，本机同端口冲突规则不变。

@@ -262,13 +262,11 @@ func TestWP6GroupedHomeSubAgentsAndBundleIntercept(t *testing.T) {
 		bundleRunCalled = true
 		return &service.BundleRestoreResult{
 			BundleID: "b_01",
-			Members: []service.BundleRestoreMemberResult{
-				{InstanceID: "openclaw"},
-				{InstanceID: "openclaw-worker"},
-			},
+			Members:  []service.BundleRestoreMemberResult{{InstanceID: "openclaw"}, {InstanceID: "openclaw-worker"}},
 		}, nil
 	}
 
+	initTestKey(t, a)
 	r := &restoreFlow{
 		origin:  "box",
 		target:  "box",
@@ -310,11 +308,9 @@ func TestWP6GroupedHomeSubAgentsAndBundleIntercept(t *testing.T) {
 
 func TestWP6MoveAllReadinessAndPartialFailure(t *testing.T) {
 	a, tt := world(t)
+	initTestKey(t, a)
 	a.agents.value.Items = nil
-	a.agents.value.Observations = []service.AgentServerObservation{
-		{ConnectionID: "box", Status: "fresh"},
-		{ConnectionID: "box2", Status: "fresh"},
-	}
+	a.agents.value.Observations = []service.AgentServerObservation{{ConnectionID: "box", Status: "fresh"}, {ConnectionID: "box2", Status: "fresh"}}
 	a.inspectHarnessMoveFn = func(_ context.Context, from, target string) (*service.HarnessMoveInspection, error) {
 		return &service.HarnessMoveInspection{
 			From:   from,

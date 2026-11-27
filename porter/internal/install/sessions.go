@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -67,40 +68,89 @@ func RunTracked(e *porterenroll.Env, argv []string) (int, error) {
 	return RunAcceptedTerminal(e.Home, cmd, out)
 }
 
+// terminalHangupGrace is how long RunAcceptedTerminal waits for a child to exit
+// after forwarding SIGHUP/SIGTERM before forcing termination.
+var terminalHangupGrace = 2 * time.Second
+
+func signalChildOrGroup(proc *os.Process, sig syscall.Signal) {
+	if proc == nil {
+		return
+	}
+	pid := proc.Pid
+	if pid > 0 {
+		if pgid, err := syscall.Getpgid(pid); err == nil && pgid == pid && pgid != syscall.Getpgrp() {
+			if syscall.Kill(-pgid, sig) == nil {
+				return
+			}
+		}
+	}
+	_ = proc.Signal(sig)
+}
+
 // RunAcceptedTerminal is used only by fixed accepted-instance controllers.
 // cmd already carries the actual mutation-lock FD and constrained arguments;
 // no RPC can submit a command or use this as a general execution bypass.
 func RunAcceptedTerminal(home string, cmd *exec.Cmd, display []string) (int, error) {
-	// The terminal's signals reach the child (same process group); porter
-	// catches them (ignoring would be inherited by the child) and stays to
-	// remove the record when the child exits, even after a hangup.
-	sigs := make(chan os.Signal, 4)
+	// Register signal handling before Start so signals during startup are buffered
+	// and never lost, and ignoring is never inherited by the child.
+	sigs := make(chan os.Signal, 8)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP, syscall.SIGTERM)
 	defer signal.Stop(sigs)
+	if err := cmd.Start(); err != nil {
+		return 127, err
+	}
+	proc := cmd.Process
 	done := make(chan struct{})
-	defer close(done)
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
+		var killTimer *time.Timer
+		var killCh <-chan time.Time
+		defer func() {
+			if killTimer != nil {
+				killTimer.Stop()
+			}
+		}()
 		for {
 			select {
-			case <-sigs:
-				// The terminal's process-group signal also reaches the child.
-				// Stay alive to wait and remove this exact session record.
+			case sig := <-sigs:
+				switch sig {
+				case syscall.SIGHUP, syscall.SIGTERM:
+					// SSH client disconnect or termination: proactively forward to
+					// the child (or its own process group) so interactive terminals
+					// and action-exec do not linger holding vault.lock indefinitely.
+					if s, ok := sig.(syscall.Signal); ok {
+						signalChildOrGroup(proc, s)
+					} else {
+						_ = proc.Signal(sig)
+					}
+					if killTimer == nil {
+						killTimer = time.NewTimer(terminalHangupGrace)
+						killCh = killTimer.C
+					}
+				default:
+					// SIGINT / SIGQUIT: the terminal's process-group signal reaches
+					// the child; stay alive to wait and remove this session record.
+				}
+			case <-killCh:
+				signalChildOrGroup(proc, syscall.SIGKILL)
+				killCh = nil
 			case <-done:
 				return
 			}
 		}
 	}()
-	if err := cmd.Start(); err != nil {
-		return 127, err
-	}
-	rec := sessionRecord{Session: coreinstall.Session{PID: cmd.Process.Pid, Argv: display, StartedAt: time.Now().UTC()},
-		Start: procStart(cmd.Process.Pid), ConnPID: os.Getppid()}
+	rec := sessionRecord{Session: coreinstall.Session{PID: proc.Pid, Argv: display, StartedAt: time.Now().UTC()},
+		Start: procStart(proc.Pid), ConnPID: os.Getppid()}
 	path := filepath.Join(SessionsDir(home), strconv.Itoa(rec.PID)+".json")
 	if err := os.MkdirAll(SessionsDir(home), 0o700); err == nil {
 		b, _ := json.Marshal(rec)
 		_ = os.WriteFile(path, b, 0o600)
 	}
 	err := cmd.Wait()
+	close(done)
+	wg.Wait()
 	_ = os.Remove(path)
 	var ee *exec.ExitError
 	switch {

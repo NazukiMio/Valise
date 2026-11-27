@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 )
 
@@ -73,6 +75,9 @@ func (a *App) navigate(path string) {
 	}
 	if path == "/locations" {
 		a.closeAdding()
+	}
+	if !strings.HasSuffix(path, "/shell") {
+		a.serverShellBack = ""
 	}
 	a.router.Push(path)
 	a.trackRoute()

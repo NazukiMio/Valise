@@ -96,12 +96,12 @@ func (a *App) requestOpenEntry(row *agentRow, entryID string) {
 		return err
 	}, func(err error) {
 		if err != nil || res == nil {
-			a.openEntry(host, inst, entryID)
+			a.openEntry(host, inst, entryID, "")
 			return
 		}
 		a.setEntryManaged(key, res.ManagedAlive)
 		if res.Listening {
-			a.openEntry(host, inst, entryID)
+			a.openEntry(host, inst, entryID, "")
 			return
 		}
 		label := a.entryDisplayName(prof, res.EntryID)
@@ -165,7 +165,7 @@ func (a *App) entryLifecycleModal(c *ui.Context, row *agentRow) {
 					quietButton(c, T("entry.lifecycle.try_forward")).OnClick(func() {
 						host, inst, eid := m.server, m.instance, m.entryID
 						a.entryLifecycle = nil
-						a.openEntry(host, inst, eid)
+						a.openEntry(host, inst, eid, "")
 					})
 					if needsPrepare {
 						ui.PrimaryButton(c, T("entry.lifecycle.prepare_and_start")).OnClick(func() {
@@ -188,7 +188,7 @@ func (a *App) entryLifecycleModal(c *ui.Context, row *agentRow) {
 					ui.PrimaryButton(c, T("entry.lifecycle.try_forward")).OnClick(func() {
 						host, inst, eid := m.server, m.instance, m.entryID
 						a.entryLifecycle = nil
-						a.openEntry(host, inst, eid)
+						a.openEntry(host, inst, eid, "")
 					})
 				})
 			}
@@ -220,11 +220,15 @@ func (a *App) runEntryPrepareAndStart(m *entryLifecycleState) {
 		if err != nil {
 			return
 		}
-		if startRes != nil && startRes.ManagedByUs {
-			a.setEntryManaged(entryKey(host, inst, eid), true)
+		authSuffix := ""
+		if startRes != nil {
+			if startRes.ManagedByUs {
+				a.setEntryManaged(entryKey(host, inst, eid), true)
+			}
+			authSuffix = startRes.AuthSuffix
 		}
 		a.entryLifecycle = nil
-		a.openEntry(host, inst, eid)
+		a.openEntry(host, inst, eid, authSuffix)
 	})
 }
 
@@ -241,17 +245,24 @@ func (a *App) runEntryStart(m *entryLifecycleState) {
 		if err != nil {
 			return
 		}
-		if startRes != nil && startRes.ManagedByUs {
-			a.setEntryManaged(entryKey(host, inst, eid), true)
+		authSuffix := ""
+		if startRes != nil {
+			if startRes.ManagedByUs {
+				a.setEntryManaged(entryKey(host, inst, eid), true)
+			}
+			authSuffix = startRes.AuthSuffix
 		}
 		a.entryLifecycle = nil
-		a.openEntry(host, inst, eid)
+		a.openEntry(host, inst, eid, authSuffix)
 	})
 }
 
 func (a *App) stopRemoteEntry(row *agentRow, entryID string) {
 	host, inst := row.Server, row.Instance
 	key := entryKey(host, inst, entryID)
+	if st := a.entries[key]; st != nil {
+		st.initialSuffix = ""
+	}
 	if a.entryStopJobs == nil {
 		a.entryStopJobs = map[string]*job{}
 	}
@@ -272,6 +283,9 @@ func (a *App) stopRemoteEntry(row *agentRow, entryID string) {
 	}, func(err error) {
 		if err == nil && (res == nil || res.Stopped || !res.Listening) {
 			a.setEntryManaged(key, false)
+			if st := a.entries[key]; st != nil {
+				st.initialSuffix = ""
+			}
 		}
 	})
 }
