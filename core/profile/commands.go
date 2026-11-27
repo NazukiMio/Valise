@@ -1,6 +1,8 @@
 package profile
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
 	"path"
 	"strings"
@@ -51,6 +53,16 @@ func Commands(p *Profile) []CommandRef {
 			for j, st := range e.PortChange.Steps {
 				add(idx("entries", i, "port_change.steps")+"["+itoa(j)+"]", "修改入口端口 "+e.ID, "admin", st)
 			}
+		}
+		if e.Prepare != nil {
+			add(idx("entries", i, "prepare.check_argv"), "检查入口准备状态 "+e.ID, "daily", e.Prepare.CheckArgv)
+			for j, st := range e.Prepare.Steps {
+				add(idx("entries", i, "prepare.steps")+"["+itoa(j)+"]", "准备启用入口 "+e.ID, "admin", st)
+			}
+		}
+		if e.Start != nil {
+			add(idx("entries", i, "start.argv"), "后台启动入口 "+e.ID, "owner", e.Start.Argv)
+			add(idx("entries", i, "start.stop_argv"), "停止入口 "+e.ID, "owner", e.Start.StopArgv)
 		}
 	}
 	if p.Health != nil {
@@ -178,4 +190,33 @@ done:
 		}
 	}
 	return ""
+}
+
+// ValidateEntryArgv validates an entry lifecycle command (prepare/start/stop)
+// before execution on the server. It rejects empty argv, shell wrappers or
+// command substitution, malformed placeholders, and any ${...} placeholder
+// outside the entry allowlist (${HOME}, ${STATE_DIR}) — including ${env:...}.
+func ValidateEntryArgv(argv Argv) error {
+	if len(argv) == 0 {
+		return errors.New("入口命令不能为空")
+	}
+	if argv[0] == "" {
+		return errors.New("入口命令 argv[0] 不能为空")
+	}
+	if msg := checkShellWrapper(argv); msg != "" {
+		return errors.New(msg)
+	}
+	for _, s := range argv {
+		rest := varRe.ReplaceAllString(s, "")
+		if strings.Contains(rest, "${") {
+			return errors.New("入口命令参数中的变量缺少右花括号")
+		}
+		for _, m := range varRe.FindAllStringSubmatch(s, -1) {
+			name := m[1]
+			if name != VarHome && name != VarStateDir {
+				return fmt.Errorf("入口命令不允许使用变量 ${%s}", name)
+			}
+		}
+	}
+	return nil
 }

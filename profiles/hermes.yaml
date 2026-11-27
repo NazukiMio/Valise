@@ -7,7 +7,7 @@
 schema: valise-profile/1
 id: hermes
 display_name: Hermes Agent
-profile_version: 15
+profile_version: 16
 status: draft
 harness_versions_tested: ["0.22.5"]
 docs: https://hermes-agent.nousresearch.com
@@ -188,15 +188,35 @@ service:
 # checks for them under health.checks.
 entries:
   - id: dashboard
+    display_name: "管理面板 (Dashboard)"
     kind: web
     host: 127.0.0.1
     port: 9119
     path: "/"                                                        # verify: pending
+    start:
+      summary: "在服务器后台启动 Hermes 官方管理面板（--no-open）"
+      argv: [hermes, dashboard, --no-open]
+      wait_seconds: 15
+      verify: pending
   - id: webapp
+    display_name: "Web 工作台 (WebApp)"
     kind: web
     host: 127.0.0.1
     port: 9120
     path: "/"                                                        # verify: pending
+    prepare:
+      summary: "开启 Hermes 配置中的 webapp.enabled 并重启网关"
+      check_argv: [hermes, config, get, webapp.enabled]
+      expect_output: "true"
+      steps:
+        - [hermes, config, set, webapp.enabled, "true"]
+      restart_service: true
+      verify: pending
+    start:
+      summary: "在服务器后台启动 Hermes Web 工作台"
+      argv: [hermes, webapp]
+      wait_seconds: 15
+      verify: pending
 
 health:
   grace_seconds: 20
@@ -226,13 +246,6 @@ actions:
     risk: config
     undo: "诊断修改前会先建立备份；可从备份原地恢复"
     argv: [hermes, doctor]                                           # verify: pending
-    output: none
-    terminal: true
-  - id: dashboard
-    name: 启动独立管理面板 (Dashboard)
-    explain: "在交互终端中启动 Hermes 官方独立管理面板；启动后可用“打开本地页面”从监听端口中选择它"
-    risk: manage
-    argv: [hermes, dashboard]                                        # verify: pending
     output: none
     terminal: true
 

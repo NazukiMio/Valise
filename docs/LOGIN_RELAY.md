@@ -94,6 +94,17 @@ login:
 - 此操作只调用已声明的 harness 命令。其他已核实的配置动作按 INSTALL.md 第 5 节执行，不能因本流程可改端口而扩大任意配置写入能力。
 - 本地页面转发（第 6 节）没有 profile 知识，不提供这个选项；端口被占用时说明原因，建议用户释放端口再尝试。登录中继的回调端口由登录服务决定，不能改。
 
+### 4.3 入口按需准备、后台启动与停止（`entry-lifecycle/1`）及多入口并发
+
+部分 harness 的管理面板或 Web 工作台不随主网关自动常驻，或需先修改配置/构建前端资源后才能按需启动。能力 `entry-lifecycle/1` 提供四个通用 RPC：
+
+- **`entry_probe`（`daily`）**：探测入口端口的远端监听状态（`listen_addrs`）、按实例 `state` 根检查 `prepare.check_paths` 与 `prepare.check_argv`（含 `expect_output`），并读取 `~/.local/state/valise/entries/<inst>_<entry>.json` 确认由 Valise 拉起的进程或 transient 单元是否仍在运行。旧版 porter 不宣告 `entry-lifecycle/1` 时，客户端自动降级为仅调用 `listen_addrs`。
+- **`entry_prepare`（`admin`）**：按实例环境变量直调（无 shell 包装）顺序执行 `entries[].prepare.steps`，`restart_service: true` 时重启实例 systemd 服务并返回最新探测结果。
+- **`entry_start`（`owner`）**：若端口已在监听则直接返回；否则脱离终端在服务器后台启动 `entries[].start.argv`——优先通过 `systemd-run --user --unit=valise-entry-<safeInst>-<safeEntry> --property=CollectMode=inactive-or-failed` 启动，无 systemd user bus 时回退 `Setsid: true` 并将输出重定向到 `~/.local/state/valise/entries/<inst>_<entry>.log`（0600），记录状态文件后轮询 `listen_addrs` 至多 `wait_seconds`（默认 15 秒）即刻退出。**`valise-porter` 绝不常驻。**
+- **`entry_stop`（`owner`）**：显式停止远端面板。若声明了 `stop_argv` 先尝试调用，再停止状态文件中记录的 transient systemd 单元或进程组，清理状态文件并返回最新端口状态。
+- **关闭转发与停止远端面板解耦**：关闭本机 SSH 转发隧道只断开本机端口转发，不自动终止服务器上的面板进程；仅当用户显式触发「停止远端面板」时才调用 `entry_stop`。
+- **多入口并发转发**：客户端按 `(host, instance, entryID)` 独立管理转发会话，允许同一实例或不同实例的多个不同端口入口同时建立隧道并独立关闭，本机同端口冲突规则不变。
+
 ## 5. 实现细节（M5 确定）
 
 ### 5.1 隧道

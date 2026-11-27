@@ -79,6 +79,7 @@ var dailyMethods = map[string]bool{
 	"old_list":                true,
 	"journal_get":             true,
 	"listen_addrs":            true,
+	"entry_probe":             true,
 	// Appending an audit entry after an admin operation must not need the
 	// admin window again; it changes nothing protected.
 	"install_audit":     true,
@@ -117,6 +118,7 @@ var ownerMethods = map[string]bool{
 	"snapshot_promote":      true,
 	"instance_write":        true,
 	"instance_forget":       true,
+	"instance_reactivate":   true,
 	"dossier_update":        true,
 	"server_rename":         true,
 	"agent_label_set":       true,
@@ -134,6 +136,8 @@ var ownerMethods = map[string]bool{
 	"login_urls":            true,
 	"login_end":             true,
 	"entry_auth":            true,
+	"entry_start":           true,
+	"entry_stop":            true,
 	"revive_inspect":        true,
 	"stage_begin":           true,
 	"stage_verify":          true,
@@ -157,6 +161,7 @@ var ownerMethods = map[string]bool{
 // a new method has to be classified.
 var adminMethods = map[string]bool{
 	"entry_port_set":   true,
+	"entry_prepare":    true,
 	"recipient_remove": true,
 	"old_cleanup":      true,
 	"install_check":    true,

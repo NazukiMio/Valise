@@ -279,16 +279,45 @@ type ServiceUnit struct {
 
 // Entry is a web entry of the instance.
 type Entry struct {
-	ID   string `yaml:"id" json:"id"`
-	Kind string `yaml:"kind" json:"kind"`
-	Host string `yaml:"host" json:"host"`
-	Port int    `yaml:"port" json:"port"`
-	Path string `yaml:"path" json:"path"`
+	ID          string `yaml:"id" json:"id"`
+	DisplayName string `yaml:"display_name" json:"display_name,omitempty"`
+	Kind        string `yaml:"kind" json:"kind"`
+	Host        string `yaml:"host" json:"host"`
+	Port        int    `yaml:"port" json:"port"`
+	Path        string `yaml:"path" json:"path"`
 	// Auth says how the harness's own command yields the entry's token
 	// (docs/LOGIN_RELAY.md 4.1).
 	Auth *EntryAuth `yaml:"auth" json:"auth,omitempty"`
 	// PortChange moves the entry to another port (docs/LOGIN_RELAY.md 4.2).
 	PortChange *PortChange `yaml:"port_change" json:"port_change,omitempty"`
+	// Prepare declares how to check and enable/build an entry on demand
+	// (docs/PROFILES.md, docs/LOGIN_RELAY.md 4.3).
+	Prepare *EntryPrepare `yaml:"prepare" json:"prepare,omitempty"`
+	// Start declares how to start an entry detached in the background on the
+	// server and optionally stop it (docs/PROFILES.md, docs/LOGIN_RELAY.md 4.3).
+	Start *EntryStart `yaml:"start" json:"start,omitempty"`
+}
+
+// EntryPrepare declares how to check whether an entry is ready/enabled and
+// how to prepare it on demand without a shell wrapper.
+type EntryPrepare struct {
+	Summary        string   `yaml:"summary" json:"summary,omitempty"`
+	CheckPaths     []string `yaml:"check_paths" json:"check_paths,omitempty"`
+	CheckArgv      Argv     `yaml:"check_argv" json:"check_argv,omitempty"`
+	ExpectOutput   string   `yaml:"expect_output" json:"expect_output,omitempty"`
+	Steps          []Argv   `yaml:"steps" json:"steps,omitempty"`
+	RestartService bool     `yaml:"restart_service" json:"restart_service,omitempty"`
+	Verify         string   `yaml:"verify" json:"verify,omitempty"`
+}
+
+// EntryStart declares how to start an entry detached in the background on the
+// server and optionally stop it.
+type EntryStart struct {
+	Summary     string `yaml:"summary" json:"summary,omitempty"`
+	Argv        Argv   `yaml:"argv" json:"argv"`
+	StopArgv    Argv   `yaml:"stop_argv" json:"stop_argv,omitempty"`
+	WaitSeconds int    `yaml:"wait_seconds" json:"wait_seconds,omitempty"`
+	Verify      string `yaml:"verify" json:"verify,omitempty"`
 }
 
 // PortChange is the harness's own commands that move an entry to another

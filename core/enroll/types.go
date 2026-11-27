@@ -22,12 +22,17 @@ const (
 	MethodInstanceWrite  = "instance_write"
 	MethodInstanceList   = "instance_list"
 	MethodInstanceForget = "instance_forget"
+	MethodReactivate     = "instance_reactivate"
 	MethodEntryPortSet   = "entry_port_set"
 	MethodLabelSet       = "agent_label_set"
 	MethodDossierUpdate  = "dossier_update"
 
-	ForgetCapability  = "instance-forget/1"
-	DossierCapability = "dossier-roots/1"
+	ForgetCapability     = "instance-forget/1"
+	ReactivateCapability = "instance-reactivate/1"
+	DossierCapability    = "dossier-roots/1"
+
+	ReactivateModeSwitchBack = "switch_back"
+	ReactivateModeCoexist    = "coexist"
 )
 
 var (
@@ -512,4 +517,23 @@ type EntryPortSetResult struct {
 // InstanceWriteResult reports where the record was written.
 type InstanceWriteResult struct {
 	Path string `json:"path"`
+}
+
+// ReactivateParams re-activates a previously migrated-out enrolled instance by
+// issuing a new generation (and optionally recording a reverse migration
+// relation when switching back from the current active target).
+type ReactivateParams struct {
+	InstanceID        string             `json:"instance_id"`
+	Mode              string             `json:"mode"` // "switch_back" | "coexist"
+	SwitchFrom        *identity.AgentRef `json:"switch_from,omitempty"`
+	SourceDisposition string             `json:"source_disposition,omitempty"`
+}
+
+// ReactivateResult reports the new active generation and optional reverse
+// migration relation committed on the reactivated server.
+type ReactivateResult struct {
+	InstanceID string             `json:"instance_id"`
+	Mode       string             `json:"mode"`
+	Agent      identity.Agent     `json:"agent"`
+	Relation   *identity.Relation `json:"relation,omitempty"`
 }

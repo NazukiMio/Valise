@@ -463,3 +463,34 @@ func TestDossierUpdateRPC(t *testing.T) {
 		t.Fatalf("legacy unbound instance should remain unbound, got %+v", b)
 	}
 }
+
+func TestMethodReactivateRejectsSuperseded(t *testing.T) {
+	home := t.TempDir()
+	stateDir := filepath.Join(home, ".demo")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := profile.Profile{ID: "demo", ProfileVersion: 1, Status: "draft"}
+	rec := enroll.Record{
+		InstanceID:     "demo",
+		ProfileID:      "demo",
+		ProfileVersion: 1,
+		Roots:          map[string]string{"state": stateDir},
+		Superseded: &enroll.Supersession{
+			At:   time.Now().UTC(),
+			By:   "demo-new",
+			OpID: "op-1",
+		},
+	}
+	if _, err := porterenroll.WriteRecord(home, rec, p); err != nil {
+		t.Fatal(err)
+	}
+	params, _ := json.Marshal(enroll.ReactivateParams{
+		InstanceID: "demo",
+		Mode:       enroll.ReactivateModeCoexist,
+	})
+	resps := serve(t, home, helloReq, `{"jsonrpc":"2.0","id":2,"method":"`+enroll.MethodReactivate+`","params":`+string(params)+`}`)
+	if len(resps) < 2 || resps[1].Error == nil || resps[1].Error.Data == nil || resps[1].Error.Data.Code != "instance_superseded" {
+		t.Fatalf("expected instance_superseded, got %+v", resps)
+	}
+}

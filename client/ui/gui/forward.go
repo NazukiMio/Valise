@@ -13,7 +13,18 @@ import (
 )
 
 // WP7: loopback port forwarding modal ("打开本地页面…") with live loopback
-// listener discovery and separated tunnel/remote/health step reporting.
+// listener discovery, multiple concurrent custom port forwards, and separated
+// tunnel/remote/health step reporting.
+
+type forwardItem struct {
+	id      string
+	busy    bool
+	active  bool
+	display string
+	steps   []service.EntryStatus
+	err     error
+	cancel  context.CancelFunc
+}
 
 type forwardState struct {
 	open      bool
@@ -21,12 +32,8 @@ type forwardState struct {
 	ports     []int
 	detectJ   job
 	detectErr error
-	busy      bool
-	active    bool
-	display   string
-	steps     []service.EntryStatus
-	err       error
-	cancel    context.CancelFunc
+	inputErr  error
+	items     []*forwardItem
 }
 
 func (a *App) forwardOf(key string) *forwardState {
@@ -72,15 +79,28 @@ func (a *App) detectLoopbackPorts(host string, st *forwardState) {
 func (a *App) startForward(row *agentRow, st *forwardState, raw string) {
 	ft, err := service.ParseForward(raw)
 	if err != nil {
-		st.err = err
+		st.inputErr = err
 		return
 	}
-	if st.cancel != nil {
-		st.cancel()
+	st.inputErr = nil
+	id := ft.Display
+	var it *forwardItem
+	for _, existing := range st.items {
+		if existing.id == id {
+			if existing.cancel != nil {
+				existing.cancel()
+			}
+			it = existing
+			break
+		}
+	}
+	if it == nil {
+		it = &forwardItem{id: id}
+		st.items = append(st.items, it)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	st.cancel = cancel
-	st.busy, st.active, st.err, st.steps, st.display = true, false, nil, nil, ft.Display
+	it.cancel = cancel
+	it.busy, it.active, it.err, it.steps, it.display = true, false, nil, nil, ft.Display
 	fn := a.forwardPageFn
 	if fn == nil {
 		fn = a.svc.ForwardPage
@@ -89,33 +109,54 @@ func (a *App) startForward(row *agentRow, st *forwardState, raw string) {
 		err := fn(ctx, row.Server, ft, service.OpenOptions{
 			Idle: service.DefaultEntryIdle,
 			Status: func(s service.EntryStatus) {
-				a.update(func() { st.steps = append(st.steps, s) })
+				a.update(func() { it.steps = append(it.steps, s) })
 			},
 			Ready: func(open, display string) {
-				a.update(func() { st.busy, st.active, st.display = false, true, display })
+				a.update(func() { it.busy, it.active, it.display = false, true, display })
 				if err := a.openURL(open); err != nil {
-					a.update(func() { st.err = errors.New(T("entry.no_browser", "url", display)) })
+					a.update(func() { it.err = errors.New(T("entry.no_browser", "url", display)) })
 				}
 			},
 		})
 		a.update(func() {
-			st.busy, st.active = false, false
+			it.busy, it.active = false, false
 			if err != nil && ctx.Err() == nil {
-				st.err = err
+				it.err = err
 			}
 		})
 	})
+}
+
+func (a *App) stopForwardItem(st *forwardState, it *forwardItem) {
+	if st == nil || it == nil {
+		return
+	}
+	if it.cancel != nil {
+		it.cancel()
+		it.cancel = nil
+	}
+	it.busy, it.active = false, false
+	out := st.items[:0]
+	for _, x := range st.items {
+		if x != it {
+			out = append(out, x)
+		}
+	}
+	st.items = out
 }
 
 func (a *App) stopForward(st *forwardState) {
 	if st == nil {
 		return
 	}
-	if st.cancel != nil {
-		st.cancel()
-		st.cancel = nil
+	for _, it := range st.items {
+		if it.cancel != nil {
+			it.cancel()
+			it.cancel = nil
+		}
+		it.busy, it.active = false, false
 	}
-	st.busy, st.active = false, false
+	st.items = nil
 }
 
 func (a *App) closeForward(key string) {
@@ -128,19 +169,25 @@ func (a *App) closeForward(key string) {
 func (a *App) forwardBanner(c *ui.Context, row *agentRow) {
 	key := row.Server + "/" + row.Instance
 	st := a.forwards[key]
-	if st == nil || st.open || (!st.busy && !st.active) {
+	if st == nil || st.open || len(st.items) == 0 {
 		return
 	}
-	reportPanel(ui.Row(c)).Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
-		if st.active {
-			ui.Text(c, T("entry.opened", "url", st.display)).FontSize(13).Bold().Grow(1)
-		} else {
-			ui.Spinner(c).Size(14, 14)
-			muted(ui.Text(c, T("entry.connecting"))).Grow(1)
+	for _, item := range st.items {
+		it := item
+		if !it.busy && !it.active {
+			continue
 		}
-		quietButton(c, T("forward.manage")).OnClick(func() { st.open = true })
-		ui.Button(c, T("forward.stop")).OnClick(func() { a.stopForward(st) })
-	})
+		reportPanel(ui.Row(c.Key("fwd-ban-" + it.id))).Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
+			if it.active {
+				ui.Text(c, T("entry.opened", "url", it.display)).FontSize(13).Bold().Grow(1)
+			} else {
+				ui.Spinner(c).Size(14, 14)
+				muted(ui.Text(c, T("entry.connecting"))).Grow(1)
+			}
+			quietButton(c.Key("fwd-mgr-"+it.id), T("forward.manage")).OnClick(func() { st.open = true })
+			ui.Button(c.Key("fwd-stop-"+it.id), T("forward.stop")).OnClick(func() { a.stopForwardItem(st, it) })
+		})
+	}
 }
 
 func (a *App) forwardModal(c *ui.Context, row *agentRow) {
@@ -168,7 +215,7 @@ func (a *App) forwardModal(c *ui.Context, row *agentRow) {
 						port := p
 						ui.Button(c.Key("fp-"+strconv.Itoa(port)), ":"+strconv.Itoa(port)).OnClick(func() {
 							st.input = strconv.Itoa(port)
-							st.err = nil
+							st.inputErr = nil
 						})
 					}
 				})
@@ -178,49 +225,59 @@ func (a *App) forwardModal(c *ui.Context, row *agentRow) {
 			labeled(c, T("forward.input_label"), func() {
 				ui.TextInput(c, &st.input).Label(T("forward.input_label")).Placeholder(T("forward.placeholder"))
 			})
-			if st.err != nil {
-				errorBox(c, st.err, a.fold("fwd-err-"+key))
+			if st.inputErr != nil {
+				errorBox(c, st.inputErr, a.fold("fwd-err-"+key))
 			}
-			if st.busy || st.active || len(st.steps) > 0 {
-				subPanel(ui.Column(c)).Gap(6).Children(func() {
-					if st.active {
-						ui.Text(c, T("entry.opened", "url", st.display)).FontSize(13).Bold()
-					} else if st.busy {
-						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.Spinner(c).Size(14, 14)
-							muted(ui.Text(c, T("entry.connecting")))
-						})
-					}
-					if len(st.steps) > 0 {
-						ui.Row(c).Wrap().Gap(spGroup).AlignItems(ui.Center).Children(func() {
-							for i, s := range st.steps {
-								tone := "ok"
-								if !s.OK {
-									tone = "warn"
-								}
-								ui.Row(c.Key("fs-" + itoa(i))).Gap(8).AlignItems(ui.Center).Children(func() {
-									ui.Box(c).Size(6, 6).Radius(3).Background(toneColor(tone))
-									ui.Text(c, T(entrySteps[s.Step])).FontSize(12)
-									if s.Detail != "" {
-										muted(ui.Text(c, s.Detail)).MaxLines(1)
-									}
-								})
-							}
-						})
-					}
-				})
+			for _, item := range st.items {
+				it := item
+				a.renderForwardItem(c, key, st, it)
 			}
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Justify(ui.End).Children(func() {
-				if st.active || st.busy {
-					ui.Button(c, T("forward.stop")).OnClick(func() { a.stopForward(st) })
-				}
 				ui.Button(c, T("common.close")).OnClick(func() { st.open = false })
 				ui.PrimaryButton(c, T("forward.start")).
-					Disabled(st.busy || strings.TrimSpace(st.input) == "").
+					Disabled(strings.TrimSpace(st.input) == "").
 					OnClick(func() { a.startForward(row, st, st.input) })
 			})
 		})
 	}).Dismissed() {
 		st.open = false
 	}
+}
+
+func (a *App) renderForwardItem(c *ui.Context, key string, st *forwardState, it *forwardItem) {
+	subPanel(ui.Column(c.Key("fi-" + it.id))).Gap(6).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+			if it.active {
+				ui.Text(c, T("entry.opened", "url", it.display)).FontSize(13).Bold().Grow(1)
+			} else if it.busy {
+				ui.Spinner(c).Size(14, 14)
+				muted(ui.Text(c, T("entry.connecting"))).Grow(1)
+			} else {
+				muted(ui.Text(c, it.display)).FontSize(13).Grow(1)
+			}
+			if it.active || it.busy {
+				ui.Button(c.Key("fi-stop-"+it.id), T("forward.stop")).OnClick(func() { a.stopForwardItem(st, it) })
+			}
+		})
+		if len(it.steps) > 0 {
+			ui.Row(c).Wrap().Gap(spGroup).AlignItems(ui.Center).Children(func() {
+				for i, s := range it.steps {
+					tone := "ok"
+					if !s.OK {
+						tone = "warn"
+					}
+					ui.Row(c.Key("fs-" + it.id + "-" + itoa(i))).Gap(8).AlignItems(ui.Center).Children(func() {
+						ui.Box(c).Size(6, 6).Radius(3).Background(toneColor(tone))
+						ui.Text(c, T(entrySteps[s.Step])).FontSize(12)
+						if s.Detail != "" {
+							muted(ui.Text(c, s.Detail)).MaxLines(1)
+						}
+					})
+				}
+			})
+		}
+		if it.err != nil {
+			errorBox(c, it.err, a.fold("fwd-item-err-"+key+"-"+it.id))
+		}
+	})
 }

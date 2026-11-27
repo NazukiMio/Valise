@@ -68,7 +68,16 @@ func (a *App) quickActionModal(c *ui.Context, row *agentRow, st *agentServiceSta
 			switch {
 			case m.termRun != nil:
 				a.renderServiceTerm(c, m.termRun)
-				if !m.termRun.running {
+				if m.termRun.running {
+					ui.Row(c).Justify(ui.End).Children(func() {
+						ui.Button(c, T("agent.term.stop_close")).OnClick(func() {
+							stopServiceTerm(m.termRun)
+							m.termRun = nil
+							m.running = false
+							st.actionAsk = nil
+						})
+					})
+				} else {
 					a.quickActionOutcome(c, row, m)
 					ui.Row(c).Justify(ui.End).Children(func() {
 						ui.PrimaryButton(c, T("common.close")).OnClick(func() { st.actionAsk = nil })
@@ -82,6 +91,15 @@ func (a *App) quickActionModal(c *ui.Context, row *agentRow, st *agentServiceSta
 				for i, p := range m.progress {
 					muted(ui.Text(c.Key(i), p))
 				}
+				ui.Row(c).Justify(ui.End).Children(func() {
+					ui.Button(c, T("agent.term.stop_close")).OnClick(func() {
+						if m.cancel != nil {
+							m.cancel()
+						}
+						m.running = false
+						st.actionAsk = nil
+					})
+				})
 			case m.res != nil || m.err != nil:
 				a.quickActionOutcome(c, row, m)
 				ui.Row(c).Justify(ui.End).Children(func() {
@@ -133,6 +151,34 @@ func (a *App) quickActionOutcome(c *ui.Context, row *agentRow, m *actionModalSta
 	}
 }
 
+func stopServiceTerm(tr *serviceTermRun) {
+	if tr == nil {
+		return
+	}
+	tr.running = false
+	conn, cancel := tr.conn, tr.cancel
+	go func() {
+		if conn != nil && conn.inW != nil {
+			wrote := make(chan struct{})
+			go func() {
+				_, _ = conn.inW.Write([]byte{3})
+				close(wrote)
+			}()
+			select {
+			case <-wrote:
+				time.Sleep(20 * time.Millisecond)
+			case <-time.After(80 * time.Millisecond):
+			}
+		}
+		if cancel != nil {
+			cancel()
+		}
+		if conn != nil {
+			_ = conn.Close()
+		}
+	}()
+}
+
 func (a *App) runQuickAction(row *agentRow, st *agentServiceState, m *actionModalState) {
 	host, inst := row.Server, row.Instance
 	actID, seal, planDigest, isTerm := m.action.ID, m.seal, m.plan, m.action.Terminal
@@ -142,10 +188,12 @@ func (a *App) runQuickAction(row *agentRow, st *agentServiceState, m *actionModa
 		PlanDigest: planDigest,
 		Progress:   func(msg string) { a.update(func() { m.progress = append(m.progress, msg) }) },
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	m.cancel = cancel
 	var conn *installConn
 	if isTerm {
 		conn = newInstallConn()
-		tr := &serviceTermRun{title: m.action.Name, running: true, conn: conn}
+		tr := &serviceTermRun{title: m.action.Name, running: true, conn: conn, cancel: cancel}
 		tr.term = a.openInstallTerminal(conn, &tr.text)
 		m.termRun = tr
 		opts.IO = service.InstallIO{
@@ -159,7 +207,6 @@ func (a *App) runQuickAction(row *agentRow, st *agentServiceState, m *actionModa
 		m.running = true
 	}
 	a.run(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		res, err := ops.runAct(ctx, host, inst, actID, opts)
 		if conn != nil {

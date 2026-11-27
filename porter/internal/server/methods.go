@@ -183,6 +183,39 @@ var methods = map[string]handler{
 		})
 		return res, nil
 	},
+	enroll.MethodReactivate: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		var p enroll.ReactivateParams
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, errInvalidParams
+		}
+		if err := enroll.ValidInstanceID(p.InstanceID); err != nil {
+			return nil, valise.New("instance_id_invalid", err.Error(), "使用合法的实例 id")
+		}
+		rec, err := porterenroll.ReadRecord(s.cfg.Home, p.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		if rec == nil {
+			return nil, valise.New("instance_not_enrolled", "服务器上没有接入 Valise 的实例 "+p.InstanceID, "先把这个 agent 接入 Valise")
+		}
+		if rec.Superseded != nil {
+			return nil, valise.New("instance_superseded", "实例 "+p.InstanceID+" 已被较新的接入记录取代", "刷新 Agent 列表并选择当前有效的实例")
+		}
+		res, err := porteridentity.Reactivate(s.cfg.Home, p)
+		if err != nil {
+			return nil, err
+		}
+		seal.Paths{Home: s.cfg.Home}.AppendAudit(seal.AuditEntry{
+			Time:      time.Now().UTC(),
+			Op:        enroll.MethodReactivate,
+			Instance:  p.InstanceID,
+			Initiator: vaultrpc.InitiatorClient,
+			Result:    "ok",
+			Reason:    p.Mode,
+			Tier:      string(rpc.TierOwner),
+		})
+		return res, nil
+	},
 	enroll.MethodInstanceWrite: func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
 		var p enroll.InstanceWriteParams
 		if err := json.Unmarshal(raw, &p); err != nil {

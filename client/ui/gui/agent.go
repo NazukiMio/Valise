@@ -85,6 +85,8 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 	})
 	a.agentRenameDialog(c, row)
 	a.agentForgetModal(c)
+	a.agentReactivateModal(c, row)
+	a.entryLifecycleModal(c, row)
 	a.forwardModal(c, row)
 }
 
@@ -184,6 +186,11 @@ func (a *App) agentHeader(c *ui.Context, row *agentRow) {
 			} else {
 				quietButton(c, T("forward.open")).OnClick(func() { a.openForwardModal(row) })
 			}
+		} else if row.MigratedToServer != "" {
+			needTag(c, T("need.valise"))
+			ui.PrimaryButton(c, T("agent.reactivate.open")).OnClick(func() {
+				a.openAgentReactivate(row)
+			})
 		}
 	})
 }

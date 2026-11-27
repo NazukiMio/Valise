@@ -81,6 +81,19 @@ func (c *installConn) SetResize(fn func(cols, rows, wpx, hpx int)) {
 
 func (c *installConn) Read(p []byte) (int, error)  { return c.out.Read(p) }
 func (c *installConn) Write(p []byte) (int, error) { return c.inW.Write(p) }
+
+// Send writes control bytes (such as Ctrl+C) to stdin without blocking the UI
+// thread if the remote command is not actively reading stdin.
+func (c *installConn) Send(p []byte) {
+	if c == nil || c.inW == nil {
+		return
+	}
+	cp := append([]byte(nil), p...)
+	go func() {
+		_, _ = c.inW.Write(cp)
+	}()
+}
+
 func (c *installConn) Close() error {
 	c.outW.Close()
 	c.inW.Close()

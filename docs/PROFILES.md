@@ -240,6 +240,7 @@ service:
 
 entries:
   - id: main
+    display_name: "管理面板"        # 可选：界面展示的入口名称（缺省时显示 id）
     kind: web
     host: 127.0.0.1
     port: 8080
@@ -254,6 +255,21 @@ entries:
       steps:                     # harness 自己的改端口命令，按顺序运行；argv 只能引用 ${PORT}
         - [example, config, set, port, "${PORT}"]
       restart_service: true      # 改完是否还需要 Valise 重启服务（命令自己会重装/重启服务时填 false）
+    prepare:                     # 可选：入口按需启用/构建准备（LOGIN_RELAY.md 4.3）
+      summary: "启用管理面板配置并重启服务"
+      check_paths: []            # 可选：相对实例 state 根的检查路径列表（禁止 .. 与 / 开头绝对路径）
+      check_argv: [example, config, get, web.enabled]   # 可选：只读检查命令（daily）
+      expect_output: "true"      # 可选：配合 check_argv，去首尾空白后精确匹配
+      steps:                     # 必填：按顺序直调的准备命令列表（admin，无 shell 包装）
+        - [example, config, set, web.enabled, "true"]
+      restart_service: true      # 可选：准备完成后是否重启实例 systemd 服务
+      verify: pending            # 未实机核实时标 pending
+    start:                       # 可选：入口脱离终端的按需后台启动与显式停止（LOGIN_RELAY.md 4.3）
+      summary: "在服务器后台启动管理面板"
+      argv: [example, dashboard, --no-open]   # 必填：后台启动命令（owner）
+      stop_argv: null            # 可选：显式停止命令（owner）；未声明时直接停止 Valise 记录的单元或进程组
+      wait_seconds: 15           # 可选：启动后轮询端口监听的超时秒数（默认 15）
+      verify: pending            # 未实机核实时标 pending
     # 改过端口后，新端口记在实例记录的 entry_ports 里（按入口 id），打开管理页、健康检查都用它；
     # profile 中的 port 只是默认值。
 
@@ -336,6 +352,9 @@ agent_kit:
 - **安装、入口与动作约束**：
   - `install.steps` 中 `script` 必须有 `https://` `url`、64 位十六进制 `sha256`、`interpreter` 与 `runtime_downloads`（确认无额外下载时写 `""`）。
   - `entries[].auth` 中 `url_argv` 与 `token_argv` 最多出现一个；`url_field`（点分路径）仅可与 `url_argv` 同用；`url_suffix`（仅允许 `${TOKEN}`）仅可与 `token_argv` 同用。
+  - `entries[].prepare`：`check_paths` 必须为相对实例 `state` 根的相对路径（禁止 `..`、`/` 开头绝对路径与变量占位符）；`steps` 非空；`expect_output` 仅可与 `check_argv` 同用；`check_argv` 与每条 `steps[]` 均须通过可执行命令与 shell 包装器安全审计（仅允许 `${HOME}`、`${STATE_DIR}`）；`verify` 只允许 `pending` 或省略。
+  - `entries[].start`：`argv` 必填，`stop_argv` 可选，均须通过可执行命令与 shell 包装器安全审计（仅允许 `${HOME}`、`${STATE_DIR}`）；`wait_seconds` 不能为负；`verify` 只允许 `pending` 或省略。
+  - `entries[].port_change`：`steps` 非空、必须引用 `${PORT}`，且全部通过可执行命令与 shell 包装器安全审计。
   - `actions`：`id` 唯一且合法；`name`、`explain` 非空；`risk`、`output` 取值合法；单步 `argv` 仅允许 `${HOME}` 且与 `steps`/`transaction` 互斥；`output: secret` 必须写 `secret` 且禁止 `terminal: true`；`config` 与 `danger` 必须写 `undo`。
   - `service.repair_action` 非空时必须有 `service.candidates`，且指向本 profile 中非交互、非机密的 `manage` 动作（尚未核实的动作不得填入关联；命名实例去掉服务时一并去掉入口）。
 - **子 profile 约束**：
@@ -359,7 +378,7 @@ agent_kit:
 2. 根目录发现：`roots[].discover_argv`
 3. 身体重建：`body.bootstrap_argv`
 4. 服务安装：`service.install_argv`
-5. 管理页认证：`entries[].auth.url_argv` / `token_argv`
+5. 管理页认证与生命周期：`entries[].auth.url_argv` / `token_argv`、`entries[].prepare.check_argv`（`daily`）、`entries[].prepare.steps[]`（`admin`）、`entries[].start.argv` / `stop_argv`（`owner`）
 6. 入口改端口：`entries[].port_change.steps[]`
 7. 健康检查：`health.checks[].argv`
 8. 登录授权：`login[].argv`

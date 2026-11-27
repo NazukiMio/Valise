@@ -45,6 +45,7 @@ type serviceTermRun struct {
 	text    tailText
 	input   string
 	conn    *installConn
+	cancel  context.CancelFunc
 	code    int
 	hasCode bool
 	err     error
@@ -56,6 +57,7 @@ type actionModalState struct {
 	plan     string
 	seal     bool
 	running  bool
+	cancel   context.CancelFunc
 	progress []string
 	termRun  *serviceTermRun
 	res      *service.ActionResult
@@ -316,7 +318,15 @@ func (a *App) serviceInstallModal(c *ui.Context, row *agentRow, st *agentService
 				return
 			}
 			a.renderServiceTerm(c, st.installRun)
-			if !st.installRun.running {
+			if st.installRun.running {
+				ui.Row(c).Justify(ui.End).Children(func() {
+					ui.Button(c, T("agent.term.stop_close")).OnClick(func() {
+						stopServiceTerm(st.installRun)
+						st.installAsk = false
+						st.installRun = nil
+					})
+				})
+			} else {
 				if st.installRun.hasCode {
 					ui.Text(c, T("agent.service.install_exited", "code", st.installRun.code)).Bold().Selectable()
 				}
@@ -345,11 +355,11 @@ func (a *App) startServiceInstall(row *agentRow, st *agentServiceState) {
 	host, inst := row.Server, row.Instance
 	ops := a.svcOps()
 	conn := newInstallConn()
-	tr := &serviceTermRun{title: T("agent.service.install_title"), running: true, conn: conn}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	tr := &serviceTermRun{title: T("agent.service.install_title"), running: true, conn: conn, cancel: cancel}
 	tr.term = a.openInstallTerminal(conn, &tr.text)
 	st.installRun = tr
 	a.run(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
 		code, updated, err := ops.install(ctx, host, inst, service.InstallIO{
 			Stdin:    conn.in,

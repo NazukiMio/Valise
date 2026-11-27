@@ -20,6 +20,8 @@ type agentRow struct {
 	Service, ServiceTone                            string // tone: ok, stop, warn
 	Entry                                           string // "" when the harness has no admin page
 	Note                                            string // migrated or superseded
+	MigratedToServer                                string // non-empty when migrated away
+	MigratedToInstance                              string // target instance id when migrated away
 	Roots                                           []string
 	MissingRoots                                    []string
 	StateMissing                                    bool
@@ -74,6 +76,8 @@ func (a *App) agentRows(res service.AgentListResult) []agentRow {
 		switch {
 		case it.MigratedTo != nil:
 			r.Note = T("agent.migrated_to", "server", it.MigratedTo.ConnectionID)
+			r.MigratedToServer = it.MigratedTo.ConnectionID
+			r.MigratedToInstance = it.MigratedTo.AgentRef.InstanceID
 		case in.Superseded != nil:
 			r.Note = T("agent.superseded")
 		}

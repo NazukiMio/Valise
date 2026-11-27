@@ -55,6 +55,9 @@ N1 交付共享 Go 服务契约、持久化边界、兼容规则和验收矩阵�
 - 成功迁移：目标拥有新的 AgentRef，以 `migration_completed` 边接续原旅程。创建副本：新 AgentRef 与独立旅程，仅有 `clone_from` 来源关系。失败、回退、仅暂存通过、仅文件恢复都不生成成功迁移边。
 - 迁移关系字段：`relation_id`, `kind`, `source_agent?`, `source_snapshot`, `target_agent`, `operation_ref`, `verified_at`, `source_disposition`。source_disposition = stopped_verified / exclusive_omitted / unresolved；unresolved 不能宣称完整迁移完成。
 - 成功目标端保存关系的权威记录；客户端缓存，原服务器可达时补记，补记失败不撤销已成功恢复。关系不进入备份库，源失联且没有任何可靠 AgentRef 证据时，只关联 source_snapshot，保留“来源实例身份未知”。
+- **已迁出实例的恢复切回与双开共存（`instance_reactivate`，`TierOwner`，能力 `instance-reactivate/1`）**：
+  - `switch_back`（切回）：先核实新机目标服务器与活跃实例世代，若目标服务存在且运行中则先停止并核实已停（`stopped_verified`），随后在老机签发新 `generation` 并原子提交已完成的 `operations/<op>.json` 与反向 `migration_completed` 关系（`source_agent` 指向新机 `AgentRef`，`target_agent` 指向老机新 `AgentRef`，`source_disposition: stopped_verified`），从而在跨服务器读取中将新机标为 `MigratedTo` 指向切回后的服务器；两边文件与接入记录均保留，支持对称来回切换。
+  - `coexist`（双开共存）：保留新机不停止，仅在老机签发新 `generation` 恢复活跃接入（不写入反向迁移边）；服务端/服务层强制要求用户明确确认双活 Bot 凭据与消息渠道路由冲突风险（`confirm_bot_conflict == true`，否则拒绝并返回 `bot_conflict_confirm_required`）。
 
 ### 3.3 与快照的关联
 

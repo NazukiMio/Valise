@@ -83,4 +83,68 @@ func init() {
 		}
 		return porterlogin.ListenAddrs(p.Port)
 	}
+	methods[login.MethodEntryProbe] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[login.EntryProbeParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		return porterlogin.ProbeEntry(ctx, s.loginEnv(ctx), s.cfg.Home, p)
+	}
+	methods[login.MethodEntryPrepare] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[login.EntryPrepareParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		res, err := porterlogin.PrepareEntry(ctx, s.loginEnv(ctx), s.cfg.Home, p)
+		if err == nil {
+			seal.Paths{Home: s.cfg.Home}.AppendAudit(seal.AuditEntry{
+				Time:      time.Now().UTC(),
+				Op:        login.MethodEntryPrepare,
+				Instance:  p.InstanceID,
+				Initiator: vaultrpc.InitiatorClient,
+				Result:    "ok",
+				Reason:    p.Entry.ID,
+				Tier:      "admin",
+			})
+		}
+		return res, err
+	}
+	methods[login.MethodEntryStart] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[login.EntryStartParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		res, err := porterlogin.StartEntry(ctx, s.loginEnv(ctx), s.cfg.Home, p)
+		if err == nil {
+			seal.Paths{Home: s.cfg.Home}.AppendAudit(seal.AuditEntry{
+				Time:      time.Now().UTC(),
+				Op:        login.MethodEntryStart,
+				Instance:  p.InstanceID,
+				Initiator: vaultrpc.InitiatorClient,
+				Result:    "ok",
+				Reason:    p.Entry.ID,
+				Tier:      "owner",
+			})
+		}
+		return res, err
+	}
+	methods[login.MethodEntryStop] = func(s *session, ctx context.Context, raw json.RawMessage) (any, error) {
+		p, err := decode[login.EntryStopParams](raw)
+		if err != nil {
+			return nil, err
+		}
+		res, err := porterlogin.StopEntry(ctx, s.loginEnv(ctx), s.cfg.Home, p)
+		if err == nil {
+			seal.Paths{Home: s.cfg.Home}.AppendAudit(seal.AuditEntry{
+				Time:      time.Now().UTC(),
+				Op:        login.MethodEntryStop,
+				Instance:  p.InstanceID,
+				Initiator: vaultrpc.InitiatorClient,
+				Result:    "ok",
+				Reason:    p.Entry.ID,
+				Tier:      "owner",
+			})
+		}
+		return res, err
+	}
 }

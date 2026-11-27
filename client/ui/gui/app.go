@@ -73,10 +73,11 @@ func New(svc *service.Service) *App {
 	a.hooks = hooks{entryOpener: svc.OpenEntry, openURL: service.OpenURL,
 		scanTimeline: svc.ScanTimelineInScope, runRestoreTest: svc.RunSelectedRestoreTest,
 		inspectPlacement: svc.InspectTargetPlacement}
-	a.agentData = agentData{harness: map[string]string{}, hasSessionCLI: map[string]bool{}, display: map[string]*profile.Display{}, vaultNames: map[string]string{},
+	a.agentData = agentData{harness: map[string]string{}, entryDisplay: map[string]string{}, hasSessionCLI: map[string]bool{}, display: map[string]*profile.Display{}, vaultNames: map[string]string{},
 		images: map[string]ui.ImageSource{}, logos: map[string]ui.ImageSource{}}
 	a.prefs = prefs{View: "cards", Dismissed: map[string]string{}}
-	a.entries, a.entryChoice, a.forwards, a.reenrollJobs = map[string]*entryState{}, map[string]string{}, map[string]*forwardState{}, map[string]*job{}
+	a.entries, a.entryChoice, a.entryManaged, a.entryStopJobs, a.entryProbeJobs = map[string]*entryState{}, map[string]string{}, map[string]bool{}, map[string]*job{}, map[string]*job{}
+	a.forwards, a.reenrollJobs = map[string]*forwardState{}, map[string]*job{}
 	a.natives, a.agentKits, a.agentServices, a.agentDossiers = map[string]*nativeState{}, map[string]*agentKitState{}, map[string]*agentServiceState{}, map[string]*agentDossierState{}
 	a.timelineScope = service.TimelineScanRequest{LocalOnly: true}
 	a.health, a.proposals = map[string]*healthState{}, map[string]*proposalsState{}
@@ -127,6 +128,7 @@ func (a *App) Start() {
 
 func (a *App) loadHarness() {
 	a.harness = map[string]string{}
+	a.entryDisplay = map[string]string{}
 	a.hasSessionCLI = map[string]bool{}
 	a.display = map[string]*profile.Display{}
 	a.installable = nil
@@ -136,6 +138,11 @@ func (a *App) loadHarness() {
 	}
 	for _, p := range set.Effective() {
 		a.harness[p.ID] = p.DisplayName
+		for _, e := range p.Entries {
+			if e.DisplayName != "" {
+				a.entryDisplay[p.ID+"/"+e.ID] = e.DisplayName
+			}
+		}
 		if len(p.NativeSessionCLI) > 0 {
 			a.hasSessionCLI[p.ID] = true
 		}

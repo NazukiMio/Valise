@@ -365,6 +365,40 @@ func (c *checker) checkTop(p *Profile) {
 				}
 			}
 		}
+		if pr := e.Prepare; pr != nil {
+			pf := f + ".prepare"
+			for j, cp := range pr.CheckPaths {
+				if strings.Contains(cp, "${") {
+					c.add(fmt.Sprintf("%s.check_paths[%d]", pf, j), "不能使用变量")
+				} else if err := validateRelPath(cp, true); err != nil {
+					c.add(fmt.Sprintf("%s.check_paths[%d]", pf, j), "%v", err)
+				}
+			}
+			c.argv(pf+".check_argv", pr.CheckArgv, false)
+			if pr.ExpectOutput != "" && len(pr.CheckArgv) == 0 {
+				c.add(pf+".expect_output", "只能与 check_argv 一起使用")
+			}
+			if len(pr.Steps) == 0 {
+				c.add(pf+".steps", "不能为空")
+			}
+			for j, st := range pr.Steps {
+				c.argv(fmt.Sprintf("%s.steps[%d]", pf, j), st, true)
+			}
+			if pr.Verify != "" && pr.Verify != "pending" {
+				c.add(pf+".verify", "只能是 pending 或不写")
+			}
+		}
+		if st := e.Start; st != nil {
+			sf := f + ".start"
+			c.argv(sf+".argv", st.Argv, true)
+			c.argv(sf+".stop_argv", st.StopArgv, false)
+			if st.WaitSeconds < 0 {
+				c.add(sf+".wait_seconds", "不能为负数")
+			}
+			if st.Verify != "" && st.Verify != "pending" {
+				c.add(sf+".verify", "只能是 pending 或不写")
+			}
+		}
 	}
 	if d := p.Display; d != nil {
 		c.checkDisplay(d)

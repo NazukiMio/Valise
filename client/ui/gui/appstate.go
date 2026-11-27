@@ -11,6 +11,7 @@ import (
 	"valise/client/config"
 	"valise/core/enroll"
 	"valise/core/journey"
+	"valise/core/login"
 	"valise/core/profile"
 	"valise/ui/service"
 )
@@ -24,6 +25,11 @@ type hooks struct {
 	scanTimeline            func(context.Context, service.TimelineScanRequest, func(service.TimelineUpdate)) error
 	runRestoreTest          func(context.Context, service.SelectedRestoreTest) (*service.RestoreTest, error)
 	entryOpener             func(context.Context, string, string, service.OpenOptions) error
+	entryProber             func(context.Context, string, string, string) (*login.EntryProbeResult, error)
+	entryPreparer           func(context.Context, string, string, string) (*login.EntryPrepareResult, error)
+	entryStarter            func(context.Context, string, string, string) (*login.EntryStartResult, error)
+	entryStopper            func(context.Context, string, string, string) (*login.EntryStopResult, error)
+	reactivateFn            func(context.Context, service.ReactivateAgentRequest) (*service.ReactivateAgentResult, error)
 	openURL                 func(string) error
 	pickImage               func() (string, error)                               // the system's open dialog; "" when cancelled
 	pickFolder              func(title, message string) (string, error)          // the system's folder dialog; "" when cancelled
@@ -54,6 +60,7 @@ type hooks struct {
 type agentData struct {
 	agents        load[service.AgentListResult]
 	harness       map[string]string // profile id → display name
+	entryDisplay  map[string]string // profile/entryID → entry display name
 	hasSessionCLI map[string]bool   // profile id → pack declares native_session_cli
 	display       map[string]*profile.Display
 	hasRepos      bool // a local repository is registered (docs/UI.md 7.2)
@@ -88,13 +95,18 @@ type homeView struct {
 type agentView struct {
 	agentTab         int                      // tabOverview, tabJourney, tabHealth, tabManage
 	iconErr          error                    // choosing an agent's picture failed
-	entries          map[string]*entryState   // admin page tunnels by server/instance
+	entries          map[string]*entryState   // admin page tunnels by server/instance/entryID
 	entryChoice      map[string]string        // selected entry id by server/instance
+	entryManaged     map[string]bool          // Valise-managed remote entries by server/instance/entryID
+	entryStopJobs    map[string]*job          // remote entry stop jobs by server/instance/entryID
+	entryProbeJobs   map[string]*job          // entry probe jobs by server/instance/entryID
+	entryLifecycle   *entryLifecycleState     // on-demand entry prepare/start modal
 	forwards         map[string]*forwardState // loopback page forwards by server/instance
 	reenrollJobs     map[string]*job          // in-place 1-click re-enroll jobs by server/instance
 	natives          map[string]*nativeState
 	native           *nativeRun
 	agentRename      *agentRenameState
+	agentReactivate  *agentReactivateState
 	agentKits        map[string]*agentKitState
 	agentKitHook     *agentKitOps
 	agentServices    map[string]*agentServiceState
@@ -215,12 +227,16 @@ func (a *App) forgetServer(name string) {
 		}
 	}
 	deleteByPrefix(a.entryChoice, prefix)
+	deleteByPrefix(a.entryManaged, prefix)
+	deleteByPrefix(a.entryStopJobs, prefix)
+	deleteByPrefix(a.entryProbeJobs, prefix)
 	deleteByPrefix(a.reenrollJobs, prefix)
 }
 
 // forgetInstance clears per-instance cached state after an instance is forgotten.
 func (a *App) forgetInstance(host, instance string) {
 	key := host + "/" + instance
+	subPrefix := key + "/"
 	delete(a.prots, key)
 	delete(a.natives, key)
 	delete(a.agentKits, key)
@@ -231,6 +247,14 @@ func (a *App) forgetInstance(host, instance string) {
 	delete(a.entryChoice, key)
 	delete(a.reenrollJobs, key)
 	a.closeEntry(key)
+	for k := range a.entries {
+		if len(k) > len(subPrefix) && k[:len(subPrefix)] == subPrefix {
+			a.closeEntry(k)
+		}
+	}
+	deleteByPrefix(a.entryManaged, subPrefix)
+	deleteByPrefix(a.entryStopJobs, subPrefix)
+	deleteByPrefix(a.entryProbeJobs, subPrefix)
 	a.closeForward(key)
 	delete(a.scans, host)
 }
