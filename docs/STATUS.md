@@ -1,10 +1,10 @@
 # 当前状态与交接
 
-> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-27。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
+> 每次交接时覆盖更新本文件，不另建交接文件。最后更新：2026-11-28。新会话读完 `AGENTS.md` 核心必读 3 份后先按第 0 节接续当前分支任务。
 
-## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-27）
+## 0. 当前阶段：Valise v0.1（Valise Recovery）发版收口（2026-11-28）
 
-- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成 **WP0–WP6**、**Round 2–7 实机反馈修复（WP-A / WP-B1-2 / WP-C / WP-D / WP-E，`3e608ed`）**，以及 **WP-B3a（Agent 声明式自汇报 `web_entry` + 零官方 Profile 通用接入 + 未声明凭据保护护栏；`auditor-b3a-r2` `AUDIT_PASS`、`./testbed/selfcheck.sh` `SELFCHECK_PASS`、改动包 `-count=1 -race` 通过，待确认是否继续 WP-B3b 或先行构建测试包）**：
+- **分支状态**：`v0.1.0-beta.1`（`56ddb6c`）/ `main`（`4e5fe6c`）在真实 Hermes Agent 服务器完成实机测试后，当前工作分支 **`feat/beta1-feedback-fixes`** 已完成 **WP0–WP6**、**Round 2–7 实机反馈修复（`3e608ed`）** 与 **WP-B3a（`2139c60` · Agent 声明式自汇报 `web_entry` + 零官方 Profile 通用接入 + 未声明凭据保护护栏；已合入并打包至 `stage-test-20261128-beta1-r7` 待实机验收，WP-B3b 暂缓按用户决策先测一轮）**：
   - **WP-B3a（通用 Harness 接入与 Agent 声明式自发现，未改动可执行命令安全边界）**：
     - `core/` & `porter/`：`profile.Entry` 新增运行期字段 `AgentHint` / `LocalSource`（`yaml:"-"`），`profile.HasSecretRules` 统一计算实例是否已声明凭据规则；`core/enroll` 新增 `LocalEntry` / `ValidLocalEntry` / `DossierAgent.LocalEntries` / `ApplyLocalEntries` / `InstanceSummary.HasSecretRules` / `EntryState.DisplayName`；`porter/internal/enroll` 新增 `UpdateRecord`（修改 Dossier 不重写基准 `profile.json`，保持绑定实例 `ProfileDigest`）；`valise_onboard_context` 新增 `has_secret_rules`、`local_entries`、`known_entries` 与纯端口号 `loopback_ports`（零 cmdline）；`valise_propose_dossier` 与 `valise-onboard` 新增纯声明式 `web_entry` 提案并拦截疑似 Token/密钥片段及与原生入口冲突，且在入队与 `Decide` 双端防 `secrets` 降级；`seal` 与 `revive_plan` 随快照继承 `local_entries`。
     - `client/` & `client/ui/`：`client/profiles/generic.go` 生成经 `profile.Lint` 严格校验的本地最小 `valise-profile/1` YAML（零猜测规则）；`Service.EnrollGeneric` 仅在确认后写盘与接入；`Service.LoginMethods` / `RemoveLocalEntry` 支持本地入口动态合并与移除；`CreateManualSavepoint`、`PrepareProtectionChange` 与桌面端管理/手动存档页当 `HasSecretRules == false` 时自动隐藏并拒绝「轻装（剥离凭据）」档位；桌面端实现 `web_entry` 逐条审核（禁批量通过）、未监听时带「由 Agent 汇报」标识 + 直达服务器终端 + 一键移除、以及「通用接入…」向导。
@@ -82,7 +82,7 @@
 
 ### 必须保留的环境与基线事实
 
-- **当前待验收测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261127-beta1-r6/Valise Test.app`（`0.1.0-beta.2-dev+stage-test-20261127-r6`，Beta 公钥 `RWTZ1EJhJqLr+89l9EhFambSn5K8QWguYmn9x2mGlC5aQfJzcMyWA15L`，资料包 `2026.11.27.2` 含 `dsh v5` / `hermes v16` / `openclaw v24`，构建自 `feat/beta1-feedback-fixes`，含 `darwin/arm64` 客户端、`valise` CLI 与 `valise-porter_linux_{arm64,amd64}`；具体提交见包内 `BUILD.json`）。打包验收门禁中执行 `profiles install` / `profiles status` / `cloud list` 必须使用 `--config-dir "$TMP"` 隔离配置目录。历史包 `stage-test-20261127-beta1-r5`、`stage-test-20261125-beta1-r4`、`stage-test-20261124-beta1-r3`、`stage-test-20261123-beta1-r2`、`stage-test-20261123-beta1-fixes`、`stage-test-20261121-v01r6`、`stage-test-20261120-v01r5`、`v01r4`、`v01r3`、`v01r2`、`b3.2` 等均保留未动。
+- **当前待验收测试包**：`/Users/nazukimio/Downloads/valise-porter-test/stage-test-20261128-beta1-r7/Valise Test.app`（`0.1.0-beta.2-dev+stage-test-20261128-r7`，Beta 公钥 `RWTZ1EJhJqLr+89l9EhFambSn5K8QWguYmn9x2mGlC5aQfJzcMyWA15L`，资料包 `2026.11.28.1` 含 `dsh v5` / `hermes v17` / `openclaw v24`，构建自 `feat/beta1-feedback-fixes` 提交 `2139c60`，含 `darwin/arm64` 客户端、`valise` CLI 与 `valise-porter_linux_{arm64,amd64}`；具体提交见包内 `BUILD.json`）。打包验收门禁中执行 `profiles install` / `profiles status` / `cloud list` 必须使用 `--config-dir "$TMP"` 隔离配置目录。历史包 `stage-test-20261127-beta1-r6`、`stage-test-20261127-beta1-r5`、`stage-test-20261125-beta1-r4`、`stage-test-20261124-beta1-r3`、`stage-test-20261123-beta1-r2`、`stage-test-20261123-beta1-fixes`、`stage-test-20261121-v01r6`、`stage-test-20261120-v01r5`、`v01r4`、`v01r3`、`v01r2`、`b3.2` 等均保留未动。
 - **默认资料包与演练公钥**：当前开发资料包位于 `~/.cache/valise-drill/devpack`（`2026.11.21`：`dsh v5`、`hermes v12`、`openclaw v24`，`kit-tools.yaml` 含 `webdav`/`s3`，公钥 `RWQCRlUzO1yCpR4+m1KbYsJO7OIYDC2OpeB3j+JTZ2cPj37DcSZuoCF1`）；演练配置 `~/.cache/valise-drill/drillpack` 独立保留，不得混用或覆盖。
 - **构建与检查环境**：macOS 上始终执行 `export PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=go1.27.3`；构建发布/测试包时 `-ldflags` 必须同时注入 `main.version` 与 `valise/client/porter.ReleasePublicKey`；禁止执行 `rm -f`（清空用 `: > file`，测试用 `t.TempDir()`）；未经用户明确要求不执行 `git push`。
 
