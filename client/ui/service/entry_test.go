@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -151,5 +152,61 @@ func TestOpenEntryInitialSuffixHiddenFromDisplay(t *testing.T) {
 	}
 	if !authStatus.OK {
 		t.Fatalf("expected EntryAuth OK when InitialSuffix provided, got %+v", authStatus)
+	}
+}
+
+func TestOpenEntryUsesAuthArgvUnlessInitialSuffixHasToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+	defer srv.Close()
+	srvPort, _ := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	old := entryDialer
+	entryDialer = func(*ssh.Transport, string, int) tunnel.Dialer {
+		return func(ctx context.Context) (io.ReadWriteCloser, error) {
+			return net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(srvPort))
+		}
+	}
+	t.Cleanup(func() { entryDialer = old })
+
+	s, home := loginWorld(t)
+	callsFile := filepath.Join(home, "auth-calls")
+	port := freePort(t)
+	authScript := fmt.Sprintf("#!/bin/sh\necho call >> %q\necho 'http://127.0.0.1:%d/#ticket=fresh-once-tok'\n", callsFile, port)
+	if err := os.WriteFile(filepath.Join(home, ".local/bin/demo-auth"), []byte(authScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(s.Dirs.Data, "profiles", "demo.yaml")
+	profYAML := demoProfile +
+		"entries: [ { id: web, kind: web, host: 127.0.0.1, port: " + strconv.Itoa(port) + ", path: \"/\", auth: { url_argv: [demo-auth] } } ]\n"
+	if err := os.WriteFile(p, []byte(profYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Without InitialSuffix (e.g. already listening): OpenEntry runs entryAuth.
+	ctx, cancel := context.WithCancel(context.Background())
+	var open1, disp1 string
+	if err := s.OpenEntry(ctx, "box", "demo", OpenOptions{
+		Ready: func(open, display string) { open1, disp1 = open, display; cancel() },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if open1 != "http://127.0.0.1:"+strconv.Itoa(port)+"/#ticket=fresh-once-tok" || disp1 != "http://127.0.0.1:"+strconv.Itoa(port)+"/" {
+		t.Fatalf("open1=%q disp1=%q", open1, disp1)
+	}
+
+	// 2. With tokenized InitialSuffix (e.g. captured by StartEntry): OpenEntry skips duplicate entryAuth call.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	var open2 string
+	if err := s.OpenEntry(ctx2, "box", "demo", OpenOptions{
+		InitialSuffix: "/#ticket=captured-start-tok",
+		Ready:         func(open, _ string) { open2 = open; cancel2() },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if open2 != "http://127.0.0.1:"+strconv.Itoa(port)+"/#ticket=captured-start-tok" {
+		t.Fatalf("open2=%q", open2)
+	}
+	rawCalls, _ := os.ReadFile(callsFile)
+	if lines := strings.Split(strings.TrimSpace(string(rawCalls)), "\n"); len(lines) != 1 {
+		t.Fatalf("expected 1 entryAuth invocation (skipped duplicate when InitialSuffix had token), got %d (%q)", len(lines), string(rawCalls))
 	}
 }

@@ -81,3 +81,38 @@ func TestNamedInstances(t *testing.T) {
 		t.Fatalf("%+v", cs)
 	}
 }
+
+func TestNestedInstancesIgnoresDeletedDir(t *testing.T) {
+	home := t.TempDir()
+	stateDir := filepath.Join(home, ".demo")
+	liveSub := filepath.Join(stateDir, "agents", "live-sub")
+	deletedSub := filepath.Join(stateDir, "agents", "deleted-sub")
+	mkfile(t, filepath.Join(stateDir, "demo.json"))
+	mkfile(t, filepath.Join(liveSub, "demo.json"))
+
+	p := &profile.Profile{
+		Schema:         profile.Schema,
+		ID:             "demo",
+		ProfileVersion: 1,
+		Detect:         &profile.Detect{StateDirCandidates: []string{"${HOME}/.demo"}, MarkersAny: []string{"demo.json"}},
+	}
+	if _, err := WriteRecord(home, coreenroll.Record{
+		InstanceID: "demo-live", ProfileID: "demo", ProfileVersion: 1, Name: "live-sub",
+		Roots: map[string]string{"state": liveSub},
+	}, *p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WriteRecord(home, coreenroll.Record{
+		InstanceID: "demo-deleted", ProfileID: "demo", ProfileVersion: 1, Name: "deleted-sub",
+		Roots: map[string]string{"state": deletedSub},
+	}, *p); err != nil {
+		t.Fatal(err)
+	}
+
+	e := &Env{Home: home, Vars: []string{"PATH=/usr/bin:/bin"}}
+	nested := NestedInstances(e, p, "demo", stateDir)
+	wantLive := realPath(liveSub)
+	if len(nested) != 1 || nested[0] != wantLive {
+		t.Fatalf("NestedInstances = %v, want [%s] (deleted dir %s must be ignored)", nested, wantLive, deletedSub)
+	}
+}

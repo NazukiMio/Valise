@@ -1044,3 +1044,73 @@ func TestPrepareBundleRestoreSubAgentOnlyOfflineClearsServiceMissing(t *testing.
 		}
 	}
 }
+
+func TestPrepareAndRunBundleRestoreIgnoresDeletedTargetSubAgents(t *testing.T) {
+	s, _, home2, bundleID := setupBundleCarryOverPair(t, true)
+	ctx := context.Background()
+
+	// Seed and enroll main + 2 nested sub-agents on box2 (matching Hermes ~/.hermes/profiles/*),
+	// then delete their directories on disk on box2 without forgetting their dossiers.
+	for _, rel := range []string{
+		".demo/demo.json",
+		".demo/.env",
+		".demo/profiles/alpha/demo.json",
+		".demo/profiles/alpha/.env",
+		".demo/profiles/beta/demo.json",
+		".demo/profiles/beta/.env",
+	} {
+		p := filepath.Join(home2, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("old"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	profPath := filepath.Join(s.Dirs.Data, "profiles", "demo.yaml")
+	rawProf := readFile(t, profPath)
+	rawProf = strings.Replace(rawProf, "named:\n", "named:\n    - glob: \"${HOME}/.demo/profiles/*\"\n      env: { DEMO_HOME: \"${STATE_DIR}\" }\n", 1)
+	if err := os.WriteFile(profPath, []byte(rawProf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Enroll(ctx, "box2", EnrollOptions{ProfileID: "demo", Accept: true}); err != nil {
+		t.Fatalf("enroll main on box2: %v", err)
+	}
+	if _, err := s.Enroll(ctx, "box2", EnrollOptions{ProfileID: "demo", InstanceID: "demo-alpha", Name: "alpha", Accept: true}); err != nil {
+		t.Fatalf("enroll alpha on box2: %v", err)
+	}
+	if _, err := s.Enroll(ctx, "box2", EnrollOptions{ProfileID: "demo", InstanceID: "demo-beta", Name: "beta", Accept: true}); err != nil {
+		t.Fatalf("enroll beta on box2: %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(home2, ".demo")); err != nil {
+		t.Fatal(err)
+	}
+
+	bp, err := s.PrepareBundleRestore(ctx, BundleRestoreOptions{
+		Target:     "box2",
+		From:       "box",
+		Mode:       revive.ModeMigrate,
+		BundleID:   bundleID,
+		AllowDraft: true,
+	}, pass)
+	if err != nil {
+		t.Fatalf("PrepareBundleRestore with deleted target sub-agents: %v", err)
+	}
+	defer bp.Close()
+
+	for i, rp := range bp.Plans {
+		if len(rp.Nested) != 0 {
+			t.Fatalf("plan[%d] (%s) unexpected Nested=%v", i, rp.Plan.InstanceID, rp.Nested)
+		}
+		if len(rp.Blockers) != 0 {
+			t.Fatalf("plan[%d] (%s) unexpected Blockers=%+v", i, rp.Plan.InstanceID, rp.Blockers)
+		}
+	}
+	res, err := s.RunBundleRestore(ctx, bp, proceedConfirm())
+	if err != nil {
+		t.Fatalf("RunBundleRestore with deleted target sub-agents: %v", err)
+	}
+	if res.Partial {
+		t.Fatalf("expected non-partial RunBundleRestore result: %+v", res)
+	}
+}

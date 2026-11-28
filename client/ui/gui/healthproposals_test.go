@@ -172,3 +172,61 @@ func TestHealthProposalsCardAndDemotionModal(t *testing.T) {
 		t.Fatalf("warn-only external_ref accept = %+v", last)
 	}
 }
+
+func TestProposalsAutoRefreshOnRevisitAndOverviewBanner(t *testing.T) {
+	a, _ := world(t)
+	a.health["home/xiaoman"] = &healthState{at: time.Now(), report: &service.HealthReport{}}
+	var items []agentkit.Proposal
+	listCalls := 0
+	a.proposalsHook = &proposalsOps{
+		list: func(context.Context, string, string) ([]agentkit.Proposal, error) {
+			listCalls++
+			return append([]agentkit.Proposal{}, items...), nil
+		},
+	}
+	tt := ui.NewTester(a.View, 1180, 1800)
+
+	// 1. Initial visit on Overview with empty proposals shows no pending banner.
+	a.agentTab = tabOverview
+	a.navigate("/agents/home/xiaoman")
+	tt.Advance(time.Second)
+	if tt.HasText(T("prop.pending_review")) {
+		t.Fatalf("unexpected pending banner when proposals are empty: %q", tt.Texts())
+	}
+
+	// 2. Agent adds 2 proposals while user is away; revisiting /agents/home/xiaoman
+	// refreshes proposals and surfaces the banner on Overview/Manage tabs.
+	a.navigate("/agents")
+	tt.Advance(time.Second)
+	now := tt.Now()
+	items = []agentkit.Proposal{
+		{ID: "p1", Kind: agentkit.ProposalKindClassify, Rule: profile.Override{Root: "state", Glob: "cache/web/**", Category: "cache"}, Reason: "web cache", Demotion: true, Created: now},
+		{ID: "p2", Kind: agentkit.ProposalKindExternalRef, ExternalRef: &agentkit.ExternalRefSpec{Path: "/home/u/.config/magpie", RefKind: agentkit.ExternalRefDir}, Reason: "external config", Created: now},
+	}
+	callsBeforeRevisit := listCalls
+	a.navigate("/agents/home/xiaoman")
+	tt.Advance(time.Second)
+	if listCalls <= callsBeforeRevisit {
+		t.Fatalf("revisiting agent route did not re-fetch proposals (before=%d after=%d)", callsBeforeRevisit, listCalls)
+	}
+	hasAll(t, tt.Texts(), T("prop.pending_banner", "n", 2), T("prop.pending_review"))
+
+	// 3. Clicking "前往审核" switches to tabHealth and displays the proposals card.
+	click(t, tt, T("prop.pending_review"))
+	if a.agentTab != tabHealth {
+		t.Fatalf("agentTab = %d, want tabHealth (%d)", a.agentTab, tabHealth)
+	}
+	hasAll(t, tt.Texts(), T("prop.title"), "/home/u/.config/magpie")
+
+	// 4. Switching to Manage and clicking Refresh on agentDossierCard also refreshes proposals.
+	click(t, tt, T("agent.tab.manage"))
+	items = []agentkit.Proposal{
+		{ID: "p3", Kind: agentkit.ProposalKindToolDep, ToolDep: &agentkit.ToolDepSpec{Name: "gh"}, Reason: "cli", Created: now},
+	}
+	callsBeforeRefresh := listCalls
+	click(t, tt, T("common.refresh"))
+	if listCalls <= callsBeforeRefresh {
+		t.Fatalf("clicking dossier refresh did not re-fetch proposals (before=%d after=%d)", callsBeforeRefresh, listCalls)
+	}
+	hasAll(t, tt.Texts(), T("prop.pending_banner", "n", 1))
+}

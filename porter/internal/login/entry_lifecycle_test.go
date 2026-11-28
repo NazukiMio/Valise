@@ -780,15 +780,18 @@ sleep 30
 	}
 
 	// Verify sanitizeLogContent catches all param variants, authSuffix values, and incomplete tail lines.
-	raw := "normal line\nauth=abc123\ncode=xyz999\ncustom-val-secret-42\nen=HALF_LINE_SECRET"
+	raw := "normal line\nauth=abc123\ncode=xyz999\nticket=tkt888\ncustom-val-secret-42\nen=HALF_LINE_SECRET"
 	clean := sanitizeLogContent(raw, "/?foo=custom-val-secret-42")
-	for _, leak := range []string{"abc123", "xyz999", "custom-val-secret-42", "HALF_LINE_SECRET"} {
+	for _, leak := range []string{"abc123", "xyz999", "tkt888", "custom-val-secret-42", "HALF_LINE_SECRET"} {
 		if strings.Contains(clean, leak) {
 			t.Fatalf("sanitizeLogContent leaked %q in %q", leak, clean)
 		}
 	}
 	if !strings.Contains(clean, "normal line") {
 		t.Fatalf("normal line lost in %q", clean)
+	}
+	if suf := extractPortURLSuffix([]byte("\x1b[32mhttp://127.0.0.1:9120/#ticket=ansi-ticket-9\x1b[0m."), 9120); suf != "/#ticket=ansi-ticket-9" {
+		t.Fatalf("extractPortURLSuffix ANSI = %q", suf)
 	}
 }
 

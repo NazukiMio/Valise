@@ -51,6 +51,7 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 			a.subAgentParentBar(c, row)
 			a.agentForgetBanner(c, row)
 			a.entryReport(c, row)
+			a.proposalsPendingBanner(c, row)
 		}},
 		{"tabs", func(c *ui.Context) {
 			var tabEl ui.Element
@@ -61,6 +62,9 @@ func (a *App) agentPage(c *ui.Context, server, instance string) {
 			}
 			if tabEl.Changed() {
 				a.closePoint()
+				if !row.Retired() && (a.agentTab == tabHealth || a.agentTab == tabManage) {
+					a.readProposals(row.Server, row.Instance)
+				}
 			}
 		}},
 		{"content", func(c *ui.Context) {

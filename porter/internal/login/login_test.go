@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"valise/core/enroll"
 	"valise/core/login"
@@ -120,6 +121,66 @@ esac
 	_, err = EntryAuth(ctx, e, home, entry(profile.EntryAuth{URLArgv: profile.Argv{"demo", "fail"}}))
 	if err == nil || strings.Contains(fmt.Sprint(err), "leaked") {
 		t.Fatalf("command output leaked into the error: %v", err)
+	}
+}
+
+func TestEntryAuthURLVariantsAndLingeringProcess(t *testing.T) {
+	oldGrace, oldPoll := entryAuthLingeringGrace, entryAuthPoll
+	entryAuthLingeringGrace, entryAuthPoll = 120*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() {
+		entryAuthLingeringGrace, entryAuthPoll = oldGrace, oldPoll
+	})
+
+	home := t.TempDir()
+	bin := t.TempDir()
+	script := `#!/bin/sh
+case "$1" in
+ ansi)
+   printf '\033[36mhttp://127.0.0.1:9120/#ticket=ansi-ticket-1\033[0m)\n'
+   ;;
+ bare-then-tok)
+   echo 'Listening on http://127.0.0.1:9120/'
+   echo 'Sign in: http://127.0.0.1:9120/auth#ticket=one-use-2'
+   ;;
+ stderr-only)
+   echo 'http://127.0.0.1:9120/?ticket=stderr-tok-3' >&2
+   ;;
+ linger)
+   echo 'Open http://127.0.0.1:9120/#ticket=linger-tok-4'
+   sleep 30
+   ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "demo"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e := &porterenroll.Env{Home: home, Vars: []string{"PATH=" + bin + ":/usr/bin:/bin"}}
+	if _, err := porterenroll.WriteRecord(home, enroll.Record{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": home}}, profile.Profile{ID: "demo", ProfileVersion: 1}); err != nil {
+		t.Fatal(err)
+	}
+	entry := func(arg string) login.EntryAuthParams {
+		return login.EntryAuthParams{InstanceID: "demo", Entry: profile.Entry{ID: "webapp", Port: 9120, Path: "/", Auth: &profile.EntryAuth{URLArgv: profile.Argv{"demo", arg}}}}
+	}
+	ctx := context.Background()
+
+	for _, tc := range []struct{ arg, want string }{
+		{"ansi", "/#ticket=ansi-ticket-1"},
+		{"bare-then-tok", "/auth#ticket=one-use-2"},
+		{"stderr-only", "/?ticket=stderr-tok-3"},
+	} {
+		res, err := EntryAuth(ctx, e, home, entry(tc.arg))
+		if err != nil || res.Suffix != tc.want {
+			t.Fatalf("%s: got %+v err=%v, want %q", tc.arg, res, err, tc.want)
+		}
+	}
+
+	start := time.Now()
+	res, err := EntryAuth(ctx, e, home, entry("linger"))
+	if err != nil || res.Suffix != "/#ticket=linger-tok-4" {
+		t.Fatalf("linger: got %+v err=%v", res, err)
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("linger took %v, expected prompt termination after grace", d)
 	}
 }
 

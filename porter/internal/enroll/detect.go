@@ -316,7 +316,11 @@ func NestedInstances(e *Env, p *profile.Profile, self, stateDir string) []string
 	if recs, err := ListRecords(e.Home); err == nil {
 		for _, r := range recs {
 			if r.InstanceID != self && r.Superseded == nil {
-				add(r.Roots[profile.StateRoot])
+				if dir := r.Roots[profile.StateRoot]; dir != "" {
+					if _, err := os.Lstat(dir); err == nil {
+						add(dir)
+					}
+				}
 			}
 		}
 	}

@@ -539,8 +539,10 @@ func overlapping(e *porterenroll.Env, p *profile.Profile, self string, roots []r
 				case within(a, b.Path):
 					rep = true
 				case within(b.Path, a):
-					if !(b.ID == profile.StateRoot && porterenroll.NamedLocation(e, p, b.Path)) {
-						in = true
+					if _, err := os.Lstat(a); err == nil {
+						if !(b.ID == profile.StateRoot && porterenroll.NamedLocation(e, p, b.Path)) {
+							in = true
+						}
 					}
 				}
 			}

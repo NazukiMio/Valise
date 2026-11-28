@@ -142,7 +142,8 @@ func (s *Service) OpenEntry(ctx context.Context, host, instance string, o OpenOp
 		hint = entry.Auth.Hint
 	}
 	authApplied := false
-	if entry.Auth != nil && (len(entry.Auth.URLArgv) > 0 || len(entry.Auth.TokenArgv) > 0) {
+	hasInitialToken := strings.ContainsAny(o.InitialSuffix, "?#")
+	if entry.Auth != nil && (len(entry.Auth.URLArgv) > 0 || len(entry.Auth.TokenArgv) > 0) && !hasInitialToken {
 		suffix, err := entryAuth(ctx, c, login.EntryAuthParams{InstanceID: instance, Entry: *entry})
 		if err == nil {
 			local = "http://127.0.0.1:" + strconv.Itoa(ln.Port) + suffix

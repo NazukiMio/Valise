@@ -81,6 +81,9 @@ func (a *App) navigate(path string) {
 	}
 	a.router.Push(path)
 	a.trackRoute()
+	if srv, inst, ok := agentRouteParts(path); ok {
+		a.refreshProposalsOnVisit(srv, inst)
+	}
 	if path == "/servers" && !a.servers.started {
 		a.refreshServers()
 	}

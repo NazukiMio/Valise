@@ -234,6 +234,7 @@ func (a *App) agentDossierCard(c *ui.Context, row *agentRow) {
 			quietButton(c, T("common.refresh")).Disabled(busy).OnClick(func() {
 				st.note = ""
 				a.readAgentDossier(row.Server, row.Instance)
+				a.readProposals(row.Server, row.Instance)
 			})
 		})
 		muted(ui.Text(c, T("dossier.what"))).FontSize(fsSub).Wrap()

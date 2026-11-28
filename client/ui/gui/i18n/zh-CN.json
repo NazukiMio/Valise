@@ -2117,6 +2117,8 @@
     "onserver.generic.files": "状态目录文件数",
     "onserver.generic.files_val": "{n} 个文件",
     "onserver.generic.no_secrets_warn": "尚未声明凭据白名单（secrets）：完整/标准加密备份可直接使用；未确认凭据路径前已停用“轻装（剥离凭据）”档位。接入后可让 Agent 运行 valise-onboard 补充归档建议。",
-    "protect.tier.no_secrets_guard": "该实例尚未声明凭据白名单，暂不可使用“轻装（剥离凭据）”档位；请使用“完整”或“标准”档位，或先通过 Agent 归档建议确认凭据位置。"
+    "protect.tier.no_secrets_guard": "该实例尚未声明凭据白名单，暂不可使用“轻装（剥离凭据）”档位；请使用“完整”或“标准”档位，或先通过 Agent 归档建议确认凭据位置。",
+    "prop.pending_banner": "该 Agent 提交了 {n} 条待确认的归档/目录建议",
+    "prop.pending_review": "前往审核"
   }
 }

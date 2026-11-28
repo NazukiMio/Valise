@@ -201,6 +201,11 @@ func (a *App) refreshAgents() {
 			}
 			if err == nil {
 				a.syncAgentsToServiceStates(res.Items)
+				if a.router != nil {
+					if srv, inst, ok := agentRouteParts(sanitizeGUIRoute(a.router.Path())); ok {
+						a.refreshProposalsOnVisit(srv, inst)
+					}
+				}
 			}
 		})
 	})

@@ -43,9 +43,10 @@ var (
 	procRoot             = "/proc"
 	entryIDRe            = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 	unitSanitizeRe       = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
-	relativeAuthSuffixRe = regexp.MustCompile(`(?i)(?:^|[\s"'(\[])((?:/[^\s"'<>]*)?[?#][^\s"'<>]*(?:token|key|secret|auth|code)=[^\s"'<>]+)`)
-	sensitiveParamRe     = regexp.MustCompile(`(?i)(?:^|[\s?&;#,"'(=])(?:token|key|secret|auth|code)\s*=`)
-	suspiciousTailRe     = regexp.MustCompile(`(?i)(?:http|tok|ken|key|sec|ret|auth|code|[=?#:/])`)
+	relativeAuthSuffixRe = regexp.MustCompile(`(?i)(?:^|[\s"'(\[])((?:/[^\s"'<>]*)?[?#][^\s"'<>]*(?:token|ticket|key|secret|auth|code)=[^\s"'<>]+)`)
+	sensitiveParamRe     = regexp.MustCompile(`(?i)(?:^|[\s?&;#,"'(=])(?:token|ticket|key|secret|auth|code)\s*=`)
+	suspiciousTailRe     = regexp.MustCompile(`(?i)(?:http|tok|ken|tick|ket|key|sec|ret|auth|code|[=?#:/])`)
+	ansiEscapeRe         = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
 )
 
 // entryState tracks a Valise-started detached entry process or transient unit
@@ -818,25 +819,35 @@ func readBoundedFile(path string, maxBytes int64) []byte {
 	return b
 }
 
+func stripANSI(s string) string {
+	return ansiEscapeRe.ReplaceAllString(s, "")
+}
+
+func portURLSuffix(u *url.URL) string {
+	suffix := u.EscapedPath()
+	if suffix == "" {
+		suffix = "/"
+	}
+	if u.RawQuery != "" {
+		suffix += "?" + u.RawQuery
+	}
+	if u.Fragment != "" {
+		suffix += "#" + u.EscapedFragment()
+	}
+	return suffix
+}
+
 func extractPortURLSuffix(output []byte, port int) string {
 	wantPort := strconv.Itoa(port)
-	text := string(output)
+	text := stripANSI(string(output))
 	var fallback string
 	for _, m := range urlRe.FindAllString(text, -1) {
+		m = strings.TrimRight(m, `.,);]}>"'`)
 		u, err := url.Parse(m)
 		if err != nil || u.Port() != wantPort {
 			continue
 		}
-		suffix := u.EscapedPath()
-		if suffix == "" {
-			suffix = "/"
-		}
-		if u.RawQuery != "" {
-			suffix += "?" + u.RawQuery
-		}
-		if u.Fragment != "" {
-			suffix += "#" + u.EscapedFragment()
-		}
+		suffix := portURLSuffix(u)
 		if u.RawQuery != "" || u.Fragment != "" {
 			return suffix
 		}
@@ -903,6 +914,7 @@ func sanitizeLogContent(raw, authSuffix string) string {
 		redact := strings.Contains(lower, "http://") ||
 			strings.Contains(lower, "https://") ||
 			strings.Contains(lower, "token") ||
+			strings.Contains(lower, "ticket") ||
 			sensitiveParamRe.MatchString(line)
 		if !redact {
 			for _, sec := range secrets {

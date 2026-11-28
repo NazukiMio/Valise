@@ -786,3 +786,64 @@ func TestInspectExtraToolsAndLocalRootClassifier(t *testing.T) {
 		t.Fatalf("classifierFor(Plan.Record.LocalRoots fallback) = %q, want workspace", got)
 	}
 }
+
+func TestInspectAndSwapIgnoreDeletedNestedSubAgents(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+
+	// Enroll main + 2 sub-agents nested under w.state, then delete all of their
+	// directories on disk without forgetting the stale dossier records.
+	sub1 := filepath.Join(w.state, "profiles", "bot1")
+	sub2 := filepath.Join(w.state, "profiles", "bot2")
+	for _, rec := range []enroll.Record{
+		{InstanceID: "demo", ProfileID: "demo", ProfileVersion: 1, Roots: map[string]string{"state": w.state}},
+		{InstanceID: "demo-bot1", ProfileID: "demo", ProfileVersion: 1, Name: "bot1", Roots: map[string]string{"state": sub1}},
+		{InstanceID: "demo-bot2", ProfileID: "demo", ProfileVersion: 1, Name: "bot2", Roots: map[string]string{"state": sub2}},
+	} {
+		if _, err := porterenroll.WriteRecord(w.home, rec, w.p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.RemoveAll(w.state); err != nil {
+		t.Fatal(err)
+	}
+
+	facts, err := Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{
+		Profile:    w.p,
+		InstanceID: "demo",
+		Roots:      []revive.RootPlan{{ID: profile.StateRoot, Path: w.state}},
+	})
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if len(facts.Nested) != 0 {
+		t.Fatalf("expected empty Nested when sub-agent dirs are deleted on disk, got %v", facts.Nested)
+	}
+	if len(facts.Overlapping) != 2 {
+		t.Fatalf("expected 2 stale sub-agents in Overlapping so swap supersedes them, got %v", facts.Overlapping)
+	}
+	// Also verify inside check ignores deleted non-existent root of stale parent.
+	subInspect, err := Inspect(ctx, w.r.Env, w.r.Store, revive.InspectParams{
+		Profile:    w.p,
+		InstanceID: "demo-sub",
+		Roots:      []revive.RootPlan{{ID: profile.StateRoot, Path: filepath.Join(w.state, "custom", "child")}},
+	})
+	if err != nil {
+		t.Fatalf("Inspect child under deleted main: %v", err)
+	}
+	if len(subInspect.Inside) != 0 {
+		t.Fatalf("expected empty Inside when parent dossier dir was deleted, got %v", subInspect.Inside)
+	}
+
+	p := w.plan()
+	p.Mode, p.Carry = revive.ModeMigrate, false
+	p.Body = revive.BodyPlan{Action: revive.BodyKeep}
+	w.stage(t, p, snapshot)
+	res, err := w.r.Swap(ctx, p.OpID)
+	if err != nil {
+		t.Fatalf("Swap with deleted nested sub-agent records failed: %v", err)
+	}
+	if res.State != revive.StateHealthy {
+		t.Fatalf("Swap state = %q, want %q", res.State, revive.StateHealthy)
+	}
+}

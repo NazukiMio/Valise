@@ -107,11 +107,11 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 	if t := a.restoreTest; t != nil && t.server == row.Server && t.instance == row.Instance {
 		a.restoreTestReport(c, t)
 	}
+	if !row.Retired() {
+		a.proposalsCard(c, row)
+	}
 	if st.report == nil {
 		a.looseReports(c, row, st, false, false)
-		if !row.Retired() {
-			a.proposalsCard(c, row)
-		}
 		return
 	}
 	items := append([]service.HealthItem(nil), st.report.Items...)
@@ -122,9 +122,6 @@ func (a *App) healthTab(c *ui.Context, row *agentRow) {
 	fixPlaced, sysPlaced := a.healthItems(c, row, st, items)
 	a.looseReports(c, row, st, fixPlaced, sysPlaced)
 	a.actualRestoreEvidence(c, row)
-	if !row.Retired() {
-		a.proposalsCard(c, row)
-	}
 	muted(ui.Text(c, T("health.scope_note")))
 }
 

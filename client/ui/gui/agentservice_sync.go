@@ -40,6 +40,7 @@ func (a *App) onAgentRouteChanged(cur string) {
 		return
 	}
 	a.lastAgentRoute = cur
+	a.refreshProposalsOnVisit(server, instance)
 	st := a.agentServices[server+"/"+instance]
 	if st == nil || st.read.busy || st.ctrlJ.busy || !a.agentCanReadService(server, instance) {
 		return
